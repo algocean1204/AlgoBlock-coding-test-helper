@@ -19,11 +19,14 @@ jobs:
     timeout-minutes: 2
     steps:
       - name: 제목의 꼴을 본다
+        shell: bash
         env:
           TITLE: ${{ github.event.pull_request.title }}
         run: |
           printf '제목: %s\n' "$TITLE"
-          if printf '%s' "$TITLE" | grep -Eq '^(feat|fix|docs|refactor|perf|test|build|ci|chore|style|revert)(\([a-z0-9-]+\))?!?: [^ ].*$'; then
+          re='^(feat|fix|docs|refactor|perf|test|build|ci|chore|style|revert)(\([a-z0-9-]+\))?!?: [^ ].*$'
+          # 제목 전체를 한 번에 본다(grep은 여러 줄 가운데 한 줄만 맞아도 통과시킨다)
+          if [[ "$TITLE" != *$'\n'* && "$TITLE" =~ $re ]]; then
             echo "맞는다"
           else
             echo "::error::PR 제목이 '<종류>(<범위>): <설명>' 꼴이 아니다. 예: fix(ui): 빈 코드 제출 안내. 종류: feat fix docs refactor perf test build ci chore style revert"

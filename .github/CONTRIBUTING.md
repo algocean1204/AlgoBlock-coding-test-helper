@@ -57,7 +57,11 @@
 - 브랜치 접두사와 종류는 대개 이렇게 맞는다: `feature/` → `feat`, `fix/` → `fix`, `refactor/` → `refactor`, `chore/` → `chore`·`ci`·`build`, `docs/` → `docs`, `problem/` → `feat(problems)`·`fix(problems)`.
 - 예: `fix(judge): 빈 입력에서 시간 초과로 보이던 것을 고침`, `feat(problems): 구간 합 문제 더하기`, `ci: actions/checkout 갱신`.
 
+- 되돌리기는 GitHub의 Revert 단추가 만드는 이름(`revert-…` 브랜치, `Revert "…"` 제목)이 검사에 걸린다. `fix/<번호>-revert-<짧은 이름>` 브랜치에 `revert: <원래 제목>`으로 올린다.
+
 브랜치 안의 커밋은 스쿼시로 하나가 되므로 꼴을 따로 검사하지 않는다. 그래도 같은 꼴로 쓰면 검토하기 쉽다.
+
+바깥 기여자의 PR에서는 유지자가 승인한 뒤에 CI가 돈다. 제목만 고쳐도 다시 승인을 기다리니 제목은 처음부터 꼴에 맞게 쓴다.
 
 ## 폴더 구조는 고정이다
 
