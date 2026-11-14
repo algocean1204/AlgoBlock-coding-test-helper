@@ -297,7 +297,18 @@ def grade(p, language: str, code: str, kinds: tuple = KINDS, stop_after: int | N
              "error": c.get("stderr") or "", "status": c["status"], "ms": c.get("time_ms", 0), "line": c.get("line"), "near": c.get("near") is True,
              "limit": by[c["id"]].get("timeout"), **({"note": MANY_ANSWERS} if many and c["status"] == "failed" else {})} for c in raw.get("cases", [])]
     return {"status": raw["status"], "reason": raw.get("reason") or "", "cases": rows, "compile": (raw.get("compile") or {}).get("stderr", ""),
-            "compile_line": raw.get("compile_line"), "language": language}
+            "compile_line": raw.get("compile_line"), "language": language, "notice": notice_of(raw)}
+
+
+# 채점기가 Windows 작업 객체 없이 돌렸을 때(결과의 warning) 화면에 한 줄로 알린다. 무엇이 빠졌는지와 무엇을 뜻하는지
+NO_LIMITS = ("이 PC에서는 채점 실행 제한(CPU 시간·메모리 상한, 끝난 뒤 남은 프로그램 정리)을 걸지 못하고 돌렸어요. "
+             "채점 결과는 그대로지만, 코드가 띄운 다른 프로그램이 남아 있을 수 있어요.")
+
+
+def notice_of(raw: dict) -> str:
+    """채점기 결과(컴파일 포함)에 warning이 하나라도 있으면 NO_LIMITS, 없으면 빈 글."""
+    parts = [raw.get("compile") or {}, *raw.get("cases", [])]
+    return NO_LIMITS if any(part.get("warning") for part in parts) else ""
 
 
 # 앱의 다른 말처럼 '~어요'
@@ -1468,7 +1479,7 @@ def result_body(report: dict) -> dict:
     # many: 통과하지 못한 케이스가 모두 '답이 여럿일 수 있는 문제에서 값이 다름'이다(틀렸다고 단정하지 않는다. 화면 머리가 그렇게 말한다)
     return {"ok": report["status"] == "passed", "status": report["status"], "reason": report["reason"], "compile": compile_head(report["compile"]),
             "compile_line": report.get("compile_line"), "score": score(report), "cases": cases, "repeat": report.get("repeat") is True,
-            "many": bool(missed) and all(case.get("note") for case in missed)}
+            "many": bool(missed) and all(case.get("note") for case in missed), "notice": report.get("notice") or ""}
 
 
 CALL_FAILED = "채점기가 이 함수를 부르는 코드를 만들지 못했어요. 반환형과 인자 형을 시작 코드 그대로 두었는지 확인해 주세요."
@@ -1537,7 +1548,7 @@ def run_once(p, language: str, code: str, given: str) -> dict:
     got, printed = (lines[-1], lines[:-1]) if ran and lines else ("", lines)
     out = {"status": "ran" if ran else status, "reason": raw.get("reason") or "", "input": given, "got": got[:2000], "stdout": "\n".join(printed)[:2000],
            "error": "" if ran else error_line(case.get("stderr") or "", status), "ms": case.get("time_ms", 0),
-           "compile": compile_head((raw.get("compile") or {}).get("stderr", "")), "compile_line": raw.get("compile_line")}
+           "compile": compile_head((raw.get("compile") or {}).get("stderr", "")), "compile_line": raw.get("compile_line"), "notice": notice_of(raw)}
     if p.mode == "program":
         out |= {"got": (case.get("stdout") or "")[:2000], "stdout": ""}
     if status == "runtime_error":

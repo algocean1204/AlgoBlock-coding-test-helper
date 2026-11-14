@@ -96,6 +96,11 @@ def registered() -> None:
     right = "def solution(a, b):\n    return a + b\n"
     ran = call("/api/run", id=pid, code=right)[1]
     assert ran["ok"] and len(ran["cases"]) == 2  # 등록한 케이스는 모두 공개 예시다
+    assert ran["notice"] == ""
+    judge_common, real = server.check_judge().common, server.check_judge().common.run_command
+    with patch.object(judge_common, "run_command", lambda *a, **k: {**real(*a, **k), "warning": "작업 없음"}):  # Windows에서 작업 객체를 쓰지 못한 실행
+        warned, own = call("/api/run", id=pid, code=right)[1], call("/api/run", id=pid, code=right, input="[1, 2]")[1]
+    assert warned["ok"] and (warned["notice"], own["notice"]) == (server.NO_LIMITS, server.NO_LIMITS), (warned, own)  # 화면에 한 줄로 알린다
     assert call("/api/submit", id=pid, code=right)[1]["ok"]
     assert call("/api/debug", id=pid, code=right)[1]["passed"]  # 통과한 코드는 디버깅으로 가지 않는다(모델 0회)
     state = call("/api/state", id=pid, mode="chair")[1]["problem"]

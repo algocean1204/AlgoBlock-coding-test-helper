@@ -1550,7 +1550,8 @@ function renderResult() {
   if (judging) return void (box.innerHTML = `<div class="note">${waitLine("result").replace(" · 보통 5~25초 걸려요", "")}</div>`);
   if (!r) return;
   if (r.alert) return void (box.innerHTML = noteHtml(r.alert));
-  if (r.own) return void (box.innerHTML = ownHtml(r) + (r.stale ? '<div class="note warn" role="status">코드를 고쳤어요. 다시 실행하면 새로 돌려요.</div>' : ""));
+  const notice = r.notice ? `<p class="hint">${esc(r.notice)}</p>` : ""; // 채점 실행 제한을 걸지 못했다(Windows 작업 객체)
+  if (r.own) return void (box.innerHTML = ownHtml(r) + notice + (r.stale ? '<div class="note warn" role="status">코드를 고쳤어요. 다시 실행하면 새로 돌려요.</div>' : ""));
   const total = r.cases.length, p = S.problem;
   const finding = S.debug && S.debug.open;
   const score = r.score || { accuracy: [0, 0], efficiency: [0, 0] };
@@ -1590,7 +1591,7 @@ function renderResult() {
   if (total) html += `<details class="case-fold"${(S.casesOpen ?? (!finding && !r.ok)) ? " open" : ""}><summary>테스트별 결과</summary>${testsHtml(r)}</details>`;
   if (r.repeat) html += '<p class="hint">직전 제출과 같은 코드라 제출 기록은 그대로예요.</p>';
   if (r.unsaved) html += '<p class="hint">틀린 곳을 찾으며 다시 채점한 결과라 제출 기록에는 남지 않았어요. 남기려면 제출해 주세요.</p>';
-  box.innerHTML = html;
+  box.innerHTML = html + notice;
 }
 
 async function submitCode() {
