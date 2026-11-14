@@ -1341,6 +1341,15 @@ class HonestCheckTest(unittest.TestCase):
             self.assertEqual(((got["solution"].code, got["solution"].verified), len(seen)), (want, runs))
             self.assertIn(starter, fakes.prompt(fake, "plan.solve"))
 
+    def test_program_guide_follows_the_starter_reading(self):
+        """표준 입출력 가이드에도 시작 코드를 넘기고 그 읽기 꼴을 따르게 한다(커서를 블록 사이로 넘기지 않게). 정해 둔 코드를 쓸 때는 넘기지 않는다."""
+        from ..plan.prompts import STARTER_NOTE, solve_messages
+
+        starter = "import sys\ninput = sys.stdin.readline\n\n# 여기에 풀이를 써요\n"
+        state = {"ctx": fakes.context(problem_text=fakes.PROGRAM_PROBLEM, mode="program", starter=starter), "strategy": "fresh"}
+        self.assertIn(f"{STARTER_NOTE['program']}\n{starter}", solve_messages(state)[1]["content"])
+        self.assertIn("커서", STARTER_NOTE["program"])
+        self.assertNotIn(starter, solve_messages(state, given="print(1)")[1]["content"])
 
     def test_given_guide_check_has_three_outcomes(self):
         """실린 정답 풀이를 이 기기에서 확인한 결과: 통과, 통과하지 못함, 채점하지 못함(도구·케이스가 없거나 채점기가 없음)."""

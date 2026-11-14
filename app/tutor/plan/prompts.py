@@ -70,9 +70,18 @@ SOLVE_STRATEGY = {
 }
 
 
+# 시작 코드를 따르게 하는 말. 표준 입출력에서 입력 전체를 토큰으로 쪼개 커서를 단계마다 넘기면, 시작 코드대로 읽는 사용자 블록과 이어 돌릴 수 없었다
+STARTER_NOTE = {
+    "function": "시작 코드(사용자가 받는 코드다. 진입 함수의 머리 — 함수 이름, 인자 이름과 차례 — 를 이것 그대로 쓴다):",
+    "program": "시작 코드(사용자가 받는 코드다. 입력을 읽는 방법을 이것 그대로 따른다. 입력은 그 값이 필요한 단계에서 읽고, 읽은 값은 문제 글이 이름 붙인 양"
+               "(크기, 격자, 질문 수 등)의 변수에 담는다. 단계를 넘어 이어 쓰는 값은 그 변수들뿐이다: 입력을 미리 한꺼번에 쪼개 두고 읽은 위치(커서)를 여러 단계에 걸쳐 옮기지 않는다):",
+}
+
+
 def solve_messages(state: MainState, retry: str = "", given: str = "") -> list[dict]:
     """풀이 가이드(A4). 문제 글만 준다: 지난 문항, 패턴, 사용자 기록을 넣지 않는다(다른 문제의 풀이가 끼어들지 않게).
-    푸는 방식은 등록한 방식(SHAPE[mode])을 따르고, 함수 방식이면 시작 코드의 진입 함수 머리를 그대로 쓰게 한다(단순 풀이·생성기와 같은 기준).
+    푸는 방식은 등록한 방식(SHAPE[mode])을 따르고, 시작 코드가 있으면 그 틀을 따르게 한다(단순 풀이·생성기와 같은 기준):
+    함수 방식은 진입 함수 머리, 표준 입출력은 입력 읽기 꼴(블록 사이를 잇는 값이 커서가 아니라 문제 글의 양이 되게).
     given은 정해 둔 정답 코드다: 코드를 새로 쓰지 않고 그 코드의 단서·방향·단계만 쓰게 한다."""
     ctx = state["ctx"]
     strategy = state.get("strategy") or "fresh"
@@ -102,8 +111,8 @@ def solve_messages(state: MainState, retry: str = "", given: str = "") -> list[d
         "줄임 표현(컴프리헨션, 람다, 한 줄 조건식)과 낯선 내장 함수를 피하고, 변수 이름은 뜻이 보이게 짓는다. 주석과 빈 줄을 쓰지 않는다. 입력으로 받은 값을 바꾸지 않는다.",
         'JSON {"clues": ["..."], "approach", "steps": ["..."], "code"' + (', "followed": true 또는 false}' if strategy == "follow" else "}"),
     ]
-    if ctx.mode == "function" and ctx.starter.strip() and not given:  # 사용자가 받는 시작 코드와 같은 머리여야 블록이 이어진다
-        lines.append(f"시작 코드(사용자가 받는 코드다. 진입 함수의 머리 — 함수 이름, 인자 이름과 차례 — 를 이것 그대로 쓴다):\n{ctx.starter}")
+    if ctx.starter.strip() and not given:  # 사용자가 받는 시작 코드와 같은 틀(함수 머리, 입력 읽기)이어야 블록이 이어진다
+        lines.append(f"{STARTER_NOTE[ctx.mode]}\n{ctx.starter}")
     if retry:
         lines.append(f"앞서 쓴 코드는 채점에서 틀렸다. 원인을 찾아 고친 전체 코드를 다시 쓴다.\n{retry}")
     if given:
