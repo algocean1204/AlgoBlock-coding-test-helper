@@ -1387,6 +1387,38 @@ class HonestCheckTest(unittest.TestCase):
                 got = solve({"ctx": ctx, "strategy": "fresh", "abstract": fact}, config)
             self.assertNotIn("abstract", got)
 
+    def test_program_guide_follows_the_starter_reading(self):
+        """표준 입출력 가이드에도 시작 코드를 넘기고 그 읽기 꼴을 따르게 한다(커서를 블록 사이로 넘기지 않게). 정해 둔 코드를 쓸 때는 넘기지 않는다."""
+        from ..knowledge.ontology import technique_list
+        from ..plan.prompts import LEVEL_TEXT, STARTER_NOTE, solve_messages
+
+        starter = "import sys\ninput = sys.stdin.readline\n\n# 여기에 풀이를 써요\n"
+        state = {"ctx": fakes.context(problem_text=fakes.PROGRAM_PROBLEM, mode="program", starter=starter), "strategy": "fresh"}
+        self.assertIn(f"{STARTER_NOTE['program']}\n{starter}", solve_messages(state)[1]["content"])
+        self.assertNotIn(starter, solve_messages(state, given="print(1)")[1]["content"])
+        # 함수 방식의 프롬프트 끝은 고정이다: 시작 코드 줄은 표준 입출력을 고치기 전과 같고, 정석 가이드(fresh·canonical)에만 태그·단계를 묻는 줄이 더해진다
+        head = "def solution(a, b):\n    answer = 0\n    return answer\n"
+        starter_line = f"시작 코드(사용자가 받는 코드다. 진입 함수의 머리 — 함수 이름, 인자 이름과 차례 — 를 이것 그대로 쓴다):\n{head}"
+        asked = ("tags: 아래 기법 목록에서 위 code가 실제로 쓰는 방법의 id 2~4개. code에 없는 방법은 쓰지 않는다(목록에 없는 낱말도 쓰지 않는다).\n"
+                 f"{technique_list()}\n{LEVEL_TEXT} 위 code가 쓰는 방법으로 정한다.\n"
+                 'JSON {"clues": ["..."], "approach", "steps": ["..."], "code", "tags": [id], "level"}\n')
+        plain = 'JSON {"clues": ["..."], "approach", "steps": ["..."], "code"}\n'
+        for strategy, tail in (("fresh", asked), ("canonical", asked), ("keep_flow", plain)):
+            function = solve_messages({"ctx": fakes.context(problem_text=fakes.PROBLEM, starter=head, direct_code="x"), "strategy": strategy})[1]["content"]
+            self.assertTrue(function.endswith(f"\n{tail}{starter_line}"), (strategy, function[-600:]))
+
+    def test_unpassed_program_guide_asks_to_check_line_breaks(self):
+        """예시를 통과하지 못한 가이드의 까닭: 표준 입출력이면 입력의 줄 나눔도 보라고 한다(줄 단위로 읽는 가이드는 줄 경계가 어긋난 예시에서 떨어진다)."""
+        from types import SimpleNamespace
+
+        from ..plan.nodes import cross_check
+
+        for mode, said in (("program", True), ("function", False)):
+            done = []
+            cross = SimpleNamespace(done=lambda pid, verdict: done.append(verdict))
+            cross_check({"ctx": fakes.context(problem_text=fakes.PROGRAM_PROBLEM, mode=mode)}, None, False, {"cases": []}, None, cross)
+            self.assertEqual("줄 나눔" in done[0]["why"], said, mode)
+
     def test_given_guide_check_has_three_outcomes(self):
         """실린 정답 풀이를 이 기기에서 확인한 결과: 통과, 통과하지 못함, 채점하지 못함(도구·케이스가 없거나 채점기가 없음)."""
         from ..plan.nodes import _given_guide

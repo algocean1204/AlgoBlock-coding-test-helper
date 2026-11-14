@@ -155,7 +155,8 @@ def cross_check(state: MainState, got: Solved, passed: bool | None, report: dict
         cross.done(pid, verdict)
         return got, verdict["verified"]
     if not passed:  # 사용자가 넣은 기대 결과를 믿는다: 끝내 맞지 않은 예시는 문제를 잘못 읽었을 수 있다
-        verdict.update(why="AI가 쓴 풀이가 공개 예시를 통과하지 못했어요. 예시의 기대 결과가 맞는지 확인해 주세요.", doubts=[
+        verdict.update(why="AI가 쓴 풀이가 공개 예시를 통과하지 못했어요. 예시의 기대 결과가 맞는지 확인해 주세요."
+                       + (" 입력의 줄 나눔(한 줄에 들어갈 값이 여러 줄로 나뉘었거나 빈 줄이 끼었는지)도 문제 글의 입력 형식과 같은지 봐 주세요." if state["ctx"].mode == "program" else ""), doubts=[
             {"where": f"예시 {row['id']}", "note": "기대 결과와 풀이가 맞지 않음"} for row in (report or {}).get("cases") or []
             if row.get("kind", "example") == "example" and row.get("status") != "passed"])
         cross.done(pid, verdict)
