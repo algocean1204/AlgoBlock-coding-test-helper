@@ -133,7 +133,8 @@ def _bound(rows: list[list[str]]) -> set[str]:
             while toks[j + 1:j + 2] == [","] and j + 2 < len(toks) and re.fullmatch(r"[A-Za-z_]\w*", toks[j + 2]):
                 j += 2  # 'a, b = …', 'for i, c in …'
             after = toks[j + 1] if j + 1 < len(toks) else ""
-            if after in _ASSIGN or (loop and after in ("in", ":")):
+            # 'for (auto x : xs)'의 x는 반복 변수지만, Python 'for x in xs:'의 xs(줄 끝 ':' 앞)는 도는 대상이다
+            if after in _ASSIGN or (loop and (after == "in" or after == ":" and "in" not in toks[:i])):
                 names.update(toks[i:j + 1:2])
     return names
 
@@ -207,7 +208,8 @@ def name_candidates(code: str, reference: str, language: str, missing: str, plan
     names = [name for name in dict.fromkeys(names) if name != missing]
     plan_bound, my_bound = first_bound(reference, language, program), _first_seen(rows)
     same = plan_bound.index(missing) if missing in plan_bound else len(my_bound)
-    first = [my_bound[same]] if same < len(my_bound) and my_bound[same] in names else []
+    # 자리 후보도 계획에 있는 이름(양쪽이 같이 쓰는 이름)은 뺀다: 함수 인자가 다른 변수의 첫 후보가 되었다
+    first = [my_bound[same]] if same < len(my_bound) and my_bound[same] in names and my_bound[same] not in plan_words else []
     return list(dict.fromkeys(first + [n for n in names if n not in plan_words] + [n for n in names if n in changed]))
 
 
@@ -349,8 +351,10 @@ def _go_made(toks: list[str]) -> list[tuple]:
 def made_statements(code: str, language: str, program: bool = False) -> list[tuple]:
     """코드(틀 줄은 뺀다)가 새로 만드는 이름 [(이름, 꼴, 타입 글, 만드는 문장), …](처음 나온 차례).
     만드는 문장: ('=', 오른쪽 식 낱말, 자리) / ('in'·':'·'range', 도는 대상, 자리) / ('for', 반복 머리) / ('type', 타입) / None(매개변수).
-    짝을 '묶음의 수가 같으면 차례대로' 지으면 선언 차례를 바꾼 코드에 틀린 짝을 알렸다. 짝의 근거는 만드는 문장이다."""
-    out = []
+    짝을 '묶음의 수가 같으면 차례대로' 지으면 선언 차례를 바꾼 코드에 틀린 짝을 알렸다. 짝의 근거는 만드는 문장이다.
+    Python의 풀어 받기('for a, b in xs')와 첨자 받기('for q in xs:' 뒤 'a = q[0]', 'a, b = q')는 같은 꼴('in', xs, 자리)이다.
+    통째로 받는 반복 변수('for q in xs'의 q)는 자리가 없다(None)."""
+    out, whole = [], {}  # whole: 통째로 받는 반복 변수 → 도는 대상
     for line in body_lines(code, language, program):
         toks = _TOKEN.findall(line)
         found = (_DEF_PY if language == "python" else _DEF).match(line)
@@ -385,7 +389,11 @@ def made_statements(code: str, language: str, program: bool = False) -> list[tup
             targets = [t for t in toks[1:toks.index("in")] if _NAME.fullmatch(t)]
             rhs = toks[toks.index("in") + 1:]
             rhs = rhs[:-1] if rhs[-1:] == [":"] else rhs
-            out += [(t, "loop", "", ("in", tuple(rhs), i)) for i, t in enumerate(targets)]
+            out += [(t, "loop", "", ("in", tuple(rhs), i if len(targets) > 1 else None)) for i, t in enumerate(targets)]
+            for t in targets:  # 다시 받으면 앞 반복의 통째 값이 아니다
+                whole.pop(t, None)
+            if len(targets) == 1:
+                whole[targets[0]] = tuple(rhs)
             continue
         names = [name for name in _first_seen([toks]) if _assigned(toks, name)]
         if names:
@@ -399,8 +407,15 @@ def made_statements(code: str, language: str, program: bool = False) -> list[tup
             pieces = _split_top(rhs)
             for name in names:
                 i = lhs.index(name) if name in lhs else 0
-                piece = pieces[i] if len(pieces) == len(lhs) and len(lhs) > 1 else rhs
-                out.append((name, "var", "", ("=", tuple(piece), i if len(pieces) != len(lhs) else 0)))
+                piece = tuple(pieces[i] if len(pieces) == len(lhs) and len(lhs) > 1 else rhs)
+                if piece[:1] and piece[0] in whole and len(lhs) > 1 and len(pieces) == 1 and len(piece) == 1:  # 'a, b = q'(오른쪽이 q 하나뿐)
+                    out.append((name, "loop", "", ("in", whole[piece[0]], i)))
+                elif piece[:1] and piece[0] in whole and len(piece) == 4 and piece[1] == "[" and piece[2].isdigit() and piece[3] == "]":  # 'a = q[0]'
+                    out.append((name, "loop", "", ("in", whole[piece[0]], int(piece[2]))))
+                else:
+                    out.append((name, "var", "", ("=", piece, i if len(pieces) != len(lhs) else 0)))
+            for name in names:  # 반복 변수에 다시 대입하면 그 뒤의 'a = q[0]'은 xs의 원소가 아니다
+                whole.pop(name, None)
     seen = {}
     for item in out:
         seen.setdefault(item[0], item)

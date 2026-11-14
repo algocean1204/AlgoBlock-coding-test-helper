@@ -756,6 +756,34 @@ class BlockCheckNewNameTest(unittest.TestCase):
         done, seen = self.turn(blocks, {}, "b1", "for q in ranges:\n    a, b = q\n    s = a * 10", [([[[1, 2]]], 12), ([[[3, 5]]], 35)])
         self.assertEqual((done["block_check"].verdict, sorted(done["block_check"].renames)), ("Y", [["b", "high"], ["s", "start"]]), done["verdict"].seen)
 
+    def test_unpacked_and_indexed_items_pair(self):
+        """풀어 받기('for r, c in xs')와 첨자 받기('for q in xs:' 뒤 'a = q[0]')는 같은 꼴이다. 양쪽에 같이 있는 이름은 자리 후보가 아니다."""
+        from ..common.solution import made_statements, name_candidates
+
+        indexed = "for query in queries:\n    row = query[0]\n    col = query[1]"
+        shape = lambda code, name: next(item[1:] for item in made_statements(code, "python") if item[0] == name)  # noqa: E731
+        for mine, a, b in (("for r, c in queries:\n    s = ''", "r", "c"), ("for q in queries:\n    a, b = q", "a", "b")):
+            self.assertEqual((shape(indexed, "row"), shape(indexed, "col")), (shape(mine, a), shape(mine, b)), mine)
+        self.assertNotEqual(shape(indexed, "query"), shape("for r, c in queries:", "r"))  # 통째로 받은 반복 변수는 그 자리의 값이 아니다
+        for other in ("for q in queries:\n    a, b = q, 0", "for q in queries:\n    q = q[1:]\n    a = q[0]"):  # 오른쪽이 q 하나가 아니다, q를 다시 대입했다
+            self.assertEqual((shape(other, "a")[0], shape(other, "a")[2][0]), ("var", "="), other)
+        words = {"queries", "query", "row", "col", "text", "answer"}
+        self.assertNotIn("queries", name_candidates("for r, c in queries:\n    s = ''", indexed, "python", "row", words))  # 도는 대상은 대입한 이름이 아니다
+        self.assertEqual(name_candidates("total = 0\nseen = {}", "count = {}\ntotal = 0", "python", "count", {"count", "total"})[0], "seen")  # 같은 자리의 total은 계획에도 있다
+        blocks = [fakes.block(1, "질문", "def solution(queries):\n    answer = []\n    for query in queries:\n        row = query[0]\n        col = query[1]\n        text = ''",
+                              "loop", hints=list(fakes.HINTS1)),
+                  fakes.block(2, "답", "        text = text + str(row * 10 + col)\n        answer.append(text)\n    return answer", hints=list(fakes.HINTS2))]
+        done, _ = self.turn(blocks, {}, "b1", "answer = []\nfor r, c in queries:\n    s = ''", [([[[1, 2], [3, 4]]], ["12", "34"])])
+        self.assertEqual((done["block_check"].verdict, sorted(done["block_check"].renames)), ("Y", [["c", "col"], ["r", "row"], ["s", "text"]]), done["verdict"].seen)
+
+    def test_wrong_block_with_leftover_name_is_not_joined(self):
+        """틀린 값(str) + 남는 이름(extra): 어림 짝으로 이은 튜터의 코드 줄에서 오류가 나도 '이어지지 않아요'다(확인 전으로 빼돌리지 않는다)."""
+        blocks = [fakes.block(1, "범위", "def solution(q):\n    start = q[0] * 10\n    high = q[1]", hints=list(fakes.HINTS1)),
+                  fakes.block(2, "답", "    return start + high", hints=list(fakes.HINTS2))]
+        done, _ = self.turn(blocks, {}, "b1", "s = str(q[0] * 10)\nhi = q[1]\nextra = 0", [([[1, 2]], 12), ([[3, 5]], 35)])
+        self.assertTrue(not done["verdict"].unsure and done["verdict"].seen.startswith("튜터의 코드(") and NOT_JOINED in done["verdict"].seen, done["verdict"].seen)
+        self.assertEqual((done["block_check"].verdict, done["block_check"].tries), ("N", 1))
+
     def test_try_seconds_and_same_failure(self):
         """6초가 지나면 새 시도를 하지 않는다(시계를 넣어서). 모든 시도가 같은 실패면 그 실패(짝과 상관없다), 확실한 짝 + 내 코드의 오류면 그 오류."""
         from unittest.mock import patch
