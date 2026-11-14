@@ -390,6 +390,8 @@ def made_statements(code: str, language: str, program: bool = False) -> list[tup
             rhs = toks[toks.index("in") + 1:]
             rhs = rhs[:-1] if rhs[-1:] == [":"] else rhs
             out += [(t, "loop", "", ("in", tuple(rhs), i if len(targets) > 1 else None)) for i, t in enumerate(targets)]
+            for t in targets:  # 다시 받으면 앞 반복의 통째 값이 아니다
+                whole.pop(t, None)
             if len(targets) == 1:
                 whole[targets[0]] = tuple(rhs)
             continue
@@ -406,12 +408,14 @@ def made_statements(code: str, language: str, program: bool = False) -> list[tup
             for name in names:
                 i = lhs.index(name) if name in lhs else 0
                 piece = tuple(pieces[i] if len(pieces) == len(lhs) and len(lhs) > 1 else rhs)
-                if piece[:1] and piece[0] in whole and len(lhs) > 1 and len(piece) == 1:  # 'a, b = q'
+                if piece[:1] and piece[0] in whole and len(lhs) > 1 and len(pieces) == 1 and len(piece) == 1:  # 'a, b = q'(오른쪽이 q 하나뿐)
                     out.append((name, "loop", "", ("in", whole[piece[0]], i)))
                 elif piece[:1] and piece[0] in whole and len(piece) == 4 and piece[1] == "[" and piece[2].isdigit() and piece[3] == "]":  # 'a = q[0]'
                     out.append((name, "loop", "", ("in", whole[piece[0]], int(piece[2]))))
                 else:
                     out.append((name, "var", "", ("=", piece, i if len(pieces) != len(lhs) else 0)))
+            for name in names:  # 반복 변수에 다시 대입하면 그 뒤의 'a = q[0]'은 xs의 원소가 아니다
+                whole.pop(name, None)
     seen = {}
     for item in out:
         seen.setdefault(item[0], item)
