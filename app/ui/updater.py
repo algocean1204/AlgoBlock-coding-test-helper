@@ -82,15 +82,30 @@ function Say([string]$text) {
   try { [IO.File]::AppendAllText($log, ('{0:yyyy-MM-dd HH:mm:ss} {1}' -f (Get-Date), $text) + "`r`n", $utf8) } catch { }
 }
 function Move-Retry([string]$from, [string]$to) {
-  for ($i = 0; $i -lt 20; $i++) {
-    try { [IO.File]::Move($from, $to); return $true } catch { Start-Sleep -Milliseconds 500 }
+  # 막 복사한 큰 exe는 백신이 검사하느라 한동안 잡고 있을 수 있다. 60초까지 다시 하고, 다시 했거나 못 했으면 까닭을 남긴다
+  $until = (Get-Date).AddSeconds(60)
+  $tries = 0
+  $last = ''
+  while ($true) {
+    try {
+      [IO.File]::Move($from, $to)
+      if ($tries) { Say ('옮겼다(' + $tries + '번 다시 함): ' + $from + ' -> ' + $to + ' / 앞의 까닭: ' + $last) }
+      return $true
+    } catch {
+      $last = $_.Exception.Message
+    }
+    $tries++
+    if ((Get-Date) -gt $until) { break }
+    Start-Sleep -Milliseconds 500
   }
+  Say ('옮기지 못했다: ' + $from + ' -> ' + $to + ' / ' + $last)
   return $false
 }
 function Remove-Retry([string]$path) {
-  for ($i = 0; $i -lt 10; $i++) {
+  for ($i = 0; $i -lt 40; $i++) {
     try { if ([IO.File]::Exists($path)) { [IO.File]::Delete($path) }; return } catch { Start-Sleep -Milliseconds 500 }
   }
+  Say ('지우지 못했다(다음에 켤 때 지운다): ' + $path)
 }
 function Open-App {
   try {

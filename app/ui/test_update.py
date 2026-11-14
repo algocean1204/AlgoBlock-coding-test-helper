@@ -725,7 +725,8 @@ def exe_swapping(built: Path) -> None:
     def finish(script: subprocess.Popen, name: str) -> str:
         script.wait(600)
         log = (updater.DIR / "swap.log").read_text(encoding="utf-8")
-        print(f"--- {name}: 스크립트 종료 코드 {script.returncode}\n{log}", flush=True)
+        files = [f"{path.name}({path.stat().st_size}바이트, 수정 {int(path.stat().st_mtime)})" for path in sorted(updater.DIR.parent.iterdir()) if path.is_file()]
+        print(f"--- {name}: 스크립트 종료 코드 {script.returncode}\n{log}[폴더] {', '.join(files)}\n[swap-out.log] {updater.tail(updater.DIR / 'swap-out.log', 800)}", flush=True)
         summary.extend(f"{name}: {line.split(' ', 2)[-1]}" for line in log.splitlines() if "응답" in line or "되돌" in line or "바꿨다" in line)
         return log
 
