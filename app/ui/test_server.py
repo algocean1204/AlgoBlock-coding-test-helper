@@ -96,6 +96,16 @@ def registered() -> None:
     right = "def solution(a, b):\n    return a + b\n"
     ran = call("/api/run", id=pid, code=right)[1]
     assert ran["ok"] and len(ran["cases"]) == 2  # 등록한 케이스는 모두 공개 예시다
+    assert ran["notice"] == ""
+    judge_common, real = server.check_judge().common, server.check_judge().common.run_command
+    with patch.object(judge_common, "run_command", lambda *a, **k: {**real(*a, **k), "warning": "작업 없음", "warning_kind": "no_job"}):  # Windows에서 작업 객체를 쓰지 못한 실행
+        warned, own = call("/api/run", id=pid, code=right)[1], call("/api/run", id=pid, code=right, input="[1, 2]")[1]
+    assert warned["ok"] and (warned["notice"], own["notice"]) == (server.NO_LIMITS, server.NO_LIMITS), (warned, own)  # 화면에 한 줄로 알린다
+    assert "커밋 메모리 상한" in server.NO_LIMITS and "채점 결과는 그대로" in server.NO_LIMITS
+    stuck = {"status": "runtime_error", "stdout": "", "stderr": "", "time_ms": 0, "warning": "재개 안 됨", "warning_kind": "not_started"}
+    with patch.object(judge_common, "run_command", lambda *a, **k: stuck):  # 멈춘 채 만든 제출 코드를 시작하지 못한 실행
+        failed = call("/api/run", id=pid, code=right)[1]
+    assert not failed["ok"] and failed["notice"] == server.NOT_STARTED and "채점 결과는 그대로" not in server.NOT_STARTED, failed
     assert call("/api/submit", id=pid, code=right)[1]["ok"]
     assert call("/api/debug", id=pid, code=right)[1]["passed"]  # 통과한 코드는 디버깅으로 가지 않는다(모델 0회)
     state = call("/api/state", id=pid, mode="chair")[1]["problem"]
@@ -849,7 +859,8 @@ def program_tutor() -> None:
         solved = {"clues": ["'A+B를 출력한다' → 두 수를 더해 출력한다"], "approach": "두 수를 읽어 더한 값을 출력한다.", "steps": ["두 수를 읽는다 — 입력", "합을 출력한다 — 답"], "code": code}
         fake = FakeLlm({"plan.solve": [solved], "plan.draft_blocks": [{"algorithm": "hash", "out_of_scope": False, "blocks": blocks}]})
         pid = server.register({**PROGRAM, "language": language})["id"]
-        with use_llm(fake):
+        # 벡터 색인을 끈다: 임베딩 모델이 있는 기기에서는 앞서 등록한 비슷한 문제를 찾아 잇는 판정(plan.gate)이 더 불려 아래의 호출 목록이 기기마다 달라진다
+        with use_llm(fake), patch.object(server, "index", lambda: None):
             with server.tutor() as t:
                 t.store.put_fact(pid, "두 정수의 합", [])
                 assert t.prepare(pid).status == 200, language

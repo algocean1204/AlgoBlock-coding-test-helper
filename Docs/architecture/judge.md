@@ -22,8 +22,8 @@
 빌드와 실행 명령은 다음과 같다. 함수 모드 기준이다.
 
 ```text
-Java     javac -encoding UTF-8 Solution.java FunctionRunner.java → java -Xss256m FunctionRunner <번호>
-Kotlin   kotlinc <파일들> -include-runtime -d app.jar           → java -Xss256m -jar app.jar [번호]
+Java     javac -encoding UTF-8 Solution.java FunctionRunner.java → java -Xss256m <UTF-8 설정> FunctionRunner <번호>
+Kotlin   kotlinc <파일들> -include-runtime -d app.jar           → java -Xss256m <UTF-8 설정> -jar app.jar [번호]
 C++      <컴파일러> -std=c++17 -O2 -I. <파일> -o app            → ./app [번호]
 Go       go build -o app .                                      → ./app [번호]
 Rust     rustc --edition 2021 -O <파일> -o app                  → ./app [번호]
@@ -31,7 +31,7 @@ Python   (빌드 없음)                                            → <python>
 JS       (빌드 없음)                                            → node algoblock_runner.js <번호>
 ```
 
-빌드는 한 번, 실행은 케이스마다 한 번 한다. C++는 작업 폴더에 `bits/stdc++.h`를 만들고, macOS에서 링커가 `tapi error`를 내면 설치된 다른 SDK로 다시 링크한다.
+빌드는 한 번, 실행은 케이스마다 한 번 한다. `<UTF-8 설정>`은 JVM의 표준 입출력을 UTF-8로 맞추는 속성(`file.encoding`, `stdout.encoding`, `stderr.encoding`과 JDK 18의 `sun.stdout.encoding`, `sun.stderr.encoding`)이다. 관으로 이은 표준 출력은 OS 기본 인코딩을 따라서, 이것이 없으면 Windows에서 한글이 깨진다. macOS·Linux에서는 C/POSIX 로케일이 아니면 바뀌지 않는다(그 로케일에서는 깨지던 한글이 바로 나온다). C++는 작업 폴더에 `bits/stdc++.h`를 만들고, macOS에서 링커가 `tapi error`를 내면 설치된 다른 SDK로 다시 링크한다.
 
 ## 두 가지 방식
 
@@ -79,7 +79,11 @@ JS       (빌드 없음)                                            → node alg
 
 - 케이스 하나의 기본 제한은 10초다. 컴파일은 한 번에 60초다. 표준 출력과 표준 오류는 각각 4,000,000바이트를 넘으면 끝낸다(`output_limit`).
 - 메모리가 2,048MB를 넘으면 끝낸다(`memory_limit`). 0.25초마다 잰다. POSIX는 `ps -o rss=`, Windows는 작업 집합으로 잰다. 컴파일러는 재지 않는다.
-- CPU 시간 상한(POSIX): 벽시계 제한의 4배에 5초를 더한 값을 `RLIMIT_CPU`로 exec 전에 건다. 기본 10초면 45초다. 이미 더 낮은 hard 한도가 있으면 그것을 쓴다. Windows에는 CPU 상한이 없다.
+- CPU 시간 상한: 벽시계 제한의 4배에 5초를 더한 값이다. 기본 10초면 45초다. 프로세스마다 걸린다.
+  - POSIX: `RLIMIT_CPU`로 exec 전에 건다. 이미 더 낮은 hard 한도가 있으면 그것을 쓴다.
+  - Windows: 작업 객체(Job Object)의 프로세스별 사용자 모드 시간 상한(`PerProcessUserTimeLimit`)으로 건다. 커널 모드 시간은 세지 않는다.
+- Windows는 작업 객체에 커밋 메모리 상한도 건다. 작업 전체(제출 코드와 그 자식)에 4,096MB(메모리 상한의 2배)다. 넘는 할당은 거절된다. 그래서 프로그램이 실행 오류(`MemoryError`, `bad_alloc` 등)로 끝나면, 작업이 완료 포트로 보낸 '작업 메모리 상한' 알림을 보고 `memory_limit`로 판정한다(POSIX와 같은 이름). Windows는 이 알림의 전달을 보장하지 않으므로, 알림을 받지 못하면 실행 오류로 남는다. 컴파일러에는 이 상한을 걸지 않는다.
+- Windows의 실행 시간(`time_ms`)은 프로세스를 작업에 넣고 재개한 뒤부터 잰다. 작업을 준비하는 시간은 넣지 않는다.
 
 효율성 케이스(케이스에 `timeout`이 있음)는 제한의 1.3배에서 끊는다. 제한을 넘었지만 1.3배 안에 스스로 끝났으면 한 번 더 돌려 짧은 쪽으로 판정한다. 1.3배에서 끊긴 것은 다시 돌리지 않는다. 시간 초과 결과의 표시 시간은 제한 시간이다. 통과했고 제한의 80% 이상 걸리면 `near: true`를 붙인다.
 
@@ -100,7 +104,10 @@ JS       (빌드 없음)                                            → node alg
 
 - 채점마다 `algoblock-check-` 접두사의 임시 작업 폴더를 만들고, 끝나면 지운다. 제출 파일, 호출 코드, `cases.json`, 큰 인자 파일을 그 안에 쓴다.
 - 환경 변수 거르기: 이름에 `KEY`, `TOKEN`, `SECRET`, `PASSWORD`, `CREDENTIAL`이 들었거나, `ALGOBLOCK_`, `ANTHROPIC_`, `OPENAI_`, `XAI_`, `OPENROUTER_`, `AWS_`, `GOOGLE_`, `AZURE_`, `GITHUB_`, `GH_`로 시작하는 변수는 넘기지 않는다. 대소문자는 가리지 않는다. 더해서 `PYTHONUTF8=1`과 `PYTHONIOENCODING=utf-8`을 넘긴다.
-- POSIX에서는 새 세션으로 띄우고, 끝나면 프로세스 그룹 전체를 `SIGKILL`로 끝낸다. Windows에서는 `taskkill /F /T`를 쓴다.
+- POSIX에서는 새 세션으로 띄우고, 끝나면 프로세스 그룹 전체를 `SIGKILL`로 끝낸다.
+- Windows에서는 프로세스를 멈춘 채로 만들어 새 작업 객체에 넣은 뒤 재개한다. 그래서 작업에 들기 전에 자식을 띄울 틈이 없다. 끝나면(정상 종료, 시간 초과, 상한 초과) 작업을 끝내 그 안의 모든 프로세스를 끝낸다. 작업은 `KILL_ON_JOB_CLOSE`라서 앱이 갑자기 죽어 핸들이 닫혀도 모두 끝난다. 처리되지 않은 예외로 죽는 프로그램은 오류 보고 창을 띄우지 않고 바로 끝난다. 콘솔 창은 띄우지 않는다.
+- Windows에서 작업 객체를 만들거나 프로세스를 넣지 못하면 작업 없이 실행한다. 이때 결과에 `warning`(까닭)과 `warning_kind`(`no_job`)를 붙인다. 앱은 채점 결과 아래에 실행 제한을 걸지 못하고 돌렸다는 한 줄을 보인다. 시간 제한과 0.25초마다 재는 메모리 상한은 그대로 걸린다. 멈춘 채 만든 프로세스를 재개하지 못하면 끝내고 실행 오류로 남기며 `warning_kind`는 `not_started`다. 앱은 이때 시작하지 못한 테스트가 있다고 알린다. 서버의 표준 오류에도 같은 까닭을 한 번 적는다(창 모드의 설치 파일에는 표준 오류가 없다). 정리는 시간 초과와 상한 초과 때의 `taskkill /F /T`뿐이다.
+- Windows에서 `./app` 같은 실행 파일은 작업 폴더의 절대 경로(`app.exe`가 있으면 그것)로 바꿔 부른다. 다른 명령은 PATH에서 찾은 경로로 부른다. `kotlinc.bat`처럼 `.exe`가 아닌 명령도 이렇게 찾는다.
 - 앱이 끝날 때 돌고 있는 채점 실행을 모두 끝낸다.
 
 ## 격리 없음
@@ -112,9 +119,10 @@ JS       (빌드 없음)                                            → node alg
 ## 알려진 한계
 
 - 제출 코드는 격리되지 않는다. 사용자 권한과 파일, 네트워크 접근을 가진 채 돈다.
-- Windows에는 CPU 시간 상한이 없다. 끝난 주 프로세스의 자식을 찾지 못해 남길 수 있다.
-- `setsid`로 새 세션을 만든 자식은 프로세스 그룹 밖이라 끝내지 못한다.
+- Windows에서 작업 객체를 쓰지 못한 실행(`warning`)에는 CPU 시간 상한과 커밋 메모리 상한이 없고, 정상 종료한 주 프로세스의 자식을 남길 수 있다.
+- Windows의 CPU 시간 상한은 사용자 모드 시간만 센다.
+- `setsid`로 새 세션을 만든 자식은 프로세스 그룹 밖이라 끝내지 못한다(POSIX). Windows의 작업에는 이 빈틈이 없다.
 - 메모리 상한은 0.25초 간격으로 재므로 짧은 순간의 초과는 놓칠 수 있다.
 - 도구 버전은 확인하지 않는다.
 - 답이 여럿인 문제는 등록할 때 '답이 여럿일 수 있음'을 켜면 다른 답을 틀렸다고 하지 않는다(맞는지 가리지도 못한다). 켜지 않은 표준 입출력 문제에서는 맞는 풀이도 기대 출력과 다르면 통과하지 못할 수 있다.
-- 창을 닫으면 채점 실행을 정리한다. 메뉴의 '끝내기'는 이 정리를 거치지 않을 수 있다. 이때는 CPU 상한만 남는다.
+- 창을 닫으면 채점 실행을 정리한다. 메뉴의 '끝내기'는 이 정리를 거치지 않을 수 있다. 이때 POSIX에서는 CPU 상한만 남는다. Windows에서는 앱 프로세스가 끝나며 작업 핸들이 닫혀 모두 끝난다.
