@@ -1341,6 +1341,31 @@ class HonestCheckTest(unittest.TestCase):
             self.assertEqual(((got["solution"].code, got["solution"].verified), len(seen)), (want, runs))
             self.assertIn(starter, fakes.prompt(fake, "plan.solve"))
 
+    def test_program_guide_follows_the_starter_reading(self):
+        """표준 입출력 가이드에도 시작 코드를 넘기고 그 읽기 꼴을 따르게 한다(커서를 블록 사이로 넘기지 않게). 정해 둔 코드를 쓸 때는 넘기지 않는다."""
+        from ..plan.prompts import STARTER_NOTE, solve_messages
+
+        starter = "import sys\ninput = sys.stdin.readline\n\n# 여기에 풀이를 써요\n"
+        state = {"ctx": fakes.context(problem_text=fakes.PROGRAM_PROBLEM, mode="program", starter=starter), "strategy": "fresh"}
+        self.assertIn(f"{STARTER_NOTE['program']}\n{starter}", solve_messages(state)[1]["content"])
+        self.assertNotIn(starter, solve_messages(state, given="print(1)")[1]["content"])
+        # 함수 방식의 프롬프트 끝(JSON 모양과 시작 코드)은 표준 입출력을 고치기 전과 글자 하나 다르지 않다
+        head = "def solution(a, b):\n    answer = 0\n    return answer\n"
+        function = solve_messages({"ctx": fakes.context(problem_text=fakes.PROBLEM, starter=head), "strategy": "fresh"})[1]["content"]
+        self.assertTrue(function.endswith('JSON {"clues": ["..."], "approach", "steps": ["..."], "code"}\n'
+                                          f"시작 코드(사용자가 받는 코드다. 진입 함수의 머리 — 함수 이름, 인자 이름과 차례 — 를 이것 그대로 쓴다):\n{head}"), function[-400:])
+
+    def test_unpassed_program_guide_asks_to_check_line_breaks(self):
+        """예시를 통과하지 못한 가이드의 까닭: 표준 입출력이면 입력의 줄 나눔도 보라고 한다(줄 단위로 읽는 가이드는 줄 경계가 어긋난 예시에서 떨어진다)."""
+        from types import SimpleNamespace
+
+        from ..plan.nodes import cross_check
+
+        for mode, said in (("program", True), ("function", False)):
+            done = []
+            cross = SimpleNamespace(done=lambda pid, verdict: done.append(verdict))
+            cross_check({"ctx": fakes.context(problem_text=fakes.PROGRAM_PROBLEM, mode=mode)}, None, False, {"cases": []}, None, cross)
+            self.assertEqual("줄 나눔" in done[0]["why"], said, mode)
 
     def test_given_guide_check_has_three_outcomes(self):
         """실린 정답 풀이를 이 기기에서 확인한 결과: 통과, 통과하지 못함, 채점하지 못함(도구·케이스가 없거나 채점기가 없음)."""
