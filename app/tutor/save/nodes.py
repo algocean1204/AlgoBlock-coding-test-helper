@@ -4,6 +4,7 @@ import sqlite3
 from dataclasses import replace
 
 from ..common.progress_view import current_index
+from ..common.talk_rules import CHECKED
 from ..context.nodes import store_of
 from ..state import ChatMessage, FollowupThread, MainState, fail
 from ..store import now
@@ -22,8 +23,11 @@ def collect(state: MainState) -> dict:
     if request.kind == "turn":
         mode = request.mode or "chair"
         user = request.text if request.event == "message" else request.code if request.event == "block_filled" and not request.quiet else ""
+        verdict = state.get("verdict")
+        # 블록 코드 확인의 글에는 판정(Y·N·?)을 남긴다. 서비스 말의 move는 사다리 차례를 세는 데 쓰여 건드리지 않는다
+        checked = (CHECKED + ("?" if result.get("unsure") else "Y" if verdict.ok else "N")) if request.event == "block_filled" and verdict is not None else None
         if user:
-            rows.append(_row(mode, "main", "user", user, current_index(state), None))
+            rows.append(_row(mode, "main", "user", user, current_index(state), None, checked))
         move = state.get("move")
         rows.append(_row(mode, "main", "service", result.get("reply", ""), move.target if move else None, None, result.get("move")))
     elif request.kind == "followup":

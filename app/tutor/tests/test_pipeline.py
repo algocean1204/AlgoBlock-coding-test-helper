@@ -1441,6 +1441,31 @@ class OtherFeatureTest(unittest.TestCase):
         self.assertEqual(mark_claims("7번째 줄을 고쳤다.", "- 디버그: 틀린 곳은 7번째 줄."), "[확실] 7번째 줄을 고쳤다.")
         self.assertEqual(mark_claims("3번 틀렸다.", "- 본 힌트: 1개"), "[추측] 3번 틀렸다.")  # 기록에 없는 수
 
+    def test_unchecked_block_answers_are_not_stuck(self):
+        """블록 코드 확인의 글에는 판정이 남고, '확인 전'으로 끝난 확인은 막힌 답으로 세지 않는다(표시 없는 옛 기록은 그대로 읽는다)."""
+        from ..common.talk_rules import CHECKED
+        from ..feedback.prompts import PASSED_ADVICE, PASSED_RULE, analyze_messages, record_lines
+        from ..save.nodes import collect
+        from ..state import Verdict
+
+        plan = fakes.planned(fakes.two())
+        for verdict, unsure, mark in ((Verdict(False, unsure=True), True, "?"), (Verdict(True), False, "Y"), (Verdict(False), False, "N")):
+            state = fakes.make_state("turn", fakes.context(plan=plan, open_count=2), mode="guide", event="block_filled", block_id="b1", code="x = 1")
+            rows = collect({**state, "verdict": verdict, "result": {"reply": "말", **({"unsure": True} if unsure else {})}})["changes"]["messages"]
+            self.assertEqual([row["move"] for row in rows if row["role"] == "user"], [CHECKED + mark])
+        held = fakes.service("튜터의 뒤 코드는 값을 `data` 이름으로 이어 써요.", 0, "m1", "blank")
+        marked = replace(fakes.user("x = 1", 0), move=CHECKED + "?")
+        states = {"b1": BlockState("b1", "x = 1", "h", "Y", None, 1)}
+        self.assertEqual(record_lines(fakes.context(guide=[marked, held], block_states=states), plan), [])
+        old = record_lines(fakes.context(guide=[fakes.user("x = 1", 0), held], block_states=states), plan)
+        self.assertTrue(any("넘어가지 못한 답이 1번" in line for line in old), old)  # 표시 없는 옛 기록은 전과 같게 읽는다
+        talk = [fakes.user("모르겠는데 반복을 먼저 할까요", 0), fakes.service("무엇을 세야 할까요?", 0, "m2", "blank")]
+        self.assertTrue(record_lines(fakes.context(guide=talk, block_states=states), plan))  # 말로 막힌 것은 그대로 센다
+        for ok in (True, False):
+            ctx = fakes.context(plan=plan, open_count=2, latest_submission=Submission("s1", "print(1)", ok), block_states=states)
+            prompt = analyze_messages({**fakes.make_state("feedback", ctx), "strategy": "keep_flow"})[1]["content"]
+            self.assertEqual((PASSED_RULE in prompt, PASSED_ADVICE in prompt, "고칠 곳" in prompt.split("advice:")[-1].split("\n")[0]), (ok, ok, not ok))
+
     def test_feedback_record_names_skipped_blocks(self):
         from ..feedback.prompts import record_lines
         from ..common.talk_rules import SKIPPED
