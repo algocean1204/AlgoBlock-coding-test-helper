@@ -13,7 +13,7 @@
 | `launcher.py` | 시작점. 묶였을 때(`sys.frozen`) 데이터 폴더, 화면 폴더, 채점기 폴더, 임베딩 모델 폴더를 환경 변수로 넘긴다. 기본은 창을 열고 `--server`를 주면 서버만 띄운다. `--check-embed`는 묶은 모델을 한 번 돌려 본다 |
 | `algoblock.spec` | PyInstaller 설정. macOS는 `.app`, Windows는 `onefile` `.exe`를 만든다. `models/`의 `model.onnx`와 `tokenizer.json`이 없으면 여기서 멈춘다 |
 | `build_mac.sh` | macOS 빌드. 모델을 받고, `.app`을 `.dmg`로 싸고, 릴리스용 사본의 `SHA256SUMS`를 만든다 |
-| `build_win.ps1` | Windows PC에서 하는 빌드(정식 길). 모델을 받는다 |
+| `build_win.ps1` | Windows PC에서 하는 빌드(정식 길). 모델을 받고, 릴리스용 사본의 `SHA256SUMS`를 만든다 |
 | `build_win_docker.sh` | macOS·Linux에서 Docker로 하는 Windows 빌드(Wine + Windows 파이썬 3.12). 모델은 밖에서 받아 둔다 |
 | `icon/` | 앱 아이콘(`icon.icns`, `icon.ico`)과 그것을 만드는 `make_icon.py` |
 | `models/` | 빌드 때 받는 임베딩 모델 폴더. 저장소에 넣지 않는다 |
@@ -51,6 +51,8 @@ powershell -ExecutionPolicy Bypass -File app\packaging\build_win.ps1
 ```
 
 - 결과: `app\packaging\dist\AlgoBlock.exe`와 그 사본 `app\packaging\dist\AlgoBlock-windows-x64.exe`. 릴리스에 올리는 파일은 사본이다.
+- `app\packaging\dist\SHA256SUMS`에 사본의 SHA-256이 macOS와 같은 꼴로 한 줄(`<해시>  AlgoBlock-windows-x64.exe`) 적힌다. 한 릴리스에 macOS 파일과 함께 올리면 두 빌드의 줄을 한 파일로 합친다.
+- `uv`, `python`, `pyinstaller`가 실패하면 그 종료 코드로 멈춘다.
 - 화면은 WebView2를 쓴다.
 
 ### Windows, 맥·리눅스에서 Docker로
@@ -136,7 +138,7 @@ app\packaging\dist\AlgoBlock.exe --check-embed
 ## 알려진 한계
 
 - 코드 서명과 공증이 없다.
-- 창을 닫으면 `window.py`가 `server.stop_grading()`으로 돌던 채점 실행기를 끝낸다. 메뉴의 '끝내기'로 끝내면 `webview.start()`가 돌아오지 않아 이 정리가 돌지 않을 수 있다. 그때 남은 채점 실행기는 채점기의 CPU 시간 상한에서 멈춘다(POSIX).
+- 창을 닫으면 `window.py`가 `server.stop_grading()`으로 돌던 채점 실행기를 끝낸다. 메뉴의 '끝내기'로 끝내면 `webview.start()`가 돌아오지 않아 이 정리가 돌지 않을 수 있다. 그때 남은 채점 실행기는 채점기의 CPU 시간 상한에서 멈춘다(POSIX). Windows에서는 앱 프로세스가 끝나며 채점기의 작업 객체 핸들이 닫혀 바로 끝난다.
 - 창 모드는 포트(`ALGOBLOCK_UI_PORT`, 기본 8791)를 이미 다른 프로그램이 쓰고 있으면 서버를 새로 띄우지 않고 그 주소를 그대로 연다(`window.py`의 `serve`).
 
 ## 버전 바꾸기
