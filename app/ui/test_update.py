@@ -343,17 +343,22 @@ def remembering(folder: Path) -> None:
 
 
 def stalling(folder: Path) -> None:
-    """확인이 시간 한도를 넘기면 실패로 친다. 멈춘 확인이 남아 있는 동안 새 확인은 띄우지 않는다."""
+    """확인이 시간 한도를 넘기면 실패로 친다. 앞의 확인이 아직 돌면 새로 띄우지 않고 그 결과를 기다린다."""
     reset(folder)
-    gate = threading.Event()
-    with patch.object(updater, "check", lambda: gate.wait(5) and True):
+    gate, calls = threading.Event(), []
+
+    def slow():
+        calls.append(True)
+        return gate.wait(5) and True
+
+    with patch.object(updater, "check", slow):
         began = time.monotonic()
         assert updater.check_in_time(0.2) is False and time.monotonic() - began < 2
         assert updater.NOW["state"] == "unknown"
-        assert updater.check_in_time(0.2) is False  # 앞의 확인이 아직 멈춰 있다
-        gate.set()
-        updater.CHECKING[-1].join(5)
-        assert updater.check_in_time(1) is True
+        assert updater.check_in_time(0.2) is False and len(calls) == 1  # 앞의 확인이 아직 멈춰 있다: 새로 띄우지 않는다
+        threading.Timer(0.2, gate.set).start()  # 자동 확인이 도는 중에 '지금 확인'을 누르면 그 결과를 받는다
+        assert updater.check_in_time(5) is True and len(calls) == 1
+        assert updater.check_in_time(1) is True and len(calls) == 2
 
 
 def staging(folder: Path) -> None:
@@ -394,46 +399,137 @@ def ps_script(folder: Path) -> None:
     reset(folder / "자료 폴더")
     for name in ("C:\\Program Files\\AlgoBlock\\AlgoBlock.exe", "D:\\내 앱\\김's ‘앱’ $env:X `n\\AlgoBlock.exe", "C:\\a‚b‛c\\AlgoBlock.exe"):
         app = Path(name)
-        text = updater.swap_ps1(app, updater.beside(app, "new"), [11, 22], 60, 20)
-        head = dict(line.split(" = ", 1) for line in text.split("\n")[:8])
-        assert list(head) == ["$app", "$new", "$old", "$log", "$ready", "$ids", "$wait", "$health"], head
+        text = updater.swap_ps1(app, updater.beside(app, "new"), [11, 22], 60, 20, 8800)
+        head = dict(line.split(" = ", 1) for line in text.split("\n")[:9])
+        assert list(head) == ["$app", "$new", "$old", "$log", "$ready", "$ids", "$wait", "$health", "$url"], head
+        assert ps_literal(head["$url"]) == "http://127.0.0.1:8800/"
         assert ps_literal(head["$app"]) == str(app) and ps_literal(head["$new"]) == str(updater.beside(app, "new"))
         assert ps_literal(head["$old"]) == str(updater.beside(app, "old")) and ps_literal(head["$log"]) == str(updater.DIR / "swap.log")
         assert ps_literal(head["$ready"]) == str(updater.DIR / "swap.waiting")
         assert head["$ids"] == "@(11, 22)" and head["$wait"] == "60" and head["$health"] == "20"
     assert updater.swap_ps1(Path("a.exe"), Path("b.exe"), []).split("\n")[5] == "$ids = @()"
+    with patch.dict(os.environ, {"ALGOBLOCK_UI_PORT": "9123"}):  # 포트를 주지 않으면 앱과 같은 값을 읽는다
+        assert "$url = 'http://127.0.0.1:9123/'" in updater.swap_ps1(Path("a.exe"), Path("b.exe"), [])
     body = updater.SWAP_PS1
     # PowerShell을 이 기기에서 돌리지 못해도 잡을 수 있는 실수: 정하지 않은 변수, 짝이 안 맞는 괄호, 함수를 괄호로 부르기
     used = set(re.findall(r"\$(?:script:)?([A-Za-z_]\w*)", body))
-    known = {"app", "new", "old", "log", "ready", "ids", "wait", "health", "true", "false", "null", "_"}
-    assigned = set(re.findall(r"\$(?:script:)?(\w+) = ", body)) | set(re.findall(r"foreach \(\$(\w+) in", body)) | set(re.findall(r"\[string\]\$(\w+)", body))
+    known = {"app", "new", "old", "log", "ready", "ids", "wait", "health", "url", "true", "false", "null", "_", "env"}
+    assigned = (set(re.findall(r"\$(?:script:)?(\w+) = ", body)) | set(re.findall(r"foreach \(\$(\w+) in", body))
+                | set(re.findall(r"\[string\]\$(\w+)", body)) | set(re.findall(r"function [\w-]+\(\$(\w+)\)", body)))
     assert used <= known | assigned, used - known - assigned
     for pair in ("{}", "()", "[]"):
         assert body.count(pair[0]) == body.count(pair[1]), pair
-    for name in ("Move-Retry", "Remove-Retry", "Open-App", "Say"):
+    for name in ("Move-Retry", "Remove-Retry", "Open-App", "Say", "Test-Served", "Stop-Tree", "Undo-Swap"):
         assert not re.search(rf"(?<!function ){name}\(", body), f"PowerShell 함수는 괄호 없이 부른다: {name}"
     assert "exit 1" in body and "finally" in body and "Remove-Retry $ready" in body
 
 
-def env_cleaning() -> None:
-    """새 앱이 이 앱의 풀어 놓은 파일을 다시 쓰지 않게 PyInstaller의 표시를 걷는다."""
+def env_cleaning(folder: Path) -> None:
+    """새 앱이 이 앱의 풀어 놓은 폴더(이 앱이 끝나면 지워진다)를 가리키지 않게 한다: PyInstaller의 표시와,
+    값이 그 폴더 아래를 가리키는 변수(런처가 넣는 화면·채점기·모델 폴더)를 걷는다. 런처도 없는 폴더를 가리키는 값은 묶음으로 바꾼다."""
     bundle = os.path.join(tempfile.gettempdir(), "_MEI12345")
-    fake = {"_PYI_APPLICATION_HOME_DIR": bundle, "_MEIPASS2": bundle, "PATH": os.pathsep.join([bundle, os.path.join(bundle, "sub"), "/usr/bin"]), "KEEP": "1"}
+    elsewhere = os.path.join(tempfile.gettempdir(), "_MEI12345-not-inside", "data")  # 이름만 비슷한 다른 폴더는 남긴다
+    fake = {"_PYI_APPLICATION_HOME_DIR": bundle, "_MEIPASS2": bundle, "PATH": os.pathsep.join([bundle, os.path.join(bundle, "sub"), "/usr/bin"]),
+            "KEEP": "1", "ALGOBLOCK_UI_STATIC": os.path.join(bundle, "ui"), "ALGOBLOCK_JUDGE_DIR": os.path.join(bundle, "judge"),
+            "ALGOBLOCK_EMBED_DIR": bundle, "ALGOBLOCK_UI_DATA": elsewhere, "RELATIVE": "ui"}
     with patch.dict(os.environ, fake, clear=True), patch.object(sys, "_MEIPASS", bundle, create=True):
         env = updater.clean_env()
-    assert env == {"KEEP": "1", "PATH": "/usr/bin", "PYINSTALLER_RESET_ENVIRONMENT": "1"}, env
+    assert env == {"KEEP": "1", "PATH": "/usr/bin", "PYINSTALLER_RESET_ENVIRONMENT": "1", "ALGOBLOCK_UI_DATA": elsewhere, "RELATIVE": "ui"}, env
+    # 런처: 물려받은 값이 없는 폴더를 가리키면 이 묶음의 폴더로, 있는 폴더를 가리키면 그대로
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "packaging"))
+    import launcher
+
+    mine = folder / "묶음"
+    kept = folder / "있는 화면"
+    kept.mkdir(parents=True)
+    gone = {"ALGOBLOCK_UI_STATIC": os.path.join(bundle, "ui"), "ALGOBLOCK_JUDGE_DIR": str(kept), "ALGOBLOCK_UI_DATA": str(folder / "data")}
+    with patch.dict(os.environ, gone), patch.object(sys, "_MEIPASS", str(mine), create=True):
+        launcher.prepare()
+        assert os.environ["ALGOBLOCK_UI_STATIC"] == str(mine / "ui") and os.environ["ALGOBLOCK_EMBED_DIR"] == str(mine / "models")
+        assert os.environ["ALGOBLOCK_JUDGE_DIR"] == str(kept)
+
+
+def pids_to_wait() -> None:
+    """onefile이면(풀어 놓는 폴더가 exe 옆이 아니다) 부모 프로세스도 기다린다. onedir(_internal)이면 이 프로세스만."""
+    exe = os.path.join(tempfile.gettempdir(), "앱", "AlgoBlock.exe")
+    for bundle, both in ((os.path.join(tempfile.gettempdir(), "_MEI777"), True), (os.path.join(os.path.dirname(exe), "_internal"), False),
+                         (os.path.dirname(exe), False)):
+        with patch.object(sys, "frozen", True, create=True), patch.object(sys, "executable", exe), patch.object(sys, "_MEIPASS", bundle, create=True):
+            assert updater.app_pids() == ([os.getpid(), os.getppid()] if both else [os.getpid()]), bundle
+
+
+def settings_safety(folder: Path) -> None:
+    """설정 파일이 있는데 읽지 못하면 기본값으로 덮어쓰지 않는다(자동 확인 끔·건너뛴 버전을 잃지 않게). 깨진 파일은 새로 쓴다."""
+    reset(folder)
+    updater.save(auto=False, skip="0.1.1")
+    file = folder / "settings.json"
+    file.chmod(0)
+    try:
+        if not os.access(file, os.R_OK):  # 관리자 권한이나 Windows면 권한 비트가 막지 못한다
+            try:
+                updater.save(checked=1.0)
+                raise AssertionError("읽지 못한 설정 위에 덮어썼다")
+            except OSError:
+                pass
+    finally:
+        file.chmod(0o600)
+    assert updater.settings()["auto"] is False and updater.settings()["skip"] == "0.1.1"
+    file.write_text("{깨짐", encoding="utf-8")
+    updater.save(auto=False)
+    assert updater.settings()["auto"] is False
+
+
+def clock_back(folder: Path) -> None:
+    """도는 중에 시계가 크게 뒤로 가면, 멀어진 다음 확인을 기다리지 않고 바로 묻는다."""
+    reset(folder)
+    calls = []
+    with patch.object(updater, "check", lambda: calls.append(True) or True):
+        updater.PLAN.update(due=1_000_000.0 + 3 * 24 * 3600, fails=0)
+        updater.tick(1_000_000.0)
+    assert calls and updater.PLAN["due"] == 1_000_000.0 + 24 * 3600
+
+
+def swap_notes(folder: Path) -> None:
+    """지난번 바꾸기의 기록을 한 번만 읽는다. 되돌렸거나 바꾸지 못했으면 화면에 알릴 글을 만든다."""
+    reset(folder)
+    folder.mkdir(parents=True)
+    assert updater.last_swap_note() == ""  # 기록이 없다
+    (folder / "swap.log").write_text("시작: A\n새 앱이 응답하지 않아 되돌린다\n되돌렸다\n열었다: A\n", encoding="utf-8")
+    note = updater.last_swap_note()
+    assert "마치지 못해" in note and str(folder / "swap.prev.log") in note and not (folder / "swap.log").exists()
+    assert updater.last_swap_note() == ""  # 한 번만
+    (folder / "swap.log").write_text("시작: A\n열었다: A\n바꿨다\n", encoding="utf-8")
+    assert updater.last_swap_note() == ""
 
 
 def windows_swapping(folder: Path) -> None:
-    """Windows에서만: 임시 폴더의 가짜 exe 둘로 PowerShell 스크립트를 돌려 본다 — 바꾸기, 새 앱이 열리지 않을 때 되돌리기,
-    앱이 끝나지 않을 때 아무것도 바꾸지 않기, 그리고 앱에서 떼어 띄우기(기다리기 시작한 것을 보고 돌아온다)."""
+    """Windows에서만: 임시 폴더의 가짜 exe 둘로 PowerShell 스크립트를 돌려 본다 — 바꾸기(로컬 서버가 응답함), 새 앱이 열리지 않거나
+    응답하지 않을 때 되돌리기, 앱이 끝나지 않을 때·앱을 잡지 못할 때 아무것도 바꾸지 않기, 그리고 앱에서 떼어 띄우기.
+    새 앱은 진짜 AlgoBlock이 아니라서, '새 앱의 서버'는 이 시험이 띄운 작은 HTTP 서버가 대신한다(스크립트의 판단만 본다)."""
     if os.name != "nt":
         return
+    import http.server
+    import socket
+
     reset(folder)
     folder.mkdir(parents=True)
     real = Path(os.environ.get("SystemRoot") or r"C:\Windows") / "System32" / "hostname.exe"  # 인자 없이 열면 바로 0으로 끝난다
     base = real.read_bytes()
     log = folder / "swap.log"
+
+    class Ok(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(200)
+            self.end_headers()
+
+        def log_message(self, *args):
+            pass
+
+    served = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Ok)
+    threading.Thread(target=served.serve_forever, daemon=True).start()
+    with socket.socket() as probe:  # 아무도 듣지 않는 포트(새 앱이 응답하지 않는 경우)
+        probe.bind(("127.0.0.1", 0))
+        silent = probe.getsockname()[1]
 
     def exe(path: Path, mark: bytes) -> Path:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -443,9 +539,9 @@ def windows_swapping(folder: Path) -> None:
     def alive(seconds: float) -> subprocess.Popen:
         return subprocess.Popen([sys.executable, "-c", f"import time; time.sleep({seconds})"])
 
-    def run(app: Path, new: Path, pids: list[int], wait: int = 15) -> tuple[int, str]:
+    def run(app: Path, new: Path, pids: list[int], wait: int = 15, port: int = served.server_address[1]) -> tuple[int, str]:
         script = folder / "swap.ps1"
-        script.write_text(updater.swap_ps1(app, new, pids, wait, 5), encoding="utf-8-sig")
+        script.write_text(updater.swap_ps1(app, new, pids, wait, 5, port), encoding="utf-8-sig")
         out = subprocess.run([str(updater.POWERSHELL), "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", str(script)],
                              capture_output=True, timeout=180)
         text = log.read_text(encoding="utf-8") if log.exists() else ""
@@ -456,21 +552,46 @@ def windows_swapping(folder: Path) -> None:
     def names(place: Path) -> list[str]:
         return sorted(path.name for path in place.iterdir())
 
-    # 1. 바꾸기: 앱이 끝나기를 기다렸다가 새 exe를 넣고 연다. 옛 exe는 남기지 않는다
+    try:
+        windows_cases(folder, exe, alive, run, names, log, silent)
+    finally:
+        served.shutdown()
+        served.server_close()
+
+
+def windows_cases(folder, exe, alive, run, names, log, silent) -> None:
+    # 1. 바꾸기: 앱이 끝나기를 기다렸다가 새 exe를 넣고 열고, 서버가 응답하면 옛 exe를 지운다
+    #    (앱 프로세스는 스크립트가 잡을 때까지 살아 있어야 한다. PowerShell이 뜨는 데 1~2초 걸린다)
     app = exe(folder / "바꾸기 'ok' 폴더" / "AlgoBlock.exe", b"old")
     new = exe(updater.beside(app, "new"), b"new")
-    process = alive(1.5)
+    process = alive(4)
     began = time.monotonic()
     code, text = run(app, new, [process.pid])
     assert code == 0 and "바꿨다" in text and "열었다" in text, text
-    assert time.monotonic() - began >= 1, "앱이 끝나기 전에 바꾸면 안 된다"
+    assert time.monotonic() - began >= 3.5, "앱이 끝나기 전에 바꾸면 안 된다"
     assert app.read_bytes().endswith(b"new") and names(app.parent) == ["AlgoBlock.exe"], names(app.parent)
 
     # 2. 새 exe가 열리지 않으면(실행 파일이 아니다) 옛 exe를 되돌리고 연다
     app = exe(folder / "되돌리기" / "AlgoBlock.exe", b"old")
     updater.beside(app, "new").write_bytes(b"not an exe")
-    code, text = run(app, updater.beside(app, "new"), [alive(0.5).pid])
+    code, text = run(app, updater.beside(app, "new"), [alive(4).pid])
     assert code == 1 and "되돌렸다" in text and "열었다" in text, text
+    assert app.read_bytes().endswith(b"old") and names(app.parent) == ["AlgoBlock.exe"], names(app.parent)
+
+    # 2-1. 새 exe는 열렸지만 서버가 응답하지 않으면(오류로 끝남, 떠 있지만 깨짐) 옛 exe를 되돌리고 연다
+    app = exe(folder / "응답 없음" / "AlgoBlock.exe", b"old")
+    new = exe(updater.beside(app, "new"), b"new")
+    code, text = run(app, new, [alive(4).pid], port=silent)
+    assert code == 1 and "응답하지 않아" in text and "되돌렸다" in text, text
+    assert app.read_bytes().endswith(b"old") and names(app.parent) == ["AlgoBlock.exe"], names(app.parent)
+
+    # 2-2. 앱 프로세스를 잡지 못하면(이미 없다) 기다릴 수 없으니 바꾸지 않고, '기다리는 중' 표시도 남기지 않는다
+    app = exe(folder / "못 잡음" / "AlgoBlock.exe", b"old")
+    new = exe(updater.beside(app, "new"), b"new")
+    gone = alive(0)
+    gone.wait()
+    code, text = run(app, new, [gone.pid])
+    assert code == 1 and "잡지 못해" in text and "열었다" not in text, text
     assert app.read_bytes().endswith(b"old") and names(app.parent) == ["AlgoBlock.exe"], names(app.parent)
 
     # 3. 앱이 끝나지 않으면 아무것도 바꾸지 않고 열지도 않는다(앱은 아직 떠 있다)
@@ -487,10 +608,9 @@ def windows_swapping(folder: Path) -> None:
     # 3-1. 앱은 끝났는데 부모 프로세스(onefile)가 끝나지 않으면 바꾸지 않고 옛 앱을 다시 연다
     app = exe(folder / "부모 안 끝남" / "AlgoBlock.exe", b"old")
     new = exe(updater.beside(app, "new"), b"new")
-    ended, stuck = alive(0.1), alive(60)
-    ended.wait()
+    ended, stuck = alive(4), alive(60)  # 앱은 스크립트가 잡은 뒤에 끝나고, 부모는 끝나지 않는다
     try:
-        code, text = run(app, new, [ended.pid, stuck.pid], wait=2)
+        code, text = run(app, new, [ended.pid, stuck.pid], wait=8)
     finally:
         stuck.kill()
     assert code == 1 and "부모 프로세스가 끝나지 않아" in text and "열었다" in text, text
@@ -499,17 +619,11 @@ def windows_swapping(folder: Path) -> None:
     # 4. 앱에서 떼어 띄우기: 스크립트가 이 프로세스를 잡고 기다리기 시작한 것을 보고 돌아온다(이 시험 프로세스는 끝나지 않으니 바꾸지 않는다)
     app = exe(folder / "떼어 띄우기" / "AlgoBlock.exe", b"old")
     new = exe(updater.beside(app, "new"), b"new")
-    updater.swap_later_exe(app, new, pids=[os.getpid()], wait=2, health=5)
-    for _ in range(300):
-        if log.exists() and "끝나지 않아" in log.read_text(encoding="utf-8"):
-            break
-        time.sleep(0.1)
+    script = updater.swap_later_exe(app, new, pids=[os.getpid()], wait=2, health=5)
+    script.wait(60)  # 스크립트가 끝나 로그를 놓은 뒤에 보고 지운다(임시 폴더 정리가 쥔 파일에 막히지 않게)
     text = log.read_text(encoding="utf-8") if log.exists() else (folder / "swap-out.log").read_text(encoding="utf-8", errors="replace")
-    assert "끝나지 않아" in text, text
-    for _ in range(50):  # 스크립트가 끝나며 표시를 지운다
-        if not (folder / "swap.waiting").exists():
-            break
-        time.sleep(0.1)
+    assert script.returncode == 1 and "끝나지 않아" in text, text
+    assert not (folder / "swap.waiting").exists() and not new.exists()
     assert app.read_bytes().endswith(b"old") and names(app.parent) == ["AlgoBlock.exe"], names(app.parent)
 
 
@@ -531,7 +645,11 @@ def run() -> None:
         stalling(root / "stall")
         staging(root / "stage")
         ps_script(root / "ps")
-        env_cleaning()
+        env_cleaning(root / "env")
+        pids_to_wait()
+        settings_safety(root / "settings")
+        clock_back(root / "clock")
+        swap_notes(root / "notes")
         windows_swapping(root / "windows")
         reset(before)
         updater.PLAN.update(due=0.0, fails=0)

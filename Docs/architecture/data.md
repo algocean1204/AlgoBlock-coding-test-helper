@@ -37,7 +37,7 @@ AlgoBlock의 기록과 설정은 데이터 폴더 하나에 있다. 이 문서�
 | `large/<문제 id>/<번호>.json` | 효율성 케이스의 큰 입력과 기대 결과 |
 | `vectors/` | 비슷한 문제 찾기 색인(로컬 Qdrant)과 임베딩 이름표 `embedder.txt` |
 | `models/` | 임베딩 모델 폴더 |
-| `updates/` | 업데이트: 받은 설치 파일(`<버전>/`), 업데이트 설정 `settings.json`(자동 확인 `auto`, 건너뛴 버전 `skip`, 마지막 확인 시각 `checked`, 그때 찾은 새 버전의 릴리스 요약 `release`), 바꿔 끼우기 스크립트(macOS `swap.sh`, Windows `swap.ps1`)와 기록 `swap.log`(Windows는 PowerShell 자체의 출력 `swap-out.log`, 스크립트가 도는 동안의 표시 `swap.waiting`도). 지금 버전 이하의 받은 파일은 다음 실행 때 지운다 |
+| `updates/` | 업데이트: 받은 설치 파일(`<버전>/`), 업데이트 설정 `settings.json`(자동 확인 `auto`, 건너뛴 버전 `skip`, 마지막 확인 시각 `checked`, 그때 찾은 새 버전의 릴리스 요약 `release`), 바꿔 끼우기 스크립트(macOS `swap.sh`, Windows `swap.ps1`)와 기록 `swap.log`(다음에 켤 때 한 번 읽고 `swap.prev.log`로 옮긴다. Windows는 PowerShell 자체의 출력 `swap-out.log`, 스크립트가 도는 동안의 표시 `swap.waiting`도). 지금 버전 이하의 받은 파일은 다음 실행 때 지운다 |
 | `<이름>.broken-<때>` | 읽지 못한 JSON을 옮겨 둔 파일 |
 
 - JSON 파일은 임시 파일에 쓴 뒤 바꿔 끼운다.

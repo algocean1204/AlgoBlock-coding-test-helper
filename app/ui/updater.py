@@ -47,7 +47,7 @@ FILE_LOCK = threading.RLock()  # 설정 파일(settings.json)
 NOW = {"state": "idle", "latest": None, "progress": 0, "message": "", "file": ""}
 STARTED = []
 PLAN = {"due": 0.0, "fails": 0}  # 다음 자동 확인 시각(벽시계)과 잇단 실패 수
-CHECKING = []  # 돌고 있는 확인(하나만)
+CHECKING = []  # 돌고 있는 확인(하나만): (스레드, 결과를 담을 목록)
 
 # 앱이 끝나기를 기다렸다가 새 앱으로 바꿔 끼우고 다시 연다. 옛 앱은 바꿔 끼우는 동안만 옆에 두고, 실패하면 되돌린다.
 SWAP_SH = r"""#!/bin/sh
@@ -71,7 +71,8 @@ open "$app"
 
 # Windows: 앱(onefile이면 풀어 놓는 부모 프로세스까지)이 끝나기를 기다렸다가 새 exe로 바꿔 끼우고 다시 연다. 값($app 등)은 swap_ps1()이 위에 붙인다.
 # 실행 중인 exe도 이름은 바꿀 수 있지만, 끝난 뒤에만 건드린다($wait초 안에 끝나지 않으면 아무것도 바꾸지 않는다).
-# 새 앱이 열리지 않거나 $health초 안에 오류로 끝나면 옛 exe를 되돌리고 연다. 백신이 새 파일을 잠깐 잡는 일이 있어 옮기기는 몇 번 다시 한다.
+# 새 앱의 로컬 서버($url)가 $health초 안에 응답하지 않으면(열리지 않음, 오류로 끝남, 떠 있지만 깨짐) 새 앱을 끝내고 옛 exe를 되돌려 연다.
+# 백신이 새 파일을 잠깐 잡는 일이 있어 옮기기는 몇 번 다시 한다. 되돌리기에 성공했을 때만 새 exe를 지운다(둘 다 잃지 않게).
 SWAP_PS1 = r"""
 $ErrorActionPreference = 'Stop'
 $utf8 = New-Object System.Text.UTF8Encoding $false
@@ -106,11 +107,52 @@ function Open-App {
     return $null
   }
 }
+function Test-Served {
+  try {
+    $request = [Net.WebRequest]::Create($url)
+    $request.Proxy = $null
+    $request.Timeout = 3000
+    $response = $request.GetResponse()
+    $ok = [int]$response.StatusCode -eq 200
+    $response.Close()
+    return $ok
+  } catch {
+    return $false
+  }
+}
+function Stop-Tree($process) {
+  # onefile은 부모와 자식 둘이다. 자식(앱)까지 끝내야 exe를 놓는다
+  try { $null = & (Join-Path $env:SystemRoot 'System32\taskkill.exe') /PID ([string]$process.Id) /T /F 2>&1 } catch { }
+  try { $null = $process.WaitForExit(10000) } catch { }
+}
+function Undo-Swap {
+  # 새 exe를 옆으로 치우고 옛 exe를 제자리에. 옛 exe를 되돌리지 못하면 새 exe도 다시 제자리에 둔다(앱이 없어지지 않게)
+  if (-not (Move-Retry $app $new)) {
+    Say '새 앱을 치우지 못해 되돌리지 못했다'
+    return
+  }
+  if (Move-Retry $old $app) {
+    Remove-Retry $new
+    Say '되돌렸다'
+  } else {
+    $null = Move-Retry $new $app
+    Say '옛 앱을 되돌리지 못했다'
+  }
+}
 try {
   # 앱의 프로세스를 먼저 잡아 둔다(끝난 뒤 그 번호를 다른 프로세스가 받아도 헷갈리지 않게). 잡은 뒤에 '기다리는 중' 표시를 남긴다
+  # 앱 자신($ids[0])을 잡지 못하면 끝나기를 기다릴 수 없으니 바꾸지 않는다(표시를 남기지 않아 앱도 끝나지 않는다)
   $procs = @()
   foreach ($id in $ids) {
-    try { $p = [Diagnostics.Process]::GetProcessById($id); $null = $p.Handle; $procs += $p } catch { }
+    try {
+      $p = [Diagnostics.Process]::GetProcessById($id); $null = $p.Handle; $procs += $p
+    } catch {
+      if ($id -eq $ids[0]) {
+        Say '앱 프로세스를 잡지 못해 바꾸지 않았다'
+        Remove-Retry $new
+        exit 1
+      }
+    }
   }
   [IO.File]::WriteAllText($ready, 'waiting')
   Say ('시작: ' + $app)
@@ -138,16 +180,29 @@ try {
     exit 1
   }
   if (-not (Move-Retry $new $app)) {
-    Say '새 앱을 넣지 못해 되돌렸다'
-    $null = Move-Retry $old $app
-    Remove-Retry $new
+    if (Move-Retry $old $app) {
+      Remove-Retry $new
+      Say '새 앱을 넣지 못해 되돌렸다'
+    } else {
+      Say '새 앱을 넣지 못했고 옛 앱도 되돌리지 못했다'
+    }
     $null = Open-App
     exit 1
   }
   $started = Open-App
-  if (-not $started -or ($started.WaitForExit($health * 1000) -and $started.ExitCode -ne 0)) {
-    Say '새 앱이 켜지지 않아 되돌렸다'
-    if ((Move-Retry $app $new) -and (Move-Retry $old $app)) { Remove-Retry $new }
+  $served = $false
+  if ($started) {
+    $until = (Get-Date).AddSeconds($health)
+    while ((Get-Date) -lt $until) {
+      if (Test-Served) { $served = $true; break }
+      if ($started.HasExited) { break }
+      Start-Sleep -Milliseconds 500
+    }
+  }
+  if (-not $served) {
+    Say '새 앱이 응답하지 않아 되돌린다'
+    if ($started -and -not $started.HasExited) { Stop-Tree $started }
+    Undo-Swap
     $null = Open-App
     exit 1
   }
@@ -262,14 +317,24 @@ def hashes_of(found: dict) -> list[str]:
     return out
 
 
-def settings() -> dict:
-    """auto(자동 확인), skip(건너뛴 버전), checked(마지막으로 확인한 시각), release(그때 찾은 새 버전의 릴리스 요약. 없으면 None)."""
+def stored() -> dict:
+    """설정 파일의 내용. 없거나 깨졌으면 빈 것. 있는데 읽지 못하면(잠김 등) OSError를 낸다(save가 그 위에 덮어쓰지 않게)."""
     try:
         with FILE_LOCK:
             saved = json.loads((DIR / "settings.json").read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        saved = {}
-    saved = saved if isinstance(saved, dict) else {}
+    except (FileNotFoundError, ValueError):
+        return {}
+    return saved if isinstance(saved, dict) else {}
+
+
+def settings(saved: dict | None = None) -> dict:
+    """auto(자동 확인), skip(건너뛴 버전), checked(마지막으로 확인한 시각), release(그때 찾은 새 버전의 릴리스 요약. 없으면 None).
+    saved를 주면 파일 대신 그것을 고른다. 읽지 못하면 기본값."""
+    if saved is None:
+        try:
+            saved = stored()
+        except OSError:
+            saved = {}
     checked = saved.get("checked")
     return {"auto": saved.get("auto") is not False, "skip": str(saved.get("skip") or ""),
             "checked": float(checked) if isinstance(checked, (int, float)) and checked > 0 else 0.0,
@@ -279,9 +344,10 @@ def settings() -> dict:
 def save(**changes) -> None:
     """설정 파일을 바꾼다. 확인 스레드와 화면 요청이 함께 쓰므로 잠근다(Windows는 읽는 중인 파일을 바꿔 넣지 못한다)."""
     with FILE_LOCK:
+        current = settings(stored())  # 있는데 읽지 못하면 여기서 멈춘다(기본값으로 덮어써 자동 확인 끔·건너뛴 버전을 잃지 않게)
         DIR.mkdir(parents=True, exist_ok=True)
         tmp = DIR / "settings.tmp"
-        tmp.write_text(json.dumps({**settings(), **changes}, ensure_ascii=False), encoding="utf-8")
+        tmp.write_text(json.dumps({**current, **changes}, ensure_ascii=False), encoding="utf-8")
         tmp.replace(DIR / "settings.json")
 
 
@@ -339,15 +405,15 @@ def check() -> bool | None:
 
 def check_in_time(limit: float = LIMIT) -> bool | None:
     """시간 한도 안에 확인한다(이름 풀이처럼 소켓 시간 제한이 닿지 않는 곳에서 멈출 수 있다). 넘기면 실패로 친다.
-    멈춘 확인은 뒤에 남아 끝나는 대로 결과만 남긴다. 그동안 새 확인은 띄우지 않는다."""
+    멈춘 확인은 뒤에 남아 끝나는 대로 결과만 남긴다. 앞의 확인이 아직 돌면 새로 띄우지 않고 그 결과를 같은 한도로 기다린다."""
     with LOCK:
-        if CHECKING and CHECKING[-1].is_alive():
-            unknown()
-            return False
-        out = []
-        worker = threading.Thread(target=lambda: out.append(check()), daemon=True, name="update-check-once")
-        CHECKING[:] = [worker]
-    worker.start()
+        if CHECKING and CHECKING[-1][0].is_alive():
+            worker, out = CHECKING[-1]
+        else:
+            out = []
+            worker = threading.Thread(target=lambda: out.append(check()), daemon=True, name="update-check-once")
+            CHECKING[:] = [(worker, out)]
+            worker.start()
     worker.join(limit)
     if out:
         return out[0]
@@ -375,6 +441,8 @@ def record(ok: bool | None, now: float, auto: bool) -> None:
 def tick(now: float) -> None:
     """때가 됐고 자동 확인이 켜져 있으면 확인한다(꺼 두었다 켜면 다음 tick에서 바로)."""
     with LOCK:
+        if PLAN["due"] - now > DAY + RETRY_MAX:  # 도는 중에 시계가 크게 뒤로 갔다: 멀어진 날짜를 기다리지 않고 바로
+            PLAN["due"] = now
         due = PLAN["due"]
     if now >= due and settings()["auto"]:
         record(check_in_time(), now, auto=True)
@@ -520,28 +588,47 @@ def ps_text(value) -> str:
     return f"'{text}'"
 
 
-def swap_ps1(app: Path, new: Path, pids: list[int], wait: int = 60, health: int = 20) -> str:
-    """바꿔 끼우는 PowerShell 스크립트의 글. 값은 인자로 넘기지 않고 맨 위에 글로 박는다(따옴표 해석이 한 군데뿐이다)."""
+def ui_port() -> int:
+    """앱의 로컬 서버 포트(server.py와 window.py가 같은 값을 읽는다). 새 앱은 같은 환경을 물려받아 같은 포트로 뜬다."""
+    try:
+        return int(os.environ.get("ALGOBLOCK_UI_PORT", "8791"))
+    except ValueError:
+        return 8791
+
+
+def swap_ps1(app: Path, new: Path, pids: list[int], wait: int = 60, health: int = 90, port: int | None = None) -> str:
+    """바꿔 끼우는 PowerShell 스크립트의 글. 값은 인자로 넘기지 않고 맨 위에 글로 박는다(따옴표 해석이 한 군데뿐이다).
+    health: 새 앱의 로컬 서버가 응답하기를 기다리는 초(묶음을 풀고 모델을 불러오는 첫 실행은 느리다)."""
     values = {"app": ps_text(app), "new": ps_text(new), "old": ps_text(beside(app, "old")), "log": ps_text(DIR / "swap.log"),
               "ready": ps_text(DIR / "swap.waiting"), "ids": f"@({', '.join(str(int(pid)) for pid in pids)})",
-              "wait": str(int(wait)), "health": str(int(health))}
+              "wait": str(int(wait)), "health": str(int(health)), "url": ps_text(f"http://127.0.0.1:{int(port or ui_port())}/")}
     return "".join(f"${name} = {value}\n" for name, value in values.items()) + SWAP_PS1
 
 
 def app_pids() -> list[int]:
     """끝나기를 기다릴 프로세스. onefile로 묶이면 풀어 놓는 부모 프로세스가 exe를 잡고 있다가 이 프로세스가 끝난 뒤 끝난다."""
-    onefile = os.path.normcase(os.path.abspath(getattr(sys, "_MEIPASS", ""))) != os.path.normcase(os.path.dirname(os.path.abspath(sys.executable)))
-    return [os.getpid(), os.getppid()] if onefile and frozen() else [os.getpid()]
+    return [os.getpid(), os.getppid()] if frozen() and not inside(getattr(sys, "_MEIPASS", ""), os.path.dirname(sys.executable)) else [os.getpid()]
+
+
+def inside(path: str, folder: str) -> bool:
+    """path가 folder이거나 그 아래인가(대소문자·구분자는 이 OS의 규칙대로)."""
+    path, folder = os.path.normcase(os.path.abspath(path)), os.path.normcase(os.path.abspath(folder))
+    return path == folder or path.startswith(folder.rstrip(os.sep) + os.sep)
 
 
 def clean_env() -> dict:
-    """새 앱이 이 앱의 풀어 놓은 파일(곧 지워진다)을 다시 쓰지 않고 새로 시작하게 PyInstaller의 표시를 걷는다."""
-    env = {key: value for key, value in os.environ.items() if not key.upper().startswith(("_PYI", "_MEIPASS"))}
-    env["PYINSTALLER_RESET_ENVIRONMENT"] = "1"
+    """새 앱이 이 앱의 풀어 놓은 폴더(이 앱이 끝나면 지워진다)를 가리키지 않고 새로 시작하게 한다:
+    PyInstaller의 표시를 걷고, 값이 그 폴더 아래를 가리키는 변수는 이름과 상관없이 걷는다(런처가 넣는 ALGOBLOCK_UI_STATIC 등). PATH는 그 항목만 뺀다."""
     bundle = getattr(sys, "_MEIPASS", "")
+    env = {}
+    for key, value in os.environ.items():
+        if key.upper().startswith(("_PYI", "_MEIPASS")) or (bundle and key.upper() != "PATH" and os.path.isabs(value) and inside(value, bundle)):
+            continue
+        env[key] = value
+    env["PYINSTALLER_RESET_ENVIRONMENT"] = "1"
     if bundle:
-        env["PATH"] = os.pathsep.join(part for part in env.get("PATH", "").split(os.pathsep)
-                                      if part and not os.path.normcase(part).startswith(os.path.normcase(bundle)))
+        path_key = next((key for key in env if key.upper() == "PATH"), "PATH")
+        env[path_key] = os.pathsep.join(part for part in env.get(path_key, "").split(os.pathsep) if part and not inside(part, bundle))
     return env
 
 
@@ -566,25 +653,29 @@ def detached(args: list[str], out: Path) -> subprocess.Popen:
         kernel32.SetDllDirectoryW(saved.value if had else None)
 
 
-def swap_later_exe(app: Path, staged: Path, pids: list[int] | None = None, wait: int = 60, health: int = 20, handshake: float = 20) -> None:
-    """바꿔 끼우는 PowerShell 스크립트를 떼어 띄우고, 그 스크립트가 앱을 잡고 기다리기 시작한 것을 본 뒤에 돌아온다.
-    띄우지 못하거나 handshake초 안에 기다리기 시작하지 않으면(실행 정책이 막는 등) 스크립트를 끝내고 앱은 그대로 둔다."""
+def swap_later_exe(app: Path, staged: Path, pids: list[int] | None = None, wait: int = 60, health: int = 90, handshake: float = 20,
+                   port: int | None = None) -> subprocess.Popen:
+    """바꿔 끼우는 PowerShell 스크립트를 떼어 띄우고, 그 스크립트가 앱을 잡고 기다리기 시작한 것을 본 뒤에 그 프로세스를 돌려준다.
+    띄우지 못하거나 handshake초 안에 기다리기 시작하지 않으면(실행 정책이 막는 등) 스크립트를 끝내고 옆에 둔 새 exe를 지운다. 앱은 그대로."""
     script, ready = DIR / "swap.ps1", DIR / "swap.waiting"
-    ready.unlink(missing_ok=True)
-    script.write_text(swap_ps1(app, staged, app_pids() if pids is None else pids, wait, health), encoding="utf-8-sig")  # BOM: Windows PowerShell 5.1이 한글을 UTF-8로 읽게
     try:
-        process = detached([str(POWERSHELL), "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", str(script)], DIR / "swap-out.log")
-    except OSError:
+        ready.unlink(missing_ok=True)
+        script.write_text(swap_ps1(app, staged, app_pids() if pids is None else pids, wait, health, port), encoding="utf-8-sig")  # BOM: Windows PowerShell 5.1이 한글을 UTF-8로 읽게
+        try:
+            process = detached([str(POWERSHELL), "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", str(script)], DIR / "swap-out.log")
+        except OSError:
+            raise Refused("바꾸는 도구(PowerShell)를 띄우지 못했어요. 지금 앱은 그대로예요. 앱을 끝낸 뒤 받은 파일로 직접 바꿀 수 있어요.") from None
+        began = time.monotonic()
+        while not ready.exists():
+            if process.poll() is not None or time.monotonic() - began > handshake:
+                with contextlib.suppress(OSError):
+                    process.kill()
+                raise Refused("바꾸는 도구(PowerShell)가 시작하지 않았어요. 지금 앱은 그대로예요. 앱을 끝낸 뒤 받은 파일로 직접 바꿀 수 있어요.")
+            time.sleep(0.1)
+    except BaseException:
         staged.unlink(missing_ok=True)
-        raise Refused("바꾸는 도구(PowerShell)를 띄우지 못했어요. 지금 앱은 그대로예요. 앱을 끝낸 뒤 받은 파일로 직접 바꿀 수 있어요.") from None
-    began = time.monotonic()
-    while not ready.exists():
-        if process.poll() is not None or time.monotonic() - began > handshake:
-            with contextlib.suppress(OSError):
-                process.kill()
-            staged.unlink(missing_ok=True)
-            raise Refused("바꾸는 도구(PowerShell)가 시작하지 않았어요. 지금 앱은 그대로예요. 앱을 끝낸 뒤 받은 파일로 직접 바꿀 수 있어요.")
-        time.sleep(0.1)
+        raise
+    return process
 
 
 def swapping_now() -> bool:
@@ -677,6 +768,20 @@ def tidy() -> None:
                     leftover.unlink()
 
 
+def last_swap_note() -> str:
+    """지난번 바꾸기의 기록(swap.log)을 한 번 읽고 swap.prev.log로 옮긴다. 바꾸지 못했거나 되돌렸으면 화면에 띄울 글.
+    (Windows에서 되돌린 뒤 다시 연 옛 앱이 같은 업데이트를 말없이 다시 권하지 않게)"""
+    log, prev = DIR / "swap.log", DIR / "swap.prev.log"
+    try:
+        text = log.read_text(encoding="utf-8", errors="replace")
+        log.replace(prev)
+    except OSError:
+        return ""
+    if not any(word in text for word in ("되돌렸다", "되돌리지 못했다", "바꾸지 않았다", "멈췄다")):
+        return ""
+    return f"지난번 업데이트를 마치지 못해 지금 버전을 그대로 쓰고 있어요. 기록: {prev}"
+
+
 def start() -> None:
     """뒤에서 확인 일정을 돌린다(설정에서 끄면 건너뛴다). 한 프로세스에 한 번만.
     켤 때: 마지막 확인에서 24시간이 지났으면 바로, 아니면 그때까지 기다린다(그동안은 지난번에 찾은 새 버전을 다시 알린다)."""
@@ -685,8 +790,11 @@ def start() -> None:
     STARTED.append(True)
     tidy()
     restore()
+    note = last_swap_note()
     with LOCK:
         PLAN["due"] = first_due(time.time())
+        if note:
+            NOW["message"] = note
 
     def loop():
         while True:
