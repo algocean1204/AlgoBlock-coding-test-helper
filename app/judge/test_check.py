@@ -433,8 +433,9 @@ class LimitTest(unittest.TestCase):
     def test_children_are_killed_with_the_parent(self):
         marker = Path(common.tempfile.gettempdir()) / "algoblock-check-child-alive.txt"
         marker.unlink(missing_ok=True)
+        child = f"import time; time.sleep(4); open({str(marker)!r}, 'w').write('alive')"  # repr: Windows 경로의 \U가 이스케이프로 읽히지 않게
         body = ("    import subprocess, sys\n"
-                f"    subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(4); open(r\"{marker}\", \"w\").write(\"alive\")'])\n"
+                f"    subprocess.Popen([sys.executable, '-c', {child!r}])\n"
                 "    while True:\n        pass\n")
         self.assertEqual(self.status(body, timeout=2)["status"], "timeout")
         common.time.sleep(4)

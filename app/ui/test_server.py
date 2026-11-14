@@ -854,7 +854,8 @@ def program_tutor() -> None:
         solved = {"clues": ["'A+B를 출력한다' → 두 수를 더해 출력한다"], "approach": "두 수를 읽어 더한 값을 출력한다.", "steps": ["두 수를 읽는다 — 입력", "합을 출력한다 — 답"], "code": code}
         fake = FakeLlm({"plan.solve": [solved], "plan.draft_blocks": [{"algorithm": "hash", "out_of_scope": False, "blocks": blocks}]})
         pid = server.register({**PROGRAM, "language": language})["id"]
-        with use_llm(fake):
+        # 벡터 색인을 끈다: 임베딩 모델이 있는 기기에서는 앞서 등록한 비슷한 문제를 찾아 잇는 판정(plan.gate)이 더 불려 아래의 호출 목록이 기기마다 달라진다
+        with use_llm(fake), patch.object(server, "index", lambda: None):
             with server.tutor() as t:
                 t.store.put_fact(pid, "두 정수의 합", [])
                 assert t.prepare(pid).status == 200, language
