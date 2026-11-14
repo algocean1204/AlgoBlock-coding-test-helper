@@ -60,7 +60,7 @@ AlgoBlock의 기록과 설정은 데이터 폴더 하나에 있다. 이 문서�
 | `problem_fact` | 문제 뼈대: 기술(`skills_json`), 크기, 단계(`level`), 태그(`tags_json`) |
 | `pitfall_hit` | 제출이 밟은 함정. 같은 코드 해시는 한 번만 센다 |
 | `solution` | 풀이 가이드 |
-| `study` | 학습 기록: 본 힌트 수, 그 가운데 통과 전에 본 수, 해설을 처음 연 시각, 통과 전에 열었는지 |
+| `study` | 학습 기록: 본 힌트 수, 해설을 처음 연 시각, 통과 전에 열었는지, 도움(튜터 기능·힌트·해설)을 처음 쓴 시각, 마지막 '처음부터'·언어 바꾸기 시각과 그 뒤에 도움을 처음 쓴 시각 |
 
 - 외래 키를 켠다. 문제를 지우면 그 문제의 행이 `ON DELETE CASCADE`로 같이 지워진다.
 - `setting`을 뺀 모든 표는 `problem_id`로 나뉜다.
@@ -78,7 +78,7 @@ AlgoBlock의 기록과 설정은 데이터 폴더 하나에 있다. 이 문서�
   - 7: `block_state.renames_json`
   - 8: 블록 판정에 '?' 추가(표를 새로 만들어 옮김)
   - 9: `problem_fact`에 `level`과 `tags_json`
-  - 10: `study.hints_before_pass`(통과 전에 본 힌트 수. 옛 행은 본 힌트 수로 채움)
+  - 10: `study`에 `help_first_at`, `help_after_reset_at`, `reset_at`. 옛 행은 남은 기록으로 채운다(대화가 있던 문항은 행을 만든다. 본 힌트는 시각이 없어 가장 이른 시각으로 둔다)
 
 ## 기기 밖으로 나가는 것
 

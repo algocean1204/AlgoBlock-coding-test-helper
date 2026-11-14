@@ -329,6 +329,7 @@ a.ladder-next:hover { background: var(--fill); }
 .tile .bar { margin-top: 6px; }
 .sides { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin: 0 0 28px; }
 .sides .card + .card { margin-top: 0; }
+.sides.full { grid-template-columns: minmax(0, 1fr); } /* 옆 카드가 없으면 한 줄을 다 쓴다 */
 .rows + .sides, .legend + .sides { margin-top: 0; }
 .card.side { padding: 20px; }
 .card.side.weak h2 { color: var(--warning); } .card.side.strong h2 { color: var(--success); }

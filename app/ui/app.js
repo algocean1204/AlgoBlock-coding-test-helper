@@ -412,7 +412,7 @@ async function showReport() {
   const rd = d.readiness, focus = rd.focus, SHOWN = 5; // 남은 주제는 앞의 다섯 줄만 펼쳐 두고 나머지는 접는다
   const lefts = (rows) => `<ul class="points plain">${rows.map((x) => `<li><strong>${esc(x.name)}</strong>
       <span>${esc(x.todo)}${x.after.length ? ` · 먼저 ${esc(x.after.join(", "))}` : ""}</span></li>`).join("")}</ul>`;
-  html += `<div class="sides"><section class="card side"><h2>준비도 <span class="muted">${esc(rd.label)}</span></h2><p>${esc(rd.line)}</p>
+  html += `<div class="sides${d.patterns.length ? "" : " full"}"><section class="card side"><h2>준비도 <span class="muted">${esc(rd.label)}</span></h2><p>${esc(rd.line)}</p>
     ${focus ? `<p class="hint">다음에 배울 주제: <strong>${esc(focus.name)}</strong>${focus.next ? ` · <a class="link" href="#/p/${esc(focus.next.id)}">${esc(focus.next.title)}</a>` : ""}</p>` : ""}
     ${rd.remaining.length ? `<p class="hint">${esc(rd.goal)}까지 남은 주제</p>${lefts(rd.remaining.slice(0, SHOWN))}` : ""}
     ${rd.remaining.length > SHOWN ? `<details class="signal-group"><summary>나머지 ${rd.remaining.length - SHOWN}개 주제 보기</summary>${lefts(rd.remaining.slice(SHOWN))}</details>` : ""}
