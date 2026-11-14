@@ -15,6 +15,7 @@ eval/recall_bench.py(쉬운 기준)와 eval/recall_hard.py(바꿔 쓴 명세, �
 
 import importlib.util
 import os
+import shutil
 import threading
 import uuid
 import zlib
@@ -59,17 +60,34 @@ def overlap(a, b) -> float:
 class ProblemIndex:
     def __init__(self, path: str, embed=None, name: str = "주입", model_dir: str | None = None):
         """embed를 주면 그 임베딩을 쓴다(시험·측정. name으로 구분한다). 안 주면 model_dir의 기기 안 모델."""
-        from qdrant_client import QdrantClient
-
-        self.client = QdrantClient(path=path)
+        self.path, self.client = Path(path), None
         self.model, self.embed = (name, embed) if embed else (e5.NAME, e5.e5_embedder(model_dir))
         self.weight = PATTERN_WEIGHT
         self.lock = threading.Lock()  # 로컬 모드는 여러 스레드가 함께 쓰면 깨진다(여러 스레드가 함께 쓰면 put이 InterfaceError로 빠진다)
-        marker = Path(path) / "embedder.txt"
+        marker = self.path / "embedder.txt"
         made_by = marker.read_text(encoding="utf-8").strip() if marker.is_file() else ""  # 이름표가 없으면 예전 버전이 만든 색인이다
-        if made_by != self.model and self.client.collection_exists(COLLECTION):
-            self.client.delete_collection(COLLECTION)  # 다른 임베딩으로 만든 벡터다(차원이 같아도 견줄 수 없다)
+        self._open(wipe=made_by != self.model)  # 다른 임베딩으로 만든 벡터는 비운다(차원이 같아도 견줄 수 없다)
         marker.write_text(self.model, encoding="utf-8")
+
+    def _open(self, wipe: bool = False) -> None:
+        """로컬 Qdrant를 연다. wipe면 색인을 통째로 비우고 연다(이 색인은 캐시다).
+        비울 때는 클라이언트를 먼저 닫고 Qdrant의 파일(collection/, meta.json)을 지운다. delete_collection은 열린 저장 파일을 닫지 않은 채 지우려 해서
+        Windows에서는 지우지 못하고(조용히 넘어간다) 옛 벡터가 남아 다음 컬렉션에 섞였다."""
+        from qdrant_client import QdrantClient
+
+        if self.client is not None:
+            self.client.close()
+            self.client = None
+        if wipe:
+            if (self.path / "collection").is_dir():
+                shutil.rmtree(self.path / "collection")  # 닫은 뒤라 지워진다. 못 지우면 옛 벡터가 섞이므로 넘기지 않고 오류를 낸다
+            (self.path / "meta.json").unlink(missing_ok=True)
+        self.client = QdrantClient(path=str(self.path))
+
+    def clear(self) -> None:
+        """색인을 통째로 비운다(모델이 바뀌었을 때처럼. 부르는 쪽이 원본에서 다시 채운다)."""
+        with self.lock:
+            self._open(wipe=True)
 
     def _ensure(self, size: int) -> None:
         """컬렉션이 없으면 만들고, 저장된 차원이 지금 모델과 다르면 지우고 다시 만든다."""
@@ -78,7 +96,7 @@ class ProblemIndex:
         if self.client.collection_exists(COLLECTION):
             if self.client.get_collection(COLLECTION).config.params.vectors["spec"].size == size:
                 return
-            self.client.delete_collection(COLLECTION)
+            self._open(wipe=True)  # 차원이 다른 옛 벡터(부르는 쪽이 이미 lock을 쥐고 있다)
         params = models.VectorParams(size=size, distance=models.Distance.COSINE)
         self.client.create_collection(COLLECTION, vectors_config={"spec": params, "flow": params})
 

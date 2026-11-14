@@ -253,7 +253,7 @@ class TutorTest(unittest.TestCase):
             fake.scripts["plan.solve"] = [SOLVED]
             tutor.turn("p2", "chair", "start")
             self.assertEqual(tutor.store.load("p2").plan.link, "추천 서가에 꽂히는 책: 입력받기 → NEXT_SECRET")
-            index.client.delete_collection("problem")  # 모델이 바뀌어 색인이 비었다고 치면
+            index.clear()  # 모델이 바뀌어 색인이 비었다고 치면
             self.assertEqual(tutor.reindex(), 2)
             self.assertEqual(index.count(), 2)
         finally:
