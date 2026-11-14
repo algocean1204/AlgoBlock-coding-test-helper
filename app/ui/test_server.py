@@ -449,6 +449,27 @@ def readiness() -> None:
     # '새 주제 시작'은 학습 지도 순서다(스택·큐 → BFS·DFS가 힙·DP보다 먼저)
     fresh = [row["theme_name"] for row in history()["next"] if row["why"] == "새 주제 시작"]
     assert fresh == [server.theme_name(key) for key in server.PREREQS][:len(fresh)], fresh
+    # 주제를 '자동'으로 둔 등록 문제: 대조 검증이 all이면 풀이 계획의 유형으로 실패 수·약점 판정에 든다(기본 문제 칸·준비도에는 들지 않는다).
+    # 고른 주제가 먼저이고, 계획의 유형과 다르면 둘을 나란히 보인다
+    auto, auto2, partly, chosen = (server.register(GOOD)["id"] for _ in range(4))
+    call("/api/problems/edit", id=chosen, **GOOD, theme="sort")
+    for pid, verified in ((auto, "all"), (auto2, "all"), (partly, "examples")):
+        server.cross_done(pid, {"verified": verified})
+
+    def planned(t):
+        for pid in (auto, auto2, partly, chosen):
+            t.store.put_problem(pid, "python", GOOD["text"], title=GOOD["title"])
+            t.adopt(pid, FIRST["ready"])  # 계획의 유형: 해시
+            t.store.add_submission(pid, "느린 코드", False, status="timeout", detail={"accuracy": [3, 3], "efficiency": [0, 1]})
+    body = history(planned)
+    rows = {row["key"]: row for row in body["themes"]}
+    assert (rows["hash"]["submissions"], rows["hash"]["fails"]["timeout"], rows["hash"]["solved"], rows["hash"]["state"]) == (2, 2, 0, "weak"), rows["hash"]
+    assert rows["hash"]["why"].startswith("2문제에서 답은 맞았지만") and any(row["key"] == "hash" for row in body["weaknesses"])
+    assert (rows["sort"]["submissions"], rows["hash"]["plan_differs"]) == (1, [])
+    assert rows["sort"]["plan_differs"] == [{"id": chosen, "title": GOOD["title"], "planned": server.theme_name("hash")}]
+    assert body["readiness"]["solved"] == 0 and body["readiness"]["stage"] == "hold"
+    for pid in (auto, auto2, partly, chosen):
+        call("/api/problems/delete", id=pid)
     # 통과 뒤에 연 힌트는 통과 전 힌트로 세지 않는다(화면의 힌트 열기로)
     def hint_after(t):
         solve(PID)(t)

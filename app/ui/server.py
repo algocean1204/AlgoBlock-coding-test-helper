@@ -596,6 +596,21 @@ def planned_themes(t) -> dict:
     return out
 
 
+def report_themes(t) -> tuple[dict, dict]:
+    """학습 보고서가 쓰는 문제의 주제(문제 → 주제): 붙인 주제가 먼저, 없으면 풀이 계획의 유형(대조 검증이 all인 등록 문제만).
+    그리고 고른 주제가 계획의 유형과 다른 등록 문제 → 계획의 유형(보고서가 둘을 나란히 보인다)."""
+    planned, theme_of, differ = planned_themes(t), {}, {}
+    for pid, p in PROBLEMS.items():
+        plan = planned.get(pid, "")
+        if p.theme:
+            theme_of[pid] = p.theme
+            if plan and plan != p.theme:
+                differ[pid] = plan
+        elif plan and (getattr(p, "check", None) or {}).get("verified") == "all":
+            theme_of[pid] = plan
+    return theme_of, differ
+
+
 def labels_of(t, p, marks: dict | None = None) -> dict:
     """문제의 라벨: 단계(사용자가 고친 것 > 분석이 붙인 것), 태그(쓰는 방법. 온톨로지 기법 이름), 검증(verified: all·examples·none, 아직 대조 전이면 빈 글)과 그 말.
     등록한 문제는 대조 결과(check)의 숨은·효율성 케이스 수와 확인이 필요한 곳(doubts), 까닭(why)도. marks: 미리 읽은 store.labels()(목록은 한 번만 읽는다)."""
@@ -1877,21 +1892,21 @@ FAIL_TODO = {"slow": "제한사항의 입력 크기를 먼저 보고 방법을 �
              "accuracy_timeout": "예시 입력을 넣고 반복이 어떻게 도는지 따라가 보세요.", "compile": "제출하기 전에 '예시 실행'으로 먼저 돌려 보세요."}
 
 
-def fail_patterns(subs: list[dict]) -> list[dict]:
-    """주제를 가로지른 실패 꼴: 서로 다른 문제 3개 이상, 주제 2개 이상에서 나온 것만. 원인은 말하지 않고 센 사실, 고친 수, 할 일만 말한다."""
+def fail_patterns(subs: list[dict], theme_of: dict) -> list[dict]:
+    """주제를 가로지른 실패 꼴: 서로 다른 문제 3개 이상, 주제 2개 이상에서 나온 것만. 원인은 말하지 않고 센 사실, 고친 수, 할 일만 말한다.
+    theme_of: 문제 → 보고서가 쓰는 주제(report_themes). 주제가 없는 문제는 세지 않는다."""
     hits, last_ok = defaultdict(dict), {}  # 꼴 → {문제: 처음 걸린 차례}, 문제 → 마지막 통과 차례
     for n, sub in enumerate(subs):
-        p = PROBLEMS.get(sub["problem_id"])
-        kind = fail_kind(sub)
-        if p is None or not p.theme:
+        pid, kind = sub["problem_id"], fail_kind(sub)
+        if not theme_of.get(pid):
             continue
         if sub["ok"]:
-            last_ok[p.id] = n
+            last_ok[pid] = n
         elif kind:
-            hits[kind].setdefault(p.id, n)
+            hits[kind].setdefault(pid, n)
     out = []
     for kind, first in hits.items():
-        keys = sorted({PROBLEMS[pid].theme for pid in first}, key=MAP_ORDER.get)
+        keys = sorted({theme_of[pid] for pid in first}, key=MAP_ORDER.get)
         if len(first) < 3 or len(keys) < 2:
             continue
         fixed = sum(last_ok.get(pid, -1) > n for pid, n in first.items())
@@ -1941,7 +1956,8 @@ def readiness(unaided: dict, started: set) -> dict:
 def learning_report(t) -> dict:
     """학습 보고서. 저장된 제출·학습 기록에서 규칙으로만 계산한다(모델 0회).
 
-    주제의 상태(기본 문제를 본다. 주제를 붙인 등록 문제는 제출·실패 수와 약점 판정에만 더한다. 단계 칸과 'n문제 중 m문제'는 기본 문제만)
+    주제의 상태(기본 문제를 본다. 주제가 있는 등록 문제(report_themes: 붙인 주제, 없으면 검증된 계획의 유형)는 제출·실패 수와 약점 판정에만 더한다.
+    단계 칸, 'n문제 중 m문제', 준비도는 기본 문제만)
     - new      아직 제출한 적이 없다.
     - strong   도움 없이(해설을 먼저 보지 않고, 통과 전 힌트 없이, 첫 통과 전 튜터 대화 없이) 3문제 이상 풀었고, 그 가운데 60% 이상을 첫 제출에 통과했고,
                풀기 전에 해설을 연 문제가 없다.
@@ -1961,10 +1977,11 @@ def learning_report(t) -> dict:
     # 튜터와 처음 말한 시각. 대화와 제출은 같은 시각 꼴(초까지의 ISO 8601)이라 글자 순서로 견준다
     talked = {row["problem_id"]: row["at"] for row in t.store.conn.execute("SELECT problem_id, MIN(at) AS at FROM message GROUP BY problem_id")}
     unaided = {}  # 주제 → 도움 없이 푼 기본 문제의 단계들
-    own_by_theme = defaultdict(list)  # 주제를 붙인 등록 문제
+    theme_of, differ = report_themes(t)
+    own_by_theme = defaultdict(list)  # 주제가 있는 등록 문제(붙인 주제, 없으면 검증된 계획의 유형)
     for pid, p in PROBLEMS.items():
-        if not p.sample and p.theme:
-            own_by_theme[p.theme].append(pid)
+        if not p.sample and theme_of.get(pid):
+            own_by_theme[theme_of[pid]].append(pid)
     theme_rows_, signals, started = [], [], set()  # started: 기본 문제를 제출해 본 주제(다음에 풀 문제의 '이어서 풀기'는 이것만. 등록 문제는 실패 수·약점 판정에만 쓴다)
     for key in ALGORITHMS:
         mine = [row for row in BUILTIN.values() if row["theme"] == key]
@@ -2015,7 +2032,9 @@ def learning_report(t) -> dict:
         theme_rows_.append({"key": key, "name": theme_name(key), "solved": len(done), "total": len(mine), "level_reached": max((row["level"] for row in done), default=0),
                             "submissions": len(mine_subs), "first_try": first_try, "fails": fails, "hints": sum(study["hints_seen"] for study in studies.values()),
                             "solution_before_pass": early, "state": state, "why": why, "next": {"id": todo["id"], "title": todo["title"], "level": todo["level"]} if todo else None,
-                            "review": {"id": review["id"], "title": review["title"], "level": review["level"]} if review else None})
+                            "review": {"id": review["id"], "title": review["title"], "level": review["level"]} if review else None,
+                            # 이 주제를 고른 등록 문제 가운데 풀이 계획의 유형이 다른 것(둘을 나란히 보인다)
+                            "plan_differs": [{"id": pid, "title": PROBLEMS[pid].title, "planned": theme_name(differ[pid])} for pid in own_by_theme[key] if pid in differ]})
         if done:  # 실전 신호는 푼 문제 것만 보여 준다(풀기 전에 보이면 스스로 알아채는 연습이 사라진다)
             signals.append({"key": key, "name": theme_name(key), "items": [{**signal, "title": row["title"]} for row in done for signal in row["signals"]]})
     strong = sorted((row for row in theme_rows_ if row["state"] == "strong"), key=lambda row: (-row["solved"], -row["first_try"]))[:3]
@@ -2026,7 +2045,8 @@ def learning_report(t) -> dict:
     stamps, mine_code = read_json(TOUCHED_FILE, {}), touched(t)
     last = {pid: max(str(stamps.get(pid) or ""), by_problem[pid][-1]["at"] if pid in by_problem else "") for pid in PROBLEMS}
     writing = sorted((pid for pid in PROBLEMS if pid not in solved and (pid in by_problem or pid in mine_code or pid in stamps)), key=lambda pid: last[pid], reverse=True)
-    queue = [({"id": pid, "title": PROBLEMS[pid].title, "level": PROBLEMS[pid].level}, PROBLEMS[pid].theme_name, "쓰던 문제예요.") for pid in writing[:1]]
+    queue = [({"id": pid, "title": PROBLEMS[pid].title, "level": PROBLEMS[pid].level}, PROBLEMS[pid].theme_name or (theme_name(theme_of[pid]) if theme_of.get(pid) else ""),
+              "쓰던 문제예요.") for pid in writing[:1]]
     for row in weak:
         queue += [(row["review"], row["name"], "해설을 먼저 본 문제예요. 힌트 없이 다시 풀어 보세요.")] if row["review"] else []
         queue += [(row["next"], row["name"], "약한 주제예요: " + row["why"])]
@@ -2066,7 +2086,7 @@ def learning_report(t) -> dict:
         "recent": [{"id": sub["problem_id"], "title": PROBLEMS[sub["problem_id"]].title, "ok": sub["ok"], "status": sub["status"], "language": sub["language"], "at": sub["at"]}
                    for sub in reversed(subs) if sub["problem_id"] in PROBLEMS][:10],
         "signals": signals, "feedbacks": feedbacks, "next": todo_rows, "attendance": attendance(),
-        "readiness": ready, "patterns": fail_patterns(subs),
+        "readiness": ready, "patterns": fail_patterns(subs, theme_of),
     }
 
 

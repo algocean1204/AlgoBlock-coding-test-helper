@@ -429,7 +429,8 @@ async function showReport() {
     <span class="ladder-name">${gdot(t.key)}${esc(t.name)}<small>${t.solved}/${t.total}</small></span>
     ${levelCells(t.name, built.filter((p) => p.theme === t.key))}
     <span class="state ${t.state}">${STATE_WORD[t.state]}</span>
-    <span class="ladder-why">${esc(t.why)}${t.submissions ? ` <span class="muted">제출 ${t.submissions}번${t.hints ? ` · 힌트 ${t.hints}개` : ""}${t.solution_before_pass ? ` · 해설 먼저 ${t.solution_before_pass}문제` : ""}</span>` : ""}</span>
+    <span class="ladder-why">${esc(t.why)}${t.submissions ? ` <span class="muted">제출 ${t.submissions}번${t.hints ? ` · 힌트 ${t.hints}개` : ""}${t.solution_before_pass ? ` · 해설 먼저 ${t.solution_before_pass}문제` : ""}</span>` : ""}${(t.plan_differs || []).map((x) => // 고른 주제와 풀이 계획의 유형을 나란히
+      ` <span class="muted">· ‘${esc(x.title)}’: 고른 주제 ${esc(t.name)}, 풀이 계획 ${esc(x.planned)}</span>`).join("")}</span>
   </li>`).join("")}</ul>`);
   const cards = [failAll ? `<section class="card side"><h2>통과하지 못한 제출</h2><ul class="bars">${fails.map(([kind, n]) => `<li><span>${FAIL_WORD[kind]}</span><span class="bar" aria-hidden="true"><i class="${kind}" style="width:${Math.round(100 * n / failMax)}%"></i></span><b>${n}</b></li>`).join("")}</ul>
       <p class="hint">${failTip(fails)}</p></section>` : "",
