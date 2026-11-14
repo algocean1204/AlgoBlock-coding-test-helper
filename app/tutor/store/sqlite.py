@@ -91,18 +91,19 @@ class Store:
                  "status": r["status"] or ("passed" if r["ok"] else "failed"), "detail": json.loads(r["detail_json"] or "{}")} for r in rows]
 
     def study(self, problem_id: str) -> dict:
-        """AI 없이 공부한 기록: 본 힌트 수, 해설을 연 시각, 통과 전에 열었는지."""
-        row = self.conn.execute("SELECT hints_seen, solution_at, solution_before_pass FROM study WHERE problem_id=?", (problem_id,)).fetchone()
-        return {"hints_seen": row["hints_seen"] if row else 0, "solution_at": row["solution_at"] if row else None,
-                "solution_before_pass": bool(row["solution_before_pass"]) if row else False}
+        """AI 없이 공부한 기록: 본 힌트 수, 그 가운데 통과 전에 본 수, 해설을 연 시각, 통과 전에 열었는지."""
+        row = self.conn.execute("SELECT hints_seen, hints_before_pass, solution_at, solution_before_pass FROM study WHERE problem_id=?", (problem_id,)).fetchone()
+        return {"hints_seen": row["hints_seen"] if row else 0, "hints_before_pass": row["hints_before_pass"] if row else 0,
+                "solution_at": row["solution_at"] if row else None, "solution_before_pass": bool(row["solution_before_pass"]) if row else False}
 
     def set_study(self, problem_id: str, **fields) -> None:
-        """hints_seen, solution_at, solution_before_pass 가운데 준 것만 바꾼다."""
+        """hints_seen, hints_before_pass, solution_at, solution_before_pass 가운데 준 것만 바꾼다."""
         now_ = {**self.study(problem_id), **fields}
         self.conn.execute(
-            "INSERT INTO study(problem_id, hints_seen, solution_at, solution_before_pass) VALUES(?, ?, ?, ?) "
-            "ON CONFLICT(problem_id) DO UPDATE SET hints_seen=excluded.hints_seen, solution_at=excluded.solution_at, solution_before_pass=excluded.solution_before_pass",
-            (problem_id, int(now_["hints_seen"]), now_["solution_at"], 1 if now_["solution_before_pass"] else 0),
+            "INSERT INTO study(problem_id, hints_seen, hints_before_pass, solution_at, solution_before_pass) VALUES(?, ?, ?, ?, ?) "
+            "ON CONFLICT(problem_id) DO UPDATE SET hints_seen=excluded.hints_seen, hints_before_pass=excluded.hints_before_pass, "
+            "solution_at=excluded.solution_at, solution_before_pass=excluded.solution_before_pass",
+            (problem_id, int(now_["hints_seen"]), int(now_["hints_before_pass"]), now_["solution_at"], 1 if now_["solution_before_pass"] else 0),
         )
         self.conn.commit()
 

@@ -685,7 +685,7 @@ class TutorTest(unittest.TestCase):
                     store.close()
 
             with ThreadPoolExecutor(max_workers=4) as pool:
-                self.assertEqual(list(pool.map(open_one, range(4))), [9] * 4)
+                self.assertEqual(list(pool.map(open_one, range(4))), [10] * 4)
 
     def test_old_database_migrates(self):
         conn = sqlite3.connect(self.path)
@@ -698,7 +698,7 @@ class TutorTest(unittest.TestCase):
         conn.close()
         tutor = Tutor(self.path, client=FakeLlm({}))
         try:
-            self.assertEqual(tutor.store.conn.execute("PRAGMA user_version").fetchone()[0], 9)
+            self.assertEqual(tutor.store.conn.execute("PRAGMA user_version").fetchone()[0], 10)
             # 버전 8: 판정 '?'(확인 전)를 담는다. 옛 블록 상태는 그대로 옮겨진다(짝은 기본값)
             self.assertEqual([tuple(row) for row in tutor.store.conn.execute("SELECT code, verdict, renames_json FROM block_state")], [("x = 1", "Y", "[]")])
             tutor.store.conn.execute("UPDATE block_state SET verdict='?'")
@@ -708,12 +708,32 @@ class TutorTest(unittest.TestCase):
             tutor.store.add_submission("p1", "코드2", True)
             self.assertEqual([(row["language"], row["status"], row["detail"]) for row in tutor.store.submissions()],
                              [("java", "timeout", {"accuracy": [3, 5]}), ("python", "passed", {})])
-            self.assertEqual(tutor.store.study("p1"), {"hints_seen": 0, "solution_at": None, "solution_before_pass": False})
+            self.assertEqual(tutor.store.study("p1"), {"hints_seen": 0, "hints_before_pass": 0, "solution_at": None, "solution_before_pass": False})
             tutor.store.set_study("p1", hints_seen=2)
             tutor.store.set_study("p1", solution_at="t", solution_before_pass=True)
-            self.assertEqual(tutor.store.study("p1"), {"hints_seen": 2, "solution_at": "t", "solution_before_pass": True})
+            self.assertEqual(tutor.store.study("p1"), {"hints_seen": 2, "hints_before_pass": 0, "solution_at": "t", "solution_before_pass": True})
             tutor.store.set_language("p1", "java")
             self.assertEqual(tutor.store.load("p1").language, "java")
+        finally:
+            tutor.close()
+
+    def test_hints_before_pass_backfill(self):
+        """버전 10: 통과 전에 본 힌트 수. 시각이 없는 옛 행은 본 힌트 수 그대로 채운다."""
+        from ..store.schema import MIGRATIONS
+
+        conn = sqlite3.connect(self.path)
+        for script in MIGRATIONS[:9]:
+            for statement in script.split(";"):
+                if statement.strip():
+                    conn.execute(statement)
+        conn.execute("PRAGMA user_version=9")
+        conn.execute("INSERT INTO problem(id, language, body) VALUES('p1', 'python', '문제')")
+        conn.execute("INSERT INTO study(problem_id, hints_seen) VALUES('p1', 3)")
+        conn.commit()
+        conn.close()
+        tutor = Tutor(self.path, client=FakeLlm({}))
+        try:
+            self.assertEqual((tutor.store.study("p1")["hints_seen"], tutor.store.study("p1")["hints_before_pass"]), (3, 3))
         finally:
             tutor.close()
 

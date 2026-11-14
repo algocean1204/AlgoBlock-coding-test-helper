@@ -408,6 +408,15 @@ async function showReport() {
     <div class="tile"><span class="tile-label">출석</span><strong>${att.days}<small>일</small></strong>
       <span class="days" role="img" aria-label="최근 14일 가운데 ${came}일 출석">${att.recent.map((on) => `<i${on ? ' class="on"' : ""}></i>`).join("")}</span></div>
   </section>`;
+  // 준비도(도움 없이 푼 기본 문제로만)와 다음 단계까지 남은 주제(학습 지도 순서), 여러 주제에서 되풀이된 실패. 빈 카드는 보이지 않는다
+  const rd = d.readiness, focus = rd.focus;
+  html += `<div class="sides"><section class="card side"><h2>준비도 <span class="muted">${esc(rd.label)}</span></h2><p>${esc(rd.line)}</p>
+    ${focus ? `<p class="hint">다음에 배울 주제: <strong>${esc(focus.name)}</strong>${focus.next ? ` · <a class="link" href="#/p/${esc(focus.next.id)}">${esc(focus.next.title)}</a>` : ""}</p>` : ""}
+    ${rd.remaining.length ? `<p class="hint">${esc(rd.goal)}까지 남은 주제</p><ul class="points plain">${rd.remaining.map((x) => `<li><strong>${esc(x.name)}</strong>
+      <span>${x.level}단계 이상까지 · 지금 도움 없이 ${x.solved}문제${x.after.length ? ` · 먼저 ${esc(x.after.join(", "))}` : ""}</span></li>`).join("")}</ul>` : ""}
+    <details class="signal-group"><summary>기준 보기</summary><ul class="plain-list">${rd.rules.map((x) => `<li>${esc(x)}</li>`).join("")}</ul></details>
+    <p class="hint">${esc(rd.basis)}</p></section>
+    ${d.patterns.length ? `<section class="card side"><h2>여러 주제에서 되풀이된 실패</h2><ul class="points">${d.patterns.map((x) => `<li>${esc(x.line)}</li>`).join("")}</ul></section>` : ""}</div>`;
   const side = (title, rows, cls) => `<section class="card side ${cls}"><h2>${title}</h2><ul class="points">${rows.map((x) => `<li><strong>${esc(x.name)}</strong><span>${esc(x.why)}</span>
     ${x.next && !(target && x.next.id === target.id) ? `<a class="link" href="#/p/${esc(x.next.id)}">다음에 풀 문제: ${esc(x.next.title)}</a>` : ""}</li>`).join("")}</ul></section>`;
   const sides = [d.weaknesses.length ? side("더 공부할 주제", d.weaknesses, "weak") : "", d.strengths.length ? side("강한 주제", d.strengths, "strong") : ""].filter(Boolean); // 빈 카드는 보이지 않는다

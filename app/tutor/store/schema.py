@@ -139,6 +139,8 @@ ALTER TABLE block_state_v8 RENAME TO block_state;
 """,
     # 9: 문항 뼈대에 분석이 붙인 단계(1~5, 모르면 0)와 태그(온톨로지 기법 id). 등록한 문제의 목록에 보인다
     "ALTER TABLE problem_fact ADD COLUMN level INTEGER NOT NULL DEFAULT 0; ALTER TABLE problem_fact ADD COLUMN tags_json TEXT NOT NULL DEFAULT '[]';",
+    # 10: 통과하기 전에 본 힌트 수(통과 뒤에 연 힌트는 '도움받아 풂'이 아니다). 시각이 없는 옛 행은 본 힌트 수 그대로(통과 전에 본 것으로 친다)
+    "ALTER TABLE study ADD COLUMN hints_before_pass INTEGER NOT NULL DEFAULT 0; UPDATE study SET hints_before_pass=hints_seen;",
 ]
 
 

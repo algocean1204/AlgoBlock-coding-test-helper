@@ -60,14 +60,14 @@ AlgoBlock의 기록과 설정은 데이터 폴더 하나에 있다. 이 문서�
 | `problem_fact` | 문제 뼈대: 기술(`skills_json`), 크기, 단계(`level`), 태그(`tags_json`) |
 | `pitfall_hit` | 제출이 밟은 함정. 같은 코드 해시는 한 번만 센다 |
 | `solution` | 풀이 가이드 |
-| `study` | 학습 기록: 본 힌트 수, 해설을 처음 연 시각, 통과 전에 열었는지 |
+| `study` | 학습 기록: 본 힌트 수, 그 가운데 통과 전에 본 수, 해설을 처음 연 시각, 통과 전에 열었는지 |
 
 - 외래 키를 켠다. 문제를 지우면 그 문제의 행이 `ON DELETE CASCADE`로 같이 지워진다.
 - `setting`을 뺀 모든 표는 `problem_id`로 나뉜다.
 
 ## 스키마 버전
 
-- 버전은 `PRAGMA user_version`에 저장한다. 마이그레이션 목록(`MIGRATIONS`)의 길이가 최신 버전이다. 현재 버전은 9다.
+- 버전은 `PRAGMA user_version`에 저장한다. 마이그레이션 목록(`MIGRATIONS`)의 길이가 최신 버전이다. 현재 버전은 10이다.
 - DB를 열면 저장된 버전 다음부터 차례로 마이그레이션을 돈다. 남은 마이그레이션은 모두 한 트랜잭션 안에서 돈다. 쓰기 잠금(`BEGIN IMMEDIATE`)을 먼저 잡고, 실패하면 모두 되돌린다.
 - 버전별 변경:
   - 2: `message`에 `move` 열
@@ -78,6 +78,7 @@ AlgoBlock의 기록과 설정은 데이터 폴더 하나에 있다. 이 문서�
   - 7: `block_state.renames_json`
   - 8: 블록 판정에 '?' 추가(표를 새로 만들어 옮김)
   - 9: `problem_fact`에 `level`과 `tags_json`
+  - 10: `study.hints_before_pass`(통과 전에 본 힌트 수. 옛 행은 본 힌트 수로 채움)
 
 ## 기기 밖으로 나가는 것
 
