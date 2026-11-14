@@ -1,10 +1,11 @@
 """N3 블록 코드 판정. 출력이 [check]뿐이라 참고 코드를 비교 기준으로 넣어도 말풍선으로 새지 않는다.
 차례: 이 자리의 표로 이름을 바꾼 계획 코드와 글자 그대로 같다(줄 끝 공백·빈 줄만 다름. 실행 없이 통과하는 유일한 길) → 실행 → 모델.
 판정은 셋이다: 통과(Y) / 이어지지 않아요(N) / 확인 전(?). 앱이 아는 것은 '튜터의 코드와 이어지는가'뿐이라 판정이 그것만 말한다.
-N(이어지지 않아요): 이어 돌린 실행이 끝까지 돌았는데 통과하지 못했다(어림 짝이면 시도할 짝을 모두 돌려 모두 실패했다. 오류가 누구 줄에서 났어도 같다).
+N(이어지지 않아요): 이어 돌린 실행이 끝까지 돌았는데 통과하지 못했다(어림 짝이면 시도할 짝을 모두 돌려 모두 실패했다. 단 어림 짝으로 이은 실행이
+튜터의 코드 줄에서 오류로 멈췄으면 확인 전이다 — 짝이 틀렸을 수 있다).
 말은 사실 → 두 가지 가능성(고칠 곳이 있다 / 튜터와 다른 방식이다) → 할 수 있는 일이다. 틀렸다고 하지 않는다.
 확인 전: 결론까지 돌리지 못했다 — 이름·매개변수 차례를 찾지 못해 이어 붙이지 못함, 짝을 다 시도하지 못함(시간 한도), 모델이 읽고 거절함(실행하지 못함),
-모델의 답이 형식에 맞지 않음. 틀린 수에 넣지 않는다.
+어림 짝으로 이은 튜터의 코드 줄에서 오류, 모델의 답이 형식에 맞지 않음. 틀린 수에 넣지 않는다.
 불변 조건: 통과는 언제나 실행이 뒷받침한다. 블록을 잇는 일은 한 곳(spliced_view)에서 한다. 앞 블록이 바뀌면 뒤 블록의 통과를 물린다. 말은 한 일을 그대로 말한다.
 실행: 이 블록은 방금 적은 코드, 사용자가 적어 통과한(또는 확인 전인) 다른 블록은 그 코드, 나머지는 계획 코드에 이름 바꾸기 표를 적용해 이은 프로그램을
 채점 함수로 돌린다(효율성 케이스는 뺀다). 통과하지 못하면 내가 쓴 블록을 모두 이은 프로그램(튜터 코드 없이. 모아서 실행과 같은 글)을 한 번 더 돌려
@@ -53,6 +54,8 @@ NOT_JOINED = ("아직 고칠 곳이 있거나, 튜터와 다른 방식으로 써
 # 어림 짝을 쓴 실행: 어떻게 이었는지를 사실로 말한다. 시간이 모자라 다른 짝을 다 돌려 보지 못했으면 결론을 내지 못한 것이다(확인 전)
 GUESSED = "튜터의 코드와 이을 때 내 이름을 이렇게 알고 이어 돌렸어요(내 이름→튜터의 이름): {pairs}."
 GUESSED_CUT = " 시간이 모자라 다른 짝은 다 돌려 보지 못해서 이어지지 않는 건지 확인하지 못했어요. 다르게 쓴 것이면 튜터의 이름으로 맞추거나 '이대로 넘어가기'를 눌러요."
+# 어림 짝으로 이은 튜터의 코드 줄에서 오류가 났다: 짝이 틀렸을 수 있어 내 코드가 이어지지 않는다는 근거가 아니다(확인 전)
+GUESSED_TUTOR = "오류가 난 곳이 어림한 짝으로 이은 튜터의 코드라 이어지지 않는 건지 확인하지 못했어요. 다르게 쓴 것이면 튜터의 이름으로 맞추거나 '이대로 넘어가기'를 눌러요."
 # 'while'을 열고 증가를 다음 블록에 두려 하면 뒤 블록(계획 코드)에 증가가 없어 끝나지 않는다
 WHILE_NOTE = "반복을 끝내는 줄(값을 늘리거나 줄이는 줄)을 뒤 블록에 두려 했다면 이 블록에 적어 주세요."
 # 도우미 함수의 매개변수 차례를 바꾼 맞는 블록을 계획의 호출 차례가 만든 오류로 거부했다. 뒤 블록이 부르는 차례를 알린다
@@ -447,7 +450,7 @@ def run_verdict(state: MainState, plan, index: int, code: str, check) -> dict | 
             return {"verdict": Verdict(False, seen=CANNOT_RUN, hint=False, unsure=True), "stored": [], "told": [], "fixes": []}
         if not reports and report.get("status") not in ("passed", *USER_FAULT):
             return {"unrun": report.get("status") or "no_cases"}  # 채점하지 못했다(도구 없음, 다루지 못하는 인자 형, 케이스 없음)
-        reports.append((report, trial, again, tables, spans))
+        reports.append((report, trial, again, tables, spans, text))
         if report.get("status") == "passed":
             fixes = {}
             for j, plans, perm in again:  # 앞 블록의 저장된 짝을 새 차례로 고쳐 쓴다
@@ -469,7 +472,7 @@ def run_verdict(state: MainState, plan, index: int, code: str, check) -> dict | 
             break  # 끝나지 않는 반복: 다른 짝으로 다시 기다리지 않는다
     if plan_blocks and (found := alone()):
         return found
-    told, trial, again, tables, spans = reports[0]
+    told, trial, again, tables, spans, text = reports[0]
     missing = missing_name(told)
     later = [i for i in plan_blocks if i > index]
     lead = LEADS["both" if later and len(later) < len(plan_blocks) else "later" if later else "earlier"] if plan_blocks else ""
@@ -499,7 +502,16 @@ def run_verdict(state: MainState, plan, index: int, code: str, check) -> dict | 
         got = Verdict(False, seen=MANY_ANSWERS, hint=False, unsure=True)
     else:
         note = assumed([[m, p] for p, m in guessed.items()], cut)  # 어림 짝으로 이었다면 그 가정을 사실로 말한다. 다 시도하지 못했으면 그 사실도
-        got = failure_verdict(told, spans, program, lead, not plan_blocks, note, cut, unchecked)
+        # 어림 짝으로 이은 실행이 튜터의 코드 줄에서 오류로 멈췄다: '이어지지 않아요'가 아니라 확인 전이다(내 줄의 오류, 굳은 짝만 쓴 실행은 그대로).
+        # 짝과 상관없는 실패는 그대로 '이어지지 않아요'다: 다른 짝으로 돌린 시도가 모두 같은 곳에서 같은 오류이거나,
+        # 이은 프로그램이 문법부터 틀렸다(이름을 이름으로 바꿔서는 문법 오류가 생기지 않는다. 내 블록이 'if …:'로 끝나 뒤 줄이 들여쓰기 오류였다)
+        fault = lambda item: (item[0].get("status"), (_place(item[0], item[4]) or ())[:3], _raw_text(item[0]).strip()[-200:])  # noqa: E731
+        tutor_fault = (bool(guessed) and status in KIND_WORD and (_place(told, spans) or ("",))[0] == "tutor"
+                       and not (len(reports) > 1 and all(fault(item) == fault(reports[0]) for item in reports))
+                       and not (language == "python" and not _parses(text)))
+        if tutor_fault and not cut:
+            note = _add(note, GUESSED_TUTOR)
+        got = failure_verdict(told, spans, program, lead, not plan_blocks, note, cut or tutor_fault, unchecked)
         # while을 열었다: 시간 초과면 언제나, 그 밖의 실패도 계획이 이 자리를 for로 열고 뒤 블록을 계획 코드로 이었으면(증가가 뒤 블록에 없다)
         if loop(code, "while") and (timeout or (later and loop(refs[index], "for") and not loop(refs[index], "while"))):
             got.seen, got.hint = _add(got.seen, WHILE_NOTE), False
@@ -511,6 +523,15 @@ def run_verdict(state: MainState, plan, index: int, code: str, check) -> dict | 
             and all(len(row) - len(row.lstrip()) >= len(rows[0]) - len(rows[0].lstrip()) for row in rows)):
         got.seen, got.hint = _add(got.seen, INDENT_NOTE), False  # 바깥으로 나가는 줄이 있는 블록인데 첫 줄보다 얕은 줄이 없다
     return {"verdict": got, "stored": [], "told": [], "fixes": []}
+
+
+def _parses(text: str) -> bool:
+    """Python 글이 문법으로 읽히는가(실행하지 않는다)."""
+    try:
+        compile(text, "<block>", "exec")
+    except (SyntaxError, ValueError):
+        return False
+    return True
 
 
 def _place(report: dict, spans: list[dict]) -> tuple[str, int, int, str] | None:

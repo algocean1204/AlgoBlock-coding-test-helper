@@ -756,6 +756,57 @@ class BlockCheckNewNameTest(unittest.TestCase):
         done, seen = self.turn(blocks, {}, "b1", "for q in ranges:\n    a, b = q\n    s = a * 10", [([[[1, 2]]], 12), ([[[3, 5]]], 35)])
         self.assertEqual((done["block_check"].verdict, sorted(done["block_check"].renames)), ("Y", [["b", "high"], ["s", "start"]]), done["verdict"].seen)
 
+    def test_unpacked_and_indexed_items_pair(self):
+        """풀어 받기('for r, c in xs')와 첨자 받기('for q in xs:' 뒤 'a = q[0]')는 같은 꼴이다. 양쪽에 같이 있는 이름은 자리 후보가 아니다."""
+        from ..common.solution import made_statements, name_candidates
+
+        indexed = "for query in queries:\n    row = query[0]\n    col = query[1]"
+        shape = lambda code, name: next(item[1:] for item in made_statements(code, "python") if item[0] == name)  # noqa: E731
+        for mine, a, b in (("for r, c in queries:\n    s = ''", "r", "c"), ("for q in queries:\n    a, b = q", "a", "b")):
+            self.assertEqual((shape(indexed, "row"), shape(indexed, "col")), (shape(mine, a), shape(mine, b)), mine)
+        self.assertNotEqual(shape(indexed, "query"), shape("for r, c in queries:", "r"))  # 통째로 받은 반복 변수는 그 자리의 값이 아니다
+        words = {"queries", "query", "row", "col", "text", "answer"}
+        self.assertNotIn("queries", name_candidates("for r, c in queries:\n    s = ''", indexed, "python", "row", words))  # 도는 대상은 대입한 이름이 아니다
+        self.assertEqual(name_candidates("total = 0\nseen = {}", "count = {}\ntotal = 0", "python", "count", {"count", "total"})[0], "seen")  # 같은 자리의 total은 계획에도 있다
+        blocks = [fakes.block(1, "질문", "def solution(queries):\n    answer = []\n    for query in queries:\n        row = query[0]\n        col = query[1]\n        text = ''",
+                              "loop", hints=list(fakes.HINTS1)),
+                  fakes.block(2, "답", "        text = text + str(row * 10 + col)\n        answer.append(text)\n    return answer", hints=list(fakes.HINTS2))]
+        done, _ = self.turn(blocks, {}, "b1", "answer = []\nfor r, c in queries:\n    s = ''", [([[[1, 2], [3, 4]]], ["12", "34"])])
+        self.assertEqual((done["block_check"].verdict, sorted(done["block_check"].renames)), ("Y", [["c", "col"], ["r", "row"], ["s", "text"]]), done["verdict"].seen)
+
+    def test_guessed_pairs_failing_in_tutor_code_are_unchecked(self):
+        """어림 짝으로 이은 튜터의 코드 줄에서 난 오류는 '확인 전'이다. 문법부터 틀린 프로그램(짝과 상관없음)은 '이어지지 않아요'."""
+        from ..turn.code_check import GUESSED_TUTOR
+
+        blocks = [fakes.block(1, "범위", "def solution(q):\n    start = q[0] * 10\n    high = q[1]", hints=list(fakes.HINTS1)),
+                  fakes.block(2, "답", "    return start + high", hints=list(fakes.HINTS2))]
+        cases = [([[1, 2]], 12), ([[3, 5]], 35)]
+        done, _ = self.turn(blocks, {}, "b1", "s = str(q[0] * 10)\nhi = q[1]\nextra = 0", cases)  # 첫 가정 s→start: 튜터의 'start + high'에서 TypeError
+        self.assertTrue(done["verdict"].unsure and done["verdict"].seen.startswith("튜터의 코드(") and GUESSED_TUTOR in done["verdict"].seen
+                        and NOT_JOINED not in done["verdict"].seen, done["verdict"].seen)
+        self.assertEqual((done["block_check"].verdict, done["block_check"].tries), ("N", 0))  # 틀린 수에 넣지 않는다
+        import traceback
+
+        def parsed(seen):  # 실제 채점기처럼 문법 오류 글에 그 줄(짝으로 바꾼 이름이 든 줄)을 싣는다: 시도마다 글이 다르다
+            run = exec_check(seen, cases)
+
+            def check(pid, code, quick=False):
+                try:
+                    compile(code, "main.py", "exec")
+                except SyntaxError as exc:
+                    seen.append(code)
+                    return {"status": "runtime_error", "compile": "", "cases": [{"id": "1", "kind": "example", "input": "[[1, 2]]", "expected": "12", "got": "",
+                            "status": "runtime_error", "error": "".join(traceback.format_exception_only(exc)), "line": exc.lineno}]}
+                return run(pid, code, quick)
+            return check
+        done, seen = self.turn(blocks, {}, "b1", "high = q[1]\nq.sort()\nif high:", parsed)  # 내 블록이 'if …:'로 끝나 튜터의 다음 줄이 들여쓰기 오류
+        self.assertTrue(not done["verdict"].unsure and NOT_JOINED in done["verdict"].seen and "`q`→`start`" in done["verdict"].seen, done["verdict"].seen)
+        same = lambda seen: lambda pid, code, quick=False: seen.append(code) or {"status": "runtime_error", "compile": "", "cases": [  # noqa: E731
+            {"id": "1", "kind": "example", "input": "[[1, 2]]", "expected": "12", "got": "", "status": "runtime_error", "error": "MemoryError",
+             "line": next((n for n, row in enumerate(code.splitlines(), 1) if "return" in row), None)}]}
+        done, seen = self.turn(blocks, {}, "b1", "s = q[0]\nhi = q[1]\nextra = 0", same)  # 어느 짝으로 돌려도 같은 곳에서 같은 오류: 짝과 상관없다
+        self.assertTrue(not done["verdict"].unsure and NOT_JOINED in done["verdict"].seen and len(seen) > 2, (done["verdict"].seen, len(seen)))
+
     def test_try_seconds_and_same_failure(self):
         """6초가 지나면 새 시도를 하지 않는다(시계를 넣어서). 모든 시도가 같은 실패면 그 실패(짝과 상관없다), 확실한 짝 + 내 코드의 오류면 그 오류."""
         from unittest.mock import patch
