@@ -66,7 +66,7 @@ cd app && python3 ui/problemkit.py check ui/problems/<주제>
 
 ## CI
 
-파일은 `.github/workflows/ci.yml`이다. 모든 pull request와 `main` 푸시에서 돈다. 같은 ref의 이전 실행은 취소된다.
+파일은 `.github/workflows/ci.yml`이다. 모든 pull request와 `develop`·`main` 푸시에서 돈다. 같은 ref의 이전 실행은 취소된다.
 
 | 작업 | 돌리는 것 | 제한 시간 |
 | --- | --- | --- |
@@ -75,10 +75,11 @@ cd app && python3 ui/problemkit.py check ui/problems/<주제>
 | `windows` | Windows 러너(`windows-latest`)에서 아래 차례로 돈다 | 45분 |
 | `publish-check` | 3번 세 가지(구조, 현재 파일, 모든 커밋) | 10분 |
 | `secret-scan` | gitleaks로 기록 전체 검사 | 10분 |
-| `branch-name` | 이 저장소 안에서 올린 PR의 브랜치 이름이 규칙에 맞는지 본다. 다른 저장소의 PR과 dependabot 브랜치는 보지 않는다 | 5분 |
-| `ci-passed` | 위 여섯 작업이 모두 성공했는지 본다 | 5분 |
+| `branch-name` | 이 저장소 안에서 올린 PR의 브랜치 이름이 규칙에 맞는지 본다. 다른 저장소의 PR, dependabot 브랜치, `develop` → `main` PR은 보지 않는다 | 5분 |
+| `main-source` | `main`으로 가는 PR이 이 저장소의 `develop`에서 왔는지, `app/ui/updater.py`의 `VERSION`이 `0.x.y` 꼴이고 마지막 릴리스보다 큰지 본다. 다른 PR에서는 바로 통과한다 | 5분 |
+| `ci-passed` | 위 일곱 작업이 모두 성공했는지 본다 | 5분 |
 
-- `ci-passed`가 `main` 브랜치 보호 규칙이 요구하는 유일한 검사다. 새 검사 작업은 `ci-passed`의 `needs`에 넣는다.
+- `develop`·`main` 보호 규칙이 요구하는 검사는 `ci-passed`와 PR 제목 검사 `pr-title`(`.github/workflows/pr-title.yml`) 둘이다. 새 검사 작업은 `ci-passed`의 `needs`에 넣는다.
 
 `windows` 작업이 하는 일:
 
