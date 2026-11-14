@@ -1,0 +1,31 @@
+# PR 제목이 Conventional Commits 꼴인지 본다. 스쿼시로 합치므로 PR 제목이 main의 커밋 제목이 된다.
+# 제목만 고쳐도 다시 돌도록 ci.yml과 따로 둔다(ci.yml은 본문 수정에 돌지 않는다). 규칙은 .github/CONTRIBUTING.md의 "커밋과 PR 제목"
+name: PR title
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+permissions: {}
+
+concurrency:
+  group: pr-title-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  pr-title:
+    name: pr-title
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: 제목의 꼴을 본다
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          printf '제목: %s\n' "$TITLE"
+          if printf '%s' "$TITLE" | grep -Eq '^(feat|fix|docs|refactor|perf|test|build|ci|chore|style|revert)(\([a-z0-9-]+\))?!?: [^ ].*$'; then
+            echo "맞는다"
+          else
+            echo "::error::PR 제목이 '<종류>(<범위>): <설명>' 꼴이 아니다. 예: fix(ui): 빈 코드 제출 안내. 종류: feat fix docs refactor perf test build ci chore style revert"
+            exit 1
+          fi
