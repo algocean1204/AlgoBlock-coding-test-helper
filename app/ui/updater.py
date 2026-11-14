@@ -140,6 +140,7 @@ function Undo-Swap {
   }
 }
 try {
+  Say ('스크립트 시작: PowerShell ' + $PSVersionTable.PSVersion + ', PID ' + $PID)  # 진단: 여기까지 왔는지
   # 앱의 프로세스를 먼저 잡아 둔다(끝난 뒤 그 번호를 다른 프로세스가 받아도 헷갈리지 않게). 잡은 뒤에 '기다리는 중' 표시를 남긴다
   # 앱 자신($ids[0])을 잡지 못하면 끝나기를 기다릴 수 없으니 바꾸지 않는다(표시를 남기지 않아 앱도 끝나지 않는다)
   $procs = @()
@@ -225,7 +226,7 @@ try {
 }
 """
 POWERSHELL = Path(os.environ.get("SystemRoot") or r"C:\Windows") / "System32" / "WindowsPowerShell" / "v1.0" / "powershell.exe"
-DETACHED_PROCESS, CREATE_NEW_PROCESS_GROUP, CREATE_BREAKAWAY_FROM_JOB = 0x8, 0x200, 0x1000000
+DETACHED_PROCESS, CREATE_NEW_PROCESS_GROUP, CREATE_BREAKAWAY_FROM_JOB, CREATE_NO_WINDOW = 0x8, 0x200, 0x1000000, 0x8000000
 
 
 class Refused(Exception):
@@ -637,8 +638,9 @@ def clean_env() -> dict:
     return env
 
 
-def detached(args: list[str], out: Path) -> subprocess.Popen:
-    """이 앱과 떼어 띄운다(콘솔 없이, 앱이 끝나도 남게). PyInstaller가 바꾼 DLL 찾는 길은 띄우는 동안만 되돌린다(자식이 물려받는다)."""
+def detached(args: list[str], out: Path, flags: int = CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP) -> subprocess.Popen:
+    """이 앱과 떼어 띄운다(보이지 않는 제 콘솔로, 앱이 끝나도 남게). 콘솔이 아예 없는 DETACHED_PROCESS는 PowerShell이 시작하지 못할 수 있어
+    쓰지 않는다. PyInstaller가 바꾼 DLL 찾는 길은 띄우는 동안만 되돌린다(자식이 물려받는다)."""
     import ctypes
 
     kernel32 = ctypes.windll.kernel32
@@ -650,12 +652,20 @@ def detached(args: list[str], out: Path) -> subprocess.Popen:
             for breakaway in (CREATE_BREAKAWAY_FROM_JOB, 0):  # 작업 개체(Job) 안이면 벗어나 본다. 막혀 있으면 그대로 띄운다
                 try:
                     return subprocess.Popen(args, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT, env=clean_env(),
-                                            creationflags=DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP | breakaway)
+                                            creationflags=flags | breakaway)
                 except OSError:
                     if not breakaway:
                         raise
     finally:
         kernel32.SetDllDirectoryW(saved.value if had else None)
+
+
+def tail(path: Path, size: int = 3000) -> str:
+    """기록 파일의 끝(진단용). 없으면 '(없음)'. PowerShell 5.1의 출력은 OEM 코드 페이지일 수 있어 깨진 글자는 바꿔 읽는다."""
+    try:
+        return path.read_bytes()[-size:].decode("utf-8", "replace")
+    except OSError:
+        return "(없음)"
 
 
 def swap_later_exe(app: Path, staged: Path, pids: list[int] | None = None, wait: int = 60, health: int = 90, handshake: float = 20,
@@ -676,6 +686,12 @@ def swap_later_exe(app: Path, staged: Path, pids: list[int] | None = None, wait:
             if process.poll() is not None or time.monotonic() - began > handshake:
                 with contextlib.suppress(OSError):
                     process.kill()
+                with contextlib.suppress(subprocess.TimeoutExpired):
+                    process.wait(5)  # 끝난 뒤에 출력 파일을 읽는다
+                # 화면에는 짧은 거절만, 까닭(종료 코드, PowerShell의 출력, 스크립트의 첫 기록)은 표준 오류에 남긴다
+                print(f"update swap: PowerShell이 기다리기 시작하지 않았다. 종료 코드 {process.returncode}, "
+                      f"{time.monotonic() - began:.1f}초\n[swap-out.log]\n{tail(DIR / 'swap-out.log')}\n[swap.log]\n{tail(DIR / 'swap.log')}",
+                      file=sys.stderr, flush=True)
                 raise Refused("바꾸는 도구(PowerShell)가 시작하지 않았어요. 지금 앱은 그대로예요. 앱을 끝낸 뒤 받은 파일로 직접 바꿀 수 있어요.")
             time.sleep(0.1)
     except BaseException:

@@ -378,6 +378,25 @@ def staging(folder: Path) -> None:
     assert sorted(path.name for path in place.iterdir()) == ["AlgoBlock.exe"]
 
 
+def handshake_failure(folder: Path) -> None:
+    """PowerShell이 기다리기 시작하지 않고 끝나면: 앱은 그대로(거절), 옆에 둔 새 exe는 지우고, 까닭(종료 코드와 출력)은 표준 오류에 남긴다."""
+    reset(folder)
+    folder.mkdir(parents=True)
+    staged = folder / ".AlgoBlock.exe.new"
+    staged.write_bytes(b"new")
+    (folder / "swap-out.log").write_text("파일을 찾을 수 없다", encoding="utf-8")
+    ended = subprocess.Popen([sys.executable, "-c", "raise SystemExit(3)"])
+    ended.wait()
+    err = io.StringIO()
+    with patch.object(updater, "detached", lambda *a, **k: ended), contextlib.redirect_stderr(err):
+        try:
+            updater.swap_later_exe(folder / "AlgoBlock.exe", staged, pids=[1])
+            raise AssertionError("시작하지 않은 스크립트를 믿고 앱을 끝내려 했다")
+        except updater.Refused as exc:
+            assert "그대로" in str(exc) and "종료 코드" not in str(exc)
+    assert not staged.exists() and "종료 코드 3" in err.getvalue() and "파일을 찾을 수 없다" in err.getvalue(), err.getvalue()
+
+
 def ps_literal(text: str) -> str:
     """PowerShell이 작은따옴표 글을 읽는 대로 되읽는다(시험용): 작은따옴표 꼴 둘이 이어지면 뒤의 것 하나."""
     quotes = "'\u2018\u2019\u201a\u201b"
@@ -411,7 +430,7 @@ def ps_script(folder: Path) -> None:
     body = updater.SWAP_PS1
     # PowerShell을 이 기기에서 돌리지 못해도 잡을 수 있는 실수: 정하지 않은 변수, 짝이 안 맞는 괄호, 함수를 괄호로 부르기
     used = set(re.findall(r"\$(?:script:)?([A-Za-z_]\w*)", body))
-    known = {"app", "new", "old", "log", "ready", "ids", "wait", "health", "url", "true", "false", "null", "_", "env"}
+    known = {"app", "new", "old", "log", "ready", "ids", "wait", "health", "url", "true", "false", "null", "_", "env", "PSVersionTable", "PID"}
     assigned = (set(re.findall(r"\$(?:script:)?(\w+) = ", body)) | set(re.findall(r"foreach \(\$(\w+) in", body))
                 | set(re.findall(r"\[string\]\$(\w+)", body)) | set(re.findall(r"function [\w-]+\(\$(\w+)\)", body)))
     assert used <= known | assigned, used - known - assigned
@@ -550,11 +569,28 @@ def windows_swapping(folder: Path) -> None:
     def names(place: Path) -> list[str]:
         return sorted(path.name for path in place.iterdir())
 
+    launch_probe(folder / "probe")
     try:
         windows_cases(folder, exe, alive, run, names, log, silent)
     finally:
         served.shutdown()
         served.server_close()
+
+
+def launch_probe(folder: Path) -> None:
+    """진단(단정하지 않는다): 떼어 띄우는 방법마다 작은 PowerShell 스크립트가 시작해 표시를 쓰는지 찍는다. 띄우기가 실패할 때 원인을 가린다."""
+    folder.mkdir(parents=True)
+    for name, flags in (("CREATE_NO_WINDOW", updater.CREATE_NO_WINDOW | updater.CREATE_NEW_PROCESS_GROUP),
+                        ("DETACHED_PROCESS", updater.DETACHED_PROCESS | updater.CREATE_NEW_PROCESS_GROUP)):
+        mark, out = folder / f"{name}.mark", folder / f"{name}.out"
+        script = folder / f"{name}.ps1"
+        script.write_text(f"[IO.File]::WriteAllText({updater.ps_text(mark)}, 'ok')\nexit 7\n", encoding="utf-8-sig")
+        try:
+            process = updater.detached([str(updater.POWERSHELL), "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", str(script)], out, flags)
+            code = process.wait(60)
+        except Exception as exc:  # noqa: BLE001 - 진단이다
+            code = f"{type(exc).__name__}: {exc}"
+        print(f"launch probe {name}: 종료 코드 {code}(7이면 끝까지 돌았다), 표시 {'있음' if mark.exists() else '없음'}, 출력 {updater.tail(out, 600)!r}", flush=True)
 
 
 def windows_cases(folder, exe, alive, run, names, log, silent) -> None:
@@ -642,6 +678,7 @@ def run() -> None:
         remembering(root / "remember")
         stalling(root / "stall")
         staging(root / "stage")
+        handshake_failure(root / "handshake")
         ps_script(root / "ps")
         env_cleaning(root / "env")
         pids_to_wait()
