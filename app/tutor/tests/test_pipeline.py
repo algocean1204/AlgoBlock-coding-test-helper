@@ -1400,7 +1400,7 @@ class OtherFeatureTest(unittest.TestCase):
             self.assertIn(must, text)
         empty = Submission("s2", "", True)
         done, fake = fakes.go(fakes.make_state("feedback", fakes.context(plan=plan, open_count=1, latest_submission=empty)), {"feedback.analyze": [analysis]})
-        self.assertEqual((done["result"]["strategy"], fakes.tasks(fake)), ("fresh", ["feedback.analyze"]))
+        self.assertEqual((done["result"]["strategy"], fakes.tasks(fake)), (None, ["feedback.analyze"]))  # 코드가 없으면 채점하지 않는다(통과라 전략도 내보내지 않는다)
         fenced, _ = fakes.go(fakes.make_state("feedback", fakes.context(plan=plan, open_count=1, latest_submission=sub)),
                              {"feedback.assess": ["[check]50 Y"], "feedback.analyze": [{**analysis, "similar_hint": "```x```"}]})
         self.assertEqual(fenced["error"].code, "invalid_output")
@@ -1465,6 +1465,15 @@ class OtherFeatureTest(unittest.TestCase):
             ctx = fakes.context(plan=plan, open_count=2, latest_submission=Submission("s1", "print(1)", ok), block_states=states)
             prompt = analyze_messages({**fakes.make_state("feedback", ctx), "strategy": "keep_flow"})[1]["content"]
             self.assertEqual((PASSED_RULE in prompt, PASSED_ADVICE in prompt, "고칠 곳" in prompt.split("advice:")[-1].split("\n")[0]), (ok, ok, not ok))
+        self.assertLess(PASSED_RULE.index("틀릴 입력"), PASSED_RULE.index("다른 방식"))  # 통과해도 틀릴 입력을 먼저 짚는다
+
+    def test_passed_feedback_has_no_strategy_title(self):
+        """통과한 제출의 피드백은 전략을 내보내지 않는다(화면이 '정석 순서로 다시 짜 보기' 같은 전략 제목 대신 기본 제목을 쓴다)."""
+        analysis = {"analysis": "빈 입력이면 어떻게 될까요? 제출은 통과했습니다.", "similar_hint": "h", "advice": "c"}
+        for ok, strategy in ((True, None), (False, "keep_flow")):
+            ctx = fakes.context(plan=fakes.planned(fakes.two()), open_count=2, latest_submission=Submission("s1", "print(1)", ok))
+            done, _ = fakes.go(fakes.make_state("feedback", ctx), {"feedback.assess": ["[check]90 Y"], "feedback.analyze": [analysis]})
+            self.assertEqual(done["result"]["strategy"], strategy, ok)
 
     def test_feedback_record_names_skipped_blocks(self):
         from ..feedback.prompts import record_lines
