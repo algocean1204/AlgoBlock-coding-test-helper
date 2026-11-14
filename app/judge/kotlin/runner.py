@@ -114,5 +114,5 @@ def prepare(mode, source, args, work):
 
 
 def command(mode, index):
-    jar = ["java", "-Xss256m", "-jar", "app.jar"]
+    jar = ["java", "-Xss256m", *common.JAVA_UTF8, "-jar", "app.jar"]
     return jar + [str(index)] if mode == "function" else jar

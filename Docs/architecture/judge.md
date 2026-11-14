@@ -22,8 +22,8 @@
 빌드와 실행 명령은 다음과 같다. 함수 모드 기준이다.
 
 ```text
-Java     javac -encoding UTF-8 Solution.java FunctionRunner.java → java -Xss256m FunctionRunner <번호>
-Kotlin   kotlinc <파일들> -include-runtime -d app.jar           → java -Xss256m -jar app.jar [번호]
+Java     javac -encoding UTF-8 Solution.java FunctionRunner.java → java -Xss256m <UTF-8 설정> FunctionRunner <번호>
+Kotlin   kotlinc <파일들> -include-runtime -d app.jar           → java -Xss256m <UTF-8 설정> -jar app.jar [번호]
 C++      <컴파일러> -std=c++17 -O2 -I. <파일> -o app            → ./app [번호]
 Go       go build -o app .                                      → ./app [번호]
 Rust     rustc --edition 2021 -O <파일> -o app                  → ./app [번호]
@@ -31,7 +31,7 @@ Python   (빌드 없음)                                            → <python>
 JS       (빌드 없음)                                            → node algoblock_runner.js <번호>
 ```
 
-빌드는 한 번, 실행은 케이스마다 한 번 한다. C++는 작업 폴더에 `bits/stdc++.h`를 만들고, macOS에서 링커가 `tapi error`를 내면 설치된 다른 SDK로 다시 링크한다.
+빌드는 한 번, 실행은 케이스마다 한 번 한다. `<UTF-8 설정>`은 JVM의 표준 입출력을 UTF-8로 맞추는 속성(`file.encoding`, `stdout.encoding`, `stderr.encoding`과 JDK 18의 `sun.stdout.encoding`, `sun.stderr.encoding`)이다. 관으로 이은 표준 출력은 OS 기본 인코딩을 따라서, 이것이 없으면 Windows에서 한글이 깨진다. C++는 작업 폴더에 `bits/stdc++.h`를 만들고, macOS에서 링커가 `tapi error`를 내면 설치된 다른 SDK로 다시 링크한다.
 
 ## 두 가지 방식
 

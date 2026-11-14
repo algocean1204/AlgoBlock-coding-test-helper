@@ -122,4 +122,5 @@ def prepare(mode, source, args, work):
 
 
 def command(mode, index):
-    return ["java", "-Xss256m", "FunctionRunner", str(index)] if mode == "function" else ["java", "-Xss256m", "Main"]
+    java = ["java", "-Xss256m", *common.JAVA_UTF8]
+    return java + ["FunctionRunner", str(index)] if mode == "function" else java + ["Main"]

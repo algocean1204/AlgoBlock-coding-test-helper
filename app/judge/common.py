@@ -19,6 +19,9 @@ COMPILE_TIMEOUT_SECONDS = 60  # 컴파일 한 번의 제한. kotlinc 첫 실행�
 OUTPUT_LIMIT = 4_000_000  # 표준 출력·표준 오류 저마다의 상한(바이트). 넘으면 끝낸다(무한 출력이 메모리를 채우지 않게). 기본 문제의 가장 큰 답은 1MB 안쪽으로 만든다
 MEMORY_LIMIT_MB = 2048  # 실행 중 메모리 상한. 넘으면 끝낸다(기기가 멈추지 않게)
 SECRET_WORDS = ("KEY", "TOKEN", "SECRET", "PASSWORD", "CREDENTIAL")  # 이름에 이것이 든 환경 변수는 제출 코드에 넘기지 않는다
+# JVM(Java·Kotlin 실행)의 표준 입출력을 UTF-8로. 관(pipe)으로 이어진 표준 출력은 OS 기본 인코딩을 써서 Windows(cp1252, cp949)에서 한글이 ?로 깨졌다.
+# JDK 17은 file.encoding을, 18은 sun.stdout.encoding을, 19부터는 stdout.encoding을 본다. 기본이 UTF-8인 macOS·Linux에서는 바뀌는 것이 없다
+JAVA_UTF8 = ("-Dfile.encoding=UTF-8", "-Dsun.stdout.encoding=UTF-8", "-Dsun.stderr.encoding=UTF-8", "-Dstdout.encoding=UTF-8", "-Dstderr.encoding=UTF-8")
 SECRET_PREFIXES = ("ALGOBLOCK_", "ANTHROPIC_", "OPENAI_", "XAI_", "OPENROUTER_", "AWS_", "GOOGLE_", "AZURE_", "GITHUB_", "GH_")  # 이것으로 시작하는 것도
 
 
