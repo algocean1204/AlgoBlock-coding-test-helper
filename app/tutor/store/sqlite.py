@@ -109,10 +109,11 @@ class Store:
         )
         self.conn.commit()
 
-    def mark_help(self, problem_id: str) -> None:
-        """도움(튜터 기능·힌트·해설)을 썼다: 처음 쓴 시각과 마지막 '처음부터' 뒤에 처음 쓴 시각을 비어 있을 때만 적는다."""
+    def mark_help(self, problem_id: str, this_try_only: bool = False) -> None:
+        """도움(튜터 기능·힌트·해설)을 썼다: 처음 쓴 시각과 마지막 '처음부터' 뒤에 처음 쓴 시각을 비어 있을 때만 적는다.
+        this_try_only: 이번 풀이에만 도움이다(처음 쓴 시각은 그대로. '처음부터' 앞에 내가 남긴 체크포인트를 되살렸을 때)."""
         study, at = self.study(problem_id), now()
-        self.set_study(problem_id, help_first_at=study["help_first_at"] or at, help_after_reset_at=study["help_after_reset_at"] or at)
+        self.set_study(problem_id, help_first_at=study["help_first_at"] or (None if this_try_only else at), help_after_reset_at=study["help_after_reset_at"] or at)
 
     def mark_reset(self, problem_id: str) -> None:
         """'처음부터': 새 풀이가 시작된다(그 뒤의 도움을 다시 센다). 힌트는 이번 풀이에서 처음부터 다시 연다(본 힌트 수는 누적으로 남는다)."""
@@ -165,7 +166,7 @@ class Store:
             canonical=canonical,
             failed_submissions=[row["status"] or "failed" for row in self.conn.execute(
                 "SELECT status FROM submission WHERE problem_id=? AND ok=0 ORDER BY rowid", (problem_id,))],
-            hints_seen=self.study(problem_id)["hints_seen"],
+            hints_seen=self.study(problem_id)["hints_seen"] - self.study(problem_id)["hints_at_reset"],  # 이번 풀이(마지막 '처음부터' 뒤)에서 본 힌트
         )
 
     def _solution(self, problem_id: str) -> Solution | None:

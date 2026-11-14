@@ -706,6 +706,15 @@ def screen_flows() -> None:
         call("/api/checkpoint/restore", id=PID)
         with at(later):
             assert submit(PID, CODE) and solved() == 1
+    with fresh():  # 도움 없이 쓰던 코드의 체크포인트 → '처음부터' → 되살려 처음 통과: 첫 풀이에 도움이 없었으므로 센다
+        opened(PID)
+        call("/api/checkpoint", id=PID, code=CODE, blocks={})
+        assert not submit(PID, "def solution(loans, k):\n    return []\n")
+        again(PID)
+        call("/api/checkpoint/restore", id=PID)
+        with server.tutor() as t:
+            assert t.store.study(PID)["help_first_at"] is None and t.store.study(PID)["help_after_reset_at"]
+        assert submit(PID, CODE) and solved() == 1
     with fresh():  # 언어를 바꿨다 돌아오는 것은 '처음부터'가 아니다: 도움을 받고 푼 문제는 하루 뒤에 다시 내도 세지 않는다
         opened(PID)
         call("/api/hint", id=PID)

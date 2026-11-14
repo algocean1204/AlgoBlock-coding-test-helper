@@ -2323,8 +2323,8 @@ def handle(path: str, body: dict) -> tuple[int, dict]:
             t.store.update_code(pid, saved["code"])
             write_json(BLOCKS_FILE, {**read_json(BLOCKS_FILE, {}), pid: saved["blocks"]})
             reset_at = t.store.study(pid)["reset_at"]
-            if reset_at and stamp(saved.get("at")) <= stamp(reset_at):  # '처음부터' 앞에 남긴 코드를 되살렸다: 도움으로 센다
-                t.store.mark_help(pid)
+            if reset_at and stamp(saved.get("at")) <= stamp(reset_at):  # '처음부터' 앞에 남긴 코드를 되살렸다: 이번 풀이의 도움으로 센다(첫 풀이의 판정은 그대로)
+                t.store.mark_help(pid, this_try_only=True)
             return 200, state_body(t, p, body)
         if path == "/api/reset":
             with LOCKS[pid]:

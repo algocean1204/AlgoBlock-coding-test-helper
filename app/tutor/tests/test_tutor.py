@@ -755,6 +755,11 @@ class TutorTest(unittest.TestCase):
             tutor.store.set_study("p3", hints_seen=2)
             tutor.store.mark_reset("p3")  # 본 힌트 수는 누적으로 남고, 이번 풀이는 그 수부터 센다
             self.assertEqual((tutor.store.study("p3")["hints_seen"], tutor.store.study("p3")["hints_at_reset"]), (2, 2))
+            tutor.store.set_study("p3", hints_seen=3)
+            self.assertEqual(tutor.store.load("p3").hints_seen, 1)  # 피드백이 읽는 본 힌트 수는 이번 풀이 것
+            tutor.store.set_study("p3", help_first_at=None, help_after_reset_at=None)
+            tutor.store.mark_help("p3", this_try_only=True)  # 이번 풀이에만 도움(첫 풀이의 판정은 그대로)
+            self.assertEqual((tutor.store.study("p3")["help_first_at"], bool(tutor.store.study("p3")["help_after_reset_at"])), (None, True))
         finally:
             tutor.close()
 
