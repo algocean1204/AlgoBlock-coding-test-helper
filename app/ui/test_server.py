@@ -416,6 +416,12 @@ def readiness() -> None:
     easy = stage(*[solve(pid) for pid in ids(ess, (1, 2))])
     assert "쉬운 코딩테스트에 도전해 볼 만해요" in easy["line"] and "(14문제)" in easy["line"] and len(easy["remaining"]) == 13
     assert [row["key"] for row in easy["remaining"]] == sorted((row["key"] for row in easy["remaining"]), key=server.MAP_ORDER.get)  # 지도 순서
+    # 남은 일은 행동으로: 푼 수가 모자라면 몇 문제 더, 단계가 모자라면 그 단계 하나 더(지금 도달한 단계와 함께)
+    lefts = {row["key"]: row for row in easy["remaining"]}
+    assert (lefts["hash"]["top"], lefts["hash"]["todo"]) == (2, "3단계 이상 문제 하나 더(지금 2단계까지)")
+    assert (lefts["stack_queue"]["top"], lefts["stack_queue"]["todo"]) == (0, "도움 없이 2문제 더(2단계 이상 하나 포함)")
+    assert short["remaining"][0]["todo"] == "도움 없이 1문제 더(2단계 이상 하나 포함)"
+    assert next(row for row in stage(solve(levels[("hash", 3)]))["remaining"] if row["key"] == "hash")["todo"] == "도움 없이 1문제 더"  # 3단계 하나를 이미 풀었다
     # 먼저 익힐 주제를 못 익혔으면 그 주제부터: 스택·큐 없이 BFS·DFS만 남으면 스택·큐를 내세운다
     rest = stage(*[solve(pid) for pid in ids([k for k in ess if k not in ("bfs", "dfs")], (1, 2))])
     assert {row["key"] for row in rest["remaining"]} == {"bfs", "dfs"} and rest["focus"]["key"] == "stack_queue"
@@ -497,7 +503,10 @@ def readiness() -> None:
         assert got["solved"] == sum(map(len, unaided.values()))
         allowed = {got["solved"], len(got["remaining"]), server.READY_MIN, len(ess), len(freq), server.BASIC_LEVEL, server.REAL_LEVEL}
         assert {int(x) for x in re.findall(r"\d+", got["line"])} <= allowed and str(got["solved"]) in re.findall(r"\d+", got["line"]), got["line"]
-        assert not any(word in text for word in BANNED for text in [got["line"], got["basis"], *got["rules"]])
+        assert not any(word in text for word in BANNED for text in [got["line"], got["basis"], *got["rules"], *(row["todo"] for row in got["remaining"])])
+        for row in got["remaining"]:  # 남은 일의 숫자도 응답 값이다
+            assert row["top"] == max(unaided[row["key"]], default=0) and row["more"] == max(0, server.MASTER_COUNT - len(unaided[row["key"]]))
+            assert {int(x) for x in re.findall(r"\d+", row["todo"])} <= {row["more"], row["level"], row["top"]}, row
     assert seen == set(order), seen
     # 보고서 전체(무작위 이력 40묶음): 도움 여부를 섞은 기록에서 단계가 '도움 없이 푼 문제'로만 정해지고, 강점 주제는 남은 것에 없다
     strongs = 0

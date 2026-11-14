@@ -1917,6 +1917,16 @@ def fail_patterns(subs: list[dict], theme_of: dict) -> list[dict]:
     return sorted(out, key=lambda row: -row["problems"])
 
 
+def left(key: str, level: int, levels: list, after: list) -> dict:
+    """남은 주제 한 줄: 지금 도달한 단계(도움 없이 푼 문제의 가장 높은 단계)와 남은 일(행동으로)."""
+    top, more = max(levels, default=0), max(0, MASTER_COUNT - len(levels))
+    if more:
+        todo = f"도움 없이 {more}문제 더" + (f"({level}단계 이상 하나 포함)" if top < level else "")
+    else:
+        todo = f"{level}단계 이상 문제 하나 더(지금 {top}단계까지)"
+    return {"key": key, "name": theme_name(key), "level": level, "solved": len(levels), "top": top, "more": more, "todo": todo, "after": after}
+
+
 def readiness(unaided: dict, started: set) -> dict:
     """준비도와 다음 단계까지 남은 주제(학습 지도 순서). unaided: 주제 → 도움 없이 푼 기본 문제의 단계들."""
     def mastered(key: str, level: int) -> bool:
@@ -1943,8 +1953,7 @@ def readiness(unaided: dict, started: set) -> dict:
         focus = next(p for p in PREREQS[focus] if not basic[p])
     return {"stage": stage, "label": STAGES[stage], "line": line, "solved": solved, "focus": focus,
             "goal": STAGES["practice" if stage == "easy" else "easy"] if need else None,  # 남은 것이 향하는 단계
-            "remaining": [{"key": key, "name": theme_name(key), "level": need[key], "solved": len(unaided.get(key, [])),
-                           "after": [theme_name(p) for p in PREREQS[key] if not basic[p]]} for key in PREREQS if key in need],
+            "remaining": [left(key, need[key], unaided.get(key, []), [theme_name(p) for p in PREREQS[key] if not basic[p]]) for key in PREREQS if key in need],
             "basis": "이 앱의 기본 문제 기준이에요.",
             "rules": ["도움 없이 푼 문제: 해설을 먼저 보지 않고, 통과하기 전에 힌트를 열지 않고, 처음 통과하기 전에 튜터와 대화하지 않고 통과한 기본 문제예요. 등록한 문제는 세지 않아요.",
                       f"기초 익힘: 한 주제에서 도움 없이 {MASTER_COUNT}문제 이상 풀었고, 그중 하나가 {BASIC_LEVEL}단계 이상이에요. 실전 익힘은 {REAL_LEVEL}단계 이상이에요.",
