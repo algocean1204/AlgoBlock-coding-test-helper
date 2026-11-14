@@ -300,15 +300,17 @@ def grade(p, language: str, code: str, kinds: tuple = KINDS, stop_after: int | N
             "compile_line": raw.get("compile_line"), "language": language, "notice": notice_of(raw)}
 
 
-# 채점기가 Windows 작업 객체 없이 돌렸을 때(결과의 warning) 화면에 한 줄로 알린다. 무엇이 빠졌는지와 무엇을 뜻하는지
-NO_LIMITS = ("이 PC에서는 채점 실행 제한(CPU 시간·메모리 상한, 끝난 뒤 남은 프로그램 정리)을 걸지 못하고 돌렸어요. "
+# 채점기가 Windows에서 실행 제한(작업 객체)을 걸지 못했을 때(결과의 warning) 화면에 한 줄로 알린다. 무엇이 빠졌는지와 무엇을 뜻하는지
+# 작업 없이 돌렸으면(no_job) 시간 제한과 0.25초마다 재는 메모리 상한은 그대로 걸린다. 시작하지 못했으면(not_started) 그 실행은 실행 오류로 끝났다
+NO_LIMITS = ("이 PC에서는 채점 실행 제한(CPU 시간 상한, 커밋 메모리 상한, 끝난 뒤 남은 프로그램 정리)을 걸지 못하고 돌렸어요. "
              "채점 결과는 그대로지만, 코드가 띄운 다른 프로그램이 남아 있을 수 있어요.")
+NOT_STARTED = "이 PC에서 제출 코드를 시작하지 못해 실행 오류로 끝난 테스트가 있어요. 다시 해 보고, 계속되면 GitHub 이슈로 알려 주세요."
 
 
 def notice_of(raw: dict) -> str:
-    """채점기 결과(컴파일 포함)에 warning이 하나라도 있으면 NO_LIMITS, 없으면 빈 글."""
-    parts = [raw.get("compile") or {}, *raw.get("cases", [])]
-    return NO_LIMITS if any(part.get("warning") for part in parts) else ""
+    """채점기 결과(컴파일 포함)의 warning을 화면의 한 줄로: 시작하지 못한 실행이 있으면 NOT_STARTED, 작업 없이 돈 실행이 있으면 NO_LIMITS, 없으면 빈 글."""
+    kinds = {part.get("warning_kind") for part in [raw.get("compile") or {}, *raw.get("cases", [])] if part.get("warning")}
+    return NOT_STARTED if "not_started" in kinds else NO_LIMITS if kinds else ""
 
 
 # 앱의 다른 말처럼 '~어요'

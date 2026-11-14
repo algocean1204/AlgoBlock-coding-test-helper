@@ -20,7 +20,8 @@ OUTPUT_LIMIT = 4_000_000  # 표준 출력·표준 오류 저마다의 상한(바
 MEMORY_LIMIT_MB = 2048  # 실행 중 메모리 상한. 넘으면 끝낸다(기기가 멈추지 않게)
 SECRET_WORDS = ("KEY", "TOKEN", "SECRET", "PASSWORD", "CREDENTIAL")  # 이름에 이것이 든 환경 변수는 제출 코드에 넘기지 않는다
 # JVM(Java·Kotlin 실행)의 표준 입출력을 UTF-8로. 관(pipe)으로 이어진 표준 출력은 OS 기본 인코딩을 써서 Windows(cp1252, cp949)에서 한글이 ?로 깨졌다.
-# JDK 17은 file.encoding을, 18은 sun.stdout.encoding을, 19부터는 stdout.encoding을 본다. 기본이 UTF-8인 macOS·Linux에서는 바뀌는 것이 없다
+# JDK 17은 file.encoding을, 18은 sun.stdout.encoding을, 19부터는 stdout.encoding을 본다.
+# macOS·Linux에서는 C/POSIX 로케일이 아니면 바뀌지 않는다(그 로케일에서는 깨지던 한글이 바로 나온다)
 JAVA_UTF8 = ("-Dfile.encoding=UTF-8", "-Dsun.stdout.encoding=UTF-8", "-Dsun.stderr.encoding=UTF-8", "-Dstdout.encoding=UTF-8", "-Dstderr.encoding=UTF-8")
 SECRET_PREFIXES = ("ALGOBLOCK_", "ANTHROPIC_", "OPENAI_", "XAI_", "OPENROUTER_", "AWS_", "GOOGLE_", "AZURE_", "GITHUB_", "GH_")  # 이것으로 시작하는 것도
 
@@ -208,22 +209,23 @@ def _resume(pid):
 
 
 def _start_windows(process, cpu_seconds, memory_mb):
-    """멈춘 채 만든 process를 작업에 넣고 재개한다. 작업을 쓰지 못하면 제한 없이 그대로 돌리고 그 까닭을 낸다(조용히 넘기지 않는다)."""
-    warning = None
+    """멈춘 채 만든 process를 작업에 넣고 재개한다. (종류, 까닭) 또는 (None, None)을 낸다(조용히 넘기지 않는다).
+    종류 no_job: 작업을 쓰지 못해 작업 없이 돌렸다. not_started: 재개하지 못해 끝냈다(실행 오류로 남는다)."""
+    kind = warning = None
     try:
         process.algoblock_job = _windows_job(process, cpu_seconds, memory_mb)
         process.algoblock_port = _memory_port(process.algoblock_job) if memory_mb else None
-    except Exception as error:  # noqa: BLE001 - 작업 없이도 채점은 한다(시간 초과 때 taskkill로 끝낸다)
-        warning = f"Windows 작업 객체를 쓰지 못해 CPU 시간·메모리 상한과 남은 자식 정리 없이 돌렸습니다: {error}"
+    except Exception as error:  # noqa: BLE001 - 작업 없이도 채점은 한다(시간 초과 때 taskkill로 끝내고, 메모리는 작업 집합으로 잰다)
+        kind, warning = "no_job", f"Windows 작업 객체를 쓰지 못해 CPU 시간 상한·커밋 메모리 상한·남은 자식 정리 없이 돌렸습니다: {error}"
     try:
         _resume(process.pid)
     except Exception as error:  # noqa: BLE001 - 멈춘 채 두면 시간 초과까지 기다린다: 끝내고 실행 오류로 남긴다
         _kill_tree(process)
-        warning = f"제출 코드를 시작하지 못했습니다: {error}"
+        kind, warning = "not_started", f"제출 코드를 시작하지 못했습니다: {error}"
     if warning and warning not in _warned:  # 서버 기록에 한 번
         _warned.append(warning)
         print(f"채점기: {warning}", file=sys.stderr)
-    return warning
+    return kind, warning
 
 
 def _end_job(process, close=False):
@@ -297,7 +299,7 @@ def _memory_mb(process):
 def run_command(command, cwd, stdin="", timeout=TIMEOUT_SECONDS, memory_mb=MEMORY_LIMIT_MB, cpu_seconds=None):
     """실행하고 {status, stdout, stderr, time_ms}. 시간(timeout), 출력 크기(OUTPUT_LIMIT), 메모리(memory_mb, None이면 안 봄)를 넘으면 자식까지 끝낸다.
     CPU 시간은 cpu_seconds(없으면 cpu_limit(timeout))를 넘으면 자식이 스스로 끝난다(POSIX는 RLIMIT_CPU, Windows는 작업 객체의 사용자 모드 시간).
-    Windows에서 작업 객체를 쓰지 못하면 제한 없이 돌리고 결과에 warning(까닭)을 붙인다.
+    Windows에서 작업 객체를 쓰지 못하면 작업 없이 돌리고 결과에 warning(까닭)과 warning_kind(no_job, 시작하지 못했으면 not_started)를 붙인다.
 
     한계: 파일·네트워크 접근은 막지 않는다(사용자 기기에서 사용자 권한으로 도는 자기 코드다). 격리가 필요해지면 컨테이너나 OS 샌드박스로 감싼다.
     """
@@ -316,14 +318,14 @@ def run_command(command, cwd, stdin="", timeout=TIMEOUT_SECONDS, memory_mb=MEMOR
     with RUNNING_LOCK:
         RUNNING.add(process)
     try:
-        warning = None
+        kind = warning = None
         if windows:
-            warning = _start_windows(process, cpu, memory_mb)
+            kind, warning = _start_windows(process, cpu, memory_mb)
             started = time.perf_counter()  # 작업 준비(작업 만들기, 스레드 찾기)는 실행 시간에 넣지 않는다. 프로세스는 재개한 뒤에야 돈다
         result = _collect(process, stdin, timeout, memory_mb, started)
         if windows and result["status"] == "runtime_error" and _hit_job_memory(process):
             result = {**result, "status": "memory_limit"}  # 커밋 상한이 할당을 거절해 죽었다(POSIX의 메모리 측정과 같은 판정)
-        return {**result, "warning": warning} if warning else result
+        return {**result, "warning": warning, "warning_kind": kind} if warning else result
     finally:
         with RUNNING_LOCK:
             RUNNING.discard(process)

@@ -575,7 +575,14 @@ class WindowsJobTest(unittest.TestCase):
         with mock.patch.object(common, "_windows_job", side_effect=OSError(5, "막힘")):
             result = self.run_python("print('ok')")
         self.assertEqual(result["status"], "passed", result)
+        self.assertEqual(result["warning_kind"], "no_job")
         self.assertIn("막힘", result["warning"])
+
+    def test_not_started_is_a_runtime_error_and_says_so(self):
+        with mock.patch.object(common, "_resume", side_effect=OSError(5, "재개 안 됨")):
+            result = self.run_python("print('ok')")
+        self.assertEqual((result["status"], result["warning_kind"]), ("runtime_error", "not_started"), result)
+        self.assertIn("재개 안 됨", result["warning"])
 
 
 class EfficiencyTest(unittest.TestCase):

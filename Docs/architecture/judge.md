@@ -31,7 +31,7 @@ Python   (빌드 없음)                                            → <python>
 JS       (빌드 없음)                                            → node algoblock_runner.js <번호>
 ```
 
-빌드는 한 번, 실행은 케이스마다 한 번 한다. `<UTF-8 설정>`은 JVM의 표준 입출력을 UTF-8로 맞추는 속성(`file.encoding`, `stdout.encoding`, `stderr.encoding`과 JDK 18의 `sun.stdout.encoding`, `sun.stderr.encoding`)이다. 관으로 이은 표준 출력은 OS 기본 인코딩을 따라서, 이것이 없으면 Windows에서 한글이 깨진다. C++는 작업 폴더에 `bits/stdc++.h`를 만들고, macOS에서 링커가 `tapi error`를 내면 설치된 다른 SDK로 다시 링크한다.
+빌드는 한 번, 실행은 케이스마다 한 번 한다. `<UTF-8 설정>`은 JVM의 표준 입출력을 UTF-8로 맞추는 속성(`file.encoding`, `stdout.encoding`, `stderr.encoding`과 JDK 18의 `sun.stdout.encoding`, `sun.stderr.encoding`)이다. 관으로 이은 표준 출력은 OS 기본 인코딩을 따라서, 이것이 없으면 Windows에서 한글이 깨진다. macOS·Linux에서는 C/POSIX 로케일이 아니면 바뀌지 않는다(그 로케일에서는 깨지던 한글이 바로 나온다). C++는 작업 폴더에 `bits/stdc++.h`를 만들고, macOS에서 링커가 `tapi error`를 내면 설치된 다른 SDK로 다시 링크한다.
 
 ## 두 가지 방식
 
@@ -106,7 +106,7 @@ JS       (빌드 없음)                                            → node alg
 - 환경 변수 거르기: 이름에 `KEY`, `TOKEN`, `SECRET`, `PASSWORD`, `CREDENTIAL`이 들었거나, `ALGOBLOCK_`, `ANTHROPIC_`, `OPENAI_`, `XAI_`, `OPENROUTER_`, `AWS_`, `GOOGLE_`, `AZURE_`, `GITHUB_`, `GH_`로 시작하는 변수는 넘기지 않는다. 대소문자는 가리지 않는다. 더해서 `PYTHONUTF8=1`과 `PYTHONIOENCODING=utf-8`을 넘긴다.
 - POSIX에서는 새 세션으로 띄우고, 끝나면 프로세스 그룹 전체를 `SIGKILL`로 끝낸다.
 - Windows에서는 프로세스를 멈춘 채로 만들어 새 작업 객체에 넣은 뒤 재개한다. 그래서 작업에 들기 전에 자식을 띄울 틈이 없다. 끝나면(정상 종료, 시간 초과, 상한 초과) 작업을 끝내 그 안의 모든 프로세스를 끝낸다. 작업은 `KILL_ON_JOB_CLOSE`라서 앱이 갑자기 죽어 핸들이 닫혀도 모두 끝난다. 처리되지 않은 예외로 죽는 프로그램은 오류 보고 창을 띄우지 않고 바로 끝난다. 콘솔 창은 띄우지 않는다.
-- Windows에서 작업 객체를 만들거나 프로세스를 넣지 못하면 작업 없이 실행한다. 이때 결과에 `warning`(까닭)을 붙인다. 앱은 채점 결과 아래에 실행 제한을 걸지 못하고 돌렸다는 한 줄을 보인다. 서버의 표준 오류에도 같은 까닭을 한 번 적는다(창 모드의 설치 파일에는 표준 오류가 없다). 정리는 시간 초과와 상한 초과 때의 `taskkill /F /T`뿐이다.
+- Windows에서 작업 객체를 만들거나 프로세스를 넣지 못하면 작업 없이 실행한다. 이때 결과에 `warning`(까닭)과 `warning_kind`(`no_job`)를 붙인다. 앱은 채점 결과 아래에 실행 제한을 걸지 못하고 돌렸다는 한 줄을 보인다. 시간 제한과 0.25초마다 재는 메모리 상한은 그대로 걸린다. 멈춘 채 만든 프로세스를 재개하지 못하면 끝내고 실행 오류로 남기며 `warning_kind`는 `not_started`다. 앱은 이때 시작하지 못한 테스트가 있다고 알린다. 서버의 표준 오류에도 같은 까닭을 한 번 적는다(창 모드의 설치 파일에는 표준 오류가 없다). 정리는 시간 초과와 상한 초과 때의 `taskkill /F /T`뿐이다.
 - Windows에서 `./app` 같은 실행 파일은 작업 폴더의 절대 경로(`app.exe`가 있으면 그것)로 바꿔 부른다. 다른 명령은 PATH에서 찾은 경로로 부른다. `kotlinc.bat`처럼 `.exe`가 아닌 명령도 이렇게 찾는다.
 - 앱이 끝날 때 돌고 있는 채점 실행을 모두 끝낸다.
 
