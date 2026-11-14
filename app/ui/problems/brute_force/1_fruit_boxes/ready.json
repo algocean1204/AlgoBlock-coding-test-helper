@@ -1,0 +1,145 @@
+{
+ "source": 3602201308,
+ "ready": {
+  "fact": {
+   "spec": "정수 두 개(각각 1 이상 1,000,000 이하)와 구간의 양 끝을 나타내는 정수 두 개(1 이상 100,000 이하, 앞의 수가 뒤의 수 이하)가 주어진다. 구간 안의 정수 가운데 두 정수를 각각 나눈 나머지의 합이 가장 작은 수(여럿이면 가장 큰 수)와, 그 수로 나눈 두 몫의 합을 담은 배열을 구한다. 두 정수는 합치지 않고 따로 나누며, 구간의 모든 정수를 한 번씩 후보로 확인한다.",
+   "patterns": [
+    "digits_or_divisors",
+    "max_min_scan"
+   ],
+   "skills": [
+    "div_mod",
+    "max_min_update"
+   ],
+   "size": 1000000
+  },
+  "solution": {
+   "approach": "size를 low부터 high까지 하나씩 대 보면서 남는 과일 수를 계산합니다. 사과와 배는 섞을 수 없으므로 남는 수는 '사과를 size로 나눈 나머지 + 배를 size로 나눈 나머지'입니다. 지금까지 가장 적게 남은 값과 그때의 size를 기억해 두고, 작은 size부터 보기 때문에 남는 수가 같거나 더 적으면 갱신합니다. 같을 때도 갱신하면 가장 큰 size가 남습니다. 마지막에 고른 size로 사과 상자 수와 배 상자 수를 더해 돌려줍니다.",
+   "steps": [
+    "best_size를 low로, best_left를 apples + pears + 1로 시작한다 — 어떤 size의 남는 수보다도 크게 잡아 첫 후보가 반드시 기록되게 한다",
+    "size를 low부터 high까지 하나씩 대 보는 반복문을 시작한다 — 후보가 최대 10만 개라 전부 확인해도 충분히 빠르다",
+    "left에 apples % size + pears % size를 담는다 — 사과와 배를 섞지 않으므로 나머지를 따로 구해 더한다",
+    "left가 best_left보다 작거나 같으면 best_size와 best_left를 바꾼다 — 같을 때도 바꿔야 남는 수가 같은 후보 중 가장 큰 size가 남는다",
+    "[best_size, apples // best_size + pears // best_size]를 돌려준다 — 고른 size로 사과 상자 수와 배 상자 수를 몫으로 구해 더한다"
+   ],
+   "code": "def solution(apples, pears, low, high):\n    best_size = low\n    best_left = apples + pears + 1  # 어떤 size보다도 많이 남는 값에서 시작한다\n    for size in range(low, high + 1):  # 상자 크기를 하나씩 대 본다\n        left = apples % size + pears % size  # 사과와 배는 섞지 않으므로 따로 남는다\n        if left <= best_left:  # 같을 때도 바꾸면 더 큰 size가 남는다\n            best_size = size\n            best_left = left\n    return [best_size, apples // best_size + pears // best_size]",
+   "verified": true,
+   "clues": [
+    "'상자 크기 size는 low 이상 high 이하의 정수 가운데 하나로 정합니다' → 후보 size가 low부터 high까지 연속된 정수이므로 하나씩 모두 대 보면 된다",
+    "'1 ≤ low ≤ high ≤ 100,000인 정수입니다' → 후보가 최대 10만 개이고 후보마다 나머지 계산 두 번이면 되므로 전부 훑어도 시간 안에 끝난다",
+    "'한 상자에 사과와 배를 섞어 담을 수는 없습니다' → 남는 수는 합쳐서 계산하지 않고 사과 나머지와 배 나머지를 따로 구해 더해야 한다",
+    "'그런 size가 여럿이면 그 가운데 가장 큰 size를 고릅니다' → size를 작은 것부터 훑으면서 남는 수가 같을 때도 갱신해야 가장 큰 size가 남는다"
+   ]
+  },
+  "plan": {
+   "strategy": "fresh",
+   "score": null,
+   "blocks": [
+    {
+     "id": "b1",
+     "kind": "var_during",
+     "name": "최선 기록 준비",
+     "goal": "지금까지 가장 적게 남은 과일 수와 그때의 상자 크기를 담을 변수를 만든다",
+     "reference": "def solution(apples, pears, low, high):\n    best_size = low\n    best_left = apples + pears + 1  # 어떤 size보다도 많이 남는 값에서 시작한다",
+     "checks": [
+      "가장 적게 남은 값과 그때의 size를 따로 기억할 변수를 둔다",
+      "남은 수의 처음 값을 어떤 후보의 남는 수보다도 크게 잡는다"
+     ],
+     "hints": [
+      "여러 후보 중 가장 적게 남은 것을 고르려면 비교를 시작하기 전에 무엇을 기억해 두어야 할까요?",
+      "'남는 사과와 남는 배를 더한 수가 가장 적은 size를 고르고'를 보면, 첫 후보가 반드시 기록되려면 남는 수의 처음 값을 얼마보다 크게 잡아야 할까요?",
+      "사과 10개와 배 7개라면 어떤 size를 골라도 남는 과일은 최대 몇 개를 넘을 수 없을까요?"
+     ],
+     "lines": [
+      1,
+      3
+     ]
+    },
+    {
+     "id": "b2",
+     "kind": "loop",
+     "name": "상자 크기 후보 훑기",
+     "goal": "low부터 high까지 상자 크기를 하나씩 대 본다",
+     "reference": "    for size in range(low, high + 1):  # 상자 크기를 하나씩 대 본다",
+     "checks": [
+      "size를 low부터 high까지 모두 하나씩 확인한다",
+      "high도 후보에 포함되도록 범위의 끝을 다룬다",
+      "후보가 최대 10만 개라 전부 확인해도 충분히 빠름을 안다"
+     ],
+     "hints": [
+      "가장 알맞은 상자 크기를 놓치지 않으려면 후보를 어떤 방식으로 살펴봐야 할까요?",
+      "'상자 크기 size는 low 이상 high 이하의 정수 가운데 하나로 정합니다'를 보면, 후보가 되는 size는 어디서 어디까지의 값일까요?",
+      "low가 2이고 high가 4라면 size를 어떤 값들로 차례로 대 보게 될까요?"
+     ],
+     "lines": [
+      4,
+      4
+     ]
+    },
+    {
+     "id": "b3",
+     "kind": "var_during",
+     "name": "남는 과일 수 계산",
+     "goal": "지금 size에서 사과와 배가 남는 수를 각각 구해 더한다",
+     "reference": "        left = apples % size + pears % size  # 사과와 배는 섞지 않으므로 따로 남는다",
+     "checks": [
+      "사과를 size로 나눈 나머지를 구한다",
+      "배도 따로 나눈 나머지를 구해 사과의 나머지와 더한다"
+     ],
+     "hints": [
+      "상자를 꽉 채우고 난 뒤 남는 과일의 수는 어떤 계산으로 구할 수 있을까요?",
+      "'한 상자에 사과와 배를 섞어 담을 수는 없습니다'를 보면, 남는 수를 구할 때 사과와 배를 합쳐서 계산해도 될까요, 따로 계산해야 할까요?",
+      "사과 5개와 배 4개를 size 3으로 담으면 사과는 몇 개, 배는 몇 개 남아 합이 얼마가 될까요?"
+     ],
+     "lines": [
+      5,
+      5
+     ]
+    },
+    {
+     "id": "b4",
+     "kind": "condition",
+     "name": "더 좋은 후보면 갱신",
+     "goal": "남는 수가 지금까지의 최선보다 적거나 같으면 기록을 바꾼다",
+     "reference": "        if left <= best_left:  # 같을 때도 바꾸면 더 큰 size가 남는다\n            best_size = size\n            best_left = left",
+     "checks": [
+      "남는 수가 지금까지의 최선보다 적으면 size와 남는 수를 함께 바꾼다",
+      "남는 수가 같을 때도 바꿔서 더 큰 size가 남게 한다"
+     ],
+     "hints": [
+      "지금 후보와 지금까지의 최선을 비교해서 기록을 바꿔야 하는 때는 언제일까요?",
+      "'그런 size가 여럿이면 그 가운데 가장 큰 size를 고릅니다'를 보면, size를 작은 것부터 훑을 때 남는 수가 같은 후보는 어떻게 다뤄야 할까요?",
+      "사과 12개와 배 8개에서 size 2와 4 모두 남는 수가 0이라면, 마지막에 어느 size가 남도록 비교해야 할까요?"
+     ],
+     "lines": [
+      6,
+      8
+     ]
+    },
+    {
+     "id": "b5",
+     "kind": "var_during",
+     "name": "결과 만들어 돌려주기",
+     "goal": "고른 size와 그때 쓰는 상자 수를 배열로 돌려준다",
+     "reference": "    return [best_size, apples // best_size + pears // best_size]",
+     "checks": [
+      "사과 상자 수와 배 상자 수를 각각 몫으로 구해 더한다",
+      "[size, 상자의 수] 순서로 돌려준다"
+     ],
+     "hints": [
+      "가장 알맞은 size를 골랐다면, 그때 필요한 상자의 수는 어떻게 구할 수 있을까요?",
+      "'상자 하나에는 과일을 정확히 size개 담아야 하고'를 보면, 사과와 배 각각 상자가 몇 개 나오는지는 어떤 계산으로 알 수 있을까요?",
+      "사과 10개와 배 7개를 size 2로 담으면 사과 상자와 배 상자는 각각 몇 개이고 합은 얼마일까요?"
+     ],
+     "lines": [
+      9,
+      9
+     ]
+    }
+   ],
+   "algorithm": "brute_force",
+   "out_of_scope": false,
+   "link": ""
+  }
+ }
+}

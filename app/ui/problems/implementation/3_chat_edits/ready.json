@@ -1,0 +1,191 @@
+{
+ "source": 180347340,
+ "ready": {
+  "fact": {
+   "spec": "문자열 배열(길이 1 이상 60,000 이하)이 주어지며, 각 원소는 공백으로 나뉜 세 종류의 명령(추가, 수정, 삭제) 중 하나이고 추가 명령의 번호는 서로 다르다. 모든 명령을 순서대로 적용한 뒤 남은 항목을 추가된 순서대로 배열로 만들되, 수정된 적 있는 항목은 값 뒤에 표시를 붙이고, 같은 키를 가진 항목이 바로 이어지면 한 문자열로 묶어 그 문자열들의 배열을 구한다. 순서가 중요하며 삭제된 항목을 뺀 뒤에 연속인 것끼리만 묶고, 남은 항목이 없으면 빈 배열이다.",
+   "patterns": [
+    "follow_steps",
+    "adjacent_same"
+   ],
+   "skills": [
+    "str_split_join",
+    "list_last",
+    "list_empty"
+   ],
+   "size": 60000
+  },
+  "solution": {
+   "approach": "먼저 기록을 처음부터 끝까지 한 번 훑으면서, 메시지 번호마다 보낸이, 마지막 내용, 고친 적이 있는지, 지워졌는지를 딕셔너리에 기억합니다. SEND가 나올 때마다 번호를 리스트에 차례로 넣어 보낸 순서도 기억합니다. 그다음 그 번호 리스트를 순서대로 보면서 지워진 것은 건너뛰고, 고친 것은 내용 뒤에 *를 붙입니다. 바로 앞 줄의 보낸이와 같으면 그 줄 끝에 이어 붙이고, 다르면 새 줄을 만듭니다. 지워진 메시지를 먼저 걸러낸 뒤 비교해야 사이에 낀 메시지가 지워졌을 때 두 줄이 올바르게 합쳐집니다.",
+   "steps": [
+    "보낸 순서를 담을 리스트와 보낸이, 내용, 고침 여부, 삭제 여부를 번호별로 담을 딕셔너리를 만든다 — 번호로 메시지를 바로 찾아 바꾸기 위해서다.",
+    "records를 앞에서부터 하나씩 읽어 낱말로 나누고, SEND면 번호를 순서 리스트에 넣고 보낸이와 내용을 저장하며 고침과 삭제는 False로 둔다 — 보낸 순서와 처음 상태를 기억하기 위해서다.",
+    "EDIT이면 내용을 새 내용으로 덮어쓰고 고침 표시를 True로, DELETE이면 삭제 표시를 True로 바꾼다 — 기록이 시간 순서라 마지막 상태가 그대로 남는다.",
+    "결과 줄 리스트와 현재 줄의 보낸이를 준비하고, 순서 리스트의 번호를 차례로 보며 지워진 메시지는 건너뛴다 — 지워진 메시지는 보이지 않고 줄 묶기에도 영향이 없어야 한다.",
+    "보일 내용을 꺼내서 고친 적이 있으면 뒤에 '*'를 붙인다 — 고친 내용이 처음과 같아도 붙이라는 규칙이므로 값 비교 없이 고침 표시만 본다.",
+    "이미 만든 줄이 있고 현재 줄의 보낸이와 같으면 마지막 줄 끝에 공백과 내용을 붙이고, 아니면 '보낸이: 내용' 새 줄을 추가하며 현재 줄의 보낸이를 갱신한다 — 같은 보낸이가 바로 이어질 때만 한 줄로 묶기 위해서다.",
+    "완성된 줄 리스트를 돌려준다 — 보이는 메시지가 없으면 빈 리스트가 그대로 나간다."
+   ],
+   "code": "def solution(records):\n    # 첫 번째 훑기: 메시지마다 마지막 상태(보낸이, 마지막 내용, 고친 적 있는가, 지워졌는가)를 모은다\n    order = []  # SEND 기록의 순서대로 메시지 번호\n    sender = {}\n    text = {}\n    edited = {}\n    deleted = {}\n    for record in records:\n        words = record.split(\" \")\n        number = words[1]\n        if words[0] == \"SEND\":\n            order.append(number)\n            sender[number] = words[2]\n            text[number] = words[3]\n            edited[number] = False\n            deleted[number] = False\n        elif words[0] == \"EDIT\":\n            text[number] = words[2]\n            edited[number] = True\n        else:\n            deleted[number] = True\n\n    # 두 번째 훑기: 남은 메시지를 보낸 순서대로 보며, 바로 앞 줄과 보낸이가 같으면 그 줄에 붙인다\n    lines = []\n    line_sender = \"\"\n    for number in order:\n        if deleted[number]:\n            continue\n        shown = text[number]\n        if edited[number]:\n            shown += \"*\"\n        if len(lines) > 0 and line_sender == sender[number]:\n            lines[-1] += \" \" + shown\n        else:\n            lines.append(sender[number] + \": \" + shown)\n            line_sender = sender[number]\n    return lines",
+   "verified": true,
+   "clues": [
+    "'메시지는 번호로 구별합니다' → 번호를 열쇠로 보낸이, 마지막 내용, 고친 적 있는지, 지워졌는지를 딕셔너리에 따로 저장해 두면 된다.",
+    "'일어난 일을 일어난 순서대로 담은 배열 records' → 기록을 앞에서부터 한 번 훑으면서 메시지 상태를 그때그때 덮어쓰면 마지막 상태가 남는다.",
+    "'남은 메시지는 SEND 기록의 순서대로 보입니다' → 번호의 크기와 상관없이, SEND가 나온 순서대로 번호를 리스트에 따로 적어 두어야 한다.",
+    "'보낸이가 같은 메시지가 바로 이어지면 한 줄로 묶습니다' → 지워진 메시지를 건너뛴 뒤 남은 메시지끼리 바로 앞 줄의 보낸이와 비교해야 한다.",
+    "records의 길이는 60,000 이하 → 기록을 한 번, 메시지를 한 번 훑는 O(N)이면 충분하다."
+   ]
+  },
+  "plan": {
+   "strategy": "fresh",
+   "score": null,
+   "blocks": [
+    {
+     "id": "b1",
+     "kind": "var_during",
+     "name": "번호별 그릇 만들기",
+     "goal": "보낸 순서와 번호별 보낸이·내용·고침 여부·삭제 여부를 담을 그릇을 만든다",
+     "reference": "def solution(records):\n    # 첫 번째 훑기: 메시지마다 마지막 상태(보낸이, 마지막 내용, 고친 적 있는가, 지워졌는가)를 모은다\n    order = []  # SEND 기록의 순서대로 메시지 번호\n    sender = {}\n    text = {}\n    edited = {}\n    deleted = {}",
+     "checks": [
+      "보낸 순서를 담을 리스트를 따로 만든다",
+      "번호를 열쇠로 보낸이, 내용, 고침 여부, 삭제 여부를 각각 담을 딕셔너리를 만든다"
+     ],
+     "hints": [
+      "기록을 다 읽고 나서 각 메시지의 마지막 모습을 알려면 번호별로 무엇을 기억해 둬야 할까요?",
+      "'메시지는 번호로 구별합니다'를 보면 보낸이와 내용 같은 정보를 번호에 어떻게 연결해 두면 좋을까요?",
+      "기록이 [SEND 5 ann a, SEND 2 bob b]라면 보낸 순서와 번호별 정보는 각각 어떤 모습으로 남아야 할까요?"
+     ],
+     "lines": [
+      1,
+      7
+     ]
+    },
+    {
+     "id": "b2",
+     "kind": "loop",
+     "name": "기록 읽고 SEND 저장",
+     "goal": "기록을 앞에서부터 하나씩 읽어 낱말로 나누고, SEND면 번호와 처음 상태를 저장한다",
+     "reference": "    for record in records:\n        words = record.split(\" \")\n        number = words[1]\n        if words[0] == \"SEND\":\n            order.append(number)\n            sender[number] = words[2]\n            text[number] = words[3]\n            edited[number] = False\n            deleted[number] = False",
+     "checks": [
+      "기록을 앞에서부터 하나씩 읽고 빈칸으로 나눈다",
+      "SEND일 때 번호를 순서 리스트에 넣고 보낸이와 내용을 저장한다",
+      "고침 여부와 삭제 여부를 처음에는 아니라고 둔다"
+     ],
+     "hints": [
+      "기록 한 줄을 읽을 때 낱말로 어떻게 나누고, SEND일 때 무엇을 저장해야 할까요?",
+      "'남은 메시지는 SEND 기록의 순서대로 보입니다'를 보면 번호의 크기가 아닌 보낸 순서를 어떻게 기억해 둬야 할까요?",
+      "기록이 [SEND 905 kim ok, SEND 31 lee go]일 때 순서를 기억하는 곳에는 어떤 번호들이 어떤 차례로 들어 있어야 할까요?"
+     ],
+     "lines": [
+      8,
+      16
+     ]
+    },
+    {
+     "id": "b3",
+     "kind": "branch",
+     "name": "EDIT·DELETE 덮어쓰기",
+     "goal": "EDIT이면 내용을 바꾸고 고침 표시를, DELETE이면 삭제 표시를 남긴다",
+     "reference": "        elif words[0] == \"EDIT\":\n            text[number] = words[2]\n            edited[number] = True\n        else:\n            deleted[number] = True",
+     "checks": [
+      "EDIT이면 저장된 내용을 새 내용으로 덮어쓴다",
+      "EDIT이면 고침 여부를 켜고, DELETE이면 삭제 여부를 켠다",
+      "기록이 시간 순서라 덮어쓰면 마지막 상태가 남음을 이해한다"
+     ],
+     "hints": [
+      "SEND 뒤에 EDIT이나 DELETE가 나오면 이미 저장해 둔 정보 중 무엇이 어떻게 달라져야 할까요?",
+      "'메시지는 마지막으로 고친 내용으로 보입니다'를 보면 고칠 때마다 저장된 내용은 어떻게 다뤄야 할까요?",
+      "31번이 [SEND 31 lee go, EDIT 31 went, EDIT 31 go] 순서로 나왔다면 내용과 고침 여부는 차례로 어떻게 바뀔까요?"
+     ],
+     "lines": [
+      17,
+      21
+     ]
+    },
+    {
+     "id": "b4",
+     "kind": "var_during",
+     "name": "결과 줄과 현재 보낸이",
+     "goal": "완성된 줄을 담을 리스트와 바로 앞 줄의 보낸이를 기억할 변수를 준비한다",
+     "reference": "\n    # 두 번째 훑기: 남은 메시지를 보낸 순서대로 보며, 바로 앞 줄과 보낸이가 같으면 그 줄에 붙인다\n    lines = []\n    line_sender = \"\"",
+     "checks": [
+      "결과 줄을 담을 빈 리스트를 만든다",
+      "바로 앞 줄의 보낸이를 기억할 변수를 만든다"
+     ],
+     "hints": [
+      "남은 메시지를 줄로 묶어 가려면 완성된 줄 말고 또 무엇을 기억하며 훑어야 할까요?",
+      "'보낸이가 같은 메시지가 바로 이어지면 한 줄로 묶습니다'를 보면 바로 앞 줄에 대해 무엇을 알고 있어야 할까요?",
+      "아직 한 줄도 만들지 않은 처음 상태에서 첫 메시지를 만나면 비교할 대상은 어떤 상태여야 할까요?"
+     ],
+     "lines": [
+      22,
+      25
+     ]
+    },
+    {
+     "id": "b5",
+     "kind": "loop",
+     "name": "지워진 메시지 건너뛰기",
+     "goal": "보낸 순서대로 번호를 훑으며 지워진 메시지는 건너뛴다",
+     "reference": "    for number in order:\n        if deleted[number]:\n            continue",
+     "checks": [
+      "번호 순서 리스트를 앞에서부터 차례로 훑는다",
+      "지워진 메시지는 줄 만들기와 비교에 쓰지 않고 건너뛴다"
+     ],
+     "hints": [
+      "보낸 순서대로 번호를 훑을 때 보이지 않는 메시지는 어떻게 다뤄야 할까요?",
+      "'지워진 메시지는 보이지 않습니다'를 보면 지워진 메시지를 만났을 때 줄 만들기에서 어떻게 해야 할까요?",
+      "순서가 [1, 2, 3]이고 2번이 지워졌다면 어떤 번호들만 줄 만들기에 쓰여야 할까요?"
+     ],
+     "lines": [
+      26,
+      28
+     ]
+    },
+    {
+     "id": "b6",
+     "kind": "condition",
+     "name": "고친 메시지에 별표",
+     "goal": "보일 내용을 꺼내서 고친 적이 있으면 뒤에 별표를 붙인다",
+     "reference": "        shown = text[number]\n        if edited[number]:\n            shown += \"*\"",
+     "checks": [
+      "저장된 내용을 꺼내 보일 내용으로 쓴다",
+      "내용을 비교하지 않고 고침 표시만 보고 별표를 붙인다"
+     ],
+     "hints": [
+      "화면에 보일 내용을 만들 때 저장해 둔 값에서 무엇을 더 확인해야 할까요?",
+      "'고친 내용이 처음 내용과 같아도 붙입니다'를 보면 별표를 붙일지 정하는 기준은 무엇이어야 할까요?",
+      "12번이 처음 c였고 EDIT 12 c로 고쳐졌다면 보일 내용은 어떤 모습이어야 할까요?"
+     ],
+     "lines": [
+      29,
+      31
+     ]
+    },
+    {
+     "id": "b7",
+     "kind": "branch",
+     "name": "줄 이어 붙이기와 결과",
+     "goal": "바로 앞 줄과 보낸이가 같으면 내용을 이어 붙이고, 다르면 새 줄을 만든 뒤 줄 목록을 돌려준다",
+     "reference": "        if len(lines) > 0 and line_sender == sender[number]:\n            lines[-1] += \" \" + shown\n        else:\n            lines.append(sender[number] + \": \" + shown)\n            line_sender = sender[number]\n    return lines",
+     "checks": [
+      "이미 만든 줄이 있고 앞 줄의 보낸이와 같으면 마지막 줄 끝에 빈칸과 내용을 붙인다",
+      "보낸이가 다르면 '보낸이: 내용' 새 줄을 추가하고 현재 보낸이를 갱신한다",
+      "보이는 메시지가 없으면 빈 리스트가 그대로 나가게 한다"
+     ],
+     "hints": [
+      "지금 메시지를 앞 줄에 붙일지 새 줄로 만들지는 무엇을 보고 정해야 할까요?",
+      "'그 줄의 메시지 내용을 빈칸 하나씩 띄워 차례로 씁니다'를 보면 같은 보낸이가 이어질 때와 새 보낸이가 나올 때 줄은 각각 어떻게 만들어져야 할까요?",
+      "보이는 메시지가 [mina hello*, mina there, jun yo] 순서라면 줄 목록은 하나씩 만날 때마다 어떻게 변할까요?"
+     ],
+     "lines": [
+      32,
+      37
+     ]
+    }
+   ],
+   "algorithm": "implementation",
+   "out_of_scope": false,
+   "link": ""
+  }
+ }
+}

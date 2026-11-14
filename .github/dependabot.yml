@@ -1,0 +1,9 @@
+# GitHub Actions의 고정한 버전(커밋 SHA)만 매달 확인해 PR로 올린다.
+# 파이썬 의존성은 잠금 파일이 없어(uv run --with) 여기에 넣지 않는다.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 1

@@ -1,0 +1,68 @@
+name: 버그 신고
+description: 앱이 기대와 다르게 움직일 때
+title: "[버그] "
+labels: [bug, needs-triage]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        한국어와 영어 모두 받는다. 오류나 로그를 붙일 때 API 키와 토큰은 지운다. 보안 문제는 이 양식이 아니라 Security 탭의 비공개 신고로 알린다.
+  - type: dropdown
+    id: os
+    attributes:
+      label: 운영체제
+      options: [macOS, Windows, Linux, 그 밖]
+    validations:
+      required: true
+  - type: input
+    id: os-version
+    attributes:
+      label: 운영체제 버전과 기기
+      placeholder: "예: macOS 15.1 (Apple Silicon)"
+  - type: dropdown
+    id: run
+    attributes:
+      label: 실행 방식
+      options: [설치 파일, 소스로 실행]
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: 앱 버전 또는 커밋
+      description: 설치 파일이면 파일 이름의 버전, 소스면 `git rev-parse --short HEAD`
+  - type: dropdown
+    id: tutor
+    attributes:
+      label: 튜터 연결
+      options: [연결 안 함, Claude API 키, OpenAI API 키, ChatGPT 로그인, 이 PC의 Claude Code(개발용)]
+    validations:
+      required: true
+  - type: dropdown
+    id: language
+    attributes:
+      label: 풀이 언어
+      options: [해당 없음, Python, Java, JavaScript, C++, Go, Kotlin, Rust]
+  - type: textarea
+    id: what
+    attributes:
+      label: 무슨 일이 있었나
+      description: 기대한 것과 실제로 일어난 것
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 다시 일으키는 순서
+      value: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: 화면에 나온 오류나 로그
+      description: 키와 토큰은 지우고 붙인다.
+      render: text

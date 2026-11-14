@@ -1,0 +1,140 @@
+[
+ {
+  "id": "1",
+  "kind": "example",
+  "expected": "4",
+  "input": "[[\"...\", \".S.\", \"...\"], \"FRFRFRF\"]"
+ },
+ {
+  "id": "2",
+  "kind": "example",
+  "expected": "2",
+  "input": "[[\"S#\", \"..\"], \"FRFRFFLLF\"]"
+ },
+ {
+  "id": "3",
+  "kind": "example",
+  "expected": "3",
+  "input": "[[\"....\", \"#S..\", \"....\"], \"LFFRFRRFFF\"]"
+ },
+ {
+  "id": "4",
+  "kind": "accuracy",
+  "expected": "1",
+  "input": "[[\"S\"], \"FLFRFF\"]"
+ },
+ {
+  "id": "5",
+  "kind": "accuracy",
+  "expected": "1",
+  "input": "[[\"S\"], \"L\"]"
+ },
+ {
+  "id": "6",
+  "kind": "accuracy",
+  "expected": "3",
+  "input": "[[\".S.\"], \"RFFFLLFFFF\"]"
+ },
+ {
+  "id": "7",
+  "kind": "accuracy",
+  "expected": "2",
+  "input": "[[\"#\", \"S\", \".\"], \"FFLLFF\"]"
+ },
+ {
+  "id": "8",
+  "kind": "accuracy",
+  "expected": "1",
+  "input": "[[\"###\", \"#S#\", \"###\"], \"FRFRFRFRF\"]"
+ },
+ {
+  "id": "9",
+  "kind": "accuracy",
+  "expected": "6",
+  "input": "[[\"S...\", \"....\", \"....\"], \"RFFFRFFLLFFRRFF\"]"
+ },
+ {
+  "id": "10",
+  "kind": "accuracy",
+  "expected": "11",
+  "input": "[[\"....\", \"..S.\", \"....\"], \"LFFRFRFFFRFFFRFF\"]"
+ },
+ {
+  "id": "11",
+  "kind": "accuracy",
+  "expected": "17",
+  "input": "[[\"S....\", \"####.\", \".....\", \".####\", \".....\"], \"RFFFFRFFRFFFFLFFLFFFF\"]"
+ },
+ {
+  "id": "12",
+  "kind": "accuracy",
+  "expected": "3",
+  "input": "[[\".....\", \".#.#.\", \"..S..\", \".#.#.\", \".....\"], \"LLLFRRRFLFFRFF\"]"
+ },
+ {
+  "id": "13",
+  "kind": "accuracy",
+  "expected": "5",
+  "input": "[[\"..#..\", \"..#..\", \"S.#..\", \"..#..\"], \"RFFFFFLFFFFRRFFFFFF\"]"
+ },
+ {
+  "id": "14",
+  "kind": "accuracy",
+  "expected": "12",
+  "input": "[[\"............\", \"............\", \"............\", \"...........S\"], \"LFFFFFFFFFFFFFRRFFFFFFFFFFFFF\"]"
+ },
+ {
+  "id": "15",
+  "kind": "accuracy",
+  "expected": "9",
+  "input": "[[\".#....S.#\", \"...#.....\", \"........#\", \"#........\", \"....#.#.#\"], \"FRLRFLFRLFFLFFFFLFFFFFFFFFLFFFFFLLFFRFFFFFLRFRFFFFLFFLLLFFFFFFFRFFFFFFFL\"]"
+ },
+ {
+  "id": "16",
+  "kind": "accuracy",
+  "expected": "5",
+  "input": "[[\"..#....\", \"S.#....\", \".#.....\"], \"FFFFRFFLLLFFRFLRFFFLRFLFFFLLFFFLRRRFFF\"]"
+ },
+ {
+  "id": "17",
+  "kind": "accuracy",
+  "expected": "7",
+  "input": "[[\"...\", \"...\", \".#.\", \"...\", \"..#\", \"#..\", \"#.S\", \"..#\", \"#..\", \".#.\"], \"FFRRFFLFRFFRFFRFLFFRFFFFFRLFRRFLLFFFFRFRFFLFFFFF\"]"
+ },
+ {
+  "id": "18",
+  "kind": "accuracy",
+  "expected": "14",
+  "input": "[[\".....\", \".#.#.\", \"....S\", \".....\", \".....\", \"#...#\", \"#...#\", \".....\", \".....\"], \"FFFFFFLFFFLFFFFFFRRFLFLFFRFFFLLFLFRFFFFRLFLRRLFFFLFRFFLRFFLRFRRRFFFRRFFFFFFFLF\"]"
+ },
+ {
+  "id": "19",
+  "kind": "accuracy",
+  "expected": "6",
+  "input": "[[\"#.....\", \".#....\", \"S..#.#\", \"#.....\"], \"FFFFLLLFFFLRFFFLFRRFRRRFFFFFLFRFRFFFFFFFF\"]"
+ },
+ {
+  "id": "20",
+  "kind": "accuracy",
+  "expected": "8",
+  "input": "[[\"....\", \"..#.\", \"###.\", \"....\", \".#..\", \"....\", \"....\", \".#.#\", \"#S..\", \".#..\"], \"LFRFFFFFFFLFFFFFFLFRLFLFFLFFFFFFFFFFFFFFFFFRFFFRFFFRLFRLLRFRFFFFRFFFF\"]"
+ },
+ {
+  "id": "21",
+  "kind": "accuracy",
+  "expected": "213",
+  "input": "[[\"....................\", \"..#.....#...........\", \".......#............\", \".#S........#.......#\", \".#..................\", \"..#......#.......#..\", \"...............##...\", \".................#..\", \".......#............\", \"#.......#....#....#.\", \"....................\", \"................#.#.\", \"....................\", \"...#................\", \".....#........##....\", \"#.............#....#\", \"..#.#.........#.....\", \"........#....#....#.\", \"...#.#..............\", \".......#............\"], \"FFFFFLRFFLFFFRRRFFFFFLFFRFLFFFRFFFFFFFRFFFFFFFFFFFRFFFFFFFFFFFLFFLLFFFRFFLFFFFLFFFLFFFLFFFFLLFFFFFFFFFRFFFFFFFRFFFFFFLFFFRFFRFFFLFFLLRFFFFFLFLFFFFRFFFFFFLFFLFFFFLFLFFFFFFFFFRLFFFFFRLFLFFLFRFFFLRFRFRFFFFFFFLFFFFRLRLLFRRFFFFFFLFFFFRFFFRFFFFFFFFFLFFFFRFFFRRFRLLRRLFFFRRFFFFFFFRLRFRFFFFFFFFFFLFFFFRLFLFFFFRLFFFFRFLFFRLFLFFLRFFFFFFRFFFFFFRFFFFRFFFFFFLRRFFFFFFLRLFFFFFFLFFFLFRFFFRFFFFFLRLFLFFFFFFFFFFRFFLFLRFFFFFFFFFFFRFFFFFFFFFFFFFFFFFFFFFFFFLFFRLLFFFFFFFRFFFFRFFFRLFFFFFLLRFFLFFRFFFFLFFFFRFFFRFFFFFFFFFFFFFFFFFFLFFFFRFFFFLFFLRFFFLRLLFFLFFFLFFFFLFFRFLFFFLFFFFFFFFFLLFFLFFFFFFRFFFRFFRFFFFFFFFFFFFFFRFFRFFFLFFFFRFFFFLFFLLFFFFFLFRFFFLRFFFFFFFRFFFFFFFFFFLFFFFFFLFFFFFFFFRFRFFRRFFRFFFFFFFFRLFFFFLFFFLLLRFFFFRFFFRFFFFFFFFFFFLRFFFLFFRFLFFRFLFFFFLFFRFFFRFFFFFLRFFFFFFLFFFFLFFFFLLFFFFFFFFRFRFRFFFFFFLFFRRFFFFLFFRFFFFRFFFFFFLRFFFRFRFFFRFFRFFLLFFFRFFFFFFFFRRFFRLFLFFFFFRFFFFFFFRLLFRFFFFFLFFLFFFFLFFRLFFFFFFFFLFFFFFLFLFFFFFFFFFLFFFFFLFFRFFFRRFFFRFLFFFRLRFFFRRFFFFFFLFFFFFFLFFFFFFFFFFFFLFFLRRRFFFLRRFFFLRFFFFRFFLRFFRFF\"]"
+ },
+ {
+  "id": "22",
+  "kind": "efficiency",
+  "expected": "40000",
+  "gen": 0
+ },
+ {
+  "id": "23",
+  "kind": "efficiency",
+  "expected": "40000",
+  "gen": 1
+ }
+]

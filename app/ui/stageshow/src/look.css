@@ -1,0 +1,89 @@
+/* 앱의 모습을 Stageshow 토큰으로 옮긴 것. 값은 ../app.css의 :root(밝은 테마)와 어두운 테마에서 가져왔다.
+   app.css의 색을 바꾸면 여기도 같이 바꾼다. */
+.algoblock .ss-stage {
+  --ss-canvas: #F5F5F7;
+  --ss-surface: #FFFFFF;
+  --ss-chrome: #FAFAFB;
+  --ss-raised: #FFFFFF;
+  --ss-well: #EDEDF0;
+  --ss-fill: #EDEDF0;
+  --ss-line: #E3E3E8;
+  --ss-line-faint: #EDEDF0;
+  --ss-text-strong: #1D1D1F;
+  --ss-text: #68686D;
+  --ss-text-faint: #8E8E93;
+  --ss-icon: #68686D;
+  --ss-icon-faint: #C7C7CC;
+  --ss-accent: #0071E3;
+  --ss-accent-2: #3B9BFF;
+  --ss-accent-soft: #E8F1FC;
+  --ss-accent-text: #0066CC;
+  --ss-success: #1D7A34;
+  --ss-success-soft: #E6F4EA;
+  --ss-success-text: #1D7A34;
+  --ss-danger: #C9211E;
+  --ss-danger-soft: #FCEBEA;
+  --ss-danger-text: #C9211E;
+  --ss-warning: #9A5B00;
+  --ss-warning-soft: #FDF3DF;
+  --ss-warning-text: #9A5B00;
+  --ss-font: -apple-system, BlinkMacSystemFont, "Pretendard Variable", Pretendard, "Segoe UI Variable Text", "Segoe UI", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+  --ss-mono: ui-monospace, "SF Mono", "Cascadia Mono", "D2Coding", Consolas, "Liberation Mono", monospace;
+  --ss-radius-sm: 8px;
+  --ss-radius-md: 10px;
+  --ss-radius-lg: 14px;
+  overflow: hidden;
+  background: var(--ss-well);
+  word-break: keep-all;
+}
+
+.algoblock .ss-stage[data-theme='dark'] {
+  --ss-canvas: #111113;
+  --ss-surface: #1C1C1E;
+  --ss-chrome: #232326;
+  --ss-raised: #2C2C2F;
+  --ss-well: #111113;
+  --ss-fill: #2C2C2F;
+  --ss-line: #303034;
+  --ss-line-faint: #2C2C2F;
+  --ss-text-strong: #F5F5F7;
+  --ss-text: #A1A1A6;
+  --ss-text-faint: #77777D;
+  --ss-icon: #A1A1A6;
+  --ss-icon-faint: #48484D;
+  --ss-accent-soft: #12304F;
+  --ss-accent-text: #4DA3FF;
+  --ss-success: #4CD27A;
+  --ss-success-soft: #143321;
+  --ss-success-text: #4CD27A;
+  --ss-danger: #FF7A72;
+  --ss-danger-soft: #3D1A19;
+  --ss-danger-text: #FF7A72;
+  --ss-warning: #F0B24A;
+  --ss-warning-soft: #3A2A0E;
+  --ss-warning-text: #F0B24A;
+}
+
+/* 앱 창: 위와 양옆은 여백, 아래는 무대 밖으로 흘려보낸다 */
+.algoblock-win {
+  position: absolute;
+  top: 28px;
+  left: 56px;
+  width: 548px;
+  height: 420px;
+  box-shadow: var(--ss-shadow-hero);
+}
+
+/* 좁은 화면: 여백을 16px 하나로 줄인다. 보이는 창이 세로보다 가로가 길게 남도록 무대 높이를 340으로 잡았다 */
+.algoblock .ss-stage[data-layout='compact'] .algoblock-win {
+  top: 16px;
+  left: 16px;
+  width: 326px;
+}
+
+/* 창 제목: 글자 폭만큼만 차지하게 하고 창 한가운데에 둔다(보이는 자리는 키트 기본과 같다) */
+.algoblock-win .ss-window__title {
+  flex: none;
+  margin: 0 auto;
+  translate: -21px 0;
+}

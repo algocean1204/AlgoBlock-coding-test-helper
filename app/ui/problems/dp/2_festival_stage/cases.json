@@ -1,0 +1,140 @@
+[
+ {
+  "id": "1",
+  "kind": "example",
+  "expected": "21",
+  "input": "[[7, 9, 6, 1, 1, 8]]"
+ },
+ {
+  "id": "2",
+  "kind": "example",
+  "expected": "6",
+  "input": "[[6]]"
+ },
+ {
+  "id": "3",
+  "kind": "example",
+  "expected": "10",
+  "input": "[[5, 1, 1, 5]]"
+ },
+ {
+  "id": "4",
+  "kind": "accuracy",
+  "expected": "0",
+  "input": "[[0]]"
+ },
+ {
+  "id": "5",
+  "kind": "accuracy",
+  "expected": "10000",
+  "input": "[[10000]]"
+ },
+ {
+  "id": "6",
+  "kind": "accuracy",
+  "expected": "5",
+  "input": "[[5, 1]]"
+ },
+ {
+  "id": "7",
+  "kind": "accuracy",
+  "expected": "5",
+  "input": "[[1, 5]]"
+ },
+ {
+  "id": "8",
+  "kind": "accuracy",
+  "expected": "0",
+  "input": "[[0, 0, 0, 0]]"
+ },
+ {
+  "id": "9",
+  "kind": "accuracy",
+  "expected": "21",
+  "input": "[[7, 7, 7, 7, 7]]"
+ },
+ {
+  "id": "10",
+  "kind": "accuracy",
+  "expected": "12",
+  "input": "[[6, 9, 6, 1]]"
+ },
+ {
+  "id": "11",
+  "kind": "accuracy",
+  "expected": "14",
+  "input": "[[9, 1, 0, 5]]"
+ },
+ {
+  "id": "12",
+  "kind": "accuracy",
+  "expected": "18",
+  "input": "[[1, 9, 1, 1, 9, 1]]"
+ },
+ {
+  "id": "13",
+  "kind": "accuracy",
+  "expected": "30",
+  "input": "[[10, 1, 1, 10, 1, 1, 10]]"
+ },
+ {
+  "id": "14",
+  "kind": "accuracy",
+  "expected": "10",
+  "input": "[[4, 10, 4]]"
+ },
+ {
+  "id": "15",
+  "kind": "accuracy",
+  "expected": "24",
+  "input": "[[8, 1, 1, 8, 1, 1, 8, 1]]"
+ },
+ {
+  "id": "16",
+  "kind": "accuracy",
+  "expected": "90000",
+  "input": "[[10000, 10000, 10000, 10000, 10000, 10000, 10000, 10000, 10000, 10000, 10000, 10000, 10000, 10000, 10000, 10000, 10000, 10000]]"
+ },
+ {
+  "id": "17",
+  "kind": "accuracy",
+  "expected": "38",
+  "input": "[[6, 4, 6, 0, 9, 3, 1, 8, 2, 9]]"
+ },
+ {
+  "id": "18",
+  "kind": "accuracy",
+  "expected": "170",
+  "input": "[[34, 48, 6, 36, 69, 2, 53]]"
+ },
+ {
+  "id": "19",
+  "kind": "accuracy",
+  "expected": "27",
+  "input": "[[8, 6, 4, 4, 2, 5, 6, 1, 6, 7]]"
+ },
+ {
+  "id": "20",
+  "kind": "accuracy",
+  "expected": "373",
+  "input": "[[0, 74, 96, 14, 99, 71, 13, 83, 0, 59, 64, 36]]"
+ },
+ {
+  "id": "21",
+  "kind": "accuracy",
+  "expected": "35",
+  "input": "[[6, 0, 8, 9, 2, 8, 7, 9, 3, 3]]"
+ },
+ {
+  "id": "22",
+  "kind": "efficiency",
+  "expected": "293498851",
+  "gen": 0
+ },
+ {
+  "id": "23",
+  "kind": "efficiency",
+  "expected": "274876194",
+  "gen": 1
+ }
+]

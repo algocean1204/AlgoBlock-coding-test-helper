@@ -1,0 +1,146 @@
+[
+ {
+  "id": "1",
+  "kind": "example",
+  "expected": "3",
+  "input": "[\"pine\", \"lake\", [\"line\", \"lane\", \"lake\", \"pane\", \"fine\", \"mike\"]]"
+ },
+ {
+  "id": "2",
+  "kind": "example",
+  "expected": "-1",
+  "input": "[\"rain\", \"ruin\", [\"main\", \"rail\", \"gain\"]]"
+ },
+ {
+  "id": "3",
+  "kind": "example",
+  "expected": "4",
+  "input": "[\"sand\", \"bond\", [\"sane\", \"bane\", \"bone\", \"bond\", \"sank\"]]"
+ },
+ {
+  "id": "4",
+  "kind": "accuracy",
+  "expected": "1",
+  "input": "[\"a\", \"b\", [\"b\"]]"
+ },
+ {
+  "id": "5",
+  "kind": "accuracy",
+  "expected": "-1",
+  "input": "[\"a\", \"b\", [\"c\"]]"
+ },
+ {
+  "id": "6",
+  "kind": "accuracy",
+  "expected": "2",
+  "input": "[\"ab\", \"cd\", [\"ad\", \"cd\"]]"
+ },
+ {
+  "id": "7",
+  "kind": "accuracy",
+  "expected": "1",
+  "input": "[\"abc\", \"abd\", [\"abd\", \"abc\"]]"
+ },
+ {
+  "id": "8",
+  "kind": "accuracy",
+  "expected": "3",
+  "input": "[\"cat\", \"dog\", [\"cot\", \"cog\", \"dog\"]]"
+ },
+ {
+  "id": "9",
+  "kind": "accuracy",
+  "expected": "1",
+  "input": "[\"aab\", \"abb\", [\"abb\"]]"
+ },
+ {
+  "id": "10",
+  "kind": "accuracy",
+  "expected": "3",
+  "input": "[\"abc\", \"bca\", [\"bca\", \"bbc\", \"bcc\"]]"
+ },
+ {
+  "id": "11",
+  "kind": "accuracy",
+  "expected": "4",
+  "input": "[\"aaa\", \"bba\", [\"aab\", \"bab\", \"bbb\", \"bba\"]]"
+ },
+ {
+  "id": "12",
+  "kind": "accuracy",
+  "expected": "-1",
+  "input": "[\"abc\", \"xyz\", [\"abd\", \"xyz\", \"xbc\"]]"
+ },
+ {
+  "id": "13",
+  "kind": "accuracy",
+  "expected": "-1",
+  "input": "[\"star\", \"stay\", [\"scar\", \"soar\"]]"
+ },
+ {
+  "id": "14",
+  "kind": "accuracy",
+  "expected": "1",
+  "input": "[\"abc\", \"abz\", [\"xbc\", \"xbz\", \"abz\"]]"
+ },
+ {
+  "id": "15",
+  "kind": "accuracy",
+  "expected": "2",
+  "input": "[\"fold\", \"mild\", [\"mold\", \"bold\", \"bald\", \"bale\", \"male\", \"mile\", \"mild\", \"gold\"]]"
+ },
+ {
+  "id": "16",
+  "kind": "accuracy",
+  "expected": "5",
+  "input": "[\"aaaa\", \"bbbb\", [\"baaa\", \"caaa\", \"cbaa\", \"cbba\", \"cbbb\", \"bbbb\"]]"
+ },
+ {
+  "id": "17",
+  "kind": "accuracy",
+  "expected": "1",
+  "input": "[\"caa\", \"cac\", [\"cac\", \"ccb\", \"bab\", \"caa\", \"aab\", \"bbb\", \"aba\", \"ccc\", \"bca\", \"baa\", \"cbb\", \"aaa\", \"aac\", \"bcb\"]]"
+ },
+ {
+  "id": "18",
+  "kind": "accuracy",
+  "expected": "1",
+  "input": "[\"aad\", \"dad\", [\"cad\", \"bbb\", \"adc\", \"ddd\", \"acc\", \"bbc\", \"aad\", \"dcb\", \"bcc\", \"bda\", \"cbb\", \"cac\", \"caa\", \"aca\", \"aaa\", \"adb\", \"dba\", \"ada\", \"bcb\", \"add\", \"cdb\", \"dab\", \"dca\", \"abc\", \"dac\", \"aab\", \"ccd\", \"dad\", \"baa\", \"cdc\"]]"
+ },
+ {
+  "id": "19",
+  "kind": "accuracy",
+  "expected": "5",
+  "input": "[\"dbba\", \"accd\", [\"addd\", \"daad\", \"dbbc\", \"dadb\", \"accd\", \"daaa\", \"acaa\", \"abdd\", \"cbcb\", \"ccab\", \"cbbd\", \"abca\", \"abbc\", \"aaba\", \"adac\", \"dbca\", \"daab\", \"daca\", \"cbbc\", \"acdb\", \"ddcd\", \"aabb\", \"bcba\", \"cddb\", \"cddc\", \"bdaa\", \"abaa\", \"bdda\", \"bbdb\", \"bcab\", \"cdaa\", \"cadd\", \"ddcb\", \"bacc\", \"dcab\", \"aadc\", \"abdb\", \"dcaa\", \"baad\", \"caad\", \"cadb\", \"aacd\", \"bccc\", \"cccd\", \"cbda\", \"bbad\", \"acdd\", \"baca\", \"dcdc\", \"ddab\", \"ccbc\", \"ddbd\", \"babd\", \"aadb\", \"bdcd\", \"dddb\", \"dbac\", \"caba\", \"dacc\", \"abcb\", \"bdba\", \"cdac\", \"acac\", \"dbdd\", \"ccac\", \"ddba\", \"dbcd\", \"badb\", \"badc\", \"acbc\", \"ddbb\", \"bccd\", \"cbdc\", \"dcdb\", \"bacd\", \"adcd\", \"cbbb\", \"aadd\", \"aacb\", \"bdbd\"]]"
+ },
+ {
+  "id": "20",
+  "kind": "accuracy",
+  "expected": "5",
+  "input": "[\"bade\", \"abeb\", [\"ccab\", \"eece\", \"ecaa\", \"cece\", \"ccdc\", \"dcba\", \"ddec\", \"cedd\", \"abaa\", \"caea\", \"bedc\", \"bbbc\", \"bccc\", \"dced\", \"dbad\", \"cead\", \"bbcd\", \"dedc\", \"ecba\", \"aeec\", \"beee\", \"dbeb\", \"bdac\", \"bbda\", \"daee\", \"accc\", \"eaed\", \"edbd\", \"ebdd\", \"ddce\", \"cdca\", \"cdce\", \"deed\", \"aaad\", \"aeae\", \"baab\", \"abae\", \"eade\", \"cabd\", \"cdba\", \"aeeb\", \"ddaa\", \"dbea\", \"cacc\", \"abbe\", \"cbaa\", \"cdde\", \"dbcc\", \"edce\", \"deab\", \"adae\", \"cdaa\", \"ebab\", \"bdba\", \"bbac\", \"eeba\", \"dcea\", \"dada\", \"eadb\", \"aebe\", \"dbbc\", \"bebc\", \"abee\", \"ebbc\", \"baed\", \"bbba\", \"eebe\", \"dcbe\", \"cede\", \"abdd\", \"edee\", \"cbcd\", \"dccc\", \"dcab\", \"bdbb\", \"aebc\", \"ebea\", \"acda\", \"deec\", \"acac\", \"edcc\", \"bdae\", \"eddc\", \"bade\", \"ebac\", \"ceeb\", \"cdeb\", \"eedc\", \"ceaa\", \"adcc\", \"ecdb\", \"ebdc\", \"cebb\", \"acba\", \"aeea\", \"aedd\", \"aaed\", \"dabc\", \"bede\", \"dabd\", \"cccb\", \"debb\", \"decb\", \"bdcc\", \"cbeb\", \"ecbd\", \"dbde\", \"accb\", \"bcba\", \"bebe\", \"cbda\", \"dbca\", \"bbee\", \"adbe\", \"deba\", \"ddbe\", \"eded\", \"aeab\", \"abeb\", \"cbbc\"]]"
+ },
+ {
+  "id": "21",
+  "kind": "accuracy",
+  "expected": "2",
+  "input": "[\"eb\", \"ac\", [\"ff\", \"ee\", \"bd\", \"fb\", \"gd\", \"ac\", \"ab\", \"eg\", \"ag\", \"ec\", \"gc\", \"be\", \"dg\", \"eb\", \"gh\", \"db\", \"gg\", \"fa\", \"ad\", \"bb\"]]"
+ },
+ {
+  "id": "22",
+  "kind": "accuracy",
+  "expected": "-1",
+  "input": "[\"ababa\", \"abaaa\", [\"aabab\", \"bbaba\", \"abbbb\", \"abbab\", \"bbabb\", \"baaaa\", \"baabb\", \"babaa\", \"aabba\", \"baaab\", \"bbbab\", \"abaab\", \"babbb\", \"bbbaa\", \"abbba\", \"aaaab\", \"bbbba\", \"bbaab\", \"aabbb\", \"ababa\"]]"
+ },
+ {
+  "id": "23",
+  "kind": "efficiency",
+  "expected": "-1",
+  "gen": 0
+ },
+ {
+  "id": "24",
+  "kind": "efficiency",
+  "expected": "105",
+  "gen": 1
+ }
+]

@@ -1,0 +1,192 @@
+{
+ "source": 3681178606,
+ "ready": {
+  "fact": {
+   "spec": "입력은 세로·가로 길이가 각각 1 이상 300 이하인 문자열 배열(2차원 격자)이며, 각 글자는 빈 칸·벽·확산 시작 칸(하나 이상)·출발 칸(정확히 하나)·도착 칸(하나 이상) 중 하나이다. 구하는 것은 출발 칸에서 1분마다 상하좌우 한 칸씩 움직여 도착 칸에 들어가는 가장 빠른 시각(최솟값)이며, 불가능하면 -1이다. 핵심 조건은 확산이 매 분 모든 확산 칸에서 벽이 아닌 상하좌우 칸으로 동시에 퍼지고, 시각 t에 들어가는 칸은 확산이 닿는 시각이 t보다 커야 한다는 것이다(다중 시작점 BFS로 각 칸에 확산이 닿는 시각을 구한 뒤 이동 BFS에서 비교).",
+   "patterns": [
+    "grid_shortest"
+   ],
+   "skills": [
+    "grid_dirs",
+    "grid_bounds",
+    "deque_use"
+   ],
+   "size": 300
+  },
+  "solution": {
+   "approach": "먼저 불만 따로 퍼뜨립니다. 'F' 칸들을 0분으로 놓고 BFS를 돌려, 칸마다 불이 몇 분에 닿는지 표에 적어 둡니다. 그다음 사람을 'S'에서 출발시켜 BFS로 움직입니다. 이웃 칸에 들어가는 시각이 그 칸에 불이 닿는 시각보다 이를 때만 들어갑니다. BFS는 가까운 칸부터 보기 때문에, 처음으로 비상구에 들어가는 순간이 가장 빠른 대피 시각입니다.",
+   "steps": [
+    "격자의 세로·가로 길이와 위·아래·왼쪽·오른쪽 네 방향을 정해 둔다 — 두 번의 BFS에서 함께 쓴다",
+    "불 도착 시각 표를 -1로 채운다. 'F' 칸은 0으로 적고 모두 큐에 넣으며, 'S' 위치도 기억해 둔다 — 여러 곳에서 동시에 번지는 불을 BFS 하나로 퍼뜨리기 위해서다",
+    "큐에서 칸을 꺼내 벽이 아니고 아직 시각이 없는 이웃 칸에 '현재 시각 + 1'을 적고 큐에 넣는다 — 칸마다 불이 가장 먼저 닿는 시각을 얻는다",
+    "사람 도착 시각 표를 -1로 채우고, 시작 칸을 0으로 적어 큐에 넣는다 — 사람의 BFS를 시작한다",
+    "꺼낸 칸의 이웃 중 지도 밖, 벽, 이미 가 본 칸은 건너뛴다 — 들어갈 수 없거나 더 늦게 도착하는 경우라서다",
+    "도착 시각을 '현재 시각 + 1'로 계산한다. 불이 닿는 칸이고 불 시각이 도착 시각 이하이면 건너뛴다 — 막 불이 번지는 칸에도 들어갈 수 없다는 규칙 때문이다",
+    "들어간 칸이 'E'이면 바로 도착 시각을 돌려준다. 아니면 시각을 적고 큐에 넣는다. 큐가 다 비면 -1을 돌려준다 — 처음 닿은 비상구가 가장 빠른 대피이기 때문이다"
+   ],
+   "code": "from collections import deque\n\n\ndef solution(building):\n    rows = len(building)\n    cols = len(building[0])\n    moves = [(-1, 0), (1, 0), (0, -1), (0, 1)]\n\n    # 1. 불: 불이 난 칸을 모두 처음부터 큐에 넣고 한 번에 퍼뜨린다(여러 출발점 BFS)\n    # fire[r][c]: 불이 (r, c)에 닿는 시각. -1은 불이 끝내 닿지 않는 칸\n    fire = [[-1] * cols for _ in range(rows)]\n    queue = deque()\n    for r in range(rows):\n        for c in range(cols):\n            if building[r][c] == \"F\":\n                fire[r][c] = 0\n                queue.append((r, c))\n            elif building[r][c] == \"S\":\n                start_r, start_c = r, c\n    while queue:\n        r, c = queue.popleft()\n        for dr, dc in moves:\n            nr, nc = r + dr, c + dc\n            if 0 <= nr < rows and 0 <= nc < cols and building[nr][nc] != \"#\" and fire[nr][nc] == -1:\n                fire[nr][nc] = fire[r][c] + 1\n                queue.append((nr, nc))\n\n    # 2. 사람: 불보다 먼저 닿는 칸으로만 움직이는 BFS\n    person = [[-1] * cols for _ in range(rows)]\n    person[start_r][start_c] = 0\n    queue = deque([(start_r, start_c)])\n    while queue:\n        r, c = queue.popleft()\n        for dr, dc in moves:\n            nr, nc = r + dr, c + dc\n            if nr < 0 or nr >= rows or nc < 0 or nc >= cols:\n                continue\n            if building[nr][nc] == \"#\" or person[nr][nc] != -1:\n                continue\n            arrive = person[r][c] + 1\n            if fire[nr][nc] != -1 and fire[nr][nc] <= arrive:  # 불이 같은 분이나 더 일찍 닿는 칸은 못 들어간다\n                continue\n            if building[nr][nc] == \"E\":\n                return arrive\n            person[nr][nc] = arrive\n            queue.append((nr, nc))\n    return -1",
+   "verified": true,
+   "clues": [
+    "'1분이 지날 때마다 불은 불이 붙은 모든 칸에서 위·아래·왼쪽·오른쪽으로 이웃한 칸으로 동시에 번집니다.' → 불이 난 칸을 모두 한꺼번에 큐에 넣고 BFS를 돌린다. 이렇게 하면 칸마다 불이 닿는 시각을 미리 구해 둘 수 있다",
+    "'이미 불이 붙은 칸뿐 아니라 t분에 막 불이 번지는 칸으로도 들어갈 수 없습니다.' → 사람이 칸에 들어가는 시각이 그 칸에 불이 닿는 시각보다 반드시 작아야 한다. 같아도 들어갈 수 없다",
+    "'사람이 대피할 수 있는 가장 빠른 시각(분)' → 1분에 한 칸씩 움직이므로 사람도 격자 BFS로 최단 시각을 구한다",
+    "'building의 길이(세로)는 1 이상 300 이하입니다.' → 칸이 최대 90,000개라서 BFS를 두 번 돌려도 충분히 빠르다"
+   ]
+  },
+  "plan": {
+   "strategy": "fresh",
+   "score": null,
+   "blocks": [
+    {
+     "id": "b1",
+     "kind": "var_from_problem",
+     "name": "격자 크기와 방향",
+     "goal": "지도의 세로·가로 길이와 위·아래·왼쪽·오른쪽 네 방향을 정해 둔다.",
+     "reference": "from collections import deque\n\n\ndef solution(building):\n    rows = len(building)\n    cols = len(building[0])\n    moves = [(-1, 0), (1, 0), (0, -1), (0, 1)]",
+     "checks": [
+      "지도의 세로 길이와 가로 길이를 구해 둔다",
+      "위·아래·왼쪽·오른쪽 네 방향을 한 묶음으로 정해 둔다",
+      "불과 사람을 따라갈 때 같은 방향 묶음을 함께 쓴다"
+     ],
+     "hints": [
+      "불과 사람이 모두 이웃 칸으로 옮겨 가는데, 두 움직임을 따라가기 전에 지도에 대해 무엇을 먼저 알아 두면 편할까요?",
+      "'사람은 1분마다 위·아래·왼쪽·오른쪽으로 이웃한 칸 하나로 움직이며'를 보면, 한 칸에서 갈 수 있는 이웃 칸들을 어떻게 빠짐없이 훑을 수 있을까요?",
+      "지도가 한 줄짜리 S.E.F라면 세로와 가로 길이는 각각 얼마이고, 맨 왼쪽 칸에서 지도 안에 남는 방향은 어느 쪽일까요?"
+     ],
+     "lines": [
+      1,
+      7
+     ]
+    },
+    {
+     "id": "b2",
+     "kind": "var_during",
+     "name": "불 시작 칸 모으기",
+     "goal": "불이 닿는 시각을 적을 표를 비워 두고, 불이 난 칸을 모두 0분으로 적어 큐에 넣으며, 사람의 시작 위치도 찾아 둔다.",
+     "reference": "\n    # 1. 불: 불이 난 칸을 모두 처음부터 큐에 넣고 한 번에 퍼뜨린다(여러 출발점 BFS)\n    # fire[r][c]: 불이 (r, c)에 닿는 시각. -1은 불이 끝내 닿지 않는 칸\n    fire = [[-1] * cols for _ in range(rows)]\n    queue = deque()\n    for r in range(rows):\n        for c in range(cols):\n            if building[r][c] == \"F\":\n                fire[r][c] = 0\n                queue.append((r, c))\n            elif building[r][c] == \"S\":\n                start_r, start_c = r, c",
+     "checks": [
+      "칸마다 불이 닿는 시각을 적을 표를 만들고, 아직 모르는 칸을 따로 표시해 둔다",
+      "불이 난 칸을 전부 0분으로 적고 처음부터 함께 큐에 넣는다",
+      "사람이 처음 있는 칸의 위치를 기억해 둔다"
+     ],
+     "hints": [
+      "사람이 어느 칸에 들어가도 되는지 판단하려면, 칸마다 불에 대해 무엇을 미리 알고 있어야 할까요?",
+      "'1분이 지날 때마다 불은 불이 붙은 모든 칸에서 위·아래·왼쪽·오른쪽으로 이웃한 칸으로 동시에 번집니다'를 보면, 불이 난 칸이 여러 개일 때 어디서부터 퍼뜨리기 시작해야 할까요?",
+      "한 줄 지도 FS.EF에서 두 F 칸을 0분으로 두고 함께 출발시키면, 가운데 세 칸에는 각각 몇 분에 불이 닿을까요?"
+     ],
+     "lines": [
+      8,
+      19
+     ]
+    },
+    {
+     "id": "b3",
+     "kind": "loop",
+     "name": "불 퍼뜨리기",
+     "goal": "큐에서 칸을 꺼내, 벽이 아니고 아직 시각이 없는 이웃 칸에 '현재 시각 + 1'을 적고 큐에 넣는다.",
+     "reference": "    while queue:\n        r, c = queue.popleft()\n        for dr, dc in moves:\n            nr, nc = r + dr, c + dc\n            if 0 <= nr < rows and 0 <= nc < cols and building[nr][nc] != \"#\" and fire[nr][nc] == -1:\n                fire[nr][nc] = fire[r][c] + 1\n                queue.append((nr, nc))",
+     "checks": [
+      "큐 앞에서 칸을 꺼내 네 이웃을 살핀다",
+      "지도 안이고, 벽이 아니며, 아직 시각이 적히지 않은 칸에만 현재 시각 + 1을 적는다",
+      "불이 끝내 닿지 않는 칸은 처음 표시 그대로 남긴다"
+     ],
+     "hints": [
+      "불이 난 칸들을 모았다면, 나머지 칸마다 불이 가장 먼저 닿는 시각은 어떤 순서로 채워 나가야 할까요?",
+      "'불은 벽으로는 번지지 않고'를 보면, 이웃 칸에 시각을 적기 전에 어떤 칸들을 걸러 내야 할까요?",
+      "한 줄 지도 SF.#E에서 불을 다 퍼뜨리고 나면, 다섯 칸에 적힌 불 시각은 각각 얼마일까요?"
+     ],
+     "lines": [
+      20,
+      26
+     ]
+    },
+    {
+     "id": "b4",
+     "kind": "var_during",
+     "name": "사람 출발 준비",
+     "goal": "사람이 도착한 시각을 적을 표를 비워 두고, 시작 칸을 0분으로 적어 새 큐에 넣는다.",
+     "reference": "\n    # 2. 사람: 불보다 먼저 닿는 칸으로만 움직이는 BFS\n    person = [[-1] * cols for _ in range(rows)]\n    person[start_r][start_c] = 0\n    queue = deque([(start_r, start_c)])",
+     "checks": [
+      "칸마다 사람이 도착한 시각을 적을 표를 새로 만든다",
+      "사람이 처음 있는 칸을 0분으로 적고 새 큐에 넣는다"
+     ],
+     "hints": [
+      "불의 시각을 다 구한 뒤, 사람이 가장 빨리 갈 수 있는 길을 찾으려면 무엇부터 준비해야 할까요?",
+      "'사람이 대피할 수 있는 가장 빠른 시각(분)'을 구하려면, 사람이 각 칸에 몇 분에 도착했는지를 어디에 어떻게 남겨 둘까요?",
+      "한 줄 지도 S.E#F에서 막 출발했을 때, 사람의 도착 시각 표와 큐에는 각각 무엇이 들어 있어야 할까요?"
+     ],
+     "lines": [
+      27,
+      31
+     ]
+    },
+    {
+     "id": "b5",
+     "kind": "loop",
+     "name": "갈 수 없는 이웃 건너뛰기",
+     "goal": "큐에서 칸을 꺼내 네 이웃을 보며, 지도 밖·벽·이미 가 본 칸은 건너뛴다.",
+     "reference": "    while queue:\n        r, c = queue.popleft()\n        for dr, dc in moves:\n            nr, nc = r + dr, c + dc\n            if nr < 0 or nr >= rows or nc < 0 or nc >= cols:\n                continue\n            if building[nr][nc] == \"#\" or person[nr][nc] != -1:\n                continue",
+     "checks": [
+      "큐 앞에서 사람이 있는 칸을 꺼내 네 방향 이웃을 하나씩 본다",
+      "지도 밖이거나 벽인 칸을 건너뛴다",
+      "이미 도착 시각이 적힌 칸으로는 다시 가지 않는다"
+     ],
+     "hints": [
+      "사람을 가까운 칸부터 넓혀 가며 움직일 때, 이웃 칸 중 아예 살펴볼 필요가 없는 칸은 어떤 칸들일까요?",
+      "'벽과 지도 밖으로는 움직일 수 없습니다'를 보면, 이웃 칸의 위치를 구한 뒤 무엇부터 확인해야 할까요?",
+      "한 줄 지도 S..E#F에서 사람이 S 바로 오른쪽 칸을 꺼냈을 때, 왼쪽 S 칸으로 되돌아가는 것은 무엇을 보고 막을 수 있을까요?"
+     ],
+     "lines": [
+      32,
+      39
+     ]
+    },
+    {
+     "id": "b6",
+     "kind": "condition",
+     "name": "불보다 먼저 들어가기",
+     "goal": "이웃 칸에 도착하는 시각을 구하고, 불이 같은 분이나 더 일찍 닿는 칸이면 건너뛴다.",
+     "reference": "            arrive = person[r][c] + 1\n            if fire[nr][nc] != -1 and fire[nr][nc] <= arrive:  # 불이 같은 분이나 더 일찍 닿는 칸은 못 들어간다\n                continue",
+     "checks": [
+      "이웃 칸에 도착하는 시각을 지금 칸의 시각 + 1로 구한다",
+      "불 시각이 도착 시각과 같아도 들어가지 않는다",
+      "불이 끝내 닿지 않는 칸은 언제든 들어갈 수 있게 따로 다룬다"
+     ],
+     "hints": [
+      "지도 안의 빈 칸이라도 사람이 들어가면 안 되는 때가 있는데, 그것은 무엇과 무엇을 비교해서 알 수 있을까요?",
+      "'이미 불이 붙은 칸뿐 아니라 t분에 막 불이 번지는 칸으로도 들어갈 수 없습니다'를 보면, 도착 시각과 불 시각이 같을 때는 어떻게 처리해야 할까요?",
+      "입출력 예 #2의 S.E.F처럼 사람과 불이 모두 2분에 비상구에 닿는다면, 두 시각을 어떻게 비교해야 결과가 -1로 나올까요?"
+     ],
+     "lines": [
+      40,
+      42
+     ]
+    },
+    {
+     "id": "b7",
+     "kind": "branch",
+     "name": "비상구 도착과 결과",
+     "goal": "들어간 칸이 비상구면 그 도착 시각을 바로 돌려주고, 아니면 시각을 적고 큐에 넣으며, 큐가 다 비면 -1을 돌려준다.",
+     "reference": "            if building[nr][nc] == \"E\":\n                return arrive\n            person[nr][nc] = arrive\n            queue.append((nr, nc))\n    return -1",
+     "checks": [
+      "들어간 칸이 비상구이면 그 도착 시각을 바로 돌려준다",
+      "비상구가 아니면 도착 시각을 적고 큐에 넣는다",
+      "큐가 다 빌 때까지 비상구에 못 닿으면 -1을 돌려준다"
+     ],
+     "hints": [
+      "들어갈 수 있는 칸을 찾았을 때, 그 칸이 비상구인 경우와 아닌 경우는 각각 어떻게 다뤄야 할까요?",
+      "'사람은 비상구 칸에 들어가는 순간 대피합니다'를 보면, 처음 비상구에 닿은 시각을 왜 더 기다리지 않고 바로 결과로 삼아도 될까요?",
+      "한 줄 지도 E..S.E#F에서는 불이 벽에 막혀 번지지 못합니다. 사람이 처음 닿는 비상구는 어느 쪽이고 그때 돌려줄 값은 몇일까요?"
+     ],
+     "lines": [
+      43,
+      47
+     ]
+    }
+   ],
+   "algorithm": "bfs",
+   "out_of_scope": false,
+   "link": ""
+  }
+ }
+}

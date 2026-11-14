@@ -1,0 +1,140 @@
+[
+ {
+  "id": "1",
+  "kind": "example",
+  "expected": "4",
+  "input": "[[1, 2, 2, 1, 3, 3], 3]"
+ },
+ {
+  "id": "2",
+  "kind": "example",
+  "expected": "6",
+  "input": "[[1, 0, 2, 0, 0], 2]"
+ },
+ {
+  "id": "3",
+  "kind": "example",
+  "expected": "0",
+  "input": "[[1, 2, 1], 2]"
+ },
+ {
+  "id": "4",
+  "kind": "accuracy",
+  "expected": "0",
+  "input": "[[1], 1]"
+ },
+ {
+  "id": "5",
+  "kind": "accuracy",
+  "expected": "1",
+  "input": "[[0], 1]"
+ },
+ {
+  "id": "6",
+  "kind": "accuracy",
+  "expected": "1",
+  "input": "[[1, 1], 1]"
+ },
+ {
+  "id": "7",
+  "kind": "accuracy",
+  "expected": "6",
+  "input": "[[0, 0, 0], 5]"
+ },
+ {
+  "id": "8",
+  "kind": "accuracy",
+  "expected": "1",
+  "input": "[[20, 20], 20]"
+ },
+ {
+  "id": "9",
+  "kind": "accuracy",
+  "expected": "1",
+  "input": "[[1, 2, 0], 2]"
+ },
+ {
+  "id": "10",
+  "kind": "accuracy",
+  "expected": "2",
+  "input": "[[1, 0, 1], 2]"
+ },
+ {
+  "id": "11",
+  "kind": "accuracy",
+  "expected": "1",
+  "input": "[[1, 2, 1, 2], 2]"
+ },
+ {
+  "id": "12",
+  "kind": "accuracy",
+  "expected": "3",
+  "input": "[[3, 1, 3, 1, 3, 1], 3]"
+ },
+ {
+  "id": "13",
+  "kind": "accuracy",
+  "expected": "4",
+  "input": "[[1, 2, 3, 1, 2, 3, 0, 1], 3]"
+ },
+ {
+  "id": "14",
+  "kind": "accuracy",
+  "expected": "9",
+  "input": "[[2, 0, 2, 0, 2, 0], 2]"
+ },
+ {
+  "id": "15",
+  "kind": "accuracy",
+  "expected": "12",
+  "input": "[[1, 1, 1, 1, 1, 1, 1], 1]"
+ },
+ {
+  "id": "16",
+  "kind": "accuracy",
+  "expected": "49",
+  "input": "[[1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1], 1]"
+ },
+ {
+  "id": "17",
+  "kind": "accuracy",
+  "expected": "31",
+  "input": "[[1, 0, 0, 0, 1, 3, 0, 1, 0, 0, 2, 0, 3, 2], 3]"
+ },
+ {
+  "id": "18",
+  "kind": "accuracy",
+  "expected": "86",
+  "input": "[[1, 2, 2, 2, 2, 1, 1, 1, 1, 1, 2, 1, 2, 1, 2, 2, 1, 1, 1, 2, 2, 2, 2, 1, 2], 2]"
+ },
+ {
+  "id": "19",
+  "kind": "accuracy",
+  "expected": "126",
+  "input": "[[0, 0, 1, 1, 1, 0, 0, 0, 1, 1, 0, 1, 1, 1, 1, 0, 1, 1, 0, 1, 0], 1]"
+ },
+ {
+  "id": "20",
+  "kind": "accuracy",
+  "expected": "106",
+  "input": "[[1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 0], 1]"
+ },
+ {
+  "id": "21",
+  "kind": "accuracy",
+  "expected": "8",
+  "input": "[[2, 1, 2, 1, 1, 2, 1, 2, 1], 2]"
+ },
+ {
+  "id": "22",
+  "kind": "efficiency",
+  "expected": "31072",
+  "gen": 0
+ },
+ {
+  "id": "23",
+  "kind": "efficiency",
+  "expected": "3272000693",
+  "gen": 1
+ }
+]

@@ -1,0 +1,76 @@
+# 코드는 app/, 공개 문서는 Docs/에 둔다. 아래는 저장소에 올리지 않는 것이다.
+/Local_Docs/
+
+# 에이전트 지시 파일
+AGENTS.md
+agents.md
+agent.md
+CLAUDE.md
+claude.md
+GEMINI.md
+.mcp.json
+
+# 비밀: API 키, 로그인 토큰, 인증서
+.env
+.env.*
+!.env.example
+keys.json
+credentials*.json
+auth/
+*.pem
+*.key
+*.p12
+*.pfx
+*.keystore
+id_rsa*
+id_ed25519*
+# 로그인 토큰·기기 아이디(앱의 자료 폴더에 생기지만, 밖에 생겨도 올리지 않는다)
+*oauth*.json
+chatgpt*.json
+*token*.json
+
+# 앱이 만드는 자료: 풀이 기록, 등록한 문항, 넣은 키(자료 폴더 밖에 생겨도 올리지 않는다)
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+*.broken-*
+*.log
+usage.jsonl
+
+# 편집기와 에이전트 도구가 만드는 폴더
+.claude/
+.codex/
+.cursor/
+.grok/
+.agents/
+.idea/
+.vscode/
+
+# 파이썬·노드·운영체제
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+node_modules/
+.DS_Store
+Thumbs.db
+
+# 산출물: 설치 파일, 화면 녹화
+*.dmg
+*.exe
+*.zip
+app/packaging/build/
+app/packaging/dist/
+app/packaging/dist-win/
+app/packaging/models/
+*.mp4
+*.mov
+
+# 측정 도구가 남기는 기록(모델 출력이 들어 있다)
+app/tutor/eval/results/

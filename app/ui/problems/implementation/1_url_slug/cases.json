@@ -1,0 +1,134 @@
+[
+ {
+  "id": "1",
+  "kind": "example",
+  "expected": "\"art-clean-code\"",
+  "input": "[\"The Art of Clean Code\", []]"
+ },
+ {
+  "id": "2",
+  "kind": "example",
+  "expected": "\"rock-roll-50-years-loud-3\"",
+  "input": "[\"  Rock & Roll: 50 Years of Loud Noise!! \", [\"rock-roll-50-years-loud\", \"rock-roll-50-years-loud-2\"]]"
+ },
+ {
+  "id": "3",
+  "kind": "example",
+  "expected": "\"an-of-the-2\"",
+  "input": "[\"An Of The\", [\"an-of-the\"]]"
+ },
+ {
+  "id": "4",
+  "kind": "accuracy",
+  "expected": "\"a\"",
+  "input": "[\"a\", []]"
+ },
+ {
+  "id": "5",
+  "kind": "accuracy",
+  "expected": "\"z-2\"",
+  "input": "[\"Z\", [\"z\"]]"
+ },
+ {
+  "id": "6",
+  "kind": "accuracy",
+  "expected": "\"hello-world\"",
+  "input": "[\"Hello   World\", []]"
+ },
+ {
+  "id": "7",
+  "kind": "accuracy",
+  "expected": "\"end\"",
+  "input": "[\"  The  End  \", []]"
+ },
+ {
+  "id": "8",
+  "kind": "accuracy",
+  "expected": "\"quick-fox-2\"",
+  "input": "[\"THE QUICK FOX\", [\"quick-fox\"]]"
+ },
+ {
+  "id": "9",
+  "kind": "accuracy",
+  "expected": "\"of-and-the\"",
+  "input": "[\"Of, And: The!\", []]"
+ },
+ {
+  "id": "10",
+  "kind": "accuracy",
+  "expected": "\"tips-tricks-4\"",
+  "input": "[\"Tips & Tricks\", [\"tips-tricks\", \"tips-tricks-2\", \"tips-tricks-3\", \"tips-tricks-5\"]]"
+ },
+ {
+  "id": "11",
+  "kind": "accuracy",
+  "expected": "\"abcdefghijklmnopqrstuvwx\"",
+  "input": "[\"Abcdefghijklmnopqrstuvwxyz Day\", []]"
+ },
+ {
+  "id": "12",
+  "kind": "accuracy",
+  "expected": "\"abcdefghijklmnopqrstuvwx-2\"",
+  "input": "[\"abcdefghijklmnopqrstuvwx yz\", [\"abcdefghijklmnopqrstuvwx\"]]"
+ },
+ {
+  "id": "13",
+  "kind": "accuracy",
+  "expected": "\"abcd-efgh-ijkl-mnop-qrst\"",
+  "input": "[\"abcd efgh ijkl mnop qrst\", []]"
+ },
+ {
+  "id": "14",
+  "kind": "accuracy",
+  "expected": "\"abcd-efgh-ijkl-mnop\"",
+  "input": "[\"abcd efgh ijkl mnop qrstu vw\", []]"
+ },
+ {
+  "id": "15",
+  "kind": "accuracy",
+  "expected": "\"email-couk-2024-3\"",
+  "input": "[\"e-mail & co.uk 2024\", [\"email-couk-2024\", \"email-couk-2024-2\"]]"
+ },
+ {
+  "id": "16",
+  "kind": "accuracy",
+  "expected": "\"its-dogs-life\"",
+  "input": "[\"It's a Dog's Life\", []]"
+ },
+ {
+  "id": "17",
+  "kind": "accuracy",
+  "expected": "\"x-y-z\"",
+  "input": "[\"x y z\", [\"x-y-z-2\"]]"
+ },
+ {
+  "id": "18",
+  "kind": "accuracy",
+  "expected": "\"tale-two-cities-long\"",
+  "input": "[\"A Tale of Two Cities and a Long Walk Home\", [\"tale-two-cities-long-walk\"]]"
+ },
+ {
+  "id": "19",
+  "kind": "accuracy",
+  "expected": "\"1-2-3-4-5-6-7-8-9-10-11\"",
+  "input": "[\"1 2 3 4 5 6 7 8 9 10 11 12 13\", []]"
+ },
+ {
+  "id": "20",
+  "kind": "accuracy",
+  "expected": "\"qy8hiks1jv-ettrznu-e\"",
+  "input": "[\"qy,8HIKs!_1J?v EtTR,,ZNu e, HZWeE4kvX4HoIrJjPi9xYdigUhlvdwXwt \", []]"
+ },
+ {
+  "id": "21",
+  "kind": "accuracy",
+  "expected": "\"1kgxs5r3x1lmzofevncmg6vm\"",
+  "input": "[\"1kGXS5r3x1Lmz:oF_EVNcMG6VmYY'E3aHqhlXi4&kNWDRqcn30LmVj--8LBxh69w&Udew4G-pc&m,l\", []]"
+ },
+ {
+  "id": "22",
+  "kind": "accuracy",
+  "expected": "\"vtpzgknppmnn9nj0akad3ndy\"",
+  "input": "[\" -vtpZg&KNp,PmnN9nJ0akaD3nDYOw&k6?KK3YSs,q?-.o9Z?9Ghg&YyaYJ6vmaPCTmA86ZRYl3iHPOg\", []]"
+ }
+]

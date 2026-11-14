@@ -1,0 +1,91 @@
+/* 모델 연결 판: 제목과 지금 연결, 안내 한 줄, API 키 칸과 단추, 그 아래 ChatGPT 로그인. */
+.d6 .d6-body {
+  display: grid;
+  align-content: start;
+  height: 100%;
+  padding: 14px 20px;
+  background: var(--ss-surface);
+}
+
+.d6 .d6-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  height: 24px;
+}
+
+.d6 .d6-title {
+  color: var(--ss-text-strong);
+  font-size: 15px;
+  font-weight: 650;
+}
+
+.d6 .d6-now {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ss-text);
+  font-size: 12.5px;
+  font-weight: 600;
+  transition: color 0.4s ease;
+}
+
+.d6 .d6-now[data-on] { color: var(--ss-text-strong); }
+
+.d6 .d6-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ss-icon-faint);
+  transition: background-color 0.4s ease;
+}
+
+.d6 .d6-now[data-on] .d6-dot { background: var(--ss-success); }
+
+.d6 .d6-lead {
+  margin-top: 4px;
+  color: var(--ss-text);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.d6 .d6-group {
+  display: grid;
+  gap: 6px;
+  margin-top: 14px;
+}
+
+.d6 .d6-key {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 8px;
+}
+
+.d6 .d6-key .ss-button { margin-bottom: 3px; }
+
+.d6 .d6-lane { height: 18px; }
+
+.d6 .d6-msg {
+  color: var(--ss-text);
+  font-size: 12px;
+}
+
+.d6 .d6-msg--ok { color: var(--ss-success-text); }
+
+.d6 .d6-group--next {
+  gap: 4px;
+  padding-top: 14px;
+  box-shadow: 0 -1px 0 var(--ss-line);
+}
+
+.d6 .d6-legend {
+  color: var(--ss-text-strong);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.d6 .ss-stage[data-layout='compact'] .d6-body { padding: 14px 16px; }
+

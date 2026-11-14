@@ -1,0 +1,87 @@
+/* 왼쪽 문제 칸 | 오른쪽 코드 칸. 코드 칸은 코드 → 단추 줄 → 채점 결과가 위에서부터 쌓이고,
+   결과는 무대 아래 끝에서 한 여백(28px) 넘게 떨어져 온전히 보인다. */
+.d1 .d1-body {
+  display: grid;
+  grid-template-columns: 172px minmax(0, 1fr);
+  height: 100%;
+  background: var(--ss-surface);
+}
+
+.d1 .ss-stage[data-layout='compact'] .d1-body { grid-template-columns: minmax(0, 1fr); }
+
+.d1 .d1-problem {
+  display: grid;
+  align-content: start;
+  gap: 9px;
+  padding: 16px;
+  background: var(--ss-canvas);
+  box-shadow: 1px 0 0 var(--ss-line);
+}
+
+.d1 .d1-title {
+  color: var(--ss-text-strong);
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.d1 .d1-tags {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.d1 .d1-pane {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.d1 .d1-code {
+  flex: none;
+  padding: 10px 12px 10px 4px;
+  font-size: 12px;
+  line-height: 21px;
+}
+
+.d1 .d1-actions {
+  flex: none;
+  display: flex;
+  gap: 8px;
+  padding: 10px 16px;
+  box-shadow: 0 -1px 0 var(--ss-line);
+}
+
+.d1 .d1-result {
+  padding: 14px 16px;
+  box-shadow: 0 -1px 0 var(--ss-line);
+}
+
+/* 표시(18px)와 사이(10px)로 글 시작을 한 칸 들여 쓴다 */
+.d1 .d1-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  height: 22px;
+}
+
+.d1 .d1-line .ss-spinner { margin: 0 1px; }
+
+.d1 .d1-wait {
+  color: var(--ss-text);
+  font-size: 13px;
+}
+
+.d1 .d1-pass {
+  color: var(--ss-success-text);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.d1 .d1-counts {
+  color: var(--ss-text);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.d1 .ss-check__fill { fill: var(--ss-success); }
+

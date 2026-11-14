@@ -1,0 +1,191 @@
+{
+ "source": 379139600,
+ "ready": {
+  "fact": {
+   "spec": "문자열 배열(길이 1 이상 100,000 이하, 각 원소는 숫자 식별자와 두 시각이 빈칸으로 나뉜 문자열이며 같은 식별자가 여러 번 나올 수 있음)과 정수 3개짜리 배열, 정수 하나가 주어진다. 식별자마다 구간별 요금을 합산한 값에 상한을 씌워 [식별자, 합계] 2차원 배열로 구한다. 구간마다 시각 범위에 따라 분당 단가가 달라지고, 같은 식별자의 직전 구간과의 간격이 기준 이하이면 고정 요금을 빼며, 합계가 큰 순서 다음 식별자가 작은 순서로 정렬한다.",
+   "patterns": [
+    "dup_names",
+    "follow_steps"
+   ],
+   "skills": [
+    "time_convert",
+    "dict_loop",
+    "sort_key"
+   ],
+   "size": 100000
+  },
+  "solution": {
+   "approach": "rides가 시작 시각 순으로 주어지므로 앞에서부터 한 번만 훑으면 됩니다. 회원마다 '요금 합'과 '직전 기록의 끝 시각(분)'을 딕셔너리에 적어 둡니다. 기록 하나마다 탄 분 수에 1분 요금을 곱하고, 할증 시간과 겹친 분만큼 1분 요금을 한 번 더 더합니다. 첫 기록이거나 직전 기록이 끝난 지 gap분을 넘었으면 잠금 해제 요금을 더합니다. 다 훑은 뒤 회원별 합에 하루 최대 요금 상한을 한 번 씌우고, 요금 큰 순, 같으면 회원번호 작은 순으로 정렬합니다.",
+   "steps": [
+    "할증 시간 두 구간을 분 단위 상수로 두고, 'HH:MM'을 자정부터 몇 분째인지로 바꾸는 함수를 만든다 — 시각끼리 빼고 비교하기 쉽게 하려는 것이다",
+    "ride_fee 함수에서 (끝-시작)×1분 요금을 구하고, 각 할증 구간과 겹친 분 수만큼 1분 요금을 더 더한다 — 할증 분은 두 배를 내므로 한 번 더 내면 된다",
+    "solution에서 price를 풀어 두고, 회원별 요금 합 total과 직전 끝 시각 last_end 딕셔너리를 만든다 — 회원마다 따로 기억해야 하기 때문이다",
+    "기록을 한 줄씩 쪼개 회원번호와 시작·끝 분을 얻고 ride_fee로 이번 기록의 요금을 구한다 — 이 값이 이번 기록의 1분 요금 부분이다",
+    "첫 기록이거나 시작-직전 끝이 gap보다 크면 잠금 해제 요금을 더하고, total에 합산한 뒤 last_end를 이번 끝 시각으로 갱신한다 — 이어 탄 경우에만 잠금 해제 요금이 없고, 다음 기록이 비교할 기준을 남기기 위해서다",
+    "모든 회원에 대해 [int(회원번호), min(합, 하루 최대 요금)]을 answer에 담고, (-요금, 회원번호) 기준으로 정렬해 return 한다 — 상한은 하루 합에 한 번만 씌우고, 정렬 기준은 요금 큰 순 다음 번호 작은 순이다"
+   ],
+   "code": "RUSH = [(7 * 60 + 30, 9 * 60 + 30), (17 * 60, 19 * 60)]  # 할증 시간: 07:30 이상 09:30 미만, 17:00 이상 19:00 미만(분)\n\n\ndef to_minutes(clock):\n    # \"HH:MM\" → 자정부터 몇 분째인가\n    hour, minute = clock.split(\":\")\n    return int(hour) * 60 + int(minute)\n\n\ndef ride_fee(start, end, per_minute):\n    # start분부터 end분 바로 전까지: 탄 분마다 1분 요금, 할증 시간과 겹친 분은 1분 요금을 한 번 더\n    fee = (end - start) * per_minute\n    for rush_start, rush_end in RUSH:\n        overlap = min(end, rush_end) - max(start, rush_start)\n        if overlap > 0:\n            fee += overlap * per_minute\n    return fee\n\n\ndef solution(rides, price, gap):\n    unlock, per_minute, day_max = price\n\n    total = {}  # 회원 → 그날 요금 합\n    last_end = {}  # 회원 → 바로 앞 기록의 끝 시각(분)\n    for ride in rides:\n        member, start_clock, end_clock = ride.split(\" \")\n        start = to_minutes(start_clock)\n        end = to_minutes(end_clock)\n        fee = ride_fee(start, end, per_minute)\n        # 같은 회원의 바로 앞 기록이 끝난 지 gap분 이하이면 이어 탄 것: 잠금 해제 요금이 없다\n        if member not in last_end or start - last_end[member] > gap:\n            fee += unlock\n        total[member] = total.get(member, 0) + fee\n        last_end[member] = end\n\n    answer = []\n    for member in total:\n        answer.append([int(member), min(total[member], day_max)])  # 상한은 하루 합에 한 번\n    answer.sort(key=lambda pair: (-pair[1], pair[0]))  # 요금이 많은 회원부터, 같으면 번호가 작은 회원부터\n    return answer",
+   "verified": true,
+   "clues": [
+    "'같은 회원의 바로 앞 기록(rides에서 그 회원의 기록 가운데 이번 기록 바로 앞의 것)의 끝 시각부터 이번 기록의 시작 시각까지가 gap분 이하이면 이어 탄 것으로 보아 잠금 해제 요금을 내지 않습니다' → 회원마다 직전 기록의 끝 시각을 기억해 둘 딕셔너리가 필요하다",
+    "'07:30부터 09:29까지의 1분들과 17:00부터 18:59까지의 1분들은 할증 시간' → 시각을 자정부터의 분으로 바꾸고, 탄 구간과 할증 구간이 겹치는 분 수를 구해 그만큼 1분 요금을 한 번 더 낸다",
+    "'이 값이 하루 최대 요금보다 크면 하루 요금은 하루 최대 요금입니다' → 기록마다 상한을 씌우지 않고, 회원의 요금을 모두 더한 뒤에 한 번만 상한을 적용한다",
+    "'rides의 길이는 1 이상 100,000 이하입니다' → 기록을 앞에서부터 한 번 훑으며 합을 구하고, 마지막에 회원 수만큼만 정렬하면 충분하다"
+   ]
+  },
+  "plan": {
+   "strategy": "fresh",
+   "score": null,
+   "blocks": [
+    {
+     "id": "b1",
+     "kind": "var_from_problem",
+     "name": "할증 시간 상수",
+     "goal": "할증 시간 두 구간을 자정부터의 분 단위 값으로 적어 둔다",
+     "reference": "RUSH = [(7 * 60 + 30, 9 * 60 + 30), (17 * 60, 19 * 60)]  # 할증 시간: 07:30 이상 09:30 미만, 17:00 이상 19:00 미만(분)\n\n",
+     "checks": [
+      "할증 시간 두 구간(오전, 저녁)을 분 단위 값으로 적어 둔다",
+      "09:29의 1분까지 할증이라는 점을 구간 끝 값에 반영한다"
+     ],
+     "hints": [
+      "시각 문자열이 아니라 분 단위 숫자로 할증 구간을 적어 두면 어떤 점이 편해질까요?",
+      "'07:30부터 09:29까지의 1분들과 17:00부터 18:59까지의 1분들은 할증 시간'을 보면, 구간의 시작과 끝을 각각 몇 분째로 적어야 할까요?",
+      "07:30은 자정부터 몇 분째이고, 09:29의 1분까지 포함하려면 구간의 끝을 몇 분째까지로 잡아야 할까요?"
+     ],
+     "lines": [
+      1,
+      3
+     ]
+    },
+    {
+     "id": "b2",
+     "kind": "var_during",
+     "name": "시각을 분으로",
+     "goal": "'HH:MM' 글자를 자정부터 몇 분째인지 숫자로 바꾼다",
+     "reference": "def to_minutes(clock):\n    # \"HH:MM\" → 자정부터 몇 분째인가\n    hour, minute = clock.split(\":\")\n    return int(hour) * 60 + int(minute)\n\n",
+     "checks": [
+      "':' 기준으로 시와 분을 나눠 숫자로 바꾼다",
+      "시에 60을 곱해 분과 더해 자정부터의 분을 돌려준다"
+     ],
+     "hints": [
+      "시각을 글자 그대로 두면 끝 시각에서 시작 시각을 빼거나 크기를 비교하기 어려운데, 어떻게 바꾸면 쉬워질까요?",
+      "'예를 들어 09:28에 타서 09:32에 내리면 09:28, 09:29, 09:30, 09:31의 4분을 탔습니다'에서 탄 분 수는 두 시각을 어떻게 바꾸면 뺄셈 한 번으로 나올까요?",
+      "'01:50'과 '02:05'를 각각 자정부터 몇 분째인지로 바꾸면 두 시각 사이는 몇 분일까요?"
+     ],
+     "lines": [
+      4,
+      9
+     ]
+    },
+    {
+     "id": "b3",
+     "kind": "var_during",
+     "name": "기록 하나의 이용 요금",
+     "goal": "시작·끝 분과 1분 요금으로 탄 시간 요금에 할증분을 더해 돌려준다",
+     "reference": "def ride_fee(start, end, per_minute):\n    # start분부터 end분 바로 전까지: 탄 분마다 1분 요금, 할증 시간과 겹친 분은 1분 요금을 한 번 더\n    fee = (end - start) * per_minute\n    for rush_start, rush_end in RUSH:\n        overlap = min(end, rush_end) - max(start, rush_start)\n        if overlap > 0:\n            fee += overlap * per_minute\n    return fee\n\n",
+     "checks": [
+      "탄 분 수(끝-시작)에 1분 요금을 곱해 기본 요금을 구한다",
+      "탄 구간과 각 할증 구간이 겹치는 분 수를 구한다",
+      "겹친 분만큼 1분 요금을 한 번 더 더하고, 겹치지 않으면 더하지 않는다"
+     ],
+     "hints": [
+      "기록 하나에서 탄 시간만으로 정해지는 요금을 구하려면 어떤 값들을 알아야 할까요?",
+      "'그 1분에는 1분 요금의 두 배를 냅니다'를 보면, 할증 시간의 1분은 기본 요금에 더해 얼마를 더 내는 걸까요?",
+      "09:28에 타서 09:32에 내리고 1분 요금이 10원이면, 전체 4분의 요금과 할증으로 더 내는 분의 요금은 각각 얼마일까요?"
+     ],
+     "lines": [
+      10,
+      19
+     ]
+    },
+    {
+     "id": "b4",
+     "kind": "var_during",
+     "name": "회원별 기억 그릇",
+     "goal": "price를 풀어 두고 회원마다 요금 합과 직전 끝 시각을 기억할 그릇을 만든다",
+     "reference": "def solution(rides, price, gap):\n    unlock, per_minute, day_max = price\n\n    total = {}  # 회원 → 그날 요금 합\n    last_end = {}  # 회원 → 바로 앞 기록의 끝 시각(분)",
+     "checks": [
+      "price의 세 값을 각각 이름을 붙여 풀어 둔다",
+      "회원별 요금 합을 담는 그릇을 만든다",
+      "회원별 바로 앞 기록의 끝 시각을 담는 그릇을 따로 만든다"
+     ],
+     "hints": [
+      "회원이 여러 명이고 기록이 섞여 있을 때, 회원마다 따로 기억해 둬야 하는 값은 무엇일까요?",
+      "'같은 회원의 바로 앞 기록(rides에서 그 회원의 기록 가운데 이번 기록 바로 앞의 것)의 끝 시각부터 이번 기록의 시작 시각까지가 gap분 이하이면'을 확인하려면 회원마다 무엇을 적어 두어야 할까요?",
+      "['7 10:00 10:30', '31 10:10 11:00', '7 10:30 11:00']을 차례로 읽을 때, 세 번째 기록에서 알아야 하는 끝 시각은 어느 기록의 것이고 어디에 적혀 있어야 할까요?"
+     ],
+     "lines": [
+      20,
+      24
+     ]
+    },
+    {
+     "id": "b5",
+     "kind": "loop",
+     "name": "기록 하나씩 읽기",
+     "goal": "기록을 앞에서부터 한 줄씩 쪼개 회원번호와 시작·끝 분을 얻고 이용 요금을 구한다",
+     "reference": "    for ride in rides:\n        member, start_clock, end_clock = ride.split(\" \")\n        start = to_minutes(start_clock)\n        end = to_minutes(end_clock)\n        fee = ride_fee(start, end, per_minute)",
+     "checks": [
+      "rides를 앞에서부터 한 번만 훑는다",
+      "한 줄을 빈칸으로 나눠 회원번호, 시작, 끝을 얻는다",
+      "시작과 끝을 분으로 바꿔 이번 기록의 이용 요금을 구한다"
+     ],
+     "hints": [
+      "기록이 문자열 한 줄로 주어지는데, 요금을 계산하려면 한 줄에서 무엇을 꺼내야 할까요?",
+      "'낱말은 빈칸 하나로 나뉩니다'를 보면, 이 한 줄을 어떻게 나누면 회원번호와 두 시각을 얻을까요?",
+      "'15 06:50 07:40'을 나누면 어떤 세 조각이 나오고, 그중 어느 조각을 분으로 바꿔야 할까요?"
+     ],
+     "lines": [
+      25,
+      29
+     ]
+    },
+    {
+     "id": "b6",
+     "kind": "condition",
+     "name": "잠금 해제 요금과 합산",
+     "goal": "첫 기록이거나 간격이 gap분을 넘으면 잠금 해제 요금을 더하고, 회원 합에 더한 뒤 끝 시각을 갱신한다",
+     "reference": "        # 같은 회원의 바로 앞 기록이 끝난 지 gap분 이하이면 이어 탄 것: 잠금 해제 요금이 없다\n        if member not in last_end or start - last_end[member] > gap:\n            fee += unlock\n        total[member] = total.get(member, 0) + fee\n        last_end[member] = end\n",
+     "checks": [
+      "그 회원의 기록이 처음인 경우를 구분한다",
+      "시작-직전 끝이 gap보다 크면 잠금 해제 요금을 더하고, gap 이하(같으면 포함)면 더하지 않는다",
+      "이번 기록의 요금을 회원 합에 더하고 직전 끝 시각을 이번 끝으로 바꿔 둔다"
+     ],
+     "hints": [
+      "이번 기록에서 잠금 해제 요금을 내는 경우와 내지 않는 경우는 무엇으로 갈릴까요?",
+      "'그 회원의 그날 첫 기록은 언제나 잠금 해제 요금을 냅니다'를 보면, 첫 기록인지는 기억해 둔 값으로 어떻게 알아낼 수 있을까요?",
+      "gap이 10이고 앞 기록이 07:40에 끝났다면, 07:50에 시작한 기록과 07:51에 시작한 기록은 각각 잠금 해제 요금이 어떻게 될까요?"
+     ],
+     "lines": [
+      30,
+      35
+     ]
+    },
+    {
+     "id": "b7",
+     "kind": "var_during",
+     "name": "상한 씌우고 정렬",
+     "goal": "회원별 합에 하루 최대 요금 상한을 한 번 씌우고, 요금 큰 순·번호 작은 순으로 정렬해 돌려준다",
+     "reference": "    answer = []\n    for member in total:\n        answer.append([int(member), min(total[member], day_max)])  # 상한은 하루 합에 한 번\n    answer.sort(key=lambda pair: (-pair[1], pair[0]))  # 요금이 많은 회원부터, 같으면 번호가 작은 회원부터\n    return answer",
+     "checks": [
+      "회원마다 [회원번호(수), 요금] 쌍을 만든다",
+      "상한은 기록마다가 아니라 회원의 합에 한 번만 적용한다",
+      "요금 큰 순, 같으면 회원번호를 수로 본 작은 순으로 정렬한다"
+     ],
+     "hints": [
+      "회원별 합을 모두 구한 뒤 결과 배열을 만들기까지 어떤 일이 남았을까요?",
+      "'이 값이 하루 최대 요금보다 크면 하루 요금은 하루 최대 요금입니다'에서 '이 값'은 무엇의 합이고, 상한은 언제 몇 번 적용해야 할까요?",
+      "[31번 3000원, 7번 3000원, 100번 550원]을 요금 많은 순, 같으면 번호 작은 순으로 세우면 어떤 순서가 될까요?"
+     ],
+     "lines": [
+      36,
+      40
+     ]
+    }
+   ],
+   "algorithm": "implementation",
+   "out_of_scope": false,
+   "link": ""
+  }
+ }
+}

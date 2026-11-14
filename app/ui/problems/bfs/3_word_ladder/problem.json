@@ -1,0 +1,37 @@
+{
+ "id": "bfs_3_word_ladder",
+ "theme": "bfs",
+ "level": 3,
+ "title": "한 글자씩 바꾸는 낱말 사다리",
+ "statement": "낱말 사다리 놀이는 시작 낱말에서 출발해 글자를 한 번에 하나씩 바꾸어 목표 낱말을 만드는 놀이입니다. 시작 낱말 start, 목표 낱말 goal, 놀이에 쓸 수 있는 낱말을 모은 사전 dictionary가 주어집니다.\n한 번 바꿀 때는 낱말의 한 자리에 있는 글자 하나만 다른 알파벳 소문자로 바꿉니다. 글자를 더하거나 빼거나 자리를 옮길 수는 없으며, 바꾼 결과는 반드시 dictionary에 있는 낱말이어야 합니다. 그래서 goal도 dictionary에 있어야 만들 수 있습니다. start는 dictionary에 있을 수도 있고 없을 수도 있습니다.\nstart에서 goal을 만들 때까지 바꾸는 횟수의 최솟값을 return 하도록 solution 함수를 완성하세요. goal을 만들 수 없으면 -1을 return 합니다.",
+ "limits": [
+  "start와 goal은 서로 다른 낱말입니다.",
+  "start, goal과 dictionary의 낱말은 모두 길이가 같으며, 그 길이는 1 이상 6 이하입니다.",
+  "모든 낱말은 알파벳 소문자로만 이루어져 있습니다.",
+  "dictionary의 길이는 1 이상 100,000 이하이고, dictionary에 같은 낱말이 두 번 들어 있지 않습니다."
+ ],
+ "params": [{"name": "start", "type": "string"}, {"name": "goal", "type": "string"}, {"name": "dictionary", "type": "string[]"}],
+ "returns": "int",
+ "examples": [
+  {"args": ["pine", "lake", ["line", "lane", "lake", "pane", "fine", "mike"]], "note": "pine → line → lane → lake로 3번 바꾸면 됩니다. pine과 lake는 세 자리가 달라 3번보다 적게 바꿀 수는 없습니다."},
+  {"args": ["rain", "ruin", ["main", "rail", "gain"]], "note": "rain과 ruin은 한 자리만 다르지만 ruin이 dictionary에 없으므로 만들 수 없어 -1입니다."},
+  {"args": ["sand", "bond", ["sane", "bane", "bone", "bond", "sank"]], "note": "sand와 bond는 두 자리만 다르지만 band도 sond도 dictionary에 없습니다. sand → sane → bane → bone → bond처럼 마지막 글자를 e로 바꿨다가 다시 d로 되돌려야 해서 4번입니다."}
+ ],
+ "signals": [
+  {"phrase": "글자를 한 번에 하나씩 바꾸어", "means": "한 번에 한 단계씩 바뀌는 '상태'가 있다. 낱말 하나를 노드로, 한 번에 바꿀 수 있는 관계를 간선으로 보면 눈에 보이지 않는 그래프가 된다."},
+  {"phrase": "바꾸는 횟수의 최솟값", "means": "바꾸기 한 번의 비용이 모두 1로 같다. 그 보이지 않는 그래프에서 BFS로 처음 닿는 단계가 답이다."},
+  {"phrase": "반드시 dictionary에 있는 낱말", "means": "갈 수 있는 노드가 사전으로 정해진다. 사전 밖 낱말은 노드가 아니므로 거쳐 갈 수도 없고, goal이 사전에 없으면 처음부터 닿을 수 없다."},
+  {"phrase": "dictionary의 길이는 1 이상 100,000 이하", "means": "노드마다 사전 전체와 견주어 이웃을 찾으면 10만 × 10만 번이다. 견주어 찾지 말고 이웃 후보를 직접 만들어(자리 수 × 25개) 집합에서 찾는다."}
+ ],
+ "pattern": "보이지 않는 그래프의 BFS(이웃 후보를 만들어 찾기)",
+ "learn": "낱말을 노드, 한 글자 차이를 간선으로 보고 BFS 합니다. 간선이 주어지지 않을 때는 이웃 후보를 직접 만들어 집합에서 확인하면 모든 쌍을 견주지 않아도 된다는 것을 익힙니다.",
+ "pitfalls": [
+  "두 낱말의 글자 집합(set)의 차로 한 글자 차이를 판단한다(글자의 자리와 겹치는 글자를 무시한다)",
+  "DFS로 처음 만든 순서의 횟수를 답으로 한다",
+  "goal이 dictionary에 없어도 한 글자 차이면 만들 수 있다고 본다",
+  "goal과 같은 글자가 더 많은 낱말로만 욕심내어 옮겨 간다(멀어졌다 돌아와야 하는 길을 놓친다)",
+  "꺼낸 낱말마다 사전 전체와 견주어 이웃을 찾아 시간이 모자란다"
+ ],
+ "ladder": "2단계는 이웃이 케이블 목록으로 주어졌지만, 이번에는 노드(낱말)와 간선(한 글자 차이)을 스스로 정하고 이웃을 직접 만들어 내야 한다.",
+ "source_type": ""
+}

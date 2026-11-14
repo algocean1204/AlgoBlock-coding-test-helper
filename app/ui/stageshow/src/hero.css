@@ -1,0 +1,34 @@
+/* README 그림: 880×440 무대, 창은 위 40px·양옆 48px 여백에서 시작해 아래로 흘러나간다. */
+
+.hero .hero-win {
+  position: absolute;
+  top: 40px;
+  left: 48px;
+  width: 784px;
+  height: 560px;
+  box-shadow: var(--ss-shadow-hero);
+}
+
+.hero .hero-win .ss-window__title {
+  flex: none;
+  margin: 0 auto;
+  translate: -21px 0;
+}
+
+.hero .hero-body {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr) 236px;
+  height: 100%;
+  background: var(--ss-surface);
+}
+
+.hero .hero-code { box-shadow: 1px 0 0 var(--ss-line); }
+
+/* 입력 칸이 무대 아래 끝에서 한 여백(40px) 위에서 끝난다: 창 몸통 522px - 보이는 높이 362px + 40px */
+.hero .d3-chat { padding-bottom: 200px; }
+
+.hero .d1-code { font-size: 11.5px; }
+
+.hero .d3-thread { gap: 8px; }
+
+.hero .d3-msg { line-height: 1.4; }

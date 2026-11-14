@@ -1,0 +1,84 @@
+# 시험 돌리기
+
+이 문서는 어떤 시험을 돌릴지, 시험이 무엇을 보는지, CI가 무엇을 돌리는지 답한다. 시험은 모델을 부르지 않으며 API 키가 필요 없다.
+
+## 시험 명령
+
+명령은 저장소 루트에서 시작한다.
+
+```bash
+# 1. 튜터 엔진
+cd app && uv run -q --no-project --python 3.12 --with langgraph --with pypdf python -B -m unittest discover -s tutor/tests -t .
+
+# 2. 화면 서버 (끝에 ok가 찍히면 통과)
+cd app && uv run -q --no-project --python 3.12 --with langgraph --with pypdf python -B ui/test_server.py
+
+# 3. 저장소 구조와 공개 전 검사
+cd app && python3 -B ui/test_structure.py
+cd app && python3 -B ui/test_publish.py
+cd app && python3 -B ui/test_publish.py history
+
+# 4. 채점기 (cd app/judge 에서)
+cd app/judge && python3 -B -m unittest test_check
+```
+
+| 시험 | 보는 것 |
+| --- | --- |
+| 1. 튜터 엔진 | 모델 연결, ChatGPT 로그인(네트워크 없이), 설계 경계, 규칙, 평가기, 벡터 색인, 문제 읽기, 온톨로지, 질문 유형 표, 가짜 모델로 돌리는 그래프 흐름과 튜터 서비스 전체(SQLite) |
+| 2. 화면 서버 | 등록, 묶음, 효율성 제한, 기본 문제, 학습 보고서, 홈, 디버그, 고치기·지우기, 시작 코드, 숨은 케이스, 잘못된 HTTP 요청 거르기, 파일 올리기, 화면 파일(글꼴 포함) 존재 |
+| 3. 저장소 구조 | 루트·`app`·`Docs`에 허용되지 않은 것이 없는지, 내부 파일이 추적되지 않는지 |
+| 3. 공개 전 검사 | 추적하는 파일의 내부 경로, 키 모양의 글자, 개인 경로와 이메일, 내부 이름, 50MB를 넘는 파일, `.env.example`의 키 이름과 서버 키 이름이 같은지, LICENSE, 공개 문서의 링크 |
+| 3. 공개 전 검사 `history` | 현재 브랜치의 모든 커밋의 모든 파일에서 내부 경로와 내용(키 모양, 개인 경로·이메일, 내부 이름)을 본다. 걸리면 경로와 커밋 수를 내고 종료 코드 1로 끝난다 |
+| 4. 채점기 | 비교, 모드 정하기, 7개 언어의 두 모드, 실패 종류, 다른 모드로 다시 돌리기, 큰 인자 파일, 출력·메모리 상한, 자식 프로세스 정리, 비밀 환경 변수 거르기, 효율성 케이스 |
+
+- 1번은 임베딩 패키지나 모델 파일이 없으면 색인 시험 일부를 건너뛴다.
+- 4번은 기기에 없는 언어를 건너뛴다. 모든 언어를 시험하려면 그 언어의 도구를 먼저 깐다([언어 도구](../guide/install.md#언어-도구)).
+- `ALGOBLOCK_LIVE=1`을 주면 실제 모델을 부르는 `tutor/tests/test_live.py`가 돈다. 키가 필요하다. 평소 실행과 CI에서는 건너뛴다.
+
+## 기본 문제 검사
+
+기본 문제 검사는 시험 명령이 아니다. 문제 하나나 주제 하나를 검사하며 모델을 부르지 않는다. 자세한 내용은 [add-builtin-problem.md](add-builtin-problem.md)를 본다.
+
+```bash
+cd app && python3 ui/problemkit.py check ui/problems/<주제>
+```
+
+전체 검사는 느린 풀이가 시간 초과할 때까지 기다려 수십 분이 걸린다. 그래서 CI에서 돌리지 않는다.
+
+## 바꾼 곳별로 돌릴 것
+
+| 바꾼 곳 | 돌릴 것 |
+| --- | --- |
+| `app/tutor/` | 1번 |
+| `app/llm/` | 1번 |
+| `app/ui/` (서버, 화면, 도구) | 2번. 튜터 코드도 건드렸다면 1번 |
+| `app/judge/` | 4번과 2번(서버가 채점기를 부른다) |
+| `app/ui/problems/` 또는 `problemkit.py`·`make_builtin.py` | 기본 문제 검사(바꾼 주제 폴더) + 2번 |
+| 파일이나 폴더를 추가·옮김, `.gitignore` | 3번 `test_structure.py` |
+| 공개 문서, 링크, `LICENSE`, `.env.example` | 3번 `test_publish.py` |
+| 커밋을 만들거나 고쳤음(푸시 전) | 3번 `test_publish.py history` |
+
+## 시험 정책
+
+- 새 시험은 그 변경을 되돌리면 실패해야 한다. 변경을 임시로 되돌려 시험이 실패하는지 확인한다.
+- 시험은 모델을 부르지 않는다(`ALGOBLOCK_LIVE` 시험 제외). 모델이 필요한 동작은 가짜 모델로 시험한다.
+- 화면 서버 시험은 API 키 환경 변수를 지우고, 임시 데이터 폴더와 임시 기본 문제 묶음을 쓴다. `ui/builtin.json`은 건드리지 않는다.
+
+## CI
+
+파일은 `.github/workflows/ci.yml`이다. 모든 pull request와 `main` 푸시에서 돈다. 같은 ref의 이전 실행은 취소된다.
+
+| 작업 | 돌리는 것 | 제한 시간 |
+| --- | --- | --- |
+| `engine-tests` | 1번, 2번 | 20분 |
+| `judge-tests` | 4번(러너에 있는 언어만 돈다) | 20분 |
+| `publish-check` | 3번 세 가지(구조, 현재 파일, 모든 커밋) | 10분 |
+| `secret-scan` | gitleaks로 기록 전체 검사 | 10분 |
+| `branch-name` | 이 저장소 안에서 올린 PR의 브랜치 이름이 규칙에 맞는지 본다. 다른 저장소의 PR과 dependabot 브랜치는 보지 않는다 | 5분 |
+| `ci-passed` | 위 다섯 작업이 모두 성공했는지 본다 | 5분 |
+
+- `ci-passed`가 `main` 브랜치 보호 규칙이 요구하는 유일한 검사다. 새 검사 작업은 `ci-passed`의 `needs`에 넣는다.
+
+## 알려진 한계
+
+- 4번은 CI 러너에 설치된 언어만 본다. 나머지 언어의 시험은 그 언어 도구가 있는 기기에서 돌려야 한다.

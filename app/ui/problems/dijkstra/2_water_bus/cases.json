@@ -1,0 +1,146 @@
+[
+ {
+  "id": "1",
+  "kind": "example",
+  "expected": "8",
+  "input": "[[\"pier mill 6\", \"mill tower 2\", \"pier tower 10\", \"tower pier 1\"], \"pier\", \"tower\"]"
+ },
+ {
+  "id": "2",
+  "kind": "example",
+  "expected": "10",
+  "input": "[[\"port isle 5\", \"isle cave 5\", \"cave port 1\"], \"port\", \"cave\"]"
+ },
+ {
+  "id": "3",
+  "kind": "example",
+  "expected": "-1",
+  "input": "[[\"west east 3\", \"north west 2\"], \"west\", \"north\"]"
+ },
+ {
+  "id": "4",
+  "kind": "accuracy",
+  "expected": "1",
+  "input": "[[\"a b 1\"], \"a\", \"b\"]"
+ },
+ {
+  "id": "5",
+  "kind": "accuracy",
+  "expected": "-1",
+  "input": "[[\"a b 1\"], \"b\", \"a\"]"
+ },
+ {
+  "id": "6",
+  "kind": "accuracy",
+  "expected": "1000",
+  "input": "[[\"ab ba 1000\", \"ba ab 1\"], \"ab\", \"ba\"]"
+ },
+ {
+  "id": "7",
+  "kind": "accuracy",
+  "expected": "2",
+  "input": "[[\"x y 9\", \"x y 2\", \"x y 5\"], \"x\", \"y\"]"
+ },
+ {
+  "id": "8",
+  "kind": "accuracy",
+  "expected": "2",
+  "input": "[[\"a aa 1\", \"aa aaa 1\", \"a aaa 3\"], \"a\", \"aaa\"]"
+ },
+ {
+  "id": "9",
+  "kind": "accuracy",
+  "expected": "-1",
+  "input": "[[\"home mall 1\", \"mall home 1\", \"gate home 1\"], \"home\", \"gate\"]"
+ },
+ {
+  "id": "10",
+  "kind": "accuracy",
+  "expected": "-1",
+  "input": "[[\"mall home 1\", \"mall gate 1\"], \"home\", \"gate\"]"
+ },
+ {
+  "id": "11",
+  "kind": "accuracy",
+  "expected": "4",
+  "input": "[[\"s a 1\", \"s g 50\", \"a b 1\", \"b c 1\", \"c g 1\", \"g s 1\"], \"s\", \"g\"]"
+ },
+ {
+  "id": "12",
+  "kind": "accuracy",
+  "expected": "10",
+  "input": "[[\"p q 5\", \"q r 5\", \"r p 1\", \"p r 100\"], \"p\", \"r\"]"
+ },
+ {
+  "id": "13",
+  "kind": "accuracy",
+  "expected": "4",
+  "input": "[[\"a b 2\", \"b d 2\", \"a c 1\", \"c d 3\"], \"a\", \"d\"]"
+ },
+ {
+  "id": "14",
+  "kind": "accuracy",
+  "expected": "1000",
+  "input": "[[\"abcdefghij klmnopqrst 1000\", \"klmnopqrst z 1000\", \"abcdefghij z 1000\", \"z abcdefghij 1\"], \"abcdefghij\", \"z\"]"
+ },
+ {
+  "id": "15",
+  "kind": "accuracy",
+  "expected": "10",
+  "input": "[[\"a b 9\", \"a b 10\", \"b c 1\"], \"a\", \"c\"]"
+ },
+ {
+  "id": "16",
+  "kind": "accuracy",
+  "expected": "5",
+  "input": "[[\"ab c 1\", \"a bc 5\", \"bc ab 1\"], \"a\", \"bc\"]"
+ },
+ {
+  "id": "17",
+  "kind": "accuracy",
+  "expected": "3",
+  "input": "[[\"reef tower 7\", \"reef cave 3\", \"reef port 3\", \"cave tower 4\", \"reef bay 2\", \"bay reef 8\", \"port tower 2\", \"cave reef 7\", \"bay well 5\", \"port bay 1\"], \"reef\", \"cave\"]"
+ },
+ {
+  "id": "18",
+  "kind": "accuracy",
+  "expected": "5",
+  "input": "[[\"well bay 16\", \"bay dock 6\", \"mill well 7\", \"cove well 11\", \"dock lake 6\", \"reef well 12\", \"reef lake 1\", \"cove bay 5\", \"dock cave 7\", \"dock bay 1\", \"mill bay 12\", \"lake mill 11\", \"dock reef 6\", \"well dock 4\", \"reef well 2\", \"bay cave 7\"], \"cove\", \"bay\"]"
+ },
+ {
+  "id": "19",
+  "kind": "accuracy",
+  "expected": "373",
+  "input": "[[\"well pier 231\", \"well gate 308\", \"bay dock 95\", \"pier lake 878\", \"isle bay 901\", \"gate well 297\", \"port inn 311\", \"reef isle 4\", \"gate lake 863\", \"pier well 667\", \"tower lake 439\", \"pier port 549\", \"bay farm 372\", \"isle dock 689\", \"gate well 624\", \"bay gate 473\", \"isle tower 439\", \"reef farm 390\", \"isle well 61\", \"reef port 496\", \"farm tower 962\", \"dock well 567\", \"port well 211\", \"inn bay 817\", \"dock pier 774\"], \"reef\", \"gate\"]"
+ },
+ {
+  "id": "20",
+  "kind": "accuracy",
+  "expected": "6",
+  "input": "[[\"gate cave 3\", \"gate well 4\", \"farm bay 5\", \"inn reef 8\", \"tower bay 5\", \"inn hill 5\", \"farm reef 3\", \"cove mill 3\", \"tower isle 3\", \"pier well 9\", \"pier mill 9\", \"dock cave 6\", \"cave pier 7\", \"cave hill 3\", \"pier port 9\", \"bay gate 2\", \"gate well 5\", \"mill bay 7\", \"inn tower 6\", \"reef tower 9\", \"mill farm 7\", \"inn isle 5\", \"well tower 2\", \"pier isle 2\", \"pier cove 4\", \"port mill 6\", \"mill lake 5\", \"mill port 3\", \"hill inn 4\", \"hill mill 7\", \"cave cove 9\", \"isle inn 3\", \"tower reef 7\", \"hill well 5\", \"inn cave 5\", \"reef dock 5\", \"reef mill 8\", \"well port 7\", \"isle reef 5\", \"gate port 2\"], \"port\", \"mill\"]"
+ },
+ {
+  "id": "21",
+  "kind": "accuracy",
+  "expected": "125",
+  "input": "[[\"azx bsf 83\", \"zgc bhahj 99\", \"x azx 41\", \"zdpz bhahj 49\", \"eapa ox 9\", \"z xvb 84\", \"jvzvz eapa 72\", \"bhahj ox 53\", \"cq zdpz 59\", \"zdpz x 17\", \"mjj bhahj 5\", \"zgc xvb 87\", \"gzq z 45\", \"queg azx 62\", \"qdl sw 5\", \"zgc qdl 56\", \"xvb qdl 32\", \"mjj xvb 76\", \"bsf fkd 35\", \"azx f 93\", \"jvzvz f 32\", \"bhahj sw 4\", \"mjj sw 48\", \"gzq zdpz 89\", \"jvzvz x 14\", \"mjj queg 70\", \"jvzvz glv 85\", \"jvzvz zdpz 23\", \"azx x 52\", \"x cq 91\", \"queg fkd 50\", \"cq ox 65\", \"cq sw 16\", \"azx xvb 24\", \"eapa glv 59\", \"eapa z 35\", \"zgc ox 98\", \"ox glv 21\", \"bsf jvzvz 23\", \"ox zdpz 59\", \"azx ox 87\", \"mjj x 42\", \"fkd bhahj 48\", \"eapa x 74\", \"cq f 92\", \"jvzvz x 33\", \"cq sw 80\", \"bsf fkd 23\", \"eapa sw 65\", \"sw x 30\"], \"bhahj\", \"cq\"]"
+ },
+ {
+  "id": "22",
+  "kind": "accuracy",
+  "expected": "1888",
+  "input": "[[\"uxtb ve 520\", \"htdj jykc 508\", \"ve uxtb 457\", \"brn bu 405\", \"sh y 562\", \"bu ri 17\", \"zt ve 317\", \"cdo qn 818\", \"b znh 49\", \"vu t 208\", \"ub ef 588\", \"nsqfv mu 891\", \"znh vu 470\", \"uxtb htdj 218\", \"g nsqfv 656\", \"sh t 794\", \"jykc ve 995\", \"ve y 853\", \"zt b 408\", \"jzkc htdj 213\", \"k b 648\", \"rohne jzkc 722\", \"qhcqj rr 868\", \"rohne jykc 872\", \"ve znh 622\", \"t bu 588\", \"qn bu 841\", \"uxtb b 817\", \"t nsqfv 401\", \"ub qn 958\", \"ve bu 283\", \"jzkc t 913\", \"nsqfv rohne 632\", \"cdo ef 573\", \"y ri 367\", \"bu znh 207\", \"vu w 839\", \"vu ub 216\", \"nsqfv ve 56\", \"qhcqj jykc 175\", \"ef znh 804\", \"ve cdo 531\", \"ve qhcqj 47\", \"w sh 498\", \"ri t 681\", \"jykc g 937\", \"mu ve 922\", \"k qhcqj 18\", \"gi w 370\", \"rr ve 243\", \"zt qn 574\", \"uxtb g 20\", \"b rohne 340\", \"jykc w 51\", \"p ub 326\", \"sh bu 73\", \"nsqfv bu 638\", \"k rohne 542\", \"vu znh 727\", \"bu y 986\"], \"g\", \"ub\"]"
+ },
+ {
+  "id": "23",
+  "kind": "efficiency",
+  "expected": "-1",
+  "gen": 0
+ },
+ {
+  "id": "24",
+  "kind": "efficiency",
+  "expected": "30064093",
+  "gen": 1
+ }
+]

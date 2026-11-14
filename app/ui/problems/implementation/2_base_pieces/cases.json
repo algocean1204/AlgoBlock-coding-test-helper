@@ -1,0 +1,140 @@
+[
+ {
+  "id": "1",
+  "kind": "example",
+  "expected": "[2, 5]",
+  "input": "[3, 46]"
+ },
+ {
+  "id": "2",
+  "kind": "example",
+  "expected": "[3, 127]",
+  "input": "[16, 801407]"
+ },
+ {
+  "id": "3",
+  "kind": "example",
+  "expected": "[3, 3]",
+  "input": "[2, 89]"
+ },
+ {
+  "id": "4",
+  "kind": "accuracy",
+  "expected": "[1, 1]",
+  "input": "[2, 1]"
+ },
+ {
+  "id": "5",
+  "kind": "accuracy",
+  "expected": "[2, 1]",
+  "input": "[2, 2]"
+ },
+ {
+  "id": "6",
+  "kind": "accuracy",
+  "expected": "[1, 15]",
+  "input": "[16, 15]"
+ },
+ {
+  "id": "7",
+  "kind": "accuracy",
+  "expected": "[2, 1]",
+  "input": "[10, 1000]"
+ },
+ {
+  "id": "8",
+  "kind": "accuracy",
+  "expected": "[2, 1]",
+  "input": "[3, 243]"
+ },
+ {
+  "id": "9",
+  "kind": "accuracy",
+  "expected": "[10, 9]",
+  "input": "[10, 9876543210]"
+ },
+ {
+  "id": "10",
+  "kind": "accuracy",
+  "expected": "[1, 1123456789]",
+  "input": "[10, 1123456789]"
+ },
+ {
+  "id": "11",
+  "kind": "accuracy",
+  "expected": "[1, 12345678999999]",
+  "input": "[10, 12345678999999]"
+ },
+ {
+  "id": "12",
+  "kind": "accuracy",
+  "expected": "[2, 12]",
+  "input": "[10, 912]"
+ },
+ {
+  "id": "13",
+  "kind": "accuracy",
+  "expected": "[1, 5555]",
+  "input": "[10, 5555]"
+ },
+ {
+  "id": "14",
+  "kind": "accuracy",
+  "expected": "[10, 15]",
+  "input": "[2, 100000000000000]"
+ },
+ {
+  "id": "15",
+  "kind": "accuracy",
+  "expected": "[6, 1455]",
+  "input": "[16, 100000000000000]"
+ },
+ {
+  "id": "16",
+  "kind": "accuracy",
+  "expected": "[2, 1]",
+  "input": "[2, 2147483648]"
+ },
+ {
+  "id": "17",
+  "kind": "accuracy",
+  "expected": "[11, 15]",
+  "input": "[16, 17513998550885]"
+ },
+ {
+  "id": "18",
+  "kind": "accuracy",
+  "expected": "[3, 155]",
+  "input": "[16, 10132236]"
+ },
+ {
+  "id": "19",
+  "kind": "accuracy",
+  "expected": "[6, 111]",
+  "input": "[16, 28772997619311]"
+ },
+ {
+  "id": "20",
+  "kind": "accuracy",
+  "expected": "[7, 6]",
+  "input": "[7, 800667]"
+ },
+ {
+  "id": "21",
+  "kind": "accuracy",
+  "expected": "[2, 153]",
+  "input": "[11, 18523]"
+ },
+ {
+  "id": "22",
+  "kind": "accuracy",
+  "expected": "[5, 1243]",
+  "input": "[8, 41576263687734]"
+ },
+ {
+  "id": "23",
+  "kind": "accuracy",
+  "expected": "[2, 1]",
+  "input": "[2, 4]"
+ }
+]

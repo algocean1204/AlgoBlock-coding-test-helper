@@ -1,0 +1,140 @@
+[
+ {
+  "id": "1",
+  "kind": "example",
+  "expected": "3",
+  "input": "[[\"abcd\", \"cdab\", \"adcb\", \"abdc\"]]"
+ },
+ {
+  "id": "2",
+  "kind": "example",
+  "expected": "4",
+  "input": "[[\"abc\", \"acb\", \"bca\", \"cab\", \"aab\"]]"
+ },
+ {
+  "id": "3",
+  "kind": "example",
+  "expected": "2",
+  "input": "[[\"ab\", \"ba\", \"a\", \"aa\", \"aab\"]]"
+ },
+ {
+  "id": "4",
+  "kind": "accuracy",
+  "expected": "1",
+  "input": "[[\"a\"]]"
+ },
+ {
+  "id": "5",
+  "kind": "accuracy",
+  "expected": "3",
+  "input": "[[\"z\", \"z\", \"z\"]]"
+ },
+ {
+  "id": "6",
+  "kind": "accuracy",
+  "expected": "2",
+  "input": "[[\"ab\", \"ba\"]]"
+ },
+ {
+  "id": "7",
+  "kind": "accuracy",
+  "expected": "2",
+  "input": "[[\"abcd\", \"dcba\"]]"
+ },
+ {
+  "id": "8",
+  "kind": "accuracy",
+  "expected": "4",
+  "input": "[[\"abcd\", \"bcda\", \"cdab\", \"dabc\"]]"
+ },
+ {
+  "id": "9",
+  "kind": "accuracy",
+  "expected": "4",
+  "input": "[[\"abcd\", \"badc\", \"cbad\", \"adcb\"]]"
+ },
+ {
+  "id": "10",
+  "kind": "accuracy",
+  "expected": "2",
+  "input": "[[\"abcd\", \"abdc\", \"acbd\", \"acdb\", \"adbc\"]]"
+ },
+ {
+  "id": "11",
+  "kind": "accuracy",
+  "expected": "3",
+  "input": "[[\"a\", \"aa\", \"aaa\", \"aa\", \"a\", \"aa\"]]"
+ },
+ {
+  "id": "12",
+  "kind": "accuracy",
+  "expected": "3",
+  "input": "[[\"aabb\", \"abab\", \"baba\", \"bbaa\", \"abba\"]]"
+ },
+ {
+  "id": "13",
+  "kind": "accuracy",
+  "expected": "3",
+  "input": "[[\"abcdefghij\", \"jihgfedcba\", \"fghijabcde\", \"abcdefghji\"]]"
+ },
+ {
+  "id": "14",
+  "kind": "accuracy",
+  "expected": "3",
+  "input": "[[\"xyz\", \"xzy\", \"yxz\", \"q\", \"q\", \"q\"]]"
+ },
+ {
+  "id": "15",
+  "kind": "accuracy",
+  "expected": "4",
+  "input": "[[\"aab\", \"aba\", \"baa\", \"abb\", \"bab\", \"bba\", \"bba\"]]"
+ },
+ {
+  "id": "16",
+  "kind": "accuracy",
+  "expected": "6",
+  "input": "[[\"cacacac\", \"ccacaca\", \"ccbbba\", \"ba\", \"ab\", \"babb\", \"acaccac\", \"accacac\", \"caccaca\", \"ab\", \"bbab\", \"abbbcc\", \"abbbcc\", \"accacac\"]]"
+ },
+ {
+  "id": "17",
+  "kind": "accuracy",
+  "expected": "4",
+  "input": "[[\"b\", \"b\", \"b\", \"cbba\", \"cabb\", \"b\"]]"
+ },
+ {
+  "id": "18",
+  "kind": "accuracy",
+  "expected": "4",
+  "input": "[[\"abbacb\", \"ccbaccb\", \"abbabc\", \"abcabb\", \"babcab\", \"ccbccba\"]]"
+ },
+ {
+  "id": "19",
+  "kind": "accuracy",
+  "expected": "6",
+  "input": "[[\"bc\", \"bc\", \"bcbcccac\", \"bcbcccac\", \"acaacbc\", \"acaacbc\", \"cacbcbcc\", \"cbcaaca\", \"cb\", \"cccbcbca\", \"cacbcbcc\", \"cb\", \"cccbcbca\", \"cb\", \"caacacb\"]]"
+ },
+ {
+  "id": "20",
+  "kind": "accuracy",
+  "expected": "4",
+  "input": "[[\"ccab\", \"ac\", \"cabc\", \"accb\", \"ccba\", \"ac\"]]"
+ },
+ {
+  "id": "21",
+  "kind": "accuracy",
+  "expected": "5",
+  "input": "[[\"ba\", \"baacc\", \"bbacb\", \"acc\", \"acc\", \"cab\", \"bca\", \"abbbc\", \"bbbca\", \"bccaa\", \"ccbaa\", \"bbbac\", \"cbaac\", \"abbbc\", \"bac\"]]"
+ },
+ {
+  "id": "22",
+  "kind": "efficiency",
+  "expected": "10",
+  "gen": 0
+ },
+ {
+  "id": "23",
+  "kind": "efficiency",
+  "expected": "1304",
+  "gen": 1
+ }
+]

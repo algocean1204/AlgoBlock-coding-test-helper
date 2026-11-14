@@ -1,0 +1,542 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#F5F5F7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#111113" media="(prefers-color-scheme: dark)">
+<title>AlgoBlock</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<!-- 블록 종류 기호(k-*): 순서도에서 쓰는 모양(자료·처리·반복·판단·갈림). 이 앱의 기호라 직접 그렸다.
+     그 밖의 기호(i-*): Phosphor Icons bold (MIT, phosphoricons.com). 한 벌, 한 굵기만 쓴다. -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <symbol id="k-var_from_problem" viewBox="0 0 16 16"><path d="M5 3.5h9l-3 9H2z"/></symbol>
+  <symbol id="k-var_during" viewBox="0 0 16 16"><rect x="2.5" y="2.5" width="11" height="11" rx="2"/><path d="M8 5.5v5M5.5 8h5"/></symbol>
+  <symbol id="k-loop" viewBox="0 0 16 16"><path d="M13 8a5 5 0 1 1-1.6-3.7"/><path d="M13.3 2.4v2.9h-2.9"/></symbol>
+  <symbol id="k-condition" viewBox="0 0 16 16"><path d="M8 1.8 14.2 8 8 14.2 1.8 8z"/></symbol>
+  <symbol id="k-branch" viewBox="0 0 16 16"><path d="M8 14V9.5M8 9.5 3.5 5V2.2M8 9.5 12.5 5V2.2"/></symbol>
+  <symbol id="i-check" viewBox="0 0 256 256" fill="currentColor" stroke="none"><path d="M232.49,80.49l-128,128a12,12,0,0,1-17,0l-56-56a12,12,0,1,1,17-17L96,183,215.51,63.51a12,12,0,0,1,17,17Z"/></symbol>
+  <symbol id="i-x" viewBox="0 0 256 256" fill="currentColor" stroke="none"><path d="M208.49,191.51a12,12,0,0,1-17,17L128,145,64.49,208.49a12,12,0,0,1-17-17L111,128,47.51,64.49a12,12,0,0,1,17-17L128,111l63.51-63.52a12,12,0,0,1,17,17L145,128Z"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 256 256" fill="currentColor" stroke="none"><path d="M208,76H180V56A52,52,0,0,0,76,56V76H48A20,20,0,0,0,28,96V208a20,20,0,0,0,20,20H208a20,20,0,0,0,20-20V96A20,20,0,0,0,208,76ZM100,56a28,28,0,0,1,56,0V76H100ZM204,204H52V100H204Z"/></symbol>
+  <symbol id="i-caret" viewBox="0 0 256 256" fill="currentColor" stroke="none"><path d="M184.49,136.49l-80,80a12,12,0,0,1-17-17L159,128,87.51,56.49a12,12,0,1,1,17-17l80,80A12,12,0,0,1,184.49,136.49Z"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 256 256" fill="currentColor" stroke="none"><path d="M228,128a12,12,0,0,1-12,12H140v76a12,12,0,0,1-24,0V140H40a12,12,0,0,1,0-24h76V40a12,12,0,0,1,24,0v76h76A12,12,0,0,1,228,128Z"/></symbol>
+  <symbol id="i-help" viewBox="0 0 256 256" fill="currentColor" stroke="none"><path d="M144,180a16,16,0,1,1-16-16A16,16,0,0,1,144,180Zm92-52A108,108,0,1,1,128,20,108.12,108.12,0,0,1,236,128Zm-24,0a84,84,0,1,0-84,84A84.09,84.09,0,0,0,212,128ZM128,64c-24.26,0-44,17.94-44,40v4a12,12,0,0,0,24,0v-4c0-8.82,9-16,20-16s20,7.18,20,16-9,16-20,16a12,12,0,0,0-12,12v8a12,12,0,0,0,23.73,2.56C158.31,137.88,172,122.37,172,104,172,81.94,152.26,64,128,64Z"/></symbol>
+  <symbol id="i-info" viewBox="0 0 256 256" fill="currentColor" stroke="none"><path d="M108,84a16,16,0,1,1,16,16A16,16,0,0,1,108,84Zm128,44A108,108,0,1,1,128,20,108.12,108.12,0,0,1,236,128Zm-24,0a84,84,0,1,0-84,84A84.09,84.09,0,0,0,212,128Zm-72,36.68V132a20,20,0,0,0-20-20,12,12,0,0,0-4,23.32V168a20,20,0,0,0,20,20,12,12,0,0,0,4-23.32Z"/></symbol>
+  <symbol id="i-warn" viewBox="0 0 256 256" fill="currentColor" stroke="none"><path d="M128,20A108,108,0,1,0,236,128,108.12,108.12,0,0,0,128,20Zm0,192a84,84,0,1,1,84-84A84.09,84.09,0,0,1,128,212Zm-12-80V80a12,12,0,0,1,24,0v52a12,12,0,0,1-24,0Zm28,40a16,16,0,1,1-16-16A16,16,0,0,1,144,172Z"/></symbol>
+  <symbol id="i-chart" viewBox="0 0 256 256" fill="currentColor" stroke="none"><path d="M228,208a12,12,0,0,1-12,12H40a12,12,0,0,1-12-12V48a12,12,0,0,1,24,0V196H216A12,12,0,0,1,228,208ZM88,172a12,12,0,0,0,12-12V128a12,12,0,0,0-24,0v32A12,12,0,0,0,88,172Zm48,0a12,12,0,0,0,12-12V88a12,12,0,0,0-24,0v72A12,12,0,0,0,136,172Zm48,0a12,12,0,0,0,12-12V56a12,12,0,0,0-24,0V160A12,12,0,0,0,184,172Z"/></symbol>
+  <symbol id="i-bulb" viewBox="0 0 256 256" fill="currentColor" stroke="none"><path d="M180,232a12,12,0,0,1-12,12H88a12,12,0,0,1,0-24h80A12,12,0,0,1,180,232Zm40-128a91.51,91.51,0,0,1-35.17,72.35A12.26,12.26,0,0,0,180,186v2a20,20,0,0,1-20,20H96a20,20,0,0,1-20-20v-2a12,12,0,0,0-4.7-9.51A91.57,91.57,0,0,1,36,104.52C35.73,54.69,76,13.2,125.79,12A92,92,0,0,1,220,104Zm-24,0a68,68,0,0,0-69.65-68C89.56,36.88,59.8,67.55,60,104.38a67.71,67.71,0,0,0,26.1,53.19A35.87,35.87,0,0,1,100,184h56.1A36.13,36.13,0,0,1,170,157.49,67.68,67.68,0,0,0,196,104Z"/></symbol>
+  <symbol id="i-ask" viewBox="0 0 256 256" fill="currentColor" stroke="none"><path d="M120,128a16,16,0,1,1-16-16A16,16,0,0,1,120,128Zm32-16a16,16,0,1,0,16,16A16,16,0,0,0,152,112Zm84,16A108,108,0,0,1,78.77,224.15L46.34,235A20,20,0,0,1,21,209.66l10.81-32.43A108,108,0,1,1,236,128Zm-24,0A84,84,0,1,0,55.27,170.06a12,12,0,0,1,1,9.81l-9.93,29.79,29.79-9.93a12.1,12.1,0,0,1,3.8-.62,12,12,0,0,1,6,1.62A84,84,0,0,0,212,128Z"/></symbol>
+</svg>
+
+<a class="skip" href="#main">본문으로 건너뛰기</a>
+
+<header class="top">
+  <strong class="brand"><img class="brand-ico" src="favicon.svg" alt="" width="22" height="22">AlgoBlock</strong>
+  <nav class="nav" aria-label="화면 이동">
+    <a href="#/list" id="nav-list">문제 목록</a>
+    <a href="#/new" id="nav-new">내 문제 넣기</a>
+    <a href="#/report" id="nav-report">학습 보고서</a>
+  </nav>
+  <p id="status" class="status" role="status" aria-live="polite"></p>
+  <span id="timer" class="timer" aria-hidden="true"></span>
+  <button type="button" id="upd-open" class="btn primary small" hidden></button>
+  <button type="button" id="tour-open" class="btn quiet small"><svg class="ico" aria-hidden="true"><use href="#i-help"/></svg>사용법</button>
+  <div class="conn-now"><span class="dot" id="conn-dot"></span><span id="conn-now">연결 확인 중</span></div>
+  <button type="button" id="conn-toggle" class="btn small" aria-expanded="false" aria-controls="conn-panel">연결</button>
+</header>
+
+<section id="conn-panel" class="conn" hidden aria-labelledby="conn-title">
+  <div class="conn-head">
+    <h2 id="conn-title">AI 연결</h2>
+    <button type="button" id="conn-close" class="btn quiet small">연결 닫기</button>
+  </div>
+  <p class="hint">연결하지 않아도 문제를 풀고 채점받을 수 있어요. 튜터(질문으로 돕기, 틀린 곳 같이 찾기, 피드백)를 쓰려면 아래 셋(Claude 키, OpenAI 키, ChatGPT 로그인) 가운데 하나만 연결하면 돼요.</p>
+  <p id="conn-state" class="conn-state"></p>
+  <fieldset>
+    <legend>API 키</legend>
+    <div class="choice-row" id="key-kinds">
+      <label class="choice"><input type="radio" name="keyname" value="claude" checked> Claude 키 <span class="muted" data-key="claude"></span></label>
+      <label class="choice"><input type="radio" name="keyname" value="openai"> OpenAI 키 <span class="muted" data-key="openai"></span></label>
+    </div>
+    <div class="inline-form">
+      <input id="key-value" type="password" aria-label="API 키" autocomplete="off" placeholder="키를 붙여 넣어요" data-send="key-save">
+      <button type="button" id="key-save" class="btn small">키 넣기</button>
+    </div>
+    <p class="hint">키는 이 기기에만 저장해요. 다음에 켜도 그대로 쓸 수 있어요.</p>
+  </fieldset>
+  <fieldset>
+    <legend>ChatGPT 요금제 쓰기</legend>
+    <p class="hint">ChatGPT 계정으로 로그인하면 튜터의 AI 요청이 내 ChatGPT 요금제(포함된 사용량이나 크레딧)로 처리돼요. AlgoBlock은 따로 요금을 받지 않아요.</p>
+    <p class="hint">OpenAI가 미리 보기(preview)로 연 기능이라 바뀔 수 있고, 지원하는 요청 방식에 제한이 있어요.</p>
+    <p id="chatgpt-state" class="muted">연결 안 됨</p>
+    <button type="button" id="chatgpt-login" class="btn small" lang="en">Continue with ChatGPT</button>
+    <a id="chatgpt-link" class="link" target="_blank" rel="noopener" hidden>브라우저에서 로그인 열기</a>
+    <a id="chatgpt-usage" class="link" href="https://chatgpt.com/settings/usage" target="_blank" rel="noopener" hidden>사용량 관리</a>
+  </fieldset>
+  <details class="more-set">
+    <summary>더 정하기 <span class="muted">과정별 모델 · 업데이트 · 언어 도구</span></summary>
+    <fieldset>
+      <legend>과정별 모델</legend>
+      <p class="hint" id="themes-now"></p>
+      <button type="button" id="models-open" class="btn small">과정별 모델 설정</button>
+    </fieldset>
+    <fieldset>
+      <legend>업데이트</legend>
+      <p class="hint" id="upd-now"></p>
+      <label class="choice small"><input type="checkbox" id="upd-auto"> 새 버전을 자동으로 확인하기</label>
+      <div class="inline-form"><button type="button" id="upd-check" class="btn small">지금 확인</button><span id="upd-note" class="hint" role="status"></span></div>
+    </fieldset>
+    <fieldset>
+      <legend>언어 도구</legend>
+      <ul id="tools-list" class="tools-list" aria-label="이 기기의 언어 도구"></ul>
+      <div class="inline-form"><button type="button" id="tools-refresh" class="btn small">다시 확인</button><span id="tools-note" class="hint" role="status"></span></div>
+    </fieldset>
+  </details>
+  <p id="conn-note" class="hint" role="status"></p>
+  <fieldset class="dev-conn" hidden>
+    <legend class="hint">지금 쓸 연결</legend>
+    <label class="choice small"><input type="radio" name="client" value="provider"> 연결한 AI <span class="muted" id="provider-now"></span></label>
+    <label class="choice small"><input type="radio" name="client" value="cli"> 이 PC의 Claude Code <span class="muted">개발용</span></label>
+  </fieldset>
+</section>
+
+<main id="main">
+  <!-- 02 문제 목록(홈): 입구 셋 → 내 문제 → 주제별 단계 -->
+  <section id="view-list" class="page wide" hidden aria-labelledby="list-title">
+    <h1 id="list-title" class="sr-only" tabindex="-1">문제 목록</h1>
+    <div id="entries" class="entries"></div>
+    <div id="list-body"></div>
+  </section>
+
+  <!-- 03 내 문제 넣기: 세 걸음(글 넣기 → 확인하기 → 등록). 한 화면에 한 걸음, 걸음마다 주 동작 하나 -->
+  <section id="view-new" class="page narrow" hidden aria-labelledby="new-title-h">
+    <header class="page-head">
+      <div>
+        <h1 id="new-title-h" tabindex="-1">내 문제 넣기</h1>
+        <p class="lead" id="new-lead">가진 문제를 글이나 사진으로 넣어 같은 방식으로 풀어요.</p>
+      </div>
+      <div class="draft-tools">
+        <button type="button" id="new-clear" class="btn quiet small" hidden>새로 쓰기</button>
+        <span id="new-clear-confirm" class="confirm" hidden>
+          <span>적은 제목, 글, 케이스, 파일을 모두 지울까요?</span>
+          <button type="button" id="new-clear-yes" class="btn danger small">지우기</button>
+          <button type="button" id="new-clear-no" class="btn quiet small">그대로 두기</button>
+        </span>
+      </div>
+    </header>
+    <ol id="wsteps" class="wsteps" aria-label="넣는 순서">
+      <li data-wstep="1"><span class="step-no" aria-hidden="true">1</span>글 넣기</li>
+      <li data-wstep="2"><span class="step-no" aria-hidden="true">2</span>확인하기</li>
+      <li data-wstep="3"><span class="step-no" aria-hidden="true">3</span>등록</li>
+    </ol>
+    <form id="new-form" class="form-card" data-step="1" novalidate>
+      <h2 id="wstep-title" class="wstep-title" tabindex="-1"></h2>
+      <div class="field files" data-in="1">
+        <button type="button" id="drop" class="drop" data-model aria-describedby="drop-note"><svg class="ico" aria-hidden="true"><use href="#i-plus"/></svg>파일에서 가져오기 <span class="muted">사진 · PDF · 글</span></button>
+        <small id="drop-note" class="hint">여기에 파일을 끌어다 놓아도 돼요. 사진은 ‘다음’을 누르면 글로 읽어 와요.</small>
+        <input type="file" id="new-files" multiple accept=".png,.jpg,.jpeg,.webp,.gif,.pdf,.md,.txt" hidden>
+        <ol id="file-list" class="file-list" aria-label="올린 파일" hidden></ol>
+        <div class="read-row"><button type="button" id="read-files" class="btn small" data-model hidden>글 읽어 오기</button><span id="read-wait" class="hint" role="status" hidden></span><span id="read-done" class="hint" hidden>읽어 왔어요</span></div>
+      </div>
+      <div class="field" data-in="1 2">
+        <label for="new-text">문제 글</label>
+        <div id="doubts" class="note warn doubts" role="status" hidden></div>
+        <textarea id="new-text" aria-label="문제 글" rows="9" data-send="new-next" placeholder="문제 설명, 제한사항, 입출력 예를 그대로 붙여 넣어요"></textarea>
+        <p id="read-note" class="hint" role="status" hidden>읽어 온 글이에요. 틀린 곳이 없는지 확인하고 고쳐 주세요.</p>
+      </div>
+      <div class="field" data-in="2">
+        <label for="new-title">제목</label>
+        <input id="new-title" type="text" aria-label="제목" aria-describedby="new-title-note" autocomplete="off">
+        <small id="new-title-note" class="hint">글의 첫 줄에서 채웠어요. 고쳐도 돼요.</small>
+      </div>
+      <fieldset class="cases" data-in="2">
+        <legend>테스트 케이스</legend>
+        <button type="button" id="case-fill" class="btn small" hidden>입출력 예에서 채우기</button>
+        <p class="hint" id="case-help">넣을 값은 solution에 넘길 값을 순서대로 대괄호 안에 적어요.</p>
+        <p id="mode-guess" class="hint mode-guess" hidden><span id="mode-guess-text"></span><button type="button" id="mode-switch" class="btn small"></button></p>
+        <p id="case-float" class="hint" hidden>실수는 0.000001 차이까지 같은 값으로 봐요.</p>
+        <p id="case-fill-confirm" class="confirm" hidden>
+          <span id="case-fill-ask">지금 적힌 케이스를 표의 것으로 바꿀까요?</span>
+          <button type="button" id="case-fill-yes" class="btn danger small">바꾸기</button>
+          <button type="button" id="case-fill-no" class="btn quiet small">그대로 두기</button>
+        </p>
+        <p id="case-note" class="hint" role="status" hidden></p>
+        <div id="case-rows"></div>
+        <button type="button" id="case-add" class="btn small">케이스 추가</button>
+        <div class="field" id="case-names-field" hidden>
+          <label for="case-names">인자 이름 <span class="muted">선택</span></label>
+          <input id="case-names" type="text" autocomplete="off" aria-describedby="case-names-note" placeholder="예: numbers, k">
+          <small id="case-names-note" class="hint">문제 글이 부르는 이름을 쉼표로 적으면 시작 코드의 인자 이름이 돼요. 비우면 a, b, c예요.</small>
+        </div>
+        <div class="field" id="case-flags" hidden>
+          <label class="case-hide"><input type="checkbox" id="new-float">실수 답(0.000001 차이까지 같게 봄)</label>
+          <label class="case-hide"><input type="checkbox" id="new-many" aria-describedby="new-many-note">답이 여럿일 수 있음</label>
+          <small id="new-many-note" class="hint">답이 여럿이면 예시와 다른 답은 맞는지 가릴 수 없다고 알려요. 숨은 테스트는 만들지 않아요.</small>
+        </div>
+      </fieldset>
+      <details id="new-more" class="more-set" data-in="2">
+        <summary>더 정하기 <span class="muted">언어 · 푸는 방식 · 주제 · 단계</span></summary>
+        <div class="more-grid">
+          <div class="field" id="new-lang-field">
+            <label for="new-lang">언어</label>
+            <select id="new-lang" class="select"><option value="python">Python</option></select>
+          </div>
+          <div class="field">
+            <label for="new-mode">푸는 방식</label>
+            <select id="new-mode" class="select" aria-describedby="new-mode-note"><option value="function">함수(solution)</option><option value="program">표준 입출력</option></select>
+            <small id="new-mode-note" class="hint" hidden>푸는 방식은 등록한 뒤에 바꿀 수 없어요.</small>
+          </div>
+          <div class="field">
+            <label for="new-theme">주제 <span class="muted">(정하지 않으면 자동)</span></label>
+            <select id="new-theme" class="select"><option value="">정하지 않음</option></select>
+          </div>
+          <div class="field">
+            <label for="new-level">단계 <span class="muted">(정하지 않으면 자동)</span></label>
+            <select id="new-level" class="select"><option value="">정하지 않음</option><option value="1">1단계</option><option value="2">2단계</option><option value="3">3단계</option><option value="4">4단계</option><option value="5">5단계</option></select>
+          </div>
+        </div>
+      </details>
+      <div id="new-summary" class="summary" data-in="3"></div>
+      <p id="new-error" class="note error" role="alert" hidden></p>
+      <p id="edit-confirm" class="confirm" hidden>
+        <span id="edit-confirm-text">문제 글이나 케이스를 바꾸면 튜터와 나눈 대화와 블록 진행이 지워져요. 제출 기록과 코드는 남아요.</span>
+        <button type="button" id="edit-yes" class="btn danger small">바꿔서 저장</button>
+        <button type="button" id="edit-no" class="btn quiet small">그대로 두기</button>
+      </p>
+      <div class="wizard-nav">
+        <button type="button" id="new-back" class="btn quiet">이전</button>
+        <button type="button" id="new-next" class="btn primary" data-model>다음</button>
+        <button type="submit" id="new-submit" class="btn primary" data-model>등록하고 풀러 가기</button>
+      </div>
+    </form>
+  </section>
+
+  <!-- 05–08 코드 화면: 문제 | 코드 | 푸는 방식(혼자 풀기·튜터와 차례로·튜터의 질문으로) -->
+  <section id="view-code" class="workspace" hidden aria-labelledby="p-title">
+    <div class="problem-bar">
+      <div class="problem-id">
+        <h1 id="p-title" tabindex="-1"></h1>
+        <span id="p-badges" class="badges"></span>
+        <span id="p-lang" class="tag"></span>
+        <select id="p-lang-select" class="select" aria-label="풀이 언어" hidden></select>
+        <span id="lang-confirm" class="confirm" hidden>
+          <span>언어를 바꾸면 대화와 블록 진행이 지워지고, 블록 칸에 적고 아직 모으지 않은 코드도 사라져요.</span>
+          <button type="button" id="lang-yes" class="btn danger small">바꾸기</button>
+          <button type="button" id="lang-no" class="btn quiet small">그대로 두기</button>
+        </span>
+        <span id="del-confirm" class="confirm" hidden>
+          <span>이 문제와 풀이 기록을 지울까요? 되돌릴 수 없어요.</span>
+          <button type="button" id="del-yes" class="btn danger small">지우기</button>
+          <button type="button" id="del-no" class="btn quiet small">그대로 두기</button>
+        </span>
+        <span id="p-count" class="muted"></span>
+      </div>
+      <ol id="steps" class="steps" aria-label="푸는 차례"></ol>
+      <div class="problem-tools">
+        <button type="button" id="problem-fold" class="btn quiet small" aria-expanded="true" aria-controls="pane-problem">문제 칸 접기</button>
+        <details id="more" class="more">
+          <summary class="btn quiet small" aria-label="더 보기">⋯ 더 보기</summary>
+          <div class="more-menu" role="group" aria-label="더 보기">
+            <span id="code-tools" class="code-tools" role="group" aria-label="코드 칸">
+              <button type="button" id="cp-save" class="btn quiet small">체크포인트 남기기</button>
+              <button type="button" id="cp-restore" class="btn quiet small">체크포인트로 되돌리기</button>
+              <button type="button" id="code-clear" class="btn quiet small">코드 칸 초기화</button>
+            </span>
+            <button type="button" id="old-feedback" class="btn quiet small" hidden>지난 피드백 보기</button>
+            <button type="button" id="reset" class="btn quiet small">이 문제 처음부터</button>
+            <span id="reset-confirm" class="confirm" role="group" aria-label="처음부터 확인" hidden>
+              <span id="reset-confirm-text" role="status">대화와 블록, 코드, 받은 피드백이 지워져요.</span>
+              <button type="button" id="reset-yes" class="btn danger small">지우고 처음부터</button>
+              <button type="button" id="reset-no" class="btn quiet small">그대로 두기</button>
+            </span>
+            <span id="p-own" class="own-tools" hidden>
+              <button type="button" id="p-edit" class="btn quiet small">문제 수정</button>
+              <button type="button" id="p-delete" class="btn quiet small">문제 삭제</button>
+            </span>
+          </div>
+        </details>
+      </div>
+    </div>
+    <p id="code-error" class="note error" role="alert" hidden></p>
+    <div class="panes" id="panes">
+      <section class="pane" id="pane-problem" aria-labelledby="h-problem">
+        <header class="pane-head"><h2 id="h-problem">문제</h2>
+          <button type="button" id="problem-peek" class="btn quiet small" aria-expanded="false" aria-controls="p-text">문제 펼치기</button>
+        </header>
+        <p id="p-check" class="check-line" role="status" hidden></p>
+        <div id="p-text" class="pane-body prose" tabindex="0" aria-label="문제 글"></div>
+      </section>
+
+      <section class="pane" id="pane-code" aria-labelledby="h-code">
+        <header class="pane-head">
+          <h2 id="h-code">코드</h2>
+          <div role="tablist" aria-label="코드 칸" class="tabs" id="code-tabs">
+            <button type="button" role="tab" id="tab-blocks" data-tab="blocks" aria-controls="panel-blocks" aria-selected="true">블록으로 쓰기</button>
+            <button type="button" role="tab" id="tab-direct" data-tab="direct" aria-controls="panel-direct" aria-selected="false" tabindex="-1">코드 전체</button>
+          </div>
+        </header>
+        <p id="kept-note" class="note kept" role="status" hidden>적어 둔 코드는 ‘코드 전체’에 그대로 있어요.</p>
+        <div id="panel-blocks" role="tabpanel" aria-labelledby="tab-blocks" class="pane-body">
+          <ol id="blocks" class="blocks"></ol>
+          <div id="blocks-note" role="status"></div>
+        </div>
+        <div id="panel-direct" role="tabpanel" aria-labelledby="tab-direct" class="pane-body editor-panel" hidden>
+          <p id="line-note" class="line-note" hidden></p>
+          <p id="starter-note" class="line-note" hidden>케이스 값의 모양을 알아보지 못해 시작 코드를 만들지 못했어요. solution 함수를 직접 만들어 풀이를 담아 주세요.</p>
+          <div class="editor" id="editor">
+            <div class="gutter" id="gutter" aria-hidden="true"></div>
+            <div class="line-mark" id="line-mark" hidden></div>
+            <textarea id="code" aria-label="내 코드" aria-describedby="code-help" spellcheck="false" autocapitalize="off" autocomplete="off" wrap="off" data-send="submit" placeholder="여기에 전체 코드를 써요. 풀이는 solution 함수에 담아요."></textarea>
+          </div>
+          <p id="code-help" class="sr-only">Tab은 들여쓰기예요. 다음 칸으로 가려면 Esc를 누른 뒤 Tab을 누르세요. Ctrl+Enter 또는 Cmd+Enter로 제출해요.</p>
+        </div>
+        <div class="code-actions">
+          <span id="code-confirm" class="confirm" role="group" aria-label="코드 칸 확인" hidden>
+            <span id="code-confirm-text" role="status"></span>
+            <button type="button" id="code-yes" class="btn danger small"></button>
+            <button type="button" id="code-no" class="btn quiet small">그대로 두기</button>
+          </span>
+          <button type="button" id="compose-run" class="btn" data-model hidden>모아서 실행</button>
+          <button type="button" id="run" class="btn" data-model>예시 실행</button>
+          <button type="button" id="submit" class="btn" data-model>제출</button>
+          <details id="run-own" class="run-own">
+            <summary>내 입력으로 실행</summary>
+            <div class="run-own-row">
+              <textarea id="run-input" rows="2" aria-label="직접 넣을 값" spellcheck="false" autocapitalize="off" autocomplete="off" data-send="run-own-go"></textarea>
+              <button type="button" id="run-own-go" class="btn small" data-model>이 값으로 실행</button>
+            </div>
+          </details>
+          <span id="tool-note" class="note warn" role="status" hidden></span>
+          <button type="button" id="pull-blocks" class="btn quiet small" hidden>블록 코드 가져오기</button>
+          <span id="code-note" class="muted"></span>
+        </div>
+        <section id="result" class="result" aria-label="채점 결과" hidden></section>
+      </section>
+
+      <section class="pane" id="pane-tutor" aria-labelledby="way-title">
+        <header class="pane-head">
+          <h2 id="way-title">어떻게 풀까요?</h2>
+          <div role="tablist" aria-label="혼자 풀기" class="tabs" id="solo-tabs" hidden>
+            <button type="button" role="tab" id="solo-tab-hint" data-solo="hint" aria-controls="tutor-body" aria-selected="false">힌트</button>
+            <button type="button" role="tab" id="solo-tab-sol" data-solo="sol" aria-controls="tutor-body" aria-selected="false" tabindex="-1">해설</button>
+          </div>
+          <span class="head-tools">
+            <button type="button" id="solo-fold" class="btn quiet small" hidden>접기</button>
+            <button type="button" id="way-change" class="btn quiet small" hidden>방식 바꾸기</button>
+          </span>
+        </header>
+        <div class="tutor-body" id="tutor-body">
+          <div id="way-box" class="pane-body way" hidden></div>
+          <div id="rail" class="rail" hidden>
+            <button type="button" id="rail-hint" class="rail-btn" data-solo-open="hint"><svg class="ico" aria-hidden="true"><use href="#i-bulb"/></svg>힌트</button>
+            <button type="button" id="rail-sol" class="rail-btn" data-solo-open="sol">해설</button>
+          </div>
+          <div id="solo-box" class="pane-body solo" hidden></div>
+          <div id="start-box" class="start" hidden></div>
+          <div id="explain-box" class="pane-body prose" hidden></div>
+          <div id="chat-log" class="chat-log" role="group" aria-label="튜터와 나눈 대화" tabindex="0" hidden></div>
+
+          <form id="composer" class="composer" hidden>
+            <label for="say">내 답</label>
+            <textarea id="say" aria-label="내 답" rows="2" data-send="send" placeholder="생각나는 대로 적어 보세요. 몰라도 괜찮아요"></textarea>
+            <div class="composer-row">
+              <span class="hint">Ctrl+Enter로 보내기</span>
+              <button type="submit" id="send" class="btn" data-model aria-label="내 답 보내기">보내기</button>
+            </div>
+          </form>
+
+          <form id="fq-composer" class="composer follow" hidden>
+            <div class="quote-row">
+              <p id="fq-quote" class="quote"></p>
+              <button type="button" id="fq-close" class="btn quiet small">꼬리질문 닫기</button>
+            </div>
+            <label for="fq-text">꼬리질문</label>
+            <textarea id="fq-text" aria-label="꼬리질문" rows="2" data-send="fq-send" placeholder="이 말에서 이해가 안 되는 부분을 물어보세요"></textarea>
+            <div class="composer-row">
+              <span class="hint">이 말에 대해서만 답해요</span>
+              <button type="submit" id="fq-send" class="btn" data-model>꼬리질문 보내기</button>
+            </div>
+          </form>
+
+          <div id="debug-sheet" class="sheet" role="region" aria-labelledby="debug-title" hidden>
+            <header class="sheet-head">
+              <h3 id="debug-title">틀린 곳 같이 찾기</h3>
+              <button type="button" id="debug-close" class="btn quiet small">틀린 곳 찾기 닫기</button>
+            </header>
+            <div id="debug-log" class="chat-log" role="group" aria-label="틀린 곳을 찾는 대화" tabindex="0"></div>
+            <form id="debug-composer" class="composer">
+              <label for="debug-say">디버깅 답</label>
+              <textarea id="debug-say" aria-label="디버깅 답" rows="2" data-send="debug-send" placeholder="코드를 보고 생각한 것을 적어 보세요"></textarea>
+              <div class="composer-row">
+                <span class="hint">코드를 고친 뒤 보내면 다시 채점해요</span>
+                <button type="submit" id="debug-send" class="btn" data-model>디버깅 답 보내기</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </section>
+    </div>
+  </section>
+
+  <!-- 학습 보고서: 저장된 기록에서 계산한다(모델을 쓰지 않는다) -->
+  <section id="view-report" class="page" hidden aria-labelledby="report-title">
+    <header class="page-head">
+      <div>
+        <h1 id="report-title" tabindex="-1">학습 보고서</h1>
+        <p class="lead">제출 기록에서 강한 주제와 더 공부할 주제를 찾아요. 기록만으로 계산하고 모델은 쓰지 않아요.</p>
+      </div>
+    </header>
+    <div id="report-body"></div>
+  </section>
+
+  <!-- 09 피드백: 돌아가기와 다음 문제는 맨 위 -->
+  <section id="view-feedback" class="page narrow" hidden aria-labelledby="fb-title">
+    <header class="page-head">
+      <div>
+        <h1 id="fb-title" tabindex="-1">피드백</h1>
+        <p id="fb-sub" class="lead"></p>
+      </div>
+      <div class="page-actions top-actions">
+        <a id="fb-back" class="btn" href="#/list">코드 화면으로</a>
+        <a id="fb-next" class="btn primary" href="#/list">다음 문제</a>
+      </div>
+    </header>
+    <p class="hint fb-legend">문장 끝의 꼬리표는 튜터가 그 말을 얼마나 확신하는지예요: <span class="sure s1">확실</span> <span class="sure s2">가능성 높음</span> <span class="sure s3">추측</span></p>
+    <div id="fb-body"></div>
+    <div class="page-actions">
+      <button type="button" id="fb-again" class="btn" data-model hidden>피드백 다시 받기</button>
+    </div>
+  </section>
+</main>
+
+<!-- 처음 쓰는 사람을 위한 안내. 그림은 실제 화면 부품을 작게 놓은 것이고, 장마다 한 가지 일만 보여 준다 -->
+<dialog id="tour" class="tour" aria-labelledby="tour-title">
+  <div class="tour-art" id="tour-art" aria-hidden="true">
+    <div id="tour-live"></div><!-- 움직이는 데모(tour-demos.js)가 들어오는 자리. 못 불러오면 아래 정적 그림이 그대로 보인다 -->
+    <div class="tour-scene" data-scene="0">
+      <div class="mini">
+        <div class="mini-head"><span class="mini-title">AlgoBlock</span></div>
+        <div class="mini-form mini-entries">
+          <div class="entry main a1"><span class="label">문제 풀기</span><strong>추천 서가에 꽂히는 책</strong><span class="hint">해시 1단계 · 막히면 튜터가 질문으로 이끌어요</span><span class="btn primary small">첫 문제 풀기</span></div>
+          <div class="entry a2"><span class="label">내 문제 넣기</span><span class="hint">가진 문제를 글이나 사진으로 넣어요</span></div>
+          <div class="entry a3"><span class="label">내 기록</span><span class="hint">통과 0 / 75 · 출석 1일</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="tour-scene" data-scene="1" hidden>
+      <div class="mini">
+        <div class="mini-head"><span class="mini-title">어떻게 풀까요?</span></div>
+        <div class="mini-form">
+          <div class="way-card primary a1"><strong>혼자 풀기</strong><span>튜터 없이 풀어요. 막히면 힌트를 하나씩 볼 수 있어요.</span></div>
+          <div class="way-card a2"><strong>튜터와 차례로</strong><span>튜터가 풀이를 블록으로 나눠 하나씩 열어 줘요.</span></div>
+          <div class="way-card a3"><strong>튜터의 질문으로</strong><span>튜터는 답을 주지 않고 질문만 해요.</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="tour-scene" data-scene="2" hidden>
+      <div class="mini">
+        <div class="mini-head"><span class="mini-title">코드</span><span class="tag">채점 결과</span></div>
+        <div class="result">
+          <p class="verdict fail a1"><span class="badge"><svg class="ico"><use href="#i-x"/></svg></span>아직 틀려요 <small>정확성 13/20</small></p>
+          <div class="result-actions a2"><span class="btn primary small">틀린 곳 같이 찾기</span><span class="btn small">풀이 힌트 보기</span></div>
+          <p class="verdict pass a3"><span class="badge"><svg class="ico"><use href="#i-check"/></svg></span>통과 <small>정확성 20/20</small></p>
+          <div class="result-actions a3"><span class="btn primary small">다음 문제</span><span class="btn quiet small">피드백 받기</span><span class="btn quiet small">실전 신호 보기</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="tour-scene" data-scene="3" hidden>
+      <div class="mini">
+        <div class="mini-head"><span class="mini-title">내 문제 넣기</span></div>
+        <div class="mini-form">
+          <ol class="wsteps mini-steps"><li class="now"><span class="step-no">1</span>글 넣기</li><li class="a1"><span class="step-no">2</span>확인하기</li><li class="a2"><span class="step-no">3</span>등록</li></ol>
+          <span class="drop">파일에서 가져오기 · 사진 · PDF · 글</span>
+          <p class="hint-line a1">두 정수 a, b가 주어질 때, 둘 가운데 큰 수를 return 하도록 solution 함수를 완성해 주세요.</p>
+          <div class="inline-form a2"><span class="fake-input case-val">[3, 8]</span><span class="fake-input case-val">8</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="tour-scene" data-scene="4" hidden>
+      <div class="mini">
+        <div class="mini-head"><span class="mini-title">학습 보고서</span></div>
+        <div class="mini-form">
+          <div class="ladder-row"><span class="ladder-name">해시</span><span class="levels"><i class="lv l1 done">1</i><i class="lv l2 done a1">2</i><i class="lv l3 done a1">3</i><i class="lv l4">4</i><i class="lv l5">5</i></span><span class="state strong a2">강점</span></div>
+          <div class="ladder-row"><span class="ladder-name">이분탐색</span><span class="levels"><i class="lv l1 done">1</i><i class="lv l2 tried a1">2</i><i class="lv l3">3</i><i class="lv l4">4</i><i class="lv l5">5</i></span><span class="state weak a2">더 공부</span></div>
+          <div class="ladder-row"><span class="ladder-name">스택/큐</span><span class="levels"><i class="lv l1 done">1</i><i class="lv l2">2</i><i class="lv l3">3</i><i class="lv l4">4</i><i class="lv l5">5</i></span><span class="state">진행 중</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="tour-scene" data-scene="5" hidden>
+      <div class="mini">
+        <div class="mini-head"><span class="mini-title">AI 연결</span><p class="conn-now a2"><span class="dot" id="tour-dot"></span><span id="tour-conn"></span></p></div>
+        <div class="mini-form">
+          <span class="label">API 키</span>
+          <div class="inline-form"><span class="fake-input a1">••••••••••••••••••••</span><span class="btn small">키 넣기</span></div>
+          <p class="hint">키는 이 기기에만 저장해요.</p>
+        </div>
+        <div class="mini-form">
+          <span class="label">ChatGPT 요금제 쓰기</span>
+          <div><span class="btn small" lang="en">Continue with ChatGPT</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="tour-text">
+    <p class="tour-count" id="tour-count"></p>
+    <h2 id="tour-title" tabindex="-1"></h2>
+    <p id="tour-body"></p>
+  </div>
+  <div class="tour-foot">
+    <button type="button" id="tour-skip" class="btn quiet small">건너뛰기</button>
+    <div class="tour-dots" id="tour-dots" aria-hidden="true"></div>
+    <div class="tour-nav">
+      <button type="button" id="tour-prev" class="btn">이전</button>
+      <button type="button" id="tour-next" class="btn primary">다음</button>
+    </div>
+  </div>
+</dialog>
+
+<!-- 과정별 모델: 과정마다 급(작음·가운데·큼)과 추론 정도를 고른다. 모델은 지금 연결의 그 시리즈 최신 버전이다. 고르는 즉시 저장한다 -->
+<dialog id="models" class="models" aria-labelledby="models-title">
+  <header class="models-head">
+    <div>
+      <h2 id="models-title" tabindex="-1">과정별 모델</h2>
+      <p class="hint">정확도가 중요한 과정과 빠른 응답이 중요한 과정에 모델을 다르게 쓸 수 있어요. 모델은 지금 연결의 가장 최신 버전을 써요. 고르면 바로 저장돼요.</p>
+    </div>
+    <button type="button" id="models-close" class="btn quiet small">설정 닫기</button>
+  </header>
+  <div id="models-body" class="models-body"></div>
+  <p id="models-note" class="hint" role="status"></p>
+</dialog>
+
+<!-- 업데이트: 새 버전 알림 → 받기(진행 %) → 다시 시작해 바꾸기 -->
+<dialog id="upd" class="models" aria-labelledby="upd-title">
+  <header class="models-head">
+    <div>
+      <h2 id="upd-title" tabindex="-1">새 버전</h2>
+      <p id="upd-sub" class="hint"></p>
+    </div>
+    <button type="button" id="upd-close" class="btn quiet small">닫기</button>
+  </header>
+  <div id="upd-body" class="models-body upd-body"></div>
+  <p id="upd-msg" class="hint" role="status"></p>
+</dialog>
+
+<!-- 등록할 때 올린 원본(문제 칸의 '원본 n'): 이미지, PDF, 글 -->
+<dialog id="asset" class="models asset-view" aria-labelledby="asset-title">
+  <header class="models-head">
+    <div>
+      <h2 id="asset-title" tabindex="-1"></h2>
+      <p id="asset-name" class="hint"></p>
+    </div>
+    <button type="button" id="asset-close" class="btn quiet small">원본 닫기</button>
+  </header>
+  <div id="asset-body" class="models-body asset-body"></div>
+</dialog>
+
+<script src="app.js"></script>
+</body>
+</html>

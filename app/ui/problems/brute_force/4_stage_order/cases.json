@@ -1,0 +1,164 @@
+[
+ {
+  "id": "1",
+  "kind": "example",
+  "expected": "1",
+  "input": "[[\"rock\", \"jazz\", \"rock\"]]"
+ },
+ {
+  "id": "2",
+  "kind": "example",
+  "expected": "0",
+  "input": "[[\"pop\", \"pop\", \"pop\", \"jazz\"]]"
+ },
+ {
+  "id": "3",
+  "kind": "example",
+  "expected": "6",
+  "input": "[[\"rock\", \"jazz\", \"pop\", \"rock\"]]"
+ },
+ {
+  "id": "4",
+  "kind": "accuracy",
+  "expected": "1",
+  "input": "[[\"indie\"]]"
+ },
+ {
+  "id": "5",
+  "kind": "accuracy",
+  "expected": "0",
+  "input": "[[\"ballad\", \"ballad\"]]"
+ },
+ {
+  "id": "6",
+  "kind": "accuracy",
+  "expected": "2",
+  "input": "[[\"jazz\", \"rock\"]]"
+ },
+ {
+  "id": "7",
+  "kind": "accuracy",
+  "expected": "1",
+  "input": "[[\"abcdefghij\", \"abcdefghij\", \"z\"]]"
+ },
+ {
+  "id": "8",
+  "kind": "accuracy",
+  "expected": "0",
+  "input": "[[\"pop\", \"pop\", \"pop\", \"pop\", \"pop\", \"pop\", \"pop\", \"pop\", \"pop\"]]"
+ },
+ {
+  "id": "9",
+  "kind": "accuracy",
+  "expected": "1",
+  "input": "[[\"trot\", \"folk\", \"trot\", \"folk\", \"trot\", \"folk\", \"trot\", \"folk\", \"trot\"]]"
+ },
+ {
+  "id": "10",
+  "kind": "accuracy",
+  "expected": "0",
+  "input": "[[\"rock\", \"rock\", \"rock\", \"rock\", \"rock\", \"jazz\", \"jazz\", \"jazz\"]]"
+ },
+ {
+  "id": "11",
+  "kind": "accuracy",
+  "expected": "1",
+  "input": "[[\"rock\", \"rock\", \"rock\", \"rock\", \"jazz\", \"jazz\", \"jazz\"]]"
+ },
+ {
+  "id": "12",
+  "kind": "accuracy",
+  "expected": "3",
+  "input": "[[\"pop\", \"pop\", \"pop\", \"pop\", \"rock\", \"jazz\", \"rock\"]]"
+ },
+ {
+  "id": "13",
+  "kind": "accuracy",
+  "expected": "174",
+  "input": "[[\"a\", \"a\", \"a\", \"b\", \"b\", \"b\", \"c\", \"c\", \"c\"]]"
+ },
+ {
+  "id": "14",
+  "kind": "accuracy",
+  "expected": "1",
+  "input": "[[\"rock\", \"rocks\", \"rock\", \"rocks\", \"rock\"]]"
+ },
+ {
+  "id": "15",
+  "kind": "accuracy",
+  "expected": "30",
+  "input": "[[\"hiphop\", \"folk\", \"hiphop\", \"folk\", \"trot\", \"trot\"]]"
+ },
+ {
+  "id": "16",
+  "kind": "accuracy",
+  "expected": "1",
+  "input": "[[\"folk\", \"folk\", \"indie\", \"indie\", \"folk\", \"indie\", \"folk\"]]"
+ },
+ {
+  "id": "17",
+  "kind": "accuracy",
+  "expected": "0",
+  "input": "[[\"pop\", \"pop\", \"pop\", \"pop\"]]"
+ },
+ {
+  "id": "18",
+  "kind": "accuracy",
+  "expected": "6",
+  "input": "[[\"rock\", \"rock\", \"folk\", \"jazz\"]]"
+ },
+ {
+  "id": "19",
+  "kind": "accuracy",
+  "expected": "3",
+  "input": "[[\"trot\", \"folk\", \"trot\", \"jazz\", \"jazz\", \"trot\", \"trot\"]]"
+ },
+ {
+  "id": "20",
+  "kind": "accuracy",
+  "expected": "0",
+  "input": "[[\"rock\", \"rock\", \"rock\"]]"
+ },
+ {
+  "id": "21",
+  "kind": "accuracy",
+  "expected": "0",
+  "input": "[[\"trot\", \"trot\", \"trot\", \"folk\"]]"
+ },
+ {
+  "id": "22",
+  "kind": "accuracy",
+  "expected": "1",
+  "input": "[[\"rock\", \"jazz\", \"rock\", \"jazz\", \"rock\", \"jazz\", \"rock\", \"jazz\", \"rock\", \"jazz\", \"rock\", \"jazz\", \"rock\", \"jazz\", \"rock\", \"jazz\", \"rock\", \"jazz\", \"rock\", \"jazz\", \"rock\", \"jazz\", \"rock\"]]"
+ },
+ {
+  "id": "23",
+  "kind": "accuracy",
+  "expected": "2",
+  "input": "[[\"pop\", \"folk\", \"pop\", \"folk\", \"pop\", \"folk\", \"pop\", \"folk\", \"pop\", \"folk\", \"pop\", \"folk\", \"pop\", \"folk\", \"pop\", \"folk\", \"pop\", \"folk\", \"pop\", \"folk\"]]"
+ },
+ {
+  "id": "24",
+  "kind": "accuracy",
+  "expected": "0",
+  "input": "[[\"trot\", \"trot\", \"trot\", \"trot\", \"trot\", \"trot\", \"trot\", \"trot\", \"trot\", \"trot\", \"trot\", \"trot\", \"indie\", \"indie\", \"indie\", \"indie\", \"indie\", \"indie\", \"indie\", \"indie\", \"indie\"]]"
+ },
+ {
+  "id": "25",
+  "kind": "accuracy",
+  "expected": "462",
+  "input": "[[\"ballad\", \"ballad\", \"ballad\", \"ballad\", \"ballad\", \"ballad\", \"ballad\", \"ballad\", \"ballad\", \"ballad\", \"ballad\", \"ballad\", \"jazz\", \"jazz\", \"jazz\", \"jazz\", \"jazz\", \"pop\", \"pop\", \"pop\", \"pop\", \"pop\", \"pop\"]]"
+ },
+ {
+  "id": "26",
+  "kind": "efficiency",
+  "expected": "1118268",
+  "gen": 0
+ },
+ {
+  "id": "27",
+  "kind": "efficiency",
+  "expected": "232610",
+  "gen": 1
+ }
+]

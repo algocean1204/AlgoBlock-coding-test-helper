@@ -1,0 +1,54 @@
+name: 기본 문제 오류 신고
+description: 기본 문제의 글이 모호하다, 맞는 풀이가 틀렸다고 나온다, 틀린 풀이가 통과한다, 해설·힌트·실전 신호가 틀렸다
+title: "[문제] "
+labels: [problem, needs-triage]
+body:
+  - type: input
+    id: where
+    attributes:
+      label: 어느 문제인가
+      description: 주제, 단계, 제목
+      placeholder: '예: 해시 3단계 "같은 디자인의 팔찌"'
+    validations:
+      required: true
+  - type: input
+    id: id
+    attributes:
+      label: 문제 id(알면)
+      description: "폴더는 app/ui/problems/<주제>/<단계>_<이름>"
+      placeholder: "예: hash_3_bead_bracelets"
+  - type: dropdown
+    id: language
+    attributes:
+      label: 풀이 언어
+      options: [Python, Java, JavaScript, C++, Go, Kotlin, Rust, 해당 없음]
+    validations:
+      required: true
+  - type: checkboxes
+    id: kind
+    attributes:
+      label: 무엇이 잘못됐나
+      options:
+        - label: 문제 글이 두 가지로 읽힌다 / 빠진 조건이 있다
+        - label: 맞는 풀이인데 틀렸다고 나온다
+        - label: 틀린 풀이인데 통과한다
+        - label: 느린 풀이인데 효율성 테스트를 통과한다 / 빠른 풀이인데 시간 초과가 난다
+        - label: 예시 설명, 힌트, 해설, 실전 신호가 틀렸다
+        - label: 다른 곳의 문제 글·예시를 옮긴 것으로 보인다
+  - type: textarea
+    id: detail
+    attributes:
+      label: 자세히
+      description: 어느 문장이 어떻게 읽히는지, 어느 테스트에서 무엇이 나왔는지
+    validations:
+      required: true
+  - type: textarea
+    id: code
+    attributes:
+      label: 넣은 코드
+      description: 맞는데 틀렸다고 나온 풀이, 또는 틀린데 통과한 풀이
+      render: text
+  - type: textarea
+    id: io
+    attributes:
+      label: 입력, 기대한 값, 나온 값(알면)

@@ -1,0 +1,12 @@
+def solution(rows, cols, works):
+    height = [[0] * cols for _ in range(rows)]
+    for r1, c1, r2, c2, amount in works:
+        for r in range(r1, r2 + 1):
+            for c in range(c1, c2 + 1):
+                height[r][c] += amount
+    count = 0
+    for r in range(rows):
+        for c in range(cols):
+            if height[r][c] == 0:
+                count += 1
+    return count

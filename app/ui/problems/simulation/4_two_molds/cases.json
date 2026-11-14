@@ -1,0 +1,152 @@
+[
+ {
+  "id": "1",
+  "kind": "example",
+  "expected": "[\"AAA\", \".#.\", \"BBB\"]",
+  "input": "[[\".A.\", \"...\", \".B.\"], 1]"
+ },
+ {
+  "id": "2",
+  "kind": "example",
+  "expected": "[\"BBB\", \"A#B\", \"BBB\"]",
+  "input": "[[\"B.B\", \"A..\", \"B.B\"], 1]"
+ },
+ {
+  "id": "3",
+  "kind": "example",
+  "expected": "[\"#A#..\", \"BAA#.\", \"#A#..\"]",
+  "input": "[[\"#A#..\", \"B.A#.\", \"#.#..\"], 1000000000]"
+ },
+ {
+  "id": "4",
+  "kind": "accuracy",
+  "expected": "[\"A\"]",
+  "input": "[[\"A\"], 1]"
+ },
+ {
+  "id": "5",
+  "kind": "accuracy",
+  "expected": "[\".\"]",
+  "input": "[[\".\"], 5]"
+ },
+ {
+  "id": "6",
+  "kind": "accuracy",
+  "expected": "[\"A#B\"]",
+  "input": "[[\"A.B\"], 1]"
+ },
+ {
+  "id": "7",
+  "kind": "accuracy",
+  "expected": "[\"AAAA....\"]",
+  "input": "[[\"A.......\"], 3]"
+ },
+ {
+  "id": "8",
+  "kind": "accuracy",
+  "expected": "[\"A#A\", \"###\", \"A#A\"]",
+  "input": "[[\"ABA\", \"BAB\", \"ABA\"], 1]"
+ },
+ {
+  "id": "9",
+  "kind": "accuracy",
+  "expected": "[\"....\", \"....\", \"....\"]",
+  "input": "[[\"....\", \"....\", \"....\"], 4]"
+ },
+ {
+  "id": "10",
+  "kind": "accuracy",
+  "expected": "[\"#A#\", \"B#B\", \"#A#\"]",
+  "input": "[[\"#A#\", \"B.B\", \"#A#\"], 2]"
+ },
+ {
+  "id": "11",
+  "kind": "accuracy",
+  "expected": "[\"BB#\", \"BBA\", \"B.A\"]",
+  "input": "[[\".B.\", \"B.A\", \"...\"], 1]"
+ },
+ {
+  "id": "12",
+  "kind": "accuracy",
+  "expected": "[\"BBB\", \"A#B\", \"BBB\"]",
+  "input": "[[\"B.B\", \"A..\", \"B.B\"], 3]"
+ },
+ {
+  "id": "13",
+  "kind": "accuracy",
+  "expected": "[\"BBAA\", \"A##B\", \"BBAA\"]",
+  "input": "[[\".BA.\", \".AB.\", \".BA.\"], 1]"
+ },
+ {
+  "id": "14",
+  "kind": "accuracy",
+  "expected": "[\"B#B\", \"BBB\"]",
+  "input": "[[\"BAB\", \".B.\"], 2]"
+ },
+ {
+  "id": "15",
+  "kind": "accuracy",
+  "expected": "[\"AAAAAAAAA\", \"########A\", \".....AAAA\", \".########\", \".........\", \"########.\", \"BBBB.....\", \"B########\", \"BBBBBBBBB\"]",
+  "input": "[[\"A........\", \"########.\", \".........\", \".########\", \".........\", \"########.\", \".........\", \".########\", \"........B\"], 13]"
+ },
+ {
+  "id": "16",
+  "kind": "accuracy",
+  "expected": "[\"AAAAAAAAA\", \"########A\", \"AAAAAAAAA\", \"A########\", \"AAAA#BBBB\", \"########B\", \"BBBBBBBBB\", \"B########\", \"BBBBBBBBB\"]",
+  "input": "[[\"A........\", \"########.\", \".........\", \".########\", \".........\", \"########.\", \".........\", \".########\", \"........B\"], 1000]"
+ },
+ {
+  "id": "17",
+  "kind": "accuracy",
+  "expected": "[\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\", \"#############################A\", \"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\", \"A#############################\", \"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\", \"#############################A\", \"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\", \"A#############################\", \"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\", \"#############################A\", \"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\", \"A#############################\", \"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\", \"#############################A\", \"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\", \"A#############################\", \"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\", \"#############################A\", \"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\", \"A#############################\", \"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\", \"#############################A\", \"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\", \"A#############################\", \"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\", \"#############################A\", \"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\", \"A#############################\", \"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\", \"#############################A\"]",
+  "input": "[[\"A.............................\", \"#############################.\", \"..............................\", \".#############################\", \"..............................\", \"#############################.\", \"..............................\", \".#############################\", \"..............................\", \"#############################.\", \"..............................\", \".#############################\", \"..............................\", \"#############################.\", \"..............................\", \".#############################\", \"..............................\", \"#############################.\", \"..............................\", \".#############################\", \"..............................\", \"#############################.\", \"..............................\", \".#############################\", \"..............................\", \"#############################.\", \"..............................\", \".#############################\", \"..............................\", \"#############################.\"], 1000]"
+ },
+ {
+  "id": "18",
+  "kind": "accuracy",
+  "expected": "[\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\", \"#############################A\", \"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\", \"A#############################\", \"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\", \"#############################A\", \"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\", \"A#############################\", \"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\", \"#############################A\", \"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\", \"A#############################\", \"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\", \"#############################A\", \"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\", \"A#############################\", \"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\", \"#############################A\", \"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\", \"A#############################\", \"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\", \"#############################A\", \"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\", \"A#############################\", \"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\", \"#############################A\", \"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\"]",
+  "input": "[[\"A.............................\", \"#############################.\", \"..............................\", \".#############################\", \"..............................\", \"#############################.\", \"..............................\", \".#############################\", \"..............................\", \"#############################.\", \"..............................\", \".#############################\", \"..............................\", \"#############################.\", \"..............................\", \".#############################\", \"..............................\", \"#############################.\", \"..............................\", \".#############################\", \"..............................\", \"#############################.\", \"..............................\", \".#############################\", \"..............................\", \"#############################.\", \"..............................\"], 999]"
+ },
+ {
+  "id": "19",
+  "kind": "accuracy",
+  "expected": "[\"B#ABBB\", \"AAA#B#\", \"AAA#AA\", \"B##BAA\", \"B##BAA\", \"B#ABAA\"]",
+  "input": "[[\"B...B.\", \".AA#B#\", \"A..#A.\", \"BBAB..\", \"BAB.A.\", \".#AB.A\"], 2]"
+ },
+ {
+  "id": "20",
+  "kind": "accuracy",
+  "expected": "[\"BBBAAAA\", \"AABAA#B\", \"BABAAAA\", \"B##A#BA\", \"BBBBB##\", \"##B##AB\", \"AABAAAB\"]",
+  "input": "[[\".BBA..A\", \".ABA..B\", \".....A.\", \"B#.A.BA\", \"BBBB...\", \"...ABAB\", \"AABAA..\"], 5]"
+ },
+ {
+  "id": "21",
+  "kind": "accuracy",
+  "expected": "[\"AAAABBA#\", \"AA##BBBB\", \"A#BBB#AA\", \"ABBB#B#A\", \"BB#BA#AA\", \"BBBB#B#B\"]",
+  "input": "[[\".A.AB.A.\", \"AABABB.B\", \"A.BB.#.A\", \"ABB.#B..\", \".B#BA.AA\", \"B.B..B#B\"], 2]"
+ },
+ {
+  "id": "22",
+  "kind": "accuracy",
+  "expected": "[\"#BBAAAABABAA\", \"A#BBB##BA#BB\", \"BBB#B#BB#AAB\", \"BBBAAABBAAAA\", \"B#BA#AAAAABB\", \"BA#ABAAA#A##\", \"BBBBBA#BB#AA\", \"A#AAA#BBB#AA\", \"AAAAAABB#AAB\", \"A#A##ABB#A#B\", \"ABBBBABBAA#B\"]",
+  "input": "[[\"#.BAAAABABA.\", \"A.B.B##.A.B.\", \"B.B..#.B#AAB\", \"BB.A.......A\", \"BABA....AABB\", \"..#ABAAA#.##\", \"B..B...BB.A.\", \"A#.A.#.B.#..\", \".A...AB.#...\", \".#.#.A.B.A#B\", \"....BAB..A.B\"], 3]"
+ },
+ {
+  "id": "23",
+  "kind": "accuracy",
+  "expected": "[\"AAABBBB##AA#AAA#BBBBAA#BBBBBB#\", \"AAAAAAAAB#A#AAAB#B#BA#BB#BBB#A\", \"BB#BBB#A#AAAABBBA##BBBBBBB#AB#\", \"##B#BBBAAAAAABBBABBBBBB#BBAABB\", \"ABBBBBBAAAA#AB#B#B#ABBBB#AAABB\", \"A#BB#BB#A##BAAABB#AA#BBBBAAA#A\", \"BBB#BBA#A#BBAAAAABBA##BBBAAA#A\", \"BB#AAAAA#BBBAAA#A#BBBBBBBB#AAA\", \"BBBBBB##A##BA#BB#AAAA#AAB#AAAA\", \"BB#BBB#AA##AA#BBBAAA#BB##BB#AA\", \"B##BBBAAABBAAAABB#AAAB##AABBBB\", \"B#BBB#AAABBB#A#BBBA##BAAAABB#B\", \"B#B#B#A#AA#BBBBBBB#BB#ABB#B#BB\", \"BBBBBA#AAA#BB#BBBB#AAAABBBBBB#\", \"###BBAA#AA#BBBBB##AABB#BB##BB#\", \"##A#B#AAA#AAA#B#B#BBBBAB#AAAAA\", \"#AA#AAAA#BB#AAAABBBBBBA#AAAAAA\", \"BAA#AA#AAB#AAAAABBBB#B#AA#B#AA\", \"BBAAA#B#ABBAAAA#B##BB#B##B#B#A\", \"A#AAA#BB#BBAA#ABB##BBBBBBBBB#A\", \"ABBAA###BB#B#BBB#AAA#BBB##BB#A\", \"ABB#AAA##BB#A##AAA##AB#AAA#BB#\", \"AA#BBBBB#BBBB##A#BBAAAAAAAA##A\", \"ABBBBBB##BBBB#B#B#BA#BB#AAA#AA\", \"ABBBBBAAAB##BBBBBBBB#A#AA##AAB\", \"A#BBBAAAABBBBBBBB#BBB#BAABB#BB\", \"ABBBBAABBBBBBB#BBBBBBBBAABB#AB\", \"#AB#B###AAB##B#B#BB#BBB##BBAAA\", \"AAAABB#AA##AA#A#.##A#BBA#B#AA#\", \"##ABBBBBBBBAAAA#..#AA#BBBBBBAA\"]",
+  "input": "[[\"A....B.##.A#.A...B.BA.#.B...B.\", \"A....A.AB#.#....#.#..#..#....A\", \"B.#..B.A.........##.......#...\", \"##.#.......A..BBAB..B..#B....B\", \"..B..B...A.#..#B........#..AB.\", \"A...#B.#.##........A#.......#A\", \"B.B#...#A#....A.....##B.BA..#.\", \".B#...AA#.B..AA#.#B....B.B#...\", \"......##.##BA#B...A..#.AB#A.A.\", \"..#..B#A...A.#......#B.#..B#..\", \"B##.......B.AA...#.A..##A..B..\", \".#...#........#B....#....ABB#.\", \".#.#B#A#..#.B.....#B.#.....#B.\", \"....BA#.....B#....#A.A..BBB.B#\", \"###....#.A#.BB..##...B...#...#\", \"##.#.#...#A.A#.#.#..B.AB..A...\", \"#A.#......B#............A.A.A.\", \"..A#.A.....A...AB...#.#.A.B#..\", \"B.....B.AB...AA#.##..#.#..#.#A\", \"A#...#..#.BA....B##.....B...#.\", \"AB.A.#.#.B#B#B..#...#B..##B.#.\", \"..B#.A.##...A##..A##..#..A..B#\", \"A.#..B..#...B##A.B..A.A..A....\", \"..B....#...B.#B..#...BB#...#A.\", \"...B......##.B.......A....#...\", \"A#.B...A........B#..B......#.B\", \"..B...AB.B....#.........AB.#..\", \"#..#..#.AAB##.#.#..#..B.#...A.\", \"AA....#....AA#.#.##.#..A#B#..#\", \"##...B...B...A.#..#.A.B.BB....\"], 1000]"
+ },
+ {
+  "id": "24",
+  "kind": "efficiency",
+  "expected": "[\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\", \"#############################A\", \"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\", \"A#############################\", \"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\", \"#############################A\", \"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\", \"A#############################\", \"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\", \"#############################A\", \"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\", \"A#############################\", \"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\", \"#############################A\", \"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\", \"A#############################\", \"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\", \"#############################A\", \"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\", \"A#############################\", \"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\", \"#############################A\", \"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\", \"A#############################\", \"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\", \"#############################A\", \"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\", \"A#############################\", \"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\", \"#############################A\"]",
+  "gen": 0
+ },
+ {
+  "id": "25",
+  "kind": "efficiency",
+  "expected": "[\"BBB#BB#AA#A###AA#AA#BB#.##B#AA\", \"BBBBBB#AAAAAAAAABAABBBB#BBB#AA\", \"BBBBBBAAA#AA##A#B#AB#BB#B#B#AA\", \"#BA#BBAA#AAABBAA#.#B#B#A#A####\", \"#AAA#AA#A#BBBBABB#B#A#BAAA#BBB\", \"AAAA#AABB#AB#B#BBBAAA#B###BBBB\", \"AAA#A##B##AA#BBBBB#BB#B#BB#BBB\", \"A###AAA##AAA#BBBBBB#BAAA#BBBBB\", \"AAAAAAAA#BBBBB##BB###AAAAB#BBB\", \"A#BAA#AAAB#BB#AAA#.#BBBBBBB#BB\", \"#BBB##AAABBBB#AAA####BBBBBBABB\", \"ABBBBA#AABB###A##BBBB#AA#BB#BB\", \"AB#AB#B#AABBAA#BBB#B##A#BBBBBB\", \"A#AA#BB#AABB#AAABB##B#A#B#AAAA\", \"BB#ABB##A#BBBAAABB##BBAB#AA#AA\", \"BBAA#BBB#ABBBBBB##AAA#ABA##AAA\", \"BB#AA#BB#A##B#BBB##AAA##ABBAA#\", \"#AAA##B#B#BB#BBB#AB##BB#ABBAAA\", \"AAAAAAA#B#AAA#B#AABBBBB#A#BAAA\", \"AAAAAA##BA#B#.#.#A#BB#AAA#AAAA\", \"AAAA##BB#A#BB#B##B#BBBBAAAAAAA\", \"AAAA#BBB#AA##AB#BBA#BBBAAA##BB\", \"AAA#BBBBBAA##A#A#BA####AA##B#A\", \"#B#.##BBBA#BB##AA#AAAAAAAA#B#A\", \"BBA#BBBBB#BBBBBAAAA#A#AA#A###A\", \"BBBBB####BBBBB#A#A#B#B#A#BBBB#\", \"BBBB#BBAABBBB#B#AA#BBBBBBBBBBB\", \"BB#BBBBAA#AAA#B#BBB##BBBBB#BBB\", \"B#BBA#BAAAAAAAAABBBBB#BB#BBBB#\", \"B#B#A#BB#AAAAAAABBB#BBB#BBBBB#\"]",
+  "gen": 1
+ }
+]

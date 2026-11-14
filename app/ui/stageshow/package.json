@@ -1,0 +1,27 @@
+{
+  "name": "algoblock-tour-demos",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "처음 안내의 움직이는 데모. Stageshow 키트(React)로 만들고 ../tour-demos.js, ../tour-demos.css로 미리 빌드한다.",
+  "license": "MIT",
+  "engines": { "node": ">=20.19" },
+  "scripts": {
+    "dev": "vite --host 127.0.0.1 --port 5199 --strictPort",
+    "build": "vite build",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "lucide-react": "0.468.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.1",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.7.0",
+    "playwright-core": "~1.48.2",
+    "typescript": "^5.6.3",
+    "vite": "^6.4.5"
+  }
+}

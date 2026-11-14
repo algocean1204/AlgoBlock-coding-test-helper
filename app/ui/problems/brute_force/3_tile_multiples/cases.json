@@ -1,0 +1,170 @@
+[
+ {
+  "id": "1",
+  "kind": "example",
+  "expected": "6",
+  "input": "[\"305\", 5]"
+ },
+ {
+  "id": "2",
+  "kind": "example",
+  "expected": "2",
+  "input": "[\"444\", 4]"
+ },
+ {
+  "id": "3",
+  "kind": "example",
+  "expected": "1",
+  "input": "[\"507\", 7]"
+ },
+ {
+  "id": "4",
+  "kind": "accuracy",
+  "expected": "0",
+  "input": "[\"00\", 2]"
+ },
+ {
+  "id": "5",
+  "kind": "accuracy",
+  "expected": "1",
+  "input": "[\"10\", 2]"
+ },
+ {
+  "id": "6",
+  "kind": "accuracy",
+  "expected": "1",
+  "input": "[\"05\", 5]"
+ },
+ {
+  "id": "7",
+  "kind": "accuracy",
+  "expected": "0",
+  "input": "[\"11\", 1000]"
+ },
+ {
+  "id": "8",
+  "kind": "accuracy",
+  "expected": "1",
+  "input": "[\"12\", 2]"
+ },
+ {
+  "id": "9",
+  "kind": "accuracy",
+  "expected": "1",
+  "input": "[\"77\", 7]"
+ },
+ {
+  "id": "10",
+  "kind": "accuracy",
+  "expected": "0",
+  "input": "[\"00000\", 2]"
+ },
+ {
+  "id": "11",
+  "kind": "accuracy",
+  "expected": "4",
+  "input": "[\"10000\", 2]"
+ },
+ {
+  "id": "12",
+  "kind": "accuracy",
+  "expected": "2",
+  "input": "[\"11111\", 11]"
+ },
+ {
+  "id": "13",
+  "kind": "accuracy",
+  "expected": "176",
+  "input": "[\"12345\", 3]"
+ },
+ {
+  "id": "14",
+  "kind": "accuracy",
+  "expected": "28",
+  "input": "[\"98765\", 13]"
+ },
+ {
+  "id": "15",
+  "kind": "accuracy",
+  "expected": "18",
+  "input": "[\"50505\", 5]"
+ },
+ {
+  "id": "16",
+  "kind": "accuracy",
+  "expected": "18",
+  "input": "[\"30303\", 3]"
+ },
+ {
+  "id": "17",
+  "kind": "accuracy",
+  "expected": "0",
+  "input": "[\"13579\", 2]"
+ },
+ {
+  "id": "18",
+  "kind": "accuracy",
+  "expected": "6",
+  "input": "[\"31113\", 11]"
+ },
+ {
+  "id": "19",
+  "kind": "accuracy",
+  "expected": "0",
+  "input": "[\"3919\", 4]"
+ },
+ {
+  "id": "20",
+  "kind": "accuracy",
+  "expected": "2",
+  "input": "[\"055\", 11]"
+ },
+ {
+  "id": "21",
+  "kind": "accuracy",
+  "expected": "4",
+  "input": "[\"90797\", 3]"
+ },
+ {
+  "id": "22",
+  "kind": "accuracy",
+  "expected": "4",
+  "input": "[\"11111111\", 11]"
+ },
+ {
+  "id": "23",
+  "kind": "accuracy",
+  "expected": "7",
+  "input": "[\"10000000\", 2]"
+ },
+ {
+  "id": "24",
+  "kind": "accuracy",
+  "expected": "7",
+  "input": "[\"22222222\", 2]"
+ },
+ {
+  "id": "25",
+  "kind": "accuracy",
+  "expected": "44156",
+  "input": "[\"12345678\", 9]"
+ },
+ {
+  "id": "26",
+  "kind": "accuracy",
+  "expected": "6030",
+  "input": "[\"90876501\", 7]"
+ },
+ {
+  "id": "27",
+  "kind": "efficiency",
+  "expected": "13617",
+  "gen": 0
+ },
+ {
+  "id": "28",
+  "kind": "efficiency",
+  "expected": "6460",
+  "gen": 1
+ }
+]
