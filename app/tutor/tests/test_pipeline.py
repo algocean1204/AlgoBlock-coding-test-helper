@@ -1342,23 +1342,50 @@ class HonestCheckTest(unittest.TestCase):
             self.assertIn(starter, fakes.prompt(fake, "plan.solve"))
 
     def test_guide_sets_tags_and_level(self):
-        """뼈대의 태그·단계는 정석 가이드가 코드로 정한 것으로 바꾼다(글의 분류 표시에 끌리지 않게). 가이드가 주지 않은 것과 사용자 방법의 가이드는 뼈대 그대로."""
+        """뼈대의 태그·단계는 정석 가이드가 코드로 정한 것으로 바꾼다(글의 분류 표시에 끌리지 않게). 둘은 모양을 따지지 않고 받아 쓸 수 있는 값만 쓰고
+        (null·"2"·2.0·"bfs"로 가이드를 잃지 않는다), 가이드가 주지 않은 것과 사용자 방법의 가이드는 뼈대 그대로다. 묻지 않는 전략에는 안내도 키도 붙이지 않는다."""
         from ..llm import FakeLlm, use_llm
         from ..plan.nodes import solve
-        from ..state import Abstract
+        from ..state import Abstract, LabeledSolved
 
         fact = Abstract(spec="격자", tags=["grid_move", "bfs"], level=2)
         solved = lambda tags, level: {"clues": [], "approach": "센다.", "steps": ["센다"], "code": KOTLIN_CODE, "tags": tags, "level": level}  # noqa: E731
         ctx = fakes.context(problem_text=fakes.KOTLIN_PROBLEM, language="kotlin")
         check = {"configurable": {"check": lambda pid, code, quick=False: {"status": "passed"}}}
         for strategy, reply, want in (("fresh", solved(["grid_move", "rule_follow"], 1), (["grid_move", "rule_follow"], 1)),
-                                      ("fresh", solved(["없는 낱말"], 9), (["grid_move", "bfs"], 2)),
+                                      ("fresh", solved(None, "2"), (["grid_move", "bfs"], 2)),
+                                      ("fresh", solved("rule_follow", 1.0), (["rule_follow"], 1)),
+                                      ("fresh", solved(["없는 낱말", 3], None), (["grid_move", "bfs"], 2)),
+                                      ("fresh", solved([], 9), (["grid_move", "bfs"], 2)),
+                                      ("fresh", {"clues": [], "approach": "센다.", "steps": ["센다"], "code": KOTLIN_CODE}, (["grid_move", "bfs"], 2)),
                                       ("keep_flow", solved(["rule_follow"], 1), None)):
             fake = FakeLlm({"plan.solve": [reply]})
             with use_llm(fake):
                 got = solve({"ctx": replace(ctx, direct_code="x"), "strategy": strategy, "abstract": fact}, check)
-            self.assertEqual((got["abstract"].tags, got["abstract"].level) if "abstract" in got else None, want, strategy)
-            self.assertEqual("기법 목록" in fakes.prompt(fake, "plan.solve"), strategy == "fresh")
+            self.assertEqual(got["solution"].code, KOTLIN_CODE, reply)  # 가이드는 살아남는다
+            self.assertEqual((got["abstract"].tags, got["abstract"].level) if "abstract" in got else None, want, reply)
+            asked = strategy == "fresh"
+            self.assertEqual(("기법 목록" in fakes.prompt(fake, "plan.solve"), fake.calls[0]["schema"] is LabeledSolved), (asked, asked), strategy)
+
+    def test_unverified_guide_keeps_the_abstract_labels(self):
+        """예시를 통과하지 못했거나 대조에서 다른 가이드는 태그·단계를 덮지 않는다(틀린 코드로 정한 것이다)."""
+        from types import SimpleNamespace
+
+        from ..llm import FakeLlm, use_llm
+        from ..plan.nodes import solve
+        from ..state import Abstract
+
+        fact = Abstract(spec="격자", tags=["grid_move", "bfs"], level=2)
+        reply = {"clues": [], "approach": "센다.", "steps": ["센다"], "code": KOTLIN_CODE, "tags": ["rule_follow"], "level": 1}
+        ctx = fakes.context(problem_text=fakes.KOTLIN_PROBLEM, language="kotlin")
+        failed = {"configurable": {"check": lambda pid, code, quick=False: {"status": "failed", "cases": []}}}
+        differ = SimpleNamespace(mode=lambda pid: "function", run=lambda *a: {"status": "differ", "input": "[1]"}, done=lambda pid, verdict: None)
+        passed = {"configurable": {"check": lambda pid, code, quick=False: {"status": "passed"}, "cross": differ}}
+        for config, scripts in ((failed, {"plan.solve": [reply] * 3}),
+                                (passed, {"plan.solve": [reply] * 3, "plan.brute": [{"code": "x"}], "plan.cases": [{"code": "x"}]})):
+            with use_llm(FakeLlm(scripts)):
+                got = solve({"ctx": ctx, "strategy": "fresh", "abstract": fact}, config)
+            self.assertNotIn("abstract", got)
 
     def test_given_guide_check_has_three_outcomes(self):
         """실린 정답 풀이를 이 기기에서 확인한 결과: 통과, 통과하지 못함, 채점하지 못함(도구·케이스가 없거나 채점기가 없음)."""

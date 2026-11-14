@@ -218,8 +218,15 @@ class TutorTest(unittest.TestCase):
             self.assertEqual(tutor.store.load("p2").plan.link, "")
             for task in ("plan.solve", "plan.draft_blocks"):  # 지난 문항의 흐름이 풀이와 블록 프롬프트에 없다
                 self.assertNotIn("NEXT_SECRET", fakes.prompt(fake, task))
-            for known in ("있다·없다만으로는 여러 번 나온 것을 가릴 수 없어", "참고 —"):  # 풀이 가이드에는 패턴 지식도 넣지 않는다(태그를 고르는 기법 목록은 문제마다 같은 목록이다)
-                self.assertNotIn(known, fakes.prompt(fake, "plan.solve"))
+            # 풀이 가이드에는 패턴 지식도 넣지 않는다: 뼈대(패턴·기술·태그)와 불러온 참고를 바꿔도 풀이 프롬프트는 같다
+            from dataclasses import replace
+
+            from ..plan.prompts import solve_messages
+            from ..state import Abstract
+            plain = tutor.store.load("p2")
+            known = {"ctx": replace(plain, patterns=["dup_names"], skills=["two_d_list"]), "strategy": "fresh", "recall": {"patterns": ["- 개수 세기(딕셔너리)"], "weak": ["시작 값 잘못"]},
+                     "abstract": Abstract(spec="x", patterns=["dup_names"], tags=["count_map", "bfs"], level=3)}
+            self.assertEqual(solve_messages(known), solve_messages({"ctx": replace(plain, patterns=[], skills=[]), "strategy": "fresh"}))
             tutor.store.add_submission("p1", "def solution(a, b): ...", False)  # 이제 풀어 본 문항이다
             tutor.store.put_problem("p3", "python", "놀이공원 이야기로 바꾼 같은 문제.", title="놀이공원")
             tutor.store.put_fact("p3", abstract["spec"], ["dup_names"])
