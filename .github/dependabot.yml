@@ -7,5 +7,6 @@ updates:
     schedule:
       interval: monthly
     open-pull-requests-limit: 1
+    target-branch: develop  # 작업 브랜치처럼 develop으로 PR을 연다
     commit-message:
       prefix: ci  # PR 제목 검사(pr-title)를 통과하는 꼴

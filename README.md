@@ -16,6 +16,8 @@ $\bf{\large{\color{#6580DD} AlgoBlock }}$
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT 라이선스"></a>
 </p>
 
+<p align="center"><a href="https://github.com/algocean1204/AlgoBlock-coding-test-helper/releases/latest"><img src="https://img.shields.io/github/v/release/algocean1204/AlgoBlock-coding-test-helper?label=%EC%B5%9C%EC%8B%A0%20%EB%B2%84%EC%A0%84&color=6580DD" alt="최신 버전"></a></p>
+
 <p align="center"><a href="https://github.com/algocean1204/AlgoBlock-coding-test-helper/releases/latest/download/AlgoBlock-macos-arm64.dmg"><b>macOS(Apple Silicon)용 내려받기</b></a> · <a href="#소스로-실행하기">소스로 실행하기</a></p>
 
 <p align="center"><img src=".github/assets/hero.png" width="880" alt="문제 글, 블록으로 나눈 코드와 채점 결과, 튜터와의 대화가 한 창에 나란히 있는 화면"></p>
@@ -102,6 +104,8 @@ AI를 연결하면 튜터가 풀이 코드를 줄 범위로 나눈 블록을 하
 
 ### 내려받기
 
+아래 링크는 늘 [마지막 릴리스](https://github.com/algocean1204/AlgoBlock-coding-test-helper/releases/latest)의 파일을 받는다. 버전마다 바뀐 것은 [릴리스 목록](https://github.com/algocean1204/AlgoBlock-coding-test-helper/releases)에 있다. 버전은 `0.x.y`이고, 큰 업데이트는 둘째 숫자, 작은 고침은 셋째 숫자가 오른다.
+
 | 운영체제 | 파일 |
 | --- | --- |
 | macOS (Apple Silicon) | [AlgoBlock-macos-arm64.dmg](https://github.com/algocean1204/AlgoBlock-coding-test-helper/releases/latest/download/AlgoBlock-macos-arm64.dmg) |
@@ -115,7 +119,7 @@ AI를 연결하면 튜터가 풀이 코드를 줄 범위로 나눈 블록을 하
 Python 3.12와 [uv](https://docs.astral.sh/uv/)가 필요하다.
 
 ```bash
-git clone https://github.com/algocean1204/AlgoBlock-coding-test-helper.git
+git clone -b main https://github.com/algocean1204/AlgoBlock-coding-test-helper.git
 cd AlgoBlock-coding-test-helper/app
 uv run --no-project --python 3.12 --with langgraph --with pypdf python ui/server.py
 ```
