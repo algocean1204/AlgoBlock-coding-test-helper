@@ -189,12 +189,17 @@ try {
     $null = Open-App
     exit 1
   }
+  $launched = Get-Date
   $started = Open-App
   $served = $false
   if ($started) {
-    $until = (Get-Date).AddSeconds($health)
+    $until = $launched.AddSeconds($health)
     while ((Get-Date) -lt $until) {
-      if (Test-Served) { $served = $true; break }
+      if (Test-Served) {
+        $served = $true
+        Say ('응답했다: {0:N1}초 (한도 {1}초)' -f ((Get-Date) - $launched).TotalSeconds, $health)
+        break
+      }
       if ($started.HasExited) { break }
       Start-Sleep -Milliseconds 500
     }
@@ -659,6 +664,7 @@ def swap_later_exe(app: Path, staged: Path, pids: list[int] | None = None, wait:
     띄우지 못하거나 handshake초 안에 기다리기 시작하지 않으면(실행 정책이 막는 등) 스크립트를 끝내고 옆에 둔 새 exe를 지운다. 앱은 그대로."""
     script, ready = DIR / "swap.ps1", DIR / "swap.waiting"
     try:
+        DIR.mkdir(parents=True, exist_ok=True)
         ready.unlink(missing_ok=True)
         script.write_text(swap_ps1(app, staged, app_pids() if pids is None else pids, wait, health, port), encoding="utf-8-sig")  # BOM: Windows PowerShell 5.1이 한글을 UTF-8로 읽게
         try:

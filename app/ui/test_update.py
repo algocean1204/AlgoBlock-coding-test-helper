@@ -197,8 +197,6 @@ def installing(folder: Path) -> None:
 
 def swapping(folder: Path) -> None:
     """셸 스크립트: 앱이 끝나기를 기다렸다가 바꿔 끼우고 다시 연다. 새 앱을 넣지 못하면 옛 앱을 되돌린다."""
-    if os.name == "nt":  # macOS의 셸 스크립트다
-        return
     bin_dir = folder / "bin"
     bin_dir.mkdir(parents=True)
     opened = folder / "opened.txt"
@@ -655,6 +653,91 @@ def run() -> None:
         updater.PLAN.update(due=0.0, fails=0)
 
 
+def exe_swapping(built: Path) -> None:
+    """Windows CI에서: 빌드한 진짜 exe의 사본 둘(수정 시각만 다르다)로 바꿔 끼우기를 끝까지 본다. 시간은 swap.log와 작업 요약에 남긴다.
+    1. 성공: 옛 앱(--server)이 떠 있는 동안 스크립트를 떼어 띄우고, 옛 앱을 끝내면 새 exe로 바꿔 열고 새 앱의 `/`가 200을 준다.
+    2. 되돌리기: 새 앱의 포트를 다른 소켓이 막아 응답하지 않으면, 새 앱을 끝내고 옛 exe를 되돌려 연다."""
+    import shutil
+    import socket
+    import urllib.request
+
+    old_time, new_time = 946684800, 978307200  # 2000-01-01, 2001-01-01: 어느 사본이 제자리에 있는지 알아보는 표시(이름 바꾸기는 수정 시각을 그대로 둔다)
+    root = Path(os.environ.get("RUNNER_TEMP") or tempfile.gettempdir()) / "업데이트 시험 'exe'"
+    shutil.rmtree(root, ignore_errors=True)
+    os.environ["ALGOBLOCK_UI_DATA"] = str(root / "data")
+    summary = []
+
+    def served(port: int) -> bool:
+        try:
+            with urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=3) as response:
+                return response.status == 200
+        except OSError:
+            return False
+
+    def prepare(name: str, port: int) -> tuple[Path, Path]:
+        os.environ["ALGOBLOCK_UI_PORT"] = str(port)
+        app = root / name / "AlgoBlock.exe"
+        app.parent.mkdir(parents=True)
+        new = updater.beside(app, "new")
+        for path, stamp in ((app, old_time), (new, new_time)):
+            shutil.copyfile(built, path)
+            os.utime(path, (stamp, stamp))
+        updater.DIR = root / name / "updates"
+        return app, new
+
+    def finish(script: subprocess.Popen, name: str) -> str:
+        script.wait(600)
+        log = (updater.DIR / "swap.log").read_text(encoding="utf-8")
+        print(f"--- {name}: 스크립트 종료 코드 {script.returncode}\n{log}", flush=True)
+        summary.extend(f"{name}: {line.split(' ', 2)[-1]}" for line in log.splitlines() if "응답" in line or "되돌" in line or "바꿨다" in line)
+        return log
+
+    def kill_apps() -> None:
+        subprocess.run(["taskkill", "/IM", "AlgoBlock.exe", "/T", "/F"], capture_output=True)
+
+    try:
+        # 1. 성공
+        app, new = prepare("성공", 8803)
+        old = subprocess.Popen([str(app), "--server"])
+        began = time.monotonic()
+        while not served(8803):
+            assert old.poll() is None and time.monotonic() - began < 300, "옛 앱(--server)이 뜨지 않았다"
+            time.sleep(1)
+        summary.append(f"성공: 옛 앱(--server)이 응답하기까지 {time.monotonic() - began:.1f}초")
+        script = updater.swap_later_exe(app, new, pids=[old.pid], port=8803)
+        subprocess.run(["taskkill", "/PID", str(old.pid), "/T", "/F"], capture_output=True)  # 앱이 끝난다(업데이트의 quit_app 자리)
+        log = finish(script, "성공")
+        assert script.returncode == 0 and "바꿨다" in log and "응답했다" in log, log
+        assert app.stat().st_mtime == new_time and not new.exists() and not updater.beside(app, "old").exists()
+        assert served(8803), "바꾼 뒤 새 앱의 / 가 200을 주지 않는다"
+        kill_apps()
+
+        # 2. 되돌리기
+        app, new = prepare("되돌리기", 8804)
+        blocker = socket.socket()
+        blocker.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)  # 새 앱이 같은 포트에 겹쳐 묶지 못하게
+        blocker.bind(("127.0.0.1", 8804))
+        blocker.listen(1)  # 받기만 하고 답하지 않는다
+        try:
+            sleeper = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(8)"])
+            script = updater.swap_later_exe(app, new, pids=[sleeper.pid], health=30, port=8804)
+            log = finish(script, "되돌리기")
+        finally:
+            blocker.close()
+            kill_apps()
+        assert script.returncode == 1 and "응답하지 않아" in log and "되돌렸다" in log, log
+        assert app.stat().st_mtime == old_time and not new.exists() and not updater.beside(app, "old").exists()
+    finally:
+        kill_apps()
+        if os.environ.get("GITHUB_STEP_SUMMARY"):
+            with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as out:
+                out.write("### exe 바꿔 끼우기(Windows)\n" + "".join(f"- {line}\n" for line in summary))
+        print("\n".join(summary))
+
+
 if __name__ == "__main__":
-    run()
+    if sys.argv[1:2] == ["exe"]:  # Windows CI: python -B ui/test_update.py exe <빌드한 exe>
+        exe_swapping(Path(sys.argv[2]).resolve())
+    else:
+        run()
     print("ok")

@@ -72,7 +72,7 @@ cd app && python3 ui/problemkit.py check ui/problems/<주제>
 | --- | --- | --- |
 | `engine-tests` | 1번, 2번 | 20분 |
 | `judge-tests` | 4번(러너에 있는 언어만 돈다) | 20분 |
-| `windows` | Windows 러너(`windows-latest`)에서 아래 차례로 돈다 | 45분 |
+| `windows` | Windows 러너(`windows-latest`)에서 아래 차례로 돈다 | 60분 |
 | `publish-check` | 3번 세 가지(구조, 현재 파일, 모든 커밋) | 10분 |
 | `secret-scan` | gitleaks로 기록 전체 검사 | 10분 |
 | `branch-name` | 이 저장소 안에서 올린 PR의 브랜치 이름이 규칙에 맞는지 본다. 다른 저장소의 PR과 dependabot 브랜치는 보지 않는다 | 5분 |
@@ -89,10 +89,11 @@ cd app && python3 ui/problemkit.py check ui/problems/<주제>
 5. 서버를 소스(`python ui/server.py`)로 띄워 기본 문제 하나(`builtin.json`의 첫 문제)에 실린 Python 풀이를 `Invoke-RestMethod`로 제출한다. 통과(`ok`)와, 실행 제한을 걸지 못했다는 알림(`notice`)이 없는지 본다. 모델은 부르지 않는다.
 6. `build_win.ps1`로 exe를 빌드한다. 해시 파일 `SHA256SUMS-windows-x64`도 만든다.
 7. 빌드한 exe를 `--server`로 띄워 5와 같이 제출한다.
+8. 업데이트의 바꿔 끼우기를 빌드한 exe의 사본 둘(수정 시각만 다르다)로 끝까지 본다(`python ui/test_update.py exe <exe>`). 성공: 옛 앱이 끝나면 새 exe로 바꿔 열고, 새 앱의 `/`가 200을 준다. 되돌리기: 새 앱의 포트를 막아 응답하지 않게 하면 새 앱을 끝내고 옛 exe를 되돌려 연다. 새 앱이 응답하기까지 걸린 시간을 작업 요약에 적는다. 이때 새 앱은 창 모드로 열린다.
 
-준비(1)가 끝나면 2부터는 앞 단계가 실패해도 모두 돈다. 실패는 한 번에 모두 보이고, 하나라도 실패하면 작업은 실패다. 모델이 필요한 4와 6은 모델을 받았을 때만, 7은 빌드가 성공했을 때만 돈다.
+준비(1)가 끝나면 2부터는 앞 단계가 실패해도 모두 돈다. 실패는 한 번에 모두 보이고, 하나라도 실패하면 작업은 실패다. 모델이 필요한 4와 6은 모델을 받았을 때만, 7과 8은 빌드가 성공했을 때만 돈다.
 
 ## 알려진 한계
 
 - 4번은 CI 러너에 설치된 언어만 본다. 나머지 언어의 시험은 그 언어 도구가 있는 기기에서 돌려야 한다.
-- `windows` 작업은 창 모드(WebView2)와 처음 실행 경고(SmartScreen)를 보지 않는다. 서버만 띄워 확인한다.
+- `windows` 작업은 처음 실행 경고(SmartScreen)를 보지 않는다. 창 모드(WebView2)는 8에서 열기만 하고, 확인은 서버의 응답으로 한다.
