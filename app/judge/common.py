@@ -73,6 +73,8 @@ JOB_LIMIT_JOB_MEMORY = 0x00000200  # JobMemoryLimit(작업 전체의 커밋 메�
 JOB_LIMIT_DIE_ON_UNHANDLED_EXCEPTION = 0x00000400  # 죽은 프로그램이 오류 보고 창을 띄운 채 시간 초과까지 남지 않게
 JOB_LIMIT_KILL_ON_JOB_CLOSE = 0x00002000
 JOB_EXTENDED_LIMIT_INFORMATION = 9  # JOBOBJECTINFOCLASS의 JobObjectExtendedLimitInformation
+JOB_ASSOCIATE_COMPLETION_PORT_INFORMATION = 7  # JobObjectAssociateCompletionPortInformation
+JOB_MSG_JOB_MEMORY_LIMIT = 10  # 완료 포트로 오는 알림: 작업의 프로세스가 작업 메모리 상한을 넘는 커밋을 하려 했다
 JOB_MEMORY_FACTOR = 2  # 작업의 커밋 상한 = memory_mb × 이것. 커밋은 실제로 쓰는 메모리(작업 집합)보다 앞서 잡힌다(JVM의 첫 힙 등).
 #                        memory_limit 판정은 POSIX처럼 0.25초마다 재는 작업 집합이 하고, 이 상한은 그 사이의 급한 증가를 막는 바닥이다
 TH32CS_SNAPTHREAD = 0x00000004
@@ -97,6 +99,10 @@ class JobExtendedLimit(ctypes.Structure):  # JOBOBJECT_EXTENDED_LIMIT_INFORMATIO
                 ("JobMemoryLimit", ctypes.c_size_t), ("PeakProcessMemoryUsed", ctypes.c_size_t), ("PeakJobMemoryUsed", ctypes.c_size_t)]
 
 
+class JobCompletionPort(ctypes.Structure):  # JOBOBJECT_ASSOCIATE_COMPLETION_PORT (x64: 16바이트)
+    _fields_ = [("CompletionKey", ctypes.c_void_p), ("CompletionPort", ctypes.c_void_p)]
+
+
 class ThreadEntry(ctypes.Structure):  # THREADENTRY32 (28바이트)
     _fields_ = [("dwSize", ctypes.c_uint32), ("cntUsage", ctypes.c_uint32), ("th32ThreadID", ctypes.c_uint32), ("th32OwnerProcessID", ctypes.c_uint32),
                 ("tpBasePri", ctypes.c_int32), ("tpDeltaPri", ctypes.c_int32), ("dwFlags", ctypes.c_uint32)]
@@ -111,7 +117,9 @@ def _kernel32():
                                ("AssignProcessToJobObject", flag, [handle, handle]), ("TerminateJobObject", flag, [handle, ctypes.c_uint]),
                                ("CloseHandle", flag, [handle]), ("CreateToolhelp32Snapshot", handle, [dword, dword]),
                                ("Thread32First", flag, [handle, pointer]), ("Thread32Next", flag, [handle, pointer]),
-                               ("OpenThread", handle, [dword, flag, dword]), ("ResumeThread", dword, [handle])):
+                               ("OpenThread", handle, [dword, flag, dword]), ("ResumeThread", dword, [handle]),
+                               ("CreateIoCompletionPort", handle, [handle, handle, ctypes.c_size_t, dword]),
+                               ("GetQueuedCompletionStatus", flag, [handle, pointer, pointer, pointer, dword])):
         function = getattr(kernel, name)
         function.restype, function.argtypes = result, args
     return kernel
@@ -146,6 +154,32 @@ def _windows_job(process, cpu_seconds, memory_mb):
     return job
 
 
+def _memory_port(job):
+    """작업에 완료 포트를 붙여 '작업 메모리 상한' 알림을 받게 한다. 커밋 상한은 넘는 할당을 거절할 뿐 프로세스를 끝내지 않아서,
+    이 알림으로 실행 오류와 memory_limit를 가린다(POSIX처럼 memory_limit로 판정한다). 붙이지 못하면 None(판정은 실행 오류로 남는다)."""
+    kernel = _kernel32()
+    port = kernel.CreateIoCompletionPort(ctypes.c_void_p(-1).value, None, 0, 1)  # INVALID_HANDLE_VALUE: 파일 없는 새 포트
+    if not port:
+        return None
+    link = JobCompletionPort(None, port)
+    if kernel.SetInformationJobObject(job, JOB_ASSOCIATE_COMPLETION_PORT_INFORMATION, ctypes.byref(link), ctypes.sizeof(link)):
+        return port
+    kernel.CloseHandle(port)
+    return None
+
+
+def _hit_job_memory(process):
+    """process의 작업이 커밋 메모리 상한에 걸렸다는 알림을 받았는가. 포트에 쌓인 알림을 기다리지 않고 모두 읽는다(알림 전달은 보장되지 않아 못 받으면 False)."""
+    port = getattr(process, "algoblock_port", None)
+    if not port:
+        return False
+    kernel, message, key, overlapped = _kernel32(), ctypes.c_uint32(), ctypes.c_size_t(), ctypes.c_void_p()
+    hit = False
+    while kernel.GetQueuedCompletionStatus(port, ctypes.byref(message), ctypes.byref(key), ctypes.byref(overlapped), 0):
+        hit = hit or message.value == JOB_MSG_JOB_MEMORY_LIMIT
+    return hit
+
+
 def _resume(pid):
     """멈춘 채 만든 프로세스 pid의 스레드를 재개한다. 하나도 재개하지 못하면 OSError."""
     kernel = _kernel32()
@@ -167,7 +201,7 @@ def _resume(pid):
     finally:
         kernel.CloseHandle(snapshot)
     if not resumed:
-        raise _win_error(f"프로세스 {pid}의 스레드 재개")
+        raise _win_error("멈춘 프로세스의 스레드 재개")  # 글에 PID를 넣지 않는다(같은 경고를 한 번만 적는다)
 
 
 def _start_windows(process, cpu_seconds, memory_mb):
@@ -175,6 +209,7 @@ def _start_windows(process, cpu_seconds, memory_mb):
     warning = None
     try:
         process.algoblock_job = _windows_job(process, cpu_seconds, memory_mb)
+        process.algoblock_port = _memory_port(process.algoblock_job) if memory_mb else None
     except Exception as error:  # noqa: BLE001 - 작업 없이도 채점은 한다(시간 초과 때 taskkill로 끝낸다)
         warning = f"Windows 작업 객체를 쓰지 못해 CPU 시간·메모리 상한과 남은 자식 정리 없이 돌렸습니다: {error}"
     try:
@@ -198,6 +233,9 @@ def _end_job(process, close=False):
         if close:
             _kernel32().CloseHandle(job)
             process.algoblock_job = None
+            if getattr(process, "algoblock_port", None):
+                _kernel32().CloseHandle(process.algoblock_port)
+                process.algoblock_port = None
         return ended
 
 
@@ -275,8 +313,13 @@ def run_command(command, cwd, stdin="", timeout=TIMEOUT_SECONDS, memory_mb=MEMOR
     with RUNNING_LOCK:
         RUNNING.add(process)
     try:
-        warning = _start_windows(process, cpu, memory_mb) if windows else None
+        warning = None
+        if windows:
+            warning = _start_windows(process, cpu, memory_mb)
+            started = time.perf_counter()  # 작업 준비(작업 만들기, 스레드 찾기)는 실행 시간에 넣지 않는다. 프로세스는 재개한 뒤에야 돈다
         result = _collect(process, stdin, timeout, memory_mb, started)
+        if windows and result["status"] == "runtime_error" and _hit_job_memory(process):
+            result = {**result, "status": "memory_limit"}  # 커밋 상한이 할당을 거절해 죽었다(POSIX의 메모리 측정과 같은 판정)
         return {**result, "warning": warning} if warning else result
     finally:
         with RUNNING_LOCK:

@@ -525,6 +525,8 @@ class WindowsShapeTest(unittest.TestCase):
         self.assertEqual(ctypes.sizeof(common.JobIoCounters), 48)
         self.assertEqual(ctypes.sizeof(common.JobExtendedLimit), 144)
         self.assertEqual([getattr(common.JobExtendedLimit, name).offset for name in ("IoInfo", "ProcessMemoryLimit", "JobMemoryLimit", "PeakJobMemoryUsed")], [64, 112, 120, 136])
+        self.assertEqual(ctypes.sizeof(common.JobCompletionPort), 16)
+        self.assertEqual(common.JobCompletionPort.CompletionPort.offset, 8)
         self.assertEqual(ctypes.sizeof(common.ThreadEntry), 28)
         self.assertEqual(common.ThreadEntry.th32OwnerProcessID.offset, 12)
 
@@ -560,10 +562,13 @@ class WindowsJobTest(unittest.TestCase):
             self.assertFalse(marker.exists(), "주 프로세스가 끝난 뒤에도 자식 프로세스가 살아 있다")
 
     def test_commit_memory_is_capped(self):
+        """한 번에 크게 잡으면 작업 집합을 재기 전에 커밋 상한이 할당을 거절한다. 작업의 알림으로 memory_limit라고 판정한다(POSIX와 같은 이름)."""
         big = common.MEMORY_LIMIT_MB * common.JOB_MEMORY_FACTOR + 1024  # 작업의 커밋 상한보다 1GB 크게 한 번에
         result = self.run_python(f"b = bytearray({big} * 2**20); print(len(b))")
-        self.assertEqual(result["status"], "runtime_error", result)
+        self.assertEqual(result["status"], "memory_limit", result)
         self.assertIn("MemoryError", result["stderr"])
+        plain = self.run_python("raise SystemExit(3)")  # 메모리와 상관없는 실패는 그대로 실행 오류다
+        self.assertEqual(plain["status"], "runtime_error", plain)
 
     def test_without_job_it_still_runs_and_says_so(self):
         with mock.patch.object(common, "_windows_job", side_effect=OSError(5, "막힘")):
