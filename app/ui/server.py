@@ -1626,19 +1626,27 @@ def need_code(body: dict) -> str:
 
 
 def reset(t, pid: str) -> None:
-    """대화·블록 진행·피드백을 지운다. 제출 기록(통과 횟수), 문항 뼈대, 정석 풀이 가이드는 남긴다. 엔진에 초기화 기능이 없어 표를 직접 지운다.
-
-    정석 가이드로 짠 계획과 해설은 그대로 두고 첫 블록으로만 돌린다(다시 풀어도 같은 블록 순서로 배운다).
-    사용자 방법으로 다시 짠 계획이었다면 지운다(다음에 정석 가이드로 다시 짠다).
-    """
+    """대화·블록 진행·피드백·해설 모드의 글(다른 언어로 보관한 것도)·다른 언어로 쓰던 코드를 지운다. 제출 기록(통과 횟수), 문항 뼈대, 정석 풀이 가이드,
+    체크포인트는 남긴다. 엔진에 초기화 기능이 없어 표를 직접 지운다. 학습 기록에 새 풀이의 시작을 적는다(mark_reset)."""
+    # 정석 가이드로 짠 계획은 그대로 두고 첫 블록으로만 돌린다(다시 풀어도 같은 블록 순서로 배운다).
+    # 사용자 방법으로 다시 짠 계획이었다면 지운다(다음에 정석 가이드로 다시 짠다).
     ctx = t.store.load(pid)
     keep = ctx is not None and ctx.plan is not None and ctx.plan.strategy in ("fresh", "canonical")
     with t.store.conn:
         for table in ("message", "block_state", "debug_state", "feedback", *(() if keep else ("tutor_session",))):
             t.store.conn.execute(f"DELETE FROM {table} WHERE problem_id=?", (pid,))
-        t.store.conn.execute("UPDATE tutor_session SET open_count=1 WHERE problem_id=?", (pid,))
+        t.store.conn.execute("UPDATE tutor_session SET open_count=1, explain_json=NULL WHERE problem_id=?", (pid,))  # 해설 모드의 글도 지운다(다시 열면 도움)
     t.store.update_code(pid, "")
     t.store.mark_reset(pid)  # 새 풀이의 시작(학습 보고서는 이 뒤에 도움 없이 다시 푼 통과도 센다)
+    codes = read_json(CODES_FILE, {})
+    if pid in codes:  # 다른 언어로 쓰던 코드도 비운다(언어를 바꿔 되살리면 처음부터가 아니다). 체크포인트는 남긴다(되살리면 도움으로 센다)
+        write_json(CODES_FILE, {key: value for key, value in codes.items() if key != pid})
+    kept = read_json(KEPT_FILE, {})
+    for saved in (kept.get(pid) or {}).values():  # 다른 언어로 보관한 해설 모드의 글도 비운다(언어를 바꿔 되살리지 않게)
+        if isinstance(saved, dict) and isinstance(saved.get("session"), dict):
+            saved["session"]["explain_json"] = None
+    if pid in kept:
+        write_json(KEPT_FILE, kept)
     REPORTS.pop(pid, None)
     write_json(BLOCKS_FILE, {key: value for key, value in read_json(BLOCKS_FILE, {}).items() if key != pid})
     own_way(pid, False)
@@ -1657,7 +1665,6 @@ def change_language(t, p, language: str, code: str | None) -> None:
     t.store.set_language(pid, language)
     restore_plan(t, pid, language)
     t.store.update_code(pid, mine.get(language, ""))
-    t.store.mark_reset(pid)  # 대화가 지워진다: 새 풀이의 시작
     LANG[pid] = language
 
 
@@ -1716,6 +1723,11 @@ def own_way(pid: str, on: bool) -> None:
     """'끝까지 내 방식으로 쓰기'를 켜거나 끈다. 켠 동안 화면은 블록 코드 확인을 숨기고 '모아서 실행'으로 이끈다(엔진의 판정은 그대로다)."""
     rows = {key: value for key, value in read_json(OWN_FILE, {}).items() if key != pid}
     write_json(OWN_FILE, {**rows, pid: True} if on else rows)
+
+
+def hints_now(study: dict, rows: list) -> int:
+    """이번 풀이(처음, 또는 마지막 '처음부터' 뒤)에서 본 힌트 수."""
+    return min(max(0, study["hints_seen"] - study["hints_at_reset"]), len(rows))
 
 
 def hint_rows(t, pid: str) -> list[dict]:
@@ -1832,7 +1844,7 @@ def state_body(t, p, body: dict) -> dict:
                         "theme": p.theme, "theme_name": p.theme_name or (theme_name(planned) if planned else ""), "level": p.level, **labels_of(t, p),
                         "languages": row["languages"] if row else list(check_judge().LANGUAGES), "starter": row["starters"].get(ctx.language, "") if row else own_starter(p, ctx.language),
                         "examples": examples, "cases": {kind: kinds.get(kind, 0) for kind in KINDS},
-                        "study": {"hints_seen": study["hints_seen"], "hints_total": len(hint_rows(t, pid)), "solution_seen": bool(study["solution_at"]),
+                        "study": {"hints_seen": hints_now(study, hint_rows(t, pid)), "hints_total": len(hint_rows(t, pid)), "solution_seen": bool(study["solution_at"]),
                                   "solution_open": passed > 0 or bool(study["solution_at"]), "has_guide": row is not None or ctx.solution is not None,
                                   "passed_now": passed_since(problem_subs(t, pid), study)},  # 이번 풀이에서 통과했다(아니면 화면이 해설을 저절로 열지 않는다)
                         "code": ctx.direct_code or "", "passed": passed, "submitted": total,
@@ -1893,14 +1905,14 @@ def problem_subs(t, pid: str) -> list[dict]:
 
 
 def passed_since(subs: list[dict], study: dict) -> bool:
-    """이번 풀이(처음, 또는 마지막 '처음부터'·언어 바꾸기 뒤)에서 이미 통과했는가."""
+    """이번 풀이(처음, 또는 마지막 '처음부터' 뒤)에서 이미 통과했는가."""
     start = study["reset_at"]
     return any(sub["ok"] and (start is None or stamp(sub["at"]) > stamp(start)) for sub in subs)
 
 
 def unaided_pass(subs: list[dict], study: dict, talked: str | None) -> bool:
     """도움 없이 푼 문제인가. 한 번의 풀이 안에서 도움(튜터 기능·힌트·해설)을 쓰기 전에 UNAIDED_MAX_SUBMITS번 안에 통과했다:
-    (가) 처음부터 첫 통과까지, 또는 (나) 마지막 '처음부터'·언어 바꾸기 뒤부터 그 뒤 첫 통과까지. (나)의 통과는 그 '처음부터'에서
+    (가) 처음부터 첫 통과까지, 또는 (나) 마지막 '처음부터' 뒤부터 그 뒤 첫 통과까지(언어 바꾸기는 '처음부터'가 아니다). (나)의 통과는 그 '처음부터'에서
     REPEAT_GAP_HOURS 지난 뒤여야 한다(그 앞의 도움은 모두 '처음부터' 앞이므로, 마지막 도움에서도 그만큼 지났다). 통과 뒤의 도움은 판정을 바꾸지 않는다.
     talked: 남아 있는 튜터 대화의 가장 이른 시각(도움 기록을 놓쳤을 때를 위해 함께 본다. '처음부터'가 대화를 지우므로 지금 풀이의 것이다).
     도움 시각이 비었는데 해설을 먼저 봤거나 본 힌트가 있으면(시각이 없는 옛 기록) 가장 이른 때 도움을 받은 것으로 본다."""
@@ -2008,7 +2020,7 @@ def readiness(unaided: dict, started: set, fresh: dict) -> dict:
                           for key in PREREQS if key in need],
             "basis": "이 앱의 기본 문제 기준이에요.",
             "rules": [f"도움 없이 푼 문제: 튜터 기능(대화, 블록 채우기, 해설 모드, 틀린 곳 같이 찾기, AI 피드백), 힌트, 해설을 쓰기 전에 제출 {UNAIDED_MAX_SUBMITS}번 안에 "
-                      f"통과한 기본 문제예요. '이 문제 처음부터'나 언어 바꾸기로 다시 시작했다면 {REPEAT_GAP_HOURS}시간이 지난 뒤에 그렇게 통과해도 세요. "
+                      f"통과한 기본 문제예요. '이 문제 처음부터'로 다시 시작했다면 {REPEAT_GAP_HOURS}시간이 지난 뒤에 그렇게 통과해도 세요. "
                       "통과한 뒤에 쓴 도움은 판정을 바꾸지 않아요. 등록한 문제는 세지 않아요.",
                       f"기초 익힘: 한 주제에서 도움 없이 {MASTER_COUNT}문제 이상 풀었고, 그중 하나가 {BASIC_LEVEL}단계 이상이에요. 실전 익힘은 {REAL_LEVEL}단계 이상이에요.",
                       f"판정 보류: 도움 없이 푼 문제가 {READY_MIN}문제보다 적어요.",
@@ -2254,12 +2266,13 @@ def handle(path: str, body: dict) -> tuple[int, dict]:
             rows = hint_rows(t, pid)
             if not rows:
                 raise Refuse("이 문제에는 미리 만들어 둔 힌트가 없어요. 튜터를 연결하면 질문으로 도와드려요.", 404, "not_found")
-            seen = min(t.store.study(pid)["hints_seen"], len(rows))
-            if body.get("peek") is True:  # 지금까지 본 힌트만 다시 보여 준다(문제를 다시 열었을 때). 새 힌트를 열지 않는다
+            study = t.store.study(pid)
+            seen = hints_now(study, rows)
+            if body.get("peek") is True:  # 이번 풀이에서 본 힌트만 다시 보여 준다(문제를 다시 열었을 때). 새 힌트를 열지 않는다
                 return 200, {"seen": seen, "total": len(rows), "done": seen == len(rows), "shown": hints_shown(rows, seen)}
             if seen < len(rows):  # 다 본 뒤에는 마지막 힌트를 다시 준다
                 seen += 1
-                t.store.set_study(pid, hints_seen=seen)
+                t.store.set_study(pid, hints_seen=study["hints_seen"] + 1)  # 본 힌트 수는 누적이다
                 t.store.mark_help(pid)
             shown = hints_shown(rows, seen)
             return 200, {**shown[-1], "seen": seen, "total": len(rows), "done": seen == len(rows), "shown": shown}
@@ -2309,6 +2322,9 @@ def handle(path: str, body: dict) -> tuple[int, dict]:
                 raise Refuse("남겨 둔 체크포인트가 없어요.", 404, "not_found")
             t.store.update_code(pid, saved["code"])
             write_json(BLOCKS_FILE, {**read_json(BLOCKS_FILE, {}), pid: saved["blocks"]})
+            reset_at = t.store.study(pid)["reset_at"]
+            if reset_at and stamp(saved.get("at")) <= stamp(reset_at):  # '처음부터' 앞에 남긴 코드를 되살렸다: 도움으로 센다
+                t.store.mark_help(pid)
             return 200, state_body(t, p, body)
         if path == "/api/reset":
             with LOCKS[pid]:

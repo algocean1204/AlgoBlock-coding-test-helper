@@ -303,7 +303,7 @@ def report() -> None:
     body = call("/api/report")[1]
     assert body["attendance"]["days"] == 1 and len(body["attendance"]["recent"]) == 14 and body["attendance"]["recent"][-1] is True and not any(body["attendance"]["recent"][:-1])
     hash_ = next(theme for theme in body["themes"] if theme["key"] == "hash")
-    assert (hash_["solved"], hash_["level_reached"], hash_["first_try"], hash_["solution_before_pass"], hash_["hints"]) == (1, 1, 0, 1, 0), hash_  # 힌트 6개를 봤지만 위에서 '처음부터'·언어 바꾸기로 다시 열게 됐다
+    assert (hash_["solved"], hash_["level_reached"], hash_["first_try"], hash_["solution_before_pass"], hash_["hints"]) == (1, 1, 0, 1, 6), hash_  # 본 힌트 수는 '처음부터' 뒤에도 누적이다
     assert hash_["fails"] == {"failed": 1, "runtime_error": 0, "timeout": 1, "compile_error": 0} and hash_["submissions"] >= 3 and hash_["state"] in ("progress", "weak")
     assert body["summary"]["solved"] == 1 and body["summary"]["total"] == len(ROWS) and body["summary"]["languages"]["python"] >= 5
     assert body["recent"][0]["id"] == PID and len(body["recent"]) <= 10
@@ -530,14 +530,14 @@ def readiness() -> None:
     assert stage(*[solve(pid, solution_before_pass=True) for pid in hash5])["solved"] == stage(*[solve(pid, hints_seen=1) for pid in hash5])["solved"] == 0
     # 혼자 푼 뒤의 도움·처음부터는 이미 센 것을 바꾸지 않는다
     assert stage(*[record(pid, ("pass", moment(0)), ("help", moment(1)), ("reset", moment(2)), ("help", moment(3))) for pid in hash5])["solved"] == 5
-    # 언어를 바꿔도(대화가 지워진다) 처음부터와 같다
+    # 언어를 바꾸는 것은 '처음부터'가 아니다(대화가 지워져도 학습 기록은 그대로)
     with tempfile.TemporaryDirectory() as folder, patch.object(server, "DB", Path(folder) / "report.db"):
         with server.tutor() as t:
             record(PID, ("help", moment(0)), ("pass", moment(1)))(t)
         call("/api/language", id=PID, language="javascript")
         call("/api/language", id=PID, language="python")
         with server.tutor() as t:
-            assert t.store.study(PID)["reset_at"] and t.store.study(PID)["help_after_reset_at"] is None and t.store.study(PID)["help_first_at"] == moment(0)
+            assert t.store.study(PID)["reset_at"] is None and t.store.study(PID)["help_after_reset_at"] == t.store.study(PID)["help_first_at"] == moment(0)
         assert call("/api/report")[1]["readiness"]["solved"] == 0
     # 화면의 도움 길: 힌트 열기·해설 모드·튜터 대화는 쓴 시각을 남긴다. 통과 전이면 도움, 통과 뒤면 판정을 바꾸지 않는다
     for path, body in (("/api/hint", {}), ("/api/explain", {}), ("/api/turn", {"mode": "chair", "event": "start"})):
@@ -686,6 +686,62 @@ def screen_flows() -> None:
         assert call("/api/hint", id=PID)[1]["seen"] == 1
         with at(later):
             assert submit(PID, CODE) and solved() == 0
+    with fresh():  # '처음부터' 앞에 남긴 체크포인트를 되살리면 도움이다. '처음부터' 뒤에 남긴 것은 아니다
+        opened(PID)
+        call("/api/hint", id=PID)
+        call("/api/checkpoint", id=PID, code=CODE, blocks={})
+        assert submit(PID, CODE)
+        again(PID)
+        call("/api/checkpoint/restore", id=PID)
+        with at(later):
+            assert submit(PID, CODE) and solved() == 0
+    with fresh():
+        opened(PID)
+        call("/api/hint", id=PID)
+        assert submit(PID, CODE)
+        again(PID)
+        soon = (datetime.now().astimezone() + timedelta(seconds=5)).isoformat(timespec="seconds")
+        with patch.object(server, "now", lambda: soon):  # '처음부터'와 같은 초에 남긴 체크포인트는 앞의 것으로 본다(사람은 그 사이에 남기지 못한다)
+            call("/api/checkpoint", id=PID, code="def solution(loans, k):\n    return []\n", blocks={})
+        call("/api/checkpoint/restore", id=PID)
+        with at(later):
+            assert submit(PID, CODE) and solved() == 1
+    with fresh():  # 언어를 바꿨다 돌아오는 것은 '처음부터'가 아니다: 도움을 받고 푼 문제는 하루 뒤에 다시 내도 세지 않는다
+        opened(PID)
+        call("/api/hint", id=PID)
+        call("/api/hint", id=PID)
+        assert submit(PID, CODE)
+        call("/api/language", id=PID, language="javascript")
+        study = call("/api/language", id=PID, language="python")[1]["problem"]["study"]
+        assert (study["hints_seen"], study["passed_now"]) == (2, True), study  # 힌트 진행과 '이번 풀이에서 통과'가 그대로다(해설·신호가 저절로 열린다)
+        with at(later):
+            assert submit(PID, CODE) and solved() == 0
+        # '처음부터' 뒤: 이번 풀이의 힌트는 0부터, 보고서의 본 힌트 수는 누적(2), 다른 언어로 쓰던 코드는 비운다
+        call("/api/language", id=PID, language="javascript")
+        call("/api/code", id=PID, code=JS, language="javascript")
+        call("/api/language", id=PID, language="python")
+        again(PID)
+        assert call("/api/language", id=PID, language="javascript")[1]["problem"]["code"] == ""
+        study = call("/api/language", id=PID, language="python")[1]["problem"]["study"]
+        assert (study["hints_seen"], call("/api/hint", id=PID, peek=True)[1]["shown"]) == (0, []), study
+        assert next(row for row in call("/api/report")[1]["themes"] if row["key"] == "hash")["hints"] == 2
+    with fresh():  # '처음부터'는 해설 모드의 글을 지운다(다른 언어로 보관한 것도). 남아 있으면 기록 없이 다시 보인다
+        opened(PID)
+        with server.tutor() as t:
+            t.store.conn.execute("UPDATE tutor_session SET explain_json=? WHERE problem_id=?", (json.dumps({"sections": [{"title": "흐름", "body": "개수를 센다"}]}), PID))
+            t.store.conn.commit()
+        assert call("/api/state", id=PID)[1]["session"]["explain"]
+        call("/api/language", id=PID, language="javascript")  # 파이썬의 해설 모드 글을 보관한다
+        call("/api/language", id=PID, language="python")
+        assert call("/api/state", id=PID)[1]["session"]["explain"]
+        call("/api/language", id=PID, language="javascript")  # 파이썬의 글은 보관된 채로 다른 언어에서 '처음부터'
+        again(PID)
+        assert not call("/api/language", id=PID, language="python")[1]["session"]["explain"]
+        with server.tutor() as t:
+            t.store.conn.execute("UPDATE tutor_session SET explain_json=? WHERE problem_id=?", (json.dumps({"sections": [{"title": "흐름", "body": "개수를 센다"}]}), PID))
+            t.store.conn.commit()
+        again(PID)  # 지금 언어의 글
+        assert not call("/api/state", id=PID)[1]["session"]["explain"]
     with fresh():  # 처음부터 뒤에 사용자가 해설을 직접 열면 도움이다(통과한 적이 있어 잠겨 있지 않다)
         opened(PID)
         call("/api/hint", id=PID)

@@ -28,7 +28,7 @@ SQLite 저장소다. 파일: `schema.py`(표, 버전), `codec.py`(계획·해설
 | 7 | `block_state.renames_json` 칸 |
 | 8 | `block_state.verdict`에 `?`를 허용한다(SQLite는 CHECK를 바꾸지 못해 표를 새로 만들어 옮긴다) |
 | 9 | `problem_fact`의 `level`, `tags_json` 칸 |
-| 10 | `study`의 `help_first_at`, `help_after_reset_at`, `reset_at` 칸. 옛 행은 남은 대화·해설·힌트 기록으로 채운다 |
+| 10 | `study`의 `help_first_at`, `help_after_reset_at`, `reset_at`, `hints_at_reset` 칸. 옛 행은 남은 대화·해설·힌트 기록으로 채운다 |
 
 ## 표
 
@@ -59,7 +59,7 @@ erDiagram
 | `problem_fact` | `problem_id` | 문항 뼈대(명세, 패턴, 구현 기술, 입력 크기, 단계, 태그). 비슷한 문항 찾기와 등록한 문제 목록이 쓴다 |
 | `pitfall_hit` | (`problem_id`, `pitfall`, `code_hash`) | 제출에서 밟은 함정 |
 | `solution` | `problem_id` | 정석 풀이 가이드(방향, 단계, 정답 코드, 검증 여부, 단서) |
-| `study` | `problem_id` | AI 없이 본 힌트 수, 해설을 처음 연 시각, 통과 전에 열었는지, 도움(튜터 기능·힌트·해설)을 처음 쓴 시각(`help_first_at`), 마지막 '처음부터'·언어 바꾸기 시각(`reset_at`)과 그 뒤에 도움을 처음 쓴 시각(`help_after_reset_at`). 학습 보고서가 도움 없이 푼 문제를 가린다 |
+| `study` | `problem_id` | AI 없이 본 힌트 수, 해설을 처음 연 시각, 통과 전에 열었는지, 도움(튜터 기능·힌트·해설)을 처음 쓴 시각(`help_first_at`), 마지막 '처음부터' 시각(`reset_at`)과 그 뒤에 도움을 처음 쓴 시각(`help_after_reset_at`), 그때까지 본 힌트 수(`hints_at_reset`. 이번 풀이에서 본 힌트 = `hints_seen` − `hints_at_reset`). 학습 보고서가 도움 없이 푼 문제를 가린다 |
 
 판정 `?`는 확인 전이라는 뜻이다. 앞 블록이 바뀌어 통과를 물린 블록, 다시 확인이 실패한 블록, 이어 돌려 통과하지 못한 채운 블록이 여기에 든다.
 

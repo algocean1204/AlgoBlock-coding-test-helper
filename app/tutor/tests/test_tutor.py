@@ -709,7 +709,7 @@ class TutorTest(unittest.TestCase):
             self.assertEqual([(row["language"], row["status"], row["detail"]) for row in tutor.store.submissions()],
                              [("java", "timeout", {"accuracy": [3, 5]}), ("python", "passed", {})])
             # 버전 10: 대화가 있던 문항은 학습 기록 행이 생기고, 가장 이른 대화 시각이 도움을 처음 쓴 시각이 된다
-            none = {"solution_at": None, "solution_before_pass": False, "reset_at": None}
+            none = {"solution_at": None, "solution_before_pass": False, "reset_at": None, "hints_at_reset": 0}
             self.assertEqual(tutor.store.study("p1"), {"hints_seen": 0, **none, "help_first_at": "t", "help_after_reset_at": "t"})
             tutor.store.set_study("p1", hints_seen=2)
             tutor.store.set_study("p1", solution_at="t", solution_before_pass=True)
@@ -753,8 +753,8 @@ class TutorTest(unittest.TestCase):
             study = tutor.store.study("p3")
             self.assertEqual((study["help_first_at"], study["help_after_reset_at"], study["reset_at"]), ("A", None, "B"))
             tutor.store.set_study("p3", hints_seen=2)
-            tutor.store.mark_reset("p3")  # 힌트도 처음부터 다시 연다
-            self.assertEqual(tutor.store.study("p3")["hints_seen"], 0)
+            tutor.store.mark_reset("p3")  # 본 힌트 수는 누적으로 남고, 이번 풀이는 그 수부터 센다
+            self.assertEqual((tutor.store.study("p3")["hints_seen"], tutor.store.study("p3")["hints_at_reset"]), (2, 2))
         finally:
             tutor.close()
 

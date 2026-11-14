@@ -1798,7 +1798,7 @@ function renderSolo() {
   const tutorExplain = ai ? '<button type="button" id="to-explain" class="btn quiet small" data-model>튜터에게 해설 받기</button>' : ""; // 모델이 쓰는 해설(예전 '해설' 탭)
   if (!p.study.has_guide) sol += `<p class="hint">이 문제에는 미리 만든 해설이 없어요. ${ai ? "튜터가 써 줄 수 있어요." : "튜터를 연결하면 해설을 써 줘요."}</p>${tutorExplain}`;
   else if (o.sol) sol += solutionHtml(o.sol, p.passed > 0) + tutorExplain;
-  else if (p.study.solution_open) sol += '<button type="button" id="solo-open" class="btn">해설 보기</button>';
+  else if (p.study.solution_open) sol += `${p.passed && !p.study.passed_now ? '<p class="hint">다시 푸는 중이에요. 지금 해설을 열면 이번 풀이는 도움을 받은 것으로 남아요.</p>' : ""}<button type="button" id="solo-open" class="btn">해설 보기</button>`; // '처음부터' 뒤에 이미 통과한 문제
   else if (o.ask) sol += `<div class="note warn"><span>통과하기 전에 해설을 보면 학습 보고서에 ‘해설을 먼저 봄’으로 남아요. 힌트를 끝까지 본 뒤에 여는 것을 권해요.</span></div>
     <div class="solo-actions"><button type="button" id="solo-force-yes" class="btn danger small">그래도 해설 보기</button><button type="button" id="solo-force-no" class="btn small">더 풀어 볼게요</button></div>`;
   else sol += `<p class="hint lock-line">${ico("i-lock")}통과하면 이 문제의 실전 신호와 해설이 열려요.</p><button type="button" id="solo-force" class="btn quiet small">포기하고 해설 보기</button>`;

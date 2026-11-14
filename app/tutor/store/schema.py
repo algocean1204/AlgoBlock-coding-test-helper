@@ -139,12 +139,13 @@ ALTER TABLE block_state_v8 RENAME TO block_state;
 """,
     # 9: 문항 뼈대에 분석이 붙인 단계(1~5, 모르면 0)와 태그(온톨로지 기법 id). 등록한 문제의 목록에 보인다
     "ALTER TABLE problem_fact ADD COLUMN level INTEGER NOT NULL DEFAULT 0; ALTER TABLE problem_fact ADD COLUMN tags_json TEXT NOT NULL DEFAULT '[]';",
-    # 10: 도움(튜터 기능·힌트·해설)을 처음 쓴 시각, 마지막 '처음부터'·언어 바꾸기 뒤에 처음 쓴 시각, 그 '처음부터'의 시각(학습 보고서가 도움 없이 푼 문제를 가린다).
+    # 10: 도움(튜터 기능·힌트·해설)을 처음 쓴 시각, 마지막 '처음부터' 뒤에 처음 쓴 시각, 그 '처음부터'의 시각과 그때까지 본 힌트 수(학습 보고서가 도움 없이 푼 문제를 가린다).
     #     옛 행은 남은 기록으로 채운다: 대화가 있는 문항은 행을 만들고, 가장 이른 대화·해설 시각을 넣는다. 본 힌트는 시각이 없어 가장 이른 시각으로 둔다(통과 전에 본 것으로 친다)
     """
 ALTER TABLE study ADD COLUMN help_first_at TEXT;
 ALTER TABLE study ADD COLUMN help_after_reset_at TEXT;
 ALTER TABLE study ADD COLUMN reset_at TEXT;
+ALTER TABLE study ADD COLUMN hints_at_reset INTEGER NOT NULL DEFAULT 0;
 INSERT OR IGNORE INTO study(problem_id) SELECT DISTINCT problem_id FROM message;
 UPDATE study SET help_first_at = CASE
   WHEN hints_seen > 0 THEN '0001-01-01T00:00:00+00:00'
