@@ -616,7 +616,8 @@ def screen_flows() -> None:
     다시 풀어 되찾는 통과는 '처음부터'에서 하루(REPEAT_GAP_HOURS)가 지난 뒤의 것만 센다."""
     from contextlib import contextmanager
     from datetime import datetime, timedelta
-    later = (datetime.now().astimezone() + timedelta(hours=server.REPEAT_GAP_HOURS, minutes=1)).isoformat(timespec="seconds")
+    def later() -> str:  # 지금(방금 한 '처음부터')에서 하루가 조금 넘게 지난 때. 쓸 때마다 잰다(채점이 느린 기기에서 시험 앞부분이 1분을 넘겼다)
+        return (datetime.now().astimezone() + timedelta(hours=server.REPEAT_GAP_HOURS, minutes=1)).isoformat(timespec="seconds")
     code = {row["id"]: row["solutions"]["python"] for row in ROWS}
 
     def opened(pid):  # app.js applyState: 본 힌트가 있으면 다시 보여 주고(peek), 이번 풀이에서 통과했으면 해설을 불러 둔다
@@ -647,6 +648,12 @@ def screen_flows() -> None:
             yield
 
     solved = lambda: call("/api/report")[1]["readiness"]["solved"]  # noqa: E731
+
+    def judged(pid, source, want):  # 제출이 통과했고 도움 없이 푼 문제가 want개다. 아니면 무엇이 어긋났는지 보인다
+        ok, got = submit(pid, source), solved()
+        with server.tutor() as t:
+            study = t.store.study(pid)
+        assert ok and got == want, f"제출 통과 {ok}, 도움 없이 푼 문제 {got}(기대 {want}), 학습 기록 {study}, 지금 {datetime.now().astimezone().isoformat()}"
     levels = {(row["theme"], row["level"]): row["id"] for row in ROWS}
     with fresh():  # 정상 흐름: 필수 7개 주제의 1·2단계를 혼자 풀면(통과 뒤 해설이 저절로 열려도) 쉬운 코딩테스트 도전
         for pid in [levels[(key, n)] for key in server.ESSENTIAL for n in (1, 2)]:
@@ -659,33 +666,33 @@ def screen_flows() -> None:
     with fresh():  # 통과 전 힌트 → 통과 → 처음부터: 예전 힌트·해설을 저절로 보여 주지 않고, 하루 뒤 혼자 통과하면 센다
         opened(PID)
         call("/api/hint", id=PID)
-        assert submit(PID, CODE) and solved() == 0
+        judged(PID, CODE, 0)
         study = again(PID)
         assert (study["hints_seen"], study["passed_now"]) == (0, False), study
         with server.tutor() as t:
             assert t.store.study(PID)["help_after_reset_at"] is None
-        assert submit(PID, CODE) and solved() == 0  # 같은 때 다시 낸 것(본 것을 그대로 붙일 수 있다)은 세지 않는다
+        judged(PID, CODE, 0)  # 같은 때 다시 낸 것(본 것을 그대로 붙일 수 있다)은 세지 않는다
         study = again(PID)
-        with at(later):
-            assert submit(PID, CODE) and solved() == 1
+        with at(later()):
+            judged(PID, CODE, 1)
     with fresh():  # 통과 전에 해설(정답 코드)을 보고 통과 → 처음부터 → 바로 다시 내면 세지 않고, 하루 뒤면 센다
         pid = levels[("sort", 1)]
         opened(pid)
         call("/api/solution", id=pid, force=True)
-        assert submit(pid, code[pid]) and solved() == 0
+        judged(pid, code[pid], 0)
         again(pid)
-        assert submit(pid, code[pid]) and solved() == 0
+        judged(pid, code[pid], 0)
         again(pid)
-        with at(later):
-            assert submit(pid, code[pid]) and solved() == 1
+        with at(later()):
+            judged(pid, code[pid], 1)
     with fresh():  # 처음부터 뒤에 힌트를 다시 열면 새 힌트를 연 것과 같이 도움이다
         opened(PID)
         call("/api/hint", id=PID)
         assert submit(PID, CODE)
         again(PID)
         assert call("/api/hint", id=PID)[1]["seen"] == 1
-        with at(later):
-            assert submit(PID, CODE) and solved() == 0
+        with at(later()):
+            judged(PID, CODE, 0)
     with fresh():  # '처음부터' 앞에 남긴 체크포인트를 되살리면 도움이다. '처음부터' 뒤에 남긴 것은 아니다
         opened(PID)
         call("/api/hint", id=PID)
@@ -693,8 +700,8 @@ def screen_flows() -> None:
         assert submit(PID, CODE)
         again(PID)
         call("/api/checkpoint/restore", id=PID)
-        with at(later):
-            assert submit(PID, CODE) and solved() == 0
+        with at(later()):
+            judged(PID, CODE, 0)
     with fresh():
         opened(PID)
         call("/api/hint", id=PID)
@@ -704,8 +711,8 @@ def screen_flows() -> None:
         with patch.object(server, "now", lambda: soon):  # '처음부터'와 같은 초에 남긴 체크포인트는 앞의 것으로 본다(사람은 그 사이에 남기지 못한다)
             call("/api/checkpoint", id=PID, code="def solution(loans, k):\n    return []\n", blocks={})
         call("/api/checkpoint/restore", id=PID)
-        with at(later):
-            assert submit(PID, CODE) and solved() == 1
+        with at(later()):
+            judged(PID, CODE, 1)
     with fresh():  # 도움 없이 쓰던 코드의 체크포인트 → '처음부터' → 되살려 처음 통과: 첫 풀이에 도움이 없었으므로 센다
         opened(PID)
         call("/api/checkpoint", id=PID, code=CODE, blocks={})
@@ -714,7 +721,7 @@ def screen_flows() -> None:
         call("/api/checkpoint/restore", id=PID)
         with server.tutor() as t:
             assert t.store.study(PID)["help_first_at"] is None and t.store.study(PID)["help_after_reset_at"]
-        assert submit(PID, CODE) and solved() == 1
+        judged(PID, CODE, 1)
     with fresh():  # 언어를 바꿨다 돌아오는 것은 '처음부터'가 아니다: 도움을 받고 푼 문제는 하루 뒤에 다시 내도 세지 않는다
         opened(PID)
         call("/api/hint", id=PID)
@@ -723,8 +730,8 @@ def screen_flows() -> None:
         call("/api/language", id=PID, language="javascript")
         study = call("/api/language", id=PID, language="python")[1]["problem"]["study"]
         assert (study["hints_seen"], study["passed_now"]) == (2, True), study  # 힌트 진행과 '이번 풀이에서 통과'가 그대로다(해설·신호가 저절로 열린다)
-        with at(later):
-            assert submit(PID, CODE) and solved() == 0
+        with at(later()):
+            judged(PID, CODE, 0)
         # '처음부터' 뒤: 이번 풀이의 힌트는 0부터, 보고서의 본 힌트 수는 누적(2), 다른 언어로 쓰던 코드는 비운다
         call("/api/language", id=PID, language="javascript")
         call("/api/code", id=PID, code=JS, language="javascript")
@@ -757,8 +764,8 @@ def screen_flows() -> None:
         assert submit(PID, CODE)
         again(PID)
         call("/api/solution", id=PID)
-        with at(later):
-            assert submit(PID, CODE) and solved() == 0
+        with at(later()):
+            judged(PID, CODE, 0)
 
 
 def home() -> None:
