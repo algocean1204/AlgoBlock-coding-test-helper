@@ -42,6 +42,10 @@
           {
             "context": "pr-title",
             "integration_id": 15368
+          },
+          {
+            "context": "main-source",
+            "integration_id": 15368
           }
         ]
       }

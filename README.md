@@ -119,7 +119,7 @@ AI를 연결하면 튜터가 풀이 코드를 줄 범위로 나눈 블록을 하
 Python 3.12와 [uv](https://docs.astral.sh/uv/)가 필요하다.
 
 ```bash
-git clone https://github.com/algocean1204/AlgoBlock-coding-test-helper.git
+git clone -b main https://github.com/algocean1204/AlgoBlock-coding-test-helper.git
 cd AlgoBlock-coding-test-helper/app
 uv run --no-project --python 3.12 --with langgraph --with pypdf python ui/server.py
 ```
