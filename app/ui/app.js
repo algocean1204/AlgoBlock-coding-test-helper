@@ -2608,5 +2608,5 @@ accounts().then((r) => { // 연결 상태를 먼저 알아야 화면을 고른�
   route();
   if (r.ok && !r.data.tour_seen) openTour(); // 처음 켰을 때만 안내를 띄운다
 });
-updAct("status"); // 서버가 켤 때와 6시간마다 새 버전을 본다. 화면은 그 결과만 10분마다 가져온다
+updAct("status"); // 서버가 켤 때와 24시간마다 새 버전을 본다. 화면은 그 결과만 10분마다 가져온다
 setInterval(() => { if (!UPD || !UPD_BUSY.includes(UPD.state)) updAct("status"); }, 10 * 60 * 1000);
