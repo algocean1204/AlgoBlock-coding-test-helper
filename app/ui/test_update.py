@@ -248,7 +248,8 @@ def run() -> None:
         checking(root / "check")
         downloading(root / "download")
         installing(root / "install")
-        swapping(root / "swap")
+        if os.name != "nt":  # 바꿔 끼우기(swap.sh)는 macOS의 .app에만 있는 기능이고 /bin/sh로 돈다. Windows에는 /bin/sh가 없고 이 길을 타지 않는다
+            swapping(root / "swap")
         tidying(root / "tidy")
         reset(before)
 
