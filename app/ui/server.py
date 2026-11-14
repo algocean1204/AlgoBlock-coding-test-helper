@@ -2258,7 +2258,7 @@ atexit.register(stop_grading)
 
 def main() -> None:
     load_keys()
-    updater.start()  # 켤 때 한 번, 그 뒤 6시간마다 새 버전을 뒤에서 본다(실패는 조용히 넘긴다)
+    updater.start()  # 켤 때(마지막 확인에서 24시간이 지났으면)와 24시간마다 새 버전을 뒤에서 본다(실패하면 1시간부터 늘려 다시)
     if threading.current_thread() is threading.main_thread():  # 창(window.py)에서 띄우면 스레드라 신호를 받을 수 없다
         signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))  # 끝내기 전에 atexit의 stop_grading이 돈다
     port = int(os.environ.get("ALGOBLOCK_UI_PORT", "8791"))

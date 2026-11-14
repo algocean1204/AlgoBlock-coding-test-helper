@@ -27,9 +27,10 @@ def prepare() -> None:
     bundle = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
     data = data_dir()
     os.environ.setdefault("ALGOBLOCK_UI_DATA", str(data))
-    os.environ.setdefault("ALGOBLOCK_UI_STATIC", str(bundle / "ui"))
-    os.environ.setdefault("ALGOBLOCK_JUDGE_DIR", str(bundle / "judge"))
-    os.environ.setdefault("ALGOBLOCK_EMBED_DIR", str(bundle / "models"))  # 같이 묶은 임베딩 모델(기기 안에서 돈다. 내려받지 않는다)
+    # 묶음 안의 화면·채점기·임베딩 모델(기기 안에서 돈다. 내려받지 않는다). 물려받은 값이 없는 폴더를 가리키면(옛 앱이 풀어 놓았다가 지운 곳) 이 묶음으로 바꾼다
+    for key, folder in (("ALGOBLOCK_UI_STATIC", "ui"), ("ALGOBLOCK_JUDGE_DIR", "judge"), ("ALGOBLOCK_EMBED_DIR", "models")):
+        if not os.path.isdir(os.environ.get(key) or ""):
+            os.environ[key] = str(bundle / folder)
     if sys.platform == "darwin":
         # Finder에서 연 앱은 PATH가 짧다. 사용자가 설치한 파이썬·컴파일러(채점에 쓴다)를 찾게 흔한 자리를 더한다
         home = Path.home()

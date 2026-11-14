@@ -62,7 +62,7 @@ python3 -B ui/test_publish.py     # 공개 전 검사(키, 개인 경로, 내부
 | --- | --- |
 | `server.py` | 표준 라이브러리 HTTP 서버. 정적 파일과 `/api/*`만 낸다 |
 | `window.py` | 서버를 같이 띄우고 네이티브 창으로 연다 |
-| `updater.py` | 새 버전 확인(켤 때와 6시간마다)과 업데이트(받기, SHA-256 확인, macOS 묶인 앱의 바꿔 끼우기). 앱의 버전(`VERSION`)도 여기 있다 |
+| `updater.py` | 새 버전 확인(켤 때와 24시간마다, 실패하면 1시간부터 두 배씩 최대 6시간 간격으로 다시)과 업데이트(받기, SHA-256 확인, 묶인 macOS 앱(`swap.sh`)과 Windows exe(`swap.ps1`)의 바꿔 끼우기와 되돌리기). 앱의 버전(`VERSION`)과 Windows 릴리스 파일 이름(`WINDOWS_ASSET`)도 여기 있다 |
 | `index.html`, `app.css`, `app.js` | 화면. 상태를 바꾸고, 서버에 요청하고, 다시 그린다. 처음 안내는 `index.html`의 `<dialog id="tour">`와 `app.js`의 `TOUR`, `renderTour`, `openTour`다 |
 | `builtin.json` | 기본 문제 묶음(75문제). 빌드 결과물이라 손으로 고치지 않는다 |
 | `make_builtin.py` | `problems/`의 문제 폴더를 `builtin.json`으로 묶는다 |
