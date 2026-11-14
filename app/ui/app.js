@@ -982,7 +982,7 @@ function applyState(data) {
     document.title = `${p.title} · AlgoBlock`;
     S.solo = { shown: [], seen: p.study.hints_seen, total: p.study.hints_total, sol: null, ask: false, note: null };
     if (p.study.hints_seen) loadHints(true); // 전에 본 힌트를 다시 보여 준다(새 힌트를 열지 않는다)
-    if (p.study.has_guide && p.passed) loadSolution(false); // 이미 통과한 문제는 실전 신호를 준비해 둔다
+    if (p.study.has_guide && p.study.passed_now) loadSolution(false); // 이번 풀이에서 통과한 문제는 실전 신호를 준비해 둔다('처음부터' 뒤에는 열 때만 보인다)
     // 방식: 기억한 것, 없으면 대화가 있는 쪽(마지막 말이 늦은 쪽), 없으면 고르기 전(어떻게 풀까요?)
     const lastAt = (chat) => (chat[chat.length - 1] || {}).at || "", sess = data.session;
     let way = savedWay(S.pid) || (sess.guide.length || sess.chair.length ? (lastAt(sess.guide) > lastAt(sess.chair) ? "guide" : "chair") : null);

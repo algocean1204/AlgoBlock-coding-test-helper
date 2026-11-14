@@ -206,7 +206,7 @@ def builtin(fake) -> None:
     assert (problem["builtin"], problem["theme"], problem["theme_name"], problem["level"], problem["languages"]) == (True, "hash", "해시", 1, ["python", "javascript"])
     assert problem["starter"].startswith("def solution(loans, k)") and problem["code"] == "" and len(problem["examples"]) == 3 and problem["examples"][0]["note"]
     assert problem["cases"]["example"] == 3 and problem["cases"]["accuracy"] >= 12 and problem["cases"]["efficiency"] == 2
-    assert problem["study"] == {"hints_seen": 0, "hints_total": 6, "solution_seen": False, "solution_open": False, "has_guide": True}
+    assert problem["study"] == {"hints_seen": 0, "hints_total": 6, "solution_seen": False, "solution_open": False, "has_guide": True, "passed_now": False}
     assert len(opened["session"]["blocks"]) == 2  # 미리 만든 계획으로 바로 시작한다
     first = call("/api/turn", id=PID, mode="chair", event="start")[1]
     assert first["messages"][0]["text"] == FIRST["ready"]["plan"]["blocks"][0]["hints"][0]
@@ -271,7 +271,7 @@ def builtin(fake) -> None:
     passed = call("/api/submit", id=PID, code=CODE)[1]
     assert passed["ok"] and passed["score"]["efficiency"] == [2, 2] and all("input" not in case for case in passed["cases"] if case["kind"] != "example")
     study = call("/api/state", id=PID)[1]["problem"]["study"]
-    assert study == {"hints_seen": 6, "hints_total": 6, "solution_seen": True, "solution_open": True, "has_guide": True}
+    assert study == {"hints_seen": 6, "hints_total": 6, "solution_seen": True, "solution_open": True, "has_guide": True, "passed_now": True}
     with server.tutor() as t:
         assert t.store.study(PID)["solution_before_pass"] and t.store.study(PID)["help_first_at"] and [sub["status"] for sub in t.store.submissions() if sub["problem_id"] == PID] == ["failed", "timeout", "passed"]
 
@@ -303,7 +303,7 @@ def report() -> None:
     body = call("/api/report")[1]
     assert body["attendance"]["days"] == 1 and len(body["attendance"]["recent"]) == 14 and body["attendance"]["recent"][-1] is True and not any(body["attendance"]["recent"][:-1])
     hash_ = next(theme for theme in body["themes"] if theme["key"] == "hash")
-    assert (hash_["solved"], hash_["level_reached"], hash_["first_try"], hash_["solution_before_pass"], hash_["hints"]) == (1, 1, 0, 1, 6), hash_
+    assert (hash_["solved"], hash_["level_reached"], hash_["first_try"], hash_["solution_before_pass"], hash_["hints"]) == (1, 1, 0, 1, 0), hash_  # 힌트 6개를 봤지만 위에서 '처음부터'·언어 바꾸기로 다시 열게 됐다
     assert hash_["fails"] == {"failed": 1, "runtime_error": 0, "timeout": 1, "compile_error": 0} and hash_["submissions"] >= 3 and hash_["state"] in ("progress", "weak")
     assert body["summary"]["solved"] == 1 and body["summary"]["total"] == len(ROWS) and body["summary"]["languages"]["python"] >= 5
     assert body["recent"][0]["id"] == PID and len(body["recent"]) <= 10
@@ -516,12 +516,18 @@ def readiness() -> None:
     assert body["readiness"]["solved"] == 0 and body["readiness"]["stage"] == "hold"
     for pid in (auto, auto2, partly, chosen):
         call("/api/problems/delete", id=pid)
-    # 도움을 받고 푼 뒤 '이 문제 처음부터'(대화가 지워진다): 다시 혼자 통과하기 전까지는 세지 않고, 혼자 다시 통과하면 센다
+    # 도움을 받고 푼 뒤 '이 문제 처음부터'(대화가 지워진다): 다시 혼자 통과하기 전까지는 세지 않고, 그 '처음부터'에서 하루(REPEAT_GAP_HOURS)가
+    # 지난 뒤에 혼자 다시 통과하면 센다. 하루 안의 통과(본 해설을 외워 붙일 수 있다)는 세지 않는다
+    day = server.REPEAT_GAP_HOURS * 3600
     helped5 = [record(pid, ("talk", moment(0)), ("help", moment(1)), ("pass", moment(2)), ("reset", moment(3))) for pid in hash5]
     assert stage(*helped5)["solved"] == 0
-    assert stage(*helped5, *[record(pid, ("fail", moment(4)), ("pass", moment(5))) for pid in hash5])["stage"] == "building"
-    assert stage(*helped5, *[record(pid, ("help", moment(4)), ("pass", moment(5))) for pid in hash5])["solved"] == 0  # 처음부터 뒤에도 도움을 받았다
-    assert stage(*helped5, *[record(pid, *[("fail", moment(4 + n)) for n in range(3)], ("pass", moment(9))) for pid in hash5])["solved"] == 0  # 다시 푼 것도 제출 4번째
+    assert stage(*helped5, *[record(pid, ("fail", moment(4)), ("pass", moment(5))) for pid in hash5])["solved"] == 0
+    assert stage(*helped5, *[record(pid, ("fail", moment(day)), ("pass", moment(day + 3))) for pid in hash5])["stage"] == "building"
+    assert stage(*helped5, *[record(pid, ("help", moment(4)), ("pass", moment(day + 3))) for pid in hash5])["solved"] == 0  # 처음부터 뒤에도 도움을 받았다
+    assert stage(*helped5, *[record(pid, *[("fail", moment(day + n)) for n in range(3)], ("pass", moment(day + 9))) for pid in hash5])["solved"] == 0  # 다시 푼 것도 제출 4번째
+    # 통과와 같은 초의 '처음부터'는 그 통과를 새 풀이에 넣지 않는다. 도움 시각이 빈 옛 기록은 해설을 먼저 봤거나 본 힌트가 있으면 도움받은 것으로 본다
+    assert stage(*[record(pid, ("help", moment(0)), ("pass", moment(day)), ("reset", moment(day))) for pid in hash5])["solved"] == 0
+    assert stage(*[solve(pid, solution_before_pass=True) for pid in hash5])["solved"] == stage(*[solve(pid, hints_seen=1) for pid in hash5])["solved"] == 0
     # 혼자 푼 뒤의 도움·처음부터는 이미 센 것을 바꾸지 않는다
     assert stage(*[record(pid, ("pass", moment(0)), ("help", moment(1)), ("reset", moment(2)), ("help", moment(3))) for pid in hash5])["solved"] == 5
     # 언어를 바꿔도(대화가 지워진다) 처음부터와 같다
@@ -574,7 +580,7 @@ def readiness() -> None:
         assert not any(word in text for word in BANNED for text in [got["line"], got["basis"], *got["rules"], *(row["todo"] for row in got["remaining"])])
         for row in got["remaining"]:  # 남은 일의 숫자도 응답 값이다
             assert row["top"] == max(unaided[row["key"]], default=0) and row["more"] == max(0, server.MASTER_COUNT - len(unaided[row["key"]]))
-            assert {int(x) for x in re.findall(r"\d+", row["todo"])} <= {row["more"], row["level"], row["top"]}, row
+            assert {int(x) for x in re.findall(r"\d+", row["todo"])} <= {row["more"], row["level"], row["top"], server.REPEAT_GAP_HOURS}, row
             mine = unaided[row["key"]] + fresh[row["key"]]  # 아직 통과하지 않은 문제로 채울 수 있으면 그 일을, 없으면 '처음부터'를 말한다
             assert (server.RESTART in row["todo"]) == (len(mine) < server.MASTER_COUNT or max(mine, default=0) < row["level"]), (row, mine)
     assert seen == set(order), seen
@@ -590,8 +596,8 @@ def readiness() -> None:
             events = [*before, *[("fail", tick()) for _ in range(0 if kind == "reset" else fails)], ("pass", tick())]
             if kind == "late":
                 events.append(("help", tick()))
-            if kind == "reset":  # 도움을 받고 푼 뒤 처음부터 다시: fails번 틀리고 통과
-                events += [("reset", tick()), *[("fail", tick()) for _ in range(fails)], ("pass", tick())]
+            if kind == "reset":  # 도움을 받고 푼 뒤 처음부터 다시: 하루가 지나 fails번 틀리고 통과
+                events += [("reset", tick()), *[("fail", moment(day + next(clock))) for _ in range(fails)], ("pass", moment(day + next(clock)))]
             if kind in ("", "late", "reset") and fails < server.UNAIDED_MAX_SUBMITS:
                 unaided.setdefault(row["theme"], []).append(row["level"])
             steps.append(record(row["id"], *events))
@@ -602,6 +608,92 @@ def readiness() -> None:
         assert not any(word in row["line"] for word in BANNED for row in body["patterns"])
         strongs += len(strong)
     assert strongs, "무작위 이력에 강점 주제가 한 번도 없으면 위 불변식이 비어 있다"
+
+
+def screen_flows() -> None:
+    """화면이 부르는 요청 그대로, 같은 초 안에서: 문제 열기 → 제출 → (통과하면) 다음 문제·해설 → '처음부터' → 다시 열기 → 보고서.
+    통과하면 화면이 해설을 저절로 여는 것은 도움이 아니고, '처음부터' 뒤에는 해설·예전 힌트를 저절로 보여 주지 않으며,
+    다시 풀어 되찾는 통과는 '처음부터'에서 하루(REPEAT_GAP_HOURS)가 지난 뒤의 것만 센다."""
+    from contextlib import contextmanager
+    from datetime import datetime, timedelta
+    later = (datetime.now().astimezone() + timedelta(hours=server.REPEAT_GAP_HOURS, minutes=1)).isoformat(timespec="seconds")
+    code = {row["id"]: row["solutions"]["python"] for row in ROWS}
+
+    def opened(pid):  # app.js applyState: 본 힌트가 있으면 다시 보여 주고(peek), 이번 풀이에서 통과했으면 해설을 불러 둔다
+        study = call("/api/state", id=pid, mode="chair", open=True)[1]["problem"]["study"]
+        if study["hints_seen"]:
+            call("/api/hint", id=pid, peek=True)
+        if study["has_guide"] and study["passed_now"]:
+            call("/api/solution", id=pid)
+        return study
+
+    sent = iter(range(1000))
+
+    def submit(pid, source):  # 제출. 통과하면 화면이 결과 아래 '다음 문제'(보고서)와 해설을 부른다(같은 코드는 다시 남지 않으므로 낼 때마다 주석을 바꾼다)
+        out = call("/api/submit", id=pid, code=f"{source}\n# {next(sent)}")[1]
+        assert out.get("repeat") is False, out
+        if out["ok"]:
+            call("/api/report")
+            call("/api/solution", id=pid)
+        return out["ok"]
+
+    def again(pid):  # '이 문제 처음부터' 뒤 화면이 상태를 다시 불러온다
+        call("/api/reset", id=pid)
+        return opened(pid)
+
+    @contextmanager
+    def fresh():
+        with tempfile.TemporaryDirectory() as folder, patch.object(server, "DB", Path(folder) / "flow.db"):
+            yield
+
+    solved = lambda: call("/api/report")[1]["readiness"]["solved"]  # noqa: E731
+    levels = {(row["theme"], row["level"]): row["id"] for row in ROWS}
+    with fresh():  # 정상 흐름: 필수 7개 주제의 1·2단계를 혼자 풀면(통과 뒤 해설이 저절로 열려도) 쉬운 코딩테스트 도전
+        for pid in [levels[(key, n)] for key in server.ESSENTIAL for n in (1, 2)]:
+            opened(pid)
+            assert submit(pid, code[pid]), pid
+        body = call("/api/report")[1]
+        assert body["readiness"]["stage"] == "easy", body["readiness"]
+        with server.tutor() as t:
+            assert t.store.study(PID)["help_first_at"] is None  # 통과한 뒤 저절로 연 해설은 도움으로 적지 않았다
+    with fresh():  # 통과 전 힌트 → 통과 → 처음부터: 예전 힌트·해설을 저절로 보여 주지 않고, 하루 뒤 혼자 통과하면 센다
+        opened(PID)
+        call("/api/hint", id=PID)
+        assert submit(PID, CODE) and solved() == 0
+        study = again(PID)
+        assert (study["hints_seen"], study["passed_now"]) == (0, False), study
+        with server.tutor() as t:
+            assert t.store.study(PID)["help_after_reset_at"] is None
+        assert submit(PID, CODE) and solved() == 0  # 같은 때 다시 낸 것(본 것을 그대로 붙일 수 있다)은 세지 않는다
+        study = again(PID)
+        with at(later):
+            assert submit(PID, CODE) and solved() == 1
+    with fresh():  # 통과 전에 해설(정답 코드)을 보고 통과 → 처음부터 → 바로 다시 내면 세지 않고, 하루 뒤면 센다
+        pid = levels[("sort", 1)]
+        opened(pid)
+        call("/api/solution", id=pid, force=True)
+        assert submit(pid, code[pid]) and solved() == 0
+        again(pid)
+        assert submit(pid, code[pid]) and solved() == 0
+        again(pid)
+        with at(later):
+            assert submit(pid, code[pid]) and solved() == 1
+    with fresh():  # 처음부터 뒤에 힌트를 다시 열면 새 힌트를 연 것과 같이 도움이다
+        opened(PID)
+        call("/api/hint", id=PID)
+        assert submit(PID, CODE)
+        again(PID)
+        assert call("/api/hint", id=PID)[1]["seen"] == 1
+        with at(later):
+            assert submit(PID, CODE) and solved() == 0
+    with fresh():  # 처음부터 뒤에 사용자가 해설을 직접 열면 도움이다(통과한 적이 있어 잠겨 있지 않다)
+        opened(PID)
+        call("/api/hint", id=PID)
+        assert submit(PID, CODE)
+        again(PID)
+        call("/api/solution", id=PID)
+        with at(later):
+            assert submit(PID, CODE) and solved() == 0
 
 
 def home() -> None:
@@ -1847,6 +1939,7 @@ def main() -> None:
         home()
         own_theme()
         readiness()
+        screen_flows()
         debug_pass()
         own_way_flow()
         chair_found()

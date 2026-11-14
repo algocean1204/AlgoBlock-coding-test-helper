@@ -752,6 +752,9 @@ class TutorTest(unittest.TestCase):
                 tutor.store.mark_reset("p3")
             study = tutor.store.study("p3")
             self.assertEqual((study["help_first_at"], study["help_after_reset_at"], study["reset_at"]), ("A", None, "B"))
+            tutor.store.set_study("p3", hints_seen=2)
+            tutor.store.mark_reset("p3")  # 힌트도 처음부터 다시 연다
+            self.assertEqual(tutor.store.study("p3")["hints_seen"], 0)
         finally:
             tutor.close()
 

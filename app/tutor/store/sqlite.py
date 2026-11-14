@@ -115,8 +115,8 @@ class Store:
         self.set_study(problem_id, help_first_at=study["help_first_at"] or at, help_after_reset_at=study["help_after_reset_at"] or at)
 
     def mark_reset(self, problem_id: str) -> None:
-        """'처음부터'·언어 바꾸기: 새 풀이가 시작된다(그 뒤의 도움을 다시 센다)."""
-        self.set_study(problem_id, reset_at=now(), help_after_reset_at=None)
+        """'처음부터'·언어 바꾸기: 새 풀이가 시작된다(그 뒤의 도움을 다시 센다). 힌트도 처음부터 다시 연다(다시 열면 도움으로 센다)."""
+        self.set_study(problem_id, reset_at=now(), help_after_reset_at=None, hints_seen=0)
 
     def latest_submission(self, problem_id: str) -> Submission | None:
         row = self.conn.execute(

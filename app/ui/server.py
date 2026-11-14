@@ -1833,7 +1833,8 @@ def state_body(t, p, body: dict) -> dict:
                         "languages": row["languages"] if row else list(check_judge().LANGUAGES), "starter": row["starters"].get(ctx.language, "") if row else own_starter(p, ctx.language),
                         "examples": examples, "cases": {kind: kinds.get(kind, 0) for kind in KINDS},
                         "study": {"hints_seen": study["hints_seen"], "hints_total": len(hint_rows(t, pid)), "solution_seen": bool(study["solution_at"]),
-                                  "solution_open": passed > 0 or bool(study["solution_at"]), "has_guide": row is not None or ctx.solution is not None},
+                                  "solution_open": passed > 0 or bool(study["solution_at"]), "has_guide": row is not None or ctx.solution is not None,
+                                  "passed_now": passed_since(problem_subs(t, pid), study)},  # 이번 풀이에서 통과했다(아니면 화면이 해설을 저절로 열지 않는다)
                         "code": ctx.direct_code or "", "passed": passed, "submitted": total,
                         "tools": tools(), "preparing": pid in PREPARING, "prepare_failed": pid in PREP_FAILED and ctx.plan is None, "assets": assets(pid), "checkpoint_at": (checkpoint(pid, ctx.language) or {}).get("at"), **mine},
             "session": t.session(pid, body.get("mode")).body, "blocks": read_json(BLOCKS_FILE, {}).get(pid, {}), "own_way": pid in read_json(OWN_FILE, {}),
@@ -1865,6 +1866,7 @@ FREQUENT = ("stack_queue", "greedy", "heap", "two_pointer", "binary_search", "dp
 READY_MIN = 5  # 도움 없이 푼 문제가 이보다 적으면 판정 보류(눈높이의 beginner 문턱과 같다)
 MASTER_COUNT, BASIC_LEVEL, REAL_LEVEL = 2, 2, 3  # 주제 익힘: 도움 없이 2문제 이상, 그중 가장 높은 단계가 2(기초 익힘)·3(실전 익힘) 이상
 UNAIDED_MAX_SUBMITS = 3  # 한 번의 풀이(처음, 또는 '처음부터' 뒤)에서 이 횟수 안에 통과해야 '도움 없이 푼 문제'다
+REPEAT_GAP_HOURS = 24  # '처음부터' 뒤의 통과는 그 '처음부터'에서 이만큼 지난 뒤여야 센다(본 해설을 외워 붙이지 않고 시간을 두고 다시 떠올린 것만)
 STAGES = {"hold": "판정 보류", "building": "기초 다지는 중", "easy": "쉬운 코딩테스트 도전", "practice": "실전 연습 단계"}
 # 학습 지도: 주제 → 먼저 기초를 익힐 주제. 적은 순서가 지도 순서다(먼저 익힐 주제가 늘 앞에 있다)
 PREREQS = {"implementation": (), "sort": (), "hash": (), "simulation": ("implementation",), "brute_force": ("implementation",),
@@ -1885,16 +1887,32 @@ def stamp(at: str) -> datetime:
     return moment if moment.tzinfo else moment.astimezone()
 
 
+def problem_subs(t, pid: str) -> list[dict]:
+    """한 문제의 제출(오래된 것부터). 도구가 없어 채점하지 못한 기록은 뺀다."""
+    return [sub for sub in t.store.submissions() if sub["problem_id"] == pid and sub["status"] != "toolchain_missing"]
+
+
+def passed_since(subs: list[dict], study: dict) -> bool:
+    """이번 풀이(처음, 또는 마지막 '처음부터'·언어 바꾸기 뒤)에서 이미 통과했는가."""
+    start = study["reset_at"]
+    return any(sub["ok"] and (start is None or stamp(sub["at"]) > stamp(start)) for sub in subs)
+
+
 def unaided_pass(subs: list[dict], study: dict, talked: str | None) -> bool:
     """도움 없이 푼 문제인가. 한 번의 풀이 안에서 도움(튜터 기능·힌트·해설)을 쓰기 전에 UNAIDED_MAX_SUBMITS번 안에 통과했다:
-    (가) 처음부터 첫 통과까지, 또는 (나) 마지막 '처음부터'·언어 바꾸기 뒤부터 그 뒤 첫 통과까지. 통과 뒤의 도움은 판정을 바꾸지 않는다.
-    talked: 남아 있는 튜터 대화의 가장 이른 시각(도움 기록을 놓쳤을 때를 위해 함께 본다. '처음부터'가 대화를 지우므로 지금 풀이의 것이다)."""
-    def clean(start, helped) -> bool:
-        tries = [sub for sub in subs if start is None or stamp(sub["at"]) >= start]
+    (가) 처음부터 첫 통과까지, 또는 (나) 마지막 '처음부터'·언어 바꾸기 뒤부터 그 뒤 첫 통과까지. (나)의 통과는 그 '처음부터'에서
+    REPEAT_GAP_HOURS 지난 뒤여야 한다(그 앞의 도움은 모두 '처음부터' 앞이므로, 마지막 도움에서도 그만큼 지났다). 통과 뒤의 도움은 판정을 바꾸지 않는다.
+    talked: 남아 있는 튜터 대화의 가장 이른 시각(도움 기록을 놓쳤을 때를 위해 함께 본다. '처음부터'가 대화를 지우므로 지금 풀이의 것이다).
+    도움 시각이 비었는데 해설을 먼저 봤거나 본 힌트가 있으면(시각이 없는 옛 기록) 가장 이른 때 도움을 받은 것으로 본다."""
+    def clean(start, helped, gap=timedelta(0)) -> bool:
+        tries = [sub for sub in subs if start is None or stamp(sub["at"]) > start]
         n = next((n for n, sub in enumerate(tries) if sub["ok"]), None)
-        return n is not None and n < UNAIDED_MAX_SUBMITS and all(stamp(at) > stamp(tries[n]["at"]) for at in helped if at)
+        return (n is not None and n < UNAIDED_MAX_SUBMITS and all(stamp(at) > stamp(tries[n]["at"]) for at in helped if at)
+                and (start is None or stamp(tries[n]["at"]) - start >= gap))
 
-    return clean(None, (study["help_first_at"], talked)) or (study["reset_at"] is not None and clean(stamp(study["reset_at"]), (study["help_after_reset_at"], talked)))
+    first = study["help_first_at"] or (EARLIEST.isoformat() if study["solution_before_pass"] or study["hints_seen"] else None)
+    return clean(None, (first, talked)) or (study["reset_at"] is not None
+                                            and clean(stamp(study["reset_at"]), (study["help_after_reset_at"], talked), timedelta(hours=REPEAT_GAP_HOURS)))
 
 
 def fail_kind(sub: dict) -> str | None:
@@ -1942,7 +1960,7 @@ def fail_patterns(subs: list[dict], theme_of: dict) -> list[dict]:
     return sorted(out, key=lambda row: -row["problems"])
 
 
-RESTART = "'이 문제 처음부터'로 다시 시작해 도움 없이 풀어 보세요."
+RESTART = f"'이 문제 처음부터'로 다시 시작하고 {REPEAT_GAP_HOURS}시간이 지난 뒤에 도움 없이 풀어 보세요."
 
 
 def left(key: str, level: int, levels: list, fresh: list, after: list) -> dict:
@@ -1990,7 +2008,8 @@ def readiness(unaided: dict, started: set, fresh: dict) -> dict:
                           for key in PREREQS if key in need],
             "basis": "이 앱의 기본 문제 기준이에요.",
             "rules": [f"도움 없이 푼 문제: 튜터 기능(대화, 블록 채우기, 해설 모드, 틀린 곳 같이 찾기, AI 피드백), 힌트, 해설을 쓰기 전에 제출 {UNAIDED_MAX_SUBMITS}번 안에 "
-                      "통과한 기본 문제예요. '이 문제 처음부터'나 언어 바꾸기 뒤에 다시 그렇게 통과해도 세요. 통과한 뒤에 쓴 도움은 판정을 바꾸지 않아요. 등록한 문제는 세지 않아요.",
+                      f"통과한 기본 문제예요. '이 문제 처음부터'나 언어 바꾸기로 다시 시작했다면 {REPEAT_GAP_HOURS}시간이 지난 뒤에 그렇게 통과해도 세요. "
+                      "통과한 뒤에 쓴 도움은 판정을 바꾸지 않아요. 등록한 문제는 세지 않아요.",
                       f"기초 익힘: 한 주제에서 도움 없이 {MASTER_COUNT}문제 이상 풀었고, 그중 하나가 {BASIC_LEVEL}단계 이상이에요. 실전 익힘은 {REAL_LEVEL}단계 이상이에요.",
                       f"판정 보류: 도움 없이 푼 문제가 {READY_MIN}문제보다 적어요.",
                       f"쉬운 코딩테스트 도전: 필수 주제({', '.join(theme_name(key) for key in ESSENTIAL)})를 모두 기초 익힘.",
@@ -2253,7 +2272,8 @@ def handle(path: str, body: dict) -> tuple[int, dict]:
                 return 409, {"error": "locked", "message": "아직 통과하지 않았어요. 그래도 해설을 보려면 한 번 더 눌러 주세요."}
             if not study["solution_at"]:  # 처음 연 때와, 그때 아직 못 풀었는지를 적어 둔다(학습 보고서가 본다)
                 t.store.set_study(pid, solution_at=now(), solution_before_pass=not passed)
-            t.store.mark_help(pid)
+            if not passed_since(problem_subs(t, pid), study):  # 통과한 뒤에 여는 해설(통과하면 화면이 저절로 연다)은 도움이 아니다
+                t.store.mark_help(pid)
             if own_guide is not None:
                 return 200, {"signals": clue_signals(own_guide.clues), "pattern": "", "learn": "", "pitfalls": [], "ladder": [], "clues": own_guide.clues,
                              "approach": own_guide.approach, "steps": own_guide.steps, "code": own_guide.code, "language": language, "next": None, "verified": own_guide.verified}
