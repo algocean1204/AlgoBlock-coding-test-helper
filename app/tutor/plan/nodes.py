@@ -109,7 +109,17 @@ def solve(state: MainState, config) -> dict:
     if cross is not None and check is not None and strategy in ("fresh", "canonical") and cross.mode(ctx.problem_id):
         got = cross_check(state, got, verified_by(report), report, check, cross)  # 정석 가이드만 실행으로 대조한다(사용자 코드·방법을 따른 가이드는 하지 않는다)
     return {"solution": Solution(got.approach.strip(), [step.strip() for step in got.steps if step.strip()], got.code, verified_by(report),
-                                 [clue.strip() for clue in got.clues if clue.strip()])}
+                                 [clue.strip() for clue in got.clues if clue.strip()]), **guide_labels(state, got)}
+
+
+def guide_labels(state: MainState, got: Solved) -> dict:
+    """이번에 뽑은 뼈대의 태그·단계를 정석 가이드가 코드로 정한 것으로 바꾼다. 뼈대는 글만 보고 정해 문제 글의 분류 표시에 끌렸다.
+    가이드가 주지 않은(목록 밖 낱말뿐이거나 범위 밖) 것은 뼈대 그대로 둔다. 사용자 코드·방법을 따른 가이드는 바꾸지 않는다."""
+    fact = state.get("abstract")
+    if fact is None or (state.get("strategy") or "fresh") not in ("fresh", "canonical"):
+        return {}
+    tags = known_techniques(got.tags)[:4]
+    return {"abstract": replace(fact, tags=tags or fact.tags, level=got.level if 1 <= got.level <= 5 else fact.level)}
 
 
 EXTRA_CALLS = 5  # 대조가 문제 하나의 준비에 더 쓰는 모델 호출 상한(단순 풀이, 생성기, 다시 풀기: 가운데 급 1회 + 큰 급 1회)

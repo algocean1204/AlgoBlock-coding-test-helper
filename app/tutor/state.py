@@ -288,6 +288,8 @@ class Solved:
     code: str
     clues: list[str] = field(default_factory=list)
     followed: bool = True  # 사용자 방법 따르기에서: 그 방법으로 풀려서 따랐는가
+    tags: list[str] = field(default_factory=list)  # 정석 가이드: 이 코드가 쓰는 방법(온톨로지 기법 id). 뼈대의 태그를 바꾼다
+    level: int = 0  # 정석 가이드: 이 코드로 본 단계 1~5(모르면 0). 뼈대의 단계를 바꾼다
 
 
 @dataclass

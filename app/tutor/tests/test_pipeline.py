@@ -1341,6 +1341,24 @@ class HonestCheckTest(unittest.TestCase):
             self.assertEqual(((got["solution"].code, got["solution"].verified), len(seen)), (want, runs))
             self.assertIn(starter, fakes.prompt(fake, "plan.solve"))
 
+    def test_guide_sets_tags_and_level(self):
+        """뼈대의 태그·단계는 정석 가이드가 코드로 정한 것으로 바꾼다(글의 분류 표시에 끌리지 않게). 가이드가 주지 않은 것과 사용자 방법의 가이드는 뼈대 그대로."""
+        from ..llm import FakeLlm, use_llm
+        from ..plan.nodes import solve
+        from ..state import Abstract
+
+        fact = Abstract(spec="격자", tags=["grid_move", "bfs"], level=2)
+        solved = lambda tags, level: {"clues": [], "approach": "센다.", "steps": ["센다"], "code": KOTLIN_CODE, "tags": tags, "level": level}  # noqa: E731
+        ctx = fakes.context(problem_text=fakes.KOTLIN_PROBLEM, language="kotlin")
+        check = {"configurable": {"check": lambda pid, code, quick=False: {"status": "passed"}}}
+        for strategy, reply, want in (("fresh", solved(["grid_move", "rule_follow"], 1), (["grid_move", "rule_follow"], 1)),
+                                      ("fresh", solved(["없는 낱말"], 9), (["grid_move", "bfs"], 2)),
+                                      ("keep_flow", solved(["rule_follow"], 1), None)):
+            fake = FakeLlm({"plan.solve": [reply]})
+            with use_llm(fake):
+                got = solve({"ctx": replace(ctx, direct_code="x"), "strategy": strategy, "abstract": fact}, check)
+            self.assertEqual((got["abstract"].tags, got["abstract"].level) if "abstract" in got else None, want, strategy)
+            self.assertEqual("기법 목록" in fakes.prompt(fake, "plan.solve"), strategy == "fresh")
 
     def test_given_guide_check_has_three_outcomes(self):
         """실린 정답 풀이를 이 기기에서 확인한 결과: 통과, 통과하지 못함, 채점하지 못함(도구·케이스가 없거나 채점기가 없음)."""
