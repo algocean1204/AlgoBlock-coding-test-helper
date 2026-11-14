@@ -8,7 +8,7 @@ from ..common.solution import solution_of
 from ..debug.rules import numbered
 from ..knowledge.ontology import pattern_list, size_table, skill_list, technique_list
 from ..llm import cached_user
-from ..state import MainState
+from ..state import LabeledSolved, MainState, Solved
 
 GUIDE = (Path(__file__).with_name("guide.md")).read_text(encoding="utf-8")  # 참고용. 지켜야 하는 것은 rules.py만
 
@@ -81,11 +81,18 @@ STARTER_NOTE = {
 }
 
 
+def solved_schema(state: MainState, given: str = "") -> type:
+    """풀이 가이드의 답 모양. 정석 가이드만 문제의 태그·단계를 함께 묻는다(사용자 코드·방법을 따른 가이드, 정해 둔 코드의 설명은 묻지 않는다).
+    프롬프트의 안내와 공급자에 붙는 키 안내가 같은 것을 묻게, 둘 다 이것으로 정한다."""
+    return LabeledSolved if (state.get("strategy") or "fresh") in ("fresh", "canonical") and not given else Solved
+
+
 def solve_messages(state: MainState, retry: str = "", given: str = "") -> list[dict]:
     """풀이 가이드(A4). 문제 글만 준다: 지난 문항, 패턴, 사용자 기록을 넣지 않는다(다른 문제의 풀이가 끼어들지 않게).
     푸는 방식은 등록한 방식(SHAPE[mode])을 따르고, 시작 코드가 있으면 그 틀을 따르게 한다(단순 풀이·생성기와 같은 기준):
     함수 방식은 진입 함수 머리, 표준 입출력은 입력 읽기 꼴(블록 사이를 잇는 값이 커서가 아니라 문제 글의 양이 되게).
-    given은 정해 둔 정답 코드다: 코드를 새로 쓰지 않고 그 코드의 단서·방향·단계만 쓰게 한다."""
+    given은 정해 둔 정답 코드다: 코드를 새로 쓰지 않고 그 코드의 단서·방향·단계만 쓰게 한다.
+    정석 가이드는 쓴 코드로 문제의 태그·단계도 함께 받는다(호출 수는 그대로. 기법 목록은 문제마다 같은 목록이다)."""
     ctx = state["ctx"]
     strategy = state.get("strategy") or "fresh"
     lines = [
@@ -112,8 +119,13 @@ def solve_messages(state: MainState, retry: str = "", given: str = "") -> list[d
         "steps: 풀이를 위에서 아래로 따라가는 단계 3~7개. 한 단계는 한 줄('무엇을 한다 — 왜')이고 코드의 이어진 줄 묶음 하나와 맞는다.",
         f"code: 전체 정답 {ctx.language} 코드. {SHAPE[ctx.mode]}{' Java는 public class Main.' if ctx.mode == 'program' else ''} 코딩테스트를 막 시작한 사람이 읽을 수 있게 쓴다: 한 줄에 한 가지 일, "
         "줄임 표현(컴프리헨션, 람다, 한 줄 조건식)과 낯선 내장 함수를 피하고, 변수 이름은 뜻이 보이게 짓는다. 주석과 빈 줄을 쓰지 않는다. 입력으로 받은 값을 바꾸지 않는다.",
-        'JSON {"clues": ["..."], "approach", "steps": ["..."], "code"' + (', "followed": true 또는 false}' if strategy == "follow" else "}"),
     ]
+    labeled = solved_schema(state, given) is LabeledSolved
+    if labeled:  # 글보다 먼저 정하면 문제 글의 분류 표시에 끌렸다: 쓴 코드가 실제로 하는 일로 정한다
+        lines += ["tags: 아래 기법 목록에서 위 code가 실제로 쓰는 방법의 id 2~4개. code에 없는 방법은 쓰지 않는다(목록에 없는 낱말도 쓰지 않는다).", technique_list(),
+                  LEVEL_TEXT + " 위 code가 쓰는 방법으로 정한다."]
+    lines.append('JSON {"clues": ["..."], "approach", "steps": ["..."], "code"'
+                 + (', "tags": [id], "level"}' if labeled else ', "followed": true 또는 false}' if strategy == "follow" else "}"))
     if ctx.starter.strip() and not given:  # 사용자가 받는 시작 코드와 같은 틀(함수 머리, 입력 읽기)이어야 블록이 이어진다
         lines.append(f"{STARTER_NOTE[ctx.mode]}\n{ctx.starter}")
     if retry:

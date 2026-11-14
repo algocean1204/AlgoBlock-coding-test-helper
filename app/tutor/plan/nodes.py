@@ -16,8 +16,8 @@ from ..debug.rules import error_tail, symptom
 from ..knowledge.ontology import SKILLS, known_patterns, known_skills, known_techniques, pattern_context, size_rule
 from ..llm import LlmError, llm, model_name, themes
 from ..output_check.nodes import strip_fence
-from ..state import Abstract, BlockPlan, CaseMaker, DraftedBlocks, ErrorInfo, MainState, MendedHints, Solution, Solved, Written
-from .prompts import abstract_text, brute_messages, draft_messages, gate_messages, hint_messages, maker_messages, solve_messages
+from ..state import Abstract, BlockPlan, CaseMaker, DraftedBlocks, ErrorInfo, LabeledSolved, MainState, MendedHints, Solution, Solved, Written
+from .prompts import abstract_text, brute_messages, draft_messages, gate_messages, hint_messages, maker_messages, solve_messages, solved_schema
 from .rules import check_blocks as check_rule
 from .rules import clean_blocks, cut_by_rule, hint_faults
 
@@ -87,7 +87,7 @@ def solve(state: MainState, config) -> dict:
     retry, got, report = "", None, None
     for _ in range(SOLVE_TRIES):
         try:
-            got: Solved = llm(model_name()).use(solve_messages(state, retry), Solved, task="plan.solve")
+            got: Solved = llm(model_name()).use(solve_messages(state, retry), solved_schema(state), task="plan.solve")
         except LlmError:
             return {}
         code = strip_fence(got.code or "").strip("\n")
@@ -106,35 +106,61 @@ def solve(state: MainState, config) -> dict:
             return {"replanned": "rejected", "result": None}  # 사용자 방법으로는 통과하는 코드를 못 썼다
     if not got.code.strip() or not got.approach.strip():
         return {}
+    crossed = ""
     if cross is not None and check is not None and strategy in ("fresh", "canonical") and cross.mode(ctx.problem_id):
-        got = cross_check(state, got, verified_by(report), report, check, cross)  # 정석 가이드만 실행으로 대조한다(사용자 코드·방법을 따른 가이드는 하지 않는다)
+        got, crossed = cross_check(state, got, verified_by(report), report, check, cross)  # 정석 가이드만 실행으로 대조한다(사용자 코드·방법을 따른 가이드는 하지 않는다)
+    trusted = verified_by(report) is True and crossed != "none"  # 예시를 통과했고 대조에서 다르지 않았다
     return {"solution": Solution(got.approach.strip(), [step.strip() for step in got.steps if step.strip()], got.code, verified_by(report),
-                                 [clue.strip() for clue in got.clues if clue.strip()])}
+                                 [clue.strip() for clue in got.clues if clue.strip()]), **(guide_labels(state, got) if trusted else {})}
+
+
+def guide_labels(state: MainState, got: Solved) -> dict:
+    """이번에 뽑은 뼈대의 태그·단계를 정석 가이드가 코드로 정한 것으로 바꾼다. 뼈대는 글만 보고 정해 문제 글의 분류 표시에 끌렸다.
+    부르는 쪽은 예시를 통과하고 대조에서 다르지 않은 가이드일 때만 부른다(틀린 코드의 단계로 덮지 않는다).
+    가이드가 주지 않았거나 쓸 수 없는 값(목록 밖 낱말, 1~5로 바꿀 수 없는 단계)은 뼈대 그대로 둔다. 사용자 코드·방법을 따른 가이드는 바꾸지 않는다.
+    이번 요청에서 뼈대를 뽑았을 때만 바꾼다: 이미 뽑아 둔 문제는 다시 정하지 않는다."""
+    fact = state.get("abstract")
+    if fact is None or not isinstance(got, LabeledSolved):
+        return {}
+    tags = [got.tags] if isinstance(got.tags, str) else got.tags if isinstance(got.tags, list) else []
+    tags = known_techniques(tag for tag in tags if isinstance(tag, str))[:4]
+    return {"abstract": replace(fact, tags=tags or fact.tags, level=whole_level(got.level) or fact.level)}
+
+
+def whole_level(value) -> int:
+    """단계로 쓸 수 있는 값(2, "2", 2.0)을 정수 1~5로. 아니면 0."""
+    if isinstance(value, bool):
+        return 0
+    try:
+        number = float(str(value).strip())
+    except ValueError:
+        return 0
+    return int(number) if number.is_integer() and 1 <= number <= 5 else 0
 
 
 EXTRA_CALLS = 5  # 대조가 문제 하나의 준비에 더 쓰는 모델 호출 상한(단순 풀이, 생성기, 다시 풀기: 가운데 급 1회 + 큰 급 1회)
 VERIFIED = {"same": "all", "differ": "none"}  # 대조 결과 → 문제의 검증: 예시와 대조 모두 통과, 검증하지 못함. 그 밖(대조하지 못함)은 예시만 통과(examples)
 
 
-def cross_check(state: MainState, got: Solved, passed: bool | None, report: dict | None, check, cross) -> Solved:
+def cross_check(state: MainState, got: Solved, passed: bool | None, report: dict | None, check, cross) -> tuple[Solved, str]:
     """모델의 풀이는 실행으로 확인한 것만 믿는다. 공개 예시를 통과한 정답 풀이를, 정의 그대로 옮긴 단순 풀이와
     생성기가 만든 작은·경계 입력에서 대조한다. 실행은 모두 cross.run(채점기 프로세스)이 하고, 맞으면 그 입력이 숨은 케이스가 된다.
     다르면 그 입력을 보여 주며 가운데 급으로 한 번, 그래도 다르면 큰 급으로 한 번 다시 푼다(다시 푼 코드도 공개 예시를 통과해야 쓴다).
-    결과(검증, 쓴 호출 수와 급, 확인이 필요한 곳)는 cross.done으로 남긴다. 고른 풀이를 돌려준다."""
+    결과(검증, 쓴 호출 수와 급, 확인이 필요한 곳)는 cross.done으로 남긴다. 고른 풀이와 검증(all·examples·none)을 돌려준다."""
     pid = state["ctx"].problem_id
     verdict = {"verified": "none", "calls": 0, "tiers": ["middle"], "doubts": [], "why": "", "hidden": 0, "efficiency": 0}
     if passed is None:  # 채점하지 못했다: 풀이가 틀렸다고 말하지 않는다
         status = (report or {}).get("status") or "no_cases"
         verdict.update(why=f"튜터의 풀이를 확인하지 못했어요. {unrun_why(status)}.{UNRUN_FIX.get(status, '')}")
         cross.done(pid, verdict)
-        return got
+        return got, verdict["verified"]
     if not passed:  # 사용자가 넣은 기대 결과를 믿는다: 끝내 맞지 않은 예시는 문제를 잘못 읽었을 수 있다
         verdict.update(why="AI가 쓴 풀이가 공개 예시를 통과하지 못했어요. 예시의 기대 결과가 맞는지 확인해 주세요."
                        + (" 입력의 줄 나눔(한 줄에 들어갈 값이 여러 줄로 나뉘었거나 빈 줄이 끼었는지)도 문제 글의 입력 형식과 같은지 봐 주세요." if state["ctx"].mode == "program" else ""), doubts=[
             {"where": f"예시 {row['id']}", "note": "기대 결과와 풀이가 맞지 않음"} for row in (report or {}).get("cases") or []
             if row.get("kind", "example") == "example" and row.get("status") != "passed"])
         cross.done(pid, verdict)
-        return got
+        return got, verdict["verified"]
     mode, text = cross.mode(pid), state["ctx"].problem_text
     try:
         brute: Written = llm(model_name()).use(brute_messages(text, mode), Written, task="plan.brute")
@@ -144,7 +170,7 @@ def cross_check(state: MainState, got: Solved, passed: bool | None, report: dict
     except LlmError:
         verdict.update(verified="examples", why="검증용 풀이를 받지 못해 예시로만 확인했어요.")
         cross.done(pid, verdict)
-        return got
+        return got, verdict["verified"]
     brute_code, maker_code = strip_fence(brute.code or ""), strip_fence(maker.code or "")
     for tier in ("middle", "large", ""):
         found = cross.run(pid, got.code, brute_code, maker_code, maker.bounds)
@@ -153,7 +179,7 @@ def cross_check(state: MainState, got: Solved, passed: bool | None, report: dict
         retry = "\n".join([f"코드:\n{got.code}", "문제 정의를 그대로 옮긴 느린 풀이와 결과가 다른 입력이 있다(느린 풀이가 틀렸을 수도 있으니 문제 글로 다시 따진다).",
                            f"입력: {found.get('input')}", f"이 코드의 결과: {found.get('got')}", f"느린 풀이의 결과: {found.get('want')}"])
         try:
-            again: Solved = llm(model_name() if tier == "middle" else themes.model_of("large")).use(solve_messages(state, retry), Solved, task="plan.solve")
+            again: Solved = llm(model_name() if tier == "middle" else themes.model_of("large")).use(solve_messages(state, retry), solved_schema(state), task="plan.solve")
         except LlmError:
             break
         verdict["calls"] += 1
@@ -167,7 +193,7 @@ def cross_check(state: MainState, got: Solved, passed: bool | None, report: dict
         verdict["why"] = verdict["why"] or ("가장 큰 입력에서 제한 시간 안에 끝나지 않았어요." if found.get("slow")
                                             else f"다른 방법으로 푼 결과와 다른 입력이 있어요: {str(found.get('input'))[:200]}")
     cross.done(pid, verdict)
-    return got
+    return got, verdict["verified"]
 
 
 def _given_guide(state: MainState, fixed: dict, check) -> dict:

@@ -1341,19 +1341,71 @@ class HonestCheckTest(unittest.TestCase):
             self.assertEqual(((got["solution"].code, got["solution"].verified), len(seen)), (want, runs))
             self.assertIn(starter, fakes.prompt(fake, "plan.solve"))
 
+    def test_guide_sets_tags_and_level(self):
+        """뼈대의 태그·단계는 정석 가이드가 코드로 정한 것으로 바꾼다(글의 분류 표시에 끌리지 않게). 둘은 모양을 따지지 않고 받아 쓸 수 있는 값만 쓰고
+        (null·"2"·2.0·"bfs"로 가이드를 잃지 않는다), 가이드가 주지 않은 것과 사용자 방법의 가이드는 뼈대 그대로다. 묻지 않는 전략에는 안내도 키도 붙이지 않는다."""
+        from ..llm import FakeLlm, use_llm
+        from ..plan.nodes import solve
+        from ..state import Abstract, LabeledSolved
+
+        fact = Abstract(spec="격자", tags=["grid_move", "bfs"], level=2)
+        solved = lambda tags, level: {"clues": [], "approach": "센다.", "steps": ["센다"], "code": KOTLIN_CODE, "tags": tags, "level": level}  # noqa: E731
+        ctx = fakes.context(problem_text=fakes.KOTLIN_PROBLEM, language="kotlin")
+        check = {"configurable": {"check": lambda pid, code, quick=False: {"status": "passed"}}}
+        for strategy, reply, want in (("fresh", solved(["grid_move", "rule_follow"], 1), (["grid_move", "rule_follow"], 1)),
+                                      ("fresh", solved(None, "2"), (["grid_move", "bfs"], 2)),
+                                      ("fresh", solved("rule_follow", 1.0), (["rule_follow"], 1)),
+                                      ("fresh", solved(["없는 낱말", 3], None), (["grid_move", "bfs"], 2)),
+                                      ("fresh", solved([], 9), (["grid_move", "bfs"], 2)),
+                                      ("fresh", {"clues": [], "approach": "센다.", "steps": ["센다"], "code": KOTLIN_CODE}, (["grid_move", "bfs"], 2)),
+                                      ("keep_flow", solved(["rule_follow"], 1), None)):
+            fake = FakeLlm({"plan.solve": [reply]})
+            with use_llm(fake):
+                got = solve({"ctx": replace(ctx, direct_code="x"), "strategy": strategy, "abstract": fact}, check)
+            self.assertEqual(got["solution"].code, KOTLIN_CODE, reply)  # 가이드는 살아남는다
+            self.assertEqual((got["abstract"].tags, got["abstract"].level) if "abstract" in got else None, want, reply)
+            asked = strategy == "fresh"
+            self.assertEqual(("기법 목록" in fakes.prompt(fake, "plan.solve"), fake.calls[0]["schema"] is LabeledSolved), (asked, asked), strategy)
+
+    def test_unverified_guide_keeps_the_abstract_labels(self):
+        """예시를 통과하지 못했거나 대조에서 다른 가이드는 태그·단계를 덮지 않는다(틀린 코드로 정한 것이다)."""
+        from types import SimpleNamespace
+
+        from ..llm import FakeLlm, use_llm
+        from ..plan.nodes import solve
+        from ..state import Abstract
+
+        fact = Abstract(spec="격자", tags=["grid_move", "bfs"], level=2)
+        reply = {"clues": [], "approach": "센다.", "steps": ["센다"], "code": KOTLIN_CODE, "tags": ["rule_follow"], "level": 1}
+        ctx = fakes.context(problem_text=fakes.KOTLIN_PROBLEM, language="kotlin")
+        failed = {"configurable": {"check": lambda pid, code, quick=False: {"status": "failed", "cases": []}}}
+        differ = SimpleNamespace(mode=lambda pid: "function", run=lambda *a: {"status": "differ", "input": "[1]"}, done=lambda pid, verdict: None)
+        passed = {"configurable": {"check": lambda pid, code, quick=False: {"status": "passed"}, "cross": differ}}
+        for config, scripts in ((failed, {"plan.solve": [reply] * 3}),
+                                (passed, {"plan.solve": [reply] * 3, "plan.brute": [{"code": "x"}], "plan.cases": [{"code": "x"}]})):
+            with use_llm(FakeLlm(scripts)):
+                got = solve({"ctx": ctx, "strategy": "fresh", "abstract": fact}, config)
+            self.assertNotIn("abstract", got)
+
     def test_program_guide_follows_the_starter_reading(self):
         """표준 입출력 가이드에도 시작 코드를 넘기고 그 읽기 꼴을 따르게 한다(커서를 블록 사이로 넘기지 않게). 정해 둔 코드를 쓸 때는 넘기지 않는다."""
-        from ..plan.prompts import STARTER_NOTE, solve_messages
+        from ..knowledge.ontology import technique_list
+        from ..plan.prompts import LEVEL_TEXT, STARTER_NOTE, solve_messages
 
         starter = "import sys\ninput = sys.stdin.readline\n\n# 여기에 풀이를 써요\n"
         state = {"ctx": fakes.context(problem_text=fakes.PROGRAM_PROBLEM, mode="program", starter=starter), "strategy": "fresh"}
         self.assertIn(f"{STARTER_NOTE['program']}\n{starter}", solve_messages(state)[1]["content"])
         self.assertNotIn(starter, solve_messages(state, given="print(1)")[1]["content"])
-        # 함수 방식의 프롬프트 끝(JSON 모양과 시작 코드)은 표준 입출력을 고치기 전과 글자 하나 다르지 않다
+        # 함수 방식의 프롬프트 끝은 고정이다: 시작 코드 줄은 표준 입출력을 고치기 전과 같고, 정석 가이드(fresh·canonical)에만 태그·단계를 묻는 줄이 더해진다
         head = "def solution(a, b):\n    answer = 0\n    return answer\n"
-        function = solve_messages({"ctx": fakes.context(problem_text=fakes.PROBLEM, starter=head), "strategy": "fresh"})[1]["content"]
-        self.assertTrue(function.endswith('JSON {"clues": ["..."], "approach", "steps": ["..."], "code"}\n'
-                                          f"시작 코드(사용자가 받는 코드다. 진입 함수의 머리 — 함수 이름, 인자 이름과 차례 — 를 이것 그대로 쓴다):\n{head}"), function[-400:])
+        starter_line = f"시작 코드(사용자가 받는 코드다. 진입 함수의 머리 — 함수 이름, 인자 이름과 차례 — 를 이것 그대로 쓴다):\n{head}"
+        asked = ("tags: 아래 기법 목록에서 위 code가 실제로 쓰는 방법의 id 2~4개. code에 없는 방법은 쓰지 않는다(목록에 없는 낱말도 쓰지 않는다).\n"
+                 f"{technique_list()}\n{LEVEL_TEXT} 위 code가 쓰는 방법으로 정한다.\n"
+                 'JSON {"clues": ["..."], "approach", "steps": ["..."], "code", "tags": [id], "level"}\n')
+        plain = 'JSON {"clues": ["..."], "approach", "steps": ["..."], "code"}\n'
+        for strategy, tail in (("fresh", asked), ("canonical", asked), ("keep_flow", plain)):
+            function = solve_messages({"ctx": fakes.context(problem_text=fakes.PROBLEM, starter=head, direct_code="x"), "strategy": strategy})[1]["content"]
+            self.assertTrue(function.endswith(f"\n{tail}{starter_line}"), (strategy, function[-600:]))
 
     def test_unpassed_program_guide_asks_to_check_line_breaks(self):
         """예시를 통과하지 못한 가이드의 까닭: 표준 입출력이면 입력의 줄 나눔도 보라고 한다(줄 단위로 읽는 가이드는 줄 경계가 어긋난 예시에서 떨어진다)."""

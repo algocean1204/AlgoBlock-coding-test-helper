@@ -141,6 +141,17 @@ class ProviderTest(unittest.TestCase):
         self.assertEqual(text_of({"output_text": "x"}), "x")
         self.assertEqual(parse(Reply, {"output_text": '{"text": "파서"}'}).text, "파서")
 
+    def test_parse_takes_loose_extra_fields(self):
+        """모양을 따지지 않는 덤 필드(Any)는 공급자 파서도 그대로 받는다: 태그·단계의 모양 탓에 풀이 가이드 전체를 잃지 않는다."""
+        import json
+
+        from ..state import LabeledSolved
+
+        for tags, level in ((None, "2"), ("bfs", 2.0), (["bfs"], None)):
+            body = {"approach": "a", "steps": [], "code": "c", "tags": tags, "level": level}
+            got = parse(LabeledSolved, {"output_text": json.dumps(body)})
+            self.assertEqual((got.code, got.tags, got.level), ("c", tags, level))
+
 
 class CacheTest(unittest.TestCase):
     """캐시 경계 표시(cache_prefix)가 공급자마다 맞는 모양으로 가는지, 사용량이 남는지."""

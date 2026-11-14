@@ -75,6 +75,8 @@ def coerce(schema: type, data: Any) -> Any:
 
 
 def _value(typ: Any, value: Any) -> Any:
+    if typ is Any:  # 모양을 따지지 않는 덤 필드(쓰는 쪽이 고른다)
+        return value
     origin = get_origin(typ)
     if origin is None and is_dataclass(typ):
         return coerce(typ, value)

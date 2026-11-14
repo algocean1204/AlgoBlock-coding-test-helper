@@ -236,7 +236,7 @@ class Tutor:
         ctx = replace(ctx, **self.shape(problem_id, ctx.language)) if self.shape is not None else ctx  # 다시 푼 코드도 시작 코드의 머리를 따른다
         old = ctx.canonical
         with use_llm(self.client) if self.client is not None else nullcontext():
-            got = cross_check({"ctx": ctx, "strategy": "fresh"}, Solved(old.approach, old.steps, old.code, old.clues), old.verified, None, self.check, self.cross)
+            got, _ = cross_check({"ctx": ctx, "strategy": "fresh"}, Solved(old.approach, old.steps, old.code, old.clues), old.verified, None, self.check, self.cross)
         if got.code == old.code:
             return None
         return Solution(got.approach.strip(), [step.strip() for step in got.steps if step.strip()], got.code, True, [clue.strip() for clue in got.clues if clue.strip()])
