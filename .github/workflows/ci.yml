@@ -68,28 +68,54 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.12"
-      - name: 파이썬 패키지와 Java 17
+      # 준비(패키지, 모델)가 된 뒤의 시험 단계는 앞 단계가 실패해도 모두 돈다(한 번에 다 보이게). 하나라도 실패하면 작업은 실패다
+      - name: 파이썬 패키지, Java 17, 제출 확인 스크립트
+        id: deps
         run: |
           $PSNativeCommandUseErrorActionPreference = $true
           python -m pip install -q langgraph pypdf qdrant-client onnxruntime tokenizers uv
           if ($env:JAVA_HOME_17_X64) { Add-Content $env:GITHUB_PATH "$env:JAVA_HOME_17_X64\bin" } # 러너의 기본 java가 8일 수 있다
+          python -B -c "import json, os; p = json.load(open('app/ui/builtin.json', encoding='utf-8'))[0]; open(os.environ['RUNNER_TEMP'] + '/submit.json', 'w', encoding='utf-8').write(json.dumps({'id': p['id'], 'code': p['solutions']['python']}))"
+          # 서버를 띄워 기본 문제 하나(첫 문제의 Python 풀이)를 제출하고 통과와 실행 제한(작업 객체)이 걸렸는지 본다. 소스와 exe 단계가 함께 쓴다
+          $script = @'
+          param($name, $program, $arguments, $port)
+          $ErrorActionPreference = "Stop"
+          $env:ALGOBLOCK_UI_DATA = Join-Path $env:RUNNER_TEMP "data-$name"
+          $env:ALGOBLOCK_UI_PORT = "$port"
+          $log = Join-Path $env:RUNNER_TEMP "server-$name"
+          $server = Start-Process $program -ArgumentList $arguments -WorkingDirectory (Resolve-Path app) -PassThru -RedirectStandardOutput "$log.out" -RedirectStandardError "$log.err"
+          try {
+            $up = $false
+            foreach ($i in 1..120) {
+              try { Invoke-WebRequest "http://127.0.0.1:$port/" -UseBasicParsing -TimeoutSec 5 | Out-Null; $up = $true; break } catch { Start-Sleep 1 }
+            }
+            if (-not $up) { throw "${name}: 서버가 뜨지 않았다" }
+            $began = Get-Date
+            $result = Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:$port/api/submit" -ContentType "application/json" -InFile (Join-Path $env:RUNNER_TEMP "submit.json") -TimeoutSec 300
+            "${name}: ok=$($result.ok) status=$($result.status) cases=$($result.cases.Count) $([int]((Get-Date) - $began).TotalSeconds)초"
+            if (-not $result.ok) { $result | ConvertTo-Json -Depth 6 | Write-Host; throw "${name}: 기본 문제 제출이 통과하지 않았다" }
+            if ($result.notice) { throw "${name}: 실행 제한(작업 객체) 없이 돌았다: $($result.notice)" }
+          } finally {
+            Stop-Process -Id $server.Id -Force -ErrorAction SilentlyContinue
+            Get-Process AlgoBlock -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue # onefile은 프로세스가 둘이다
+            Get-Content "$log.err" -Tail 20 -ErrorAction SilentlyContinue
+          }
+          '@
+          Set-Content -Path (Join-Path $env:RUNNER_TEMP "submit.ps1") -Value $script -Encoding utf8
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: app/packaging/models
           key: embed-model-${{ hashFiles('app/tutor/knowledge/embed.py') }}
       - name: 임베딩 모델 받기(캐시에 없을 때)와 해시 확인
+        id: model
+        if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
         working-directory: app
         run: |
           $PSNativeCommandUseErrorActionPreference = $true
           python -B tutor/knowledge/embed.py fetch packaging/models
           python -B -c "import hashlib; from tutor.knowledge import embed; bad = [n for n, (_, _, d) in embed.FILES.items() if hashlib.file_digest(open('packaging/models/' + n, 'rb'), 'sha256').hexdigest() != d]; assert not bad, bad"
-      - name: 튜터 엔진 시험
-        working-directory: app
-        run: python -B -m unittest discover -s tutor/tests -t .
-      - name: 화면 서버 시험
-        working-directory: app
-        run: python -B ui/test_server.py
       - name: 채점기 자체 시험 (러너에 있는 언어만 돈다)
+        if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
         working-directory: app/judge
         run: |
           foreach ($tool in 'python', 'node', 'javac', 'go', 'g++', 'clang++', 'rustc', 'kotlinc') {
@@ -97,7 +123,16 @@ jobs:
             '{0}: {1}' -f $tool, $(if ($found) { $found.Source } else { '없음' })
           }
           python -B -m unittest test_check
+      - name: 튜터 엔진 시험
+        if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
+        working-directory: app
+        run: python -B -m unittest discover -s tutor/tests -t .
+      - name: 화면 서버 시험
+        if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
+        working-directory: app
+        run: python -B ui/test_server.py
       - name: 임베딩 색인 시간
+        if: ${{ !cancelled() && steps.model.outcome == 'success' }}
         working-directory: app
         shell: python
         run: |
@@ -120,41 +155,22 @@ jobs:
           print(line)
           with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
               summary.write(line + "\n")
+      - name: 소스 서버에 기본 문제 하나 제출
+        if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
+        run: |
+          & (Join-Path $env:RUNNER_TEMP "submit.ps1") "source" (Get-Command python).Source @("-B", "ui/server.py") 8801
       - name: exe 빌드
+        id: build
+        if: ${{ !cancelled() && steps.model.outcome == 'success' }}
         run: |
           powershell -NoProfile -ExecutionPolicy Bypass -File app\packaging\build_win.ps1
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
-      - name: 서버를 띄워 기본 문제 하나 제출 (소스, exe)
-        if: ${{ !cancelled() }}
+          Get-Content app\packaging\dist\SHA256SUMS-windows-x64
+      - name: exe 서버(--server)에 기본 문제 하나 제출
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         run: |
-          $PSNativeCommandUseErrorActionPreference = $true
-          $body = Join-Path $env:RUNNER_TEMP "submit.json"
-          python -B -c "import json, os; p = json.load(open('app/ui/builtin.json', encoding='utf-8'))[0]; open(os.environ['RUNNER_TEMP'] + '/submit.json', 'w', encoding='utf-8').write(json.dumps({'id': p['id'], 'code': p['solutions']['python']}))"
-          function Submit($name, $program, $arguments, $port) {
-            $env:ALGOBLOCK_UI_DATA = Join-Path $env:RUNNER_TEMP "data-$name"
-            $env:ALGOBLOCK_UI_PORT = "$port"
-            $log = Join-Path $env:RUNNER_TEMP "server-$name"
-            $server = Start-Process $program -ArgumentList $arguments -WorkingDirectory (Resolve-Path app) -PassThru -RedirectStandardOutput "$log.out" -RedirectStandardError "$log.err"
-            try {
-              $up = $false
-              foreach ($i in 1..120) {
-                try { Invoke-WebRequest "http://127.0.0.1:$port/" -UseBasicParsing -TimeoutSec 5 | Out-Null; $up = $true; break } catch { Start-Sleep 1 }
-              }
-              if (-not $up) { throw "${name}: 서버가 뜨지 않았다" }
-              $began = Get-Date
-              $result = Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:$port/api/submit" -ContentType "application/json" -InFile $body -TimeoutSec 300
-              "${name}: ok=$($result.ok) status=$($result.status) cases=$($result.cases.Count) $([int]((Get-Date) - $began).TotalSeconds)초"
-              if (-not $result.ok) { $result | ConvertTo-Json -Depth 6 | Write-Host; throw "${name}: 기본 문제 제출이 통과하지 않았다" }
-            } finally {
-              Stop-Process -Id $server.Id -Force -ErrorAction SilentlyContinue
-              Get-Process AlgoBlock -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue # onefile은 프로세스가 둘이다
-              Get-Content "$log.err" -Tail 20 -ErrorAction SilentlyContinue
-            }
-          }
-          Submit "source" (Get-Command python).Source @("-B", "ui/server.py") 8801
-          $exe = "app\packaging\dist\AlgoBlock.exe"
-          if (Test-Path $exe) { Submit "exe" (Resolve-Path $exe).Path @("--server") 8802 } else { throw "exe가 없다(빌드 단계를 본다)" }
-          Get-Content app\packaging\dist\SHA256SUMS
+          & (Join-Path $env:RUNNER_TEMP "submit.ps1") "exe" (Resolve-Path app\packaging\dist\AlgoBlock.exe).Path @("--server") 8802
+
 
   publish-check:
     name: publish-check
