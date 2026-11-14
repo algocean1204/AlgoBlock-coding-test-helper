@@ -106,7 +106,23 @@ AI를 연결하면 튜터가 풀이 코드를 줄 범위로 나눈 블록을 하
 | --- | --- |
 | macOS (Apple Silicon) | [AlgoBlock-macos-arm64.dmg](https://github.com/algocean1204/AlgoBlock-coding-test-helper/releases/latest/download/AlgoBlock-macos-arm64.dmg) |
 
-설치 파일에는 서명이 없다. `.dmg`를 열어 앱을 `Applications`로 옮긴다. 처음 열 때 "열 수 없다"는 경고가 뜬다. 경고를 닫고 시스템 설정 → 개인정보 보호 및 보안 → '그래도 열기'를 누른다(macOS 14까지는 앱을 우클릭 → '열기'로도 된다). 한 번 열면 다음부터는 그냥 열린다. 채점 언어의 도구는 설치 파일에 들어 있지 않다. 자세한 것은 [설치](Docs/guide/install.md)에 있다.
+`.dmg`를 열어 앱을 `Applications`로 옮긴다. 채점 언어의 도구는 설치 파일에 들어 있지 않다. 자세한 것은 [설치](Docs/guide/install.md)에 있다.
+
+#### macOS에서 처음 열 때
+
+설치 파일에 Apple 서명과 공증이 없어서, 처음 열면 "'AlgoBlock.app'을(를) 열지 않음" 창이 뜬다. 앱이 망가졌다는 뜻이 아니다. 아래처럼 한 번만 허용한다.
+
+1. 경고 창에서 **'완료'**를 누른다. '휴지통으로 이동'은 누르지 않는다.
+2. 시스템 설정 → **개인정보 보호 및 보안**을 열고 아래로 내린다. "'AlgoBlock.app'이(가) 차단되었습니다" 옆의 **'그래도 열기'**를 누르고 암호를 넣는다.
+3. 앱을 다시 열고 뜨는 창에서 **'열기'**를 누른다. 한 번 열면 다음부터는 그냥 열린다.
+
+터미널을 쓸 수 있으면 앱을 `Applications`로 옮긴 뒤 아래 한 줄로도 된다. 내려받은 파일에 붙는 격리 표시만 지운다.
+
+```bash
+xattr -dr com.apple.quarantine /Applications/AlgoBlock.app
+```
+
+앱 안의 업데이트로 받은 새 버전에는 이 경고가 다시 뜨지 않는다. 브라우저로 새 dmg를 받아 직접 바꾸면 다시 뜬다.
 
 새 버전이 나오면 앱 위쪽 막대에 알려 주고, 내려받기와 '다시 시작해 업데이트' 두 단추로 바꾼다(macOS).
 
