@@ -1,5 +1,6 @@
 """채점 확인 자체 시험. 이 폴더에서 python3 test_check.py 로 돈다. 컴파일러가 없는 언어는 건너뛴다."""
 
+import ctypes
 import importlib.util
 import json
 import os
@@ -465,14 +466,12 @@ class LimitTest(unittest.TestCase):
             common.time.sleep(0.1)
         self.fail("정상 종료 뒤에도 자식 프로세스가 살아 있다")
 
-    @unittest.skipIf(os.name == "nt", "프로세스 그룹은 POSIX에서만 본다")
     def test_child_holding_stdout_does_not_block(self):
         started = common.time.monotonic()
-        case = self.status("    import subprocess\n    subprocess.Popen(['sleep', '300'])\n    return 1\n")
+        case = self.status("    import subprocess, sys\n    subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(300)'])\n    return 1\n")
         self.assertEqual(case["status"], "passed", case)
         self.assertLess(common.time.monotonic() - started, 3)
 
-    @unittest.skipIf(os.name == "nt", "프로세스 그룹은 POSIX에서만 본다")
     def test_kill_running_ends_a_running_command(self):
         result = []
         thread = common.threading.Thread(target=lambda: result.append(common.run_command([sys.executable, "-c", "while True: pass"], ROOT, timeout=60)))
@@ -488,8 +487,7 @@ class LimitTest(unittest.TestCase):
         self.assertIsNotNone(process.poll(), "kill_running 뒤에도 프로세스가 살아 있다")
         self.assertEqual(common.RUNNING, set())
 
-    @unittest.skipIf(os.name == "nt", "CPU 시간 상한은 POSIX에서만 건다")
-    def test_cpu_limit_ends_a_loop_nobody_kills(self):
+    def test_cpu_limit_ends_a_loop_nobody_kills(self):  # POSIX는 RLIMIT_CPU, Windows는 작업 객체가 끝낸다
         self.assertEqual(common.cpu_limit(1), 9)
         self.assertEqual(common.cpu_limit(0.65), 8)
         started = common.time.monotonic()
@@ -514,6 +512,64 @@ class LimitTest(unittest.TestCase):
         cases = [{"id": str(i), "input": f"[{n}]", "expected": str(n)} for i, n in enumerate((0, 0, 1, 0, 0))]
         report = judge.judge("python", source, cases, mode="function", timeout=1)
         self.assertEqual([c["status"] for c in report["cases"]], ["timeout", "timeout", "passed", "timeout", "timeout"])
+
+
+class WindowsShapeTest(unittest.TestCase):
+    """Windows API에 넘기는 구조체의 크기와 자리(Microsoft 문서의 x64 배치). 순수 ctypes라 어느 64비트 OS에서나 돈다."""
+
+    @unittest.skipUnless(ctypes.sizeof(ctypes.c_void_p) == 8, "64비트에서만 본다")
+    def test_structures_match_windows_x64(self):
+        self.assertEqual(ctypes.sizeof(common.JobBasicLimit), 64)
+        self.assertEqual([getattr(common.JobBasicLimit, name).offset for name in ("PerJobUserTimeLimit", "LimitFlags", "MinimumWorkingSetSize", "ActiveProcessLimit", "Affinity", "SchedulingClass")],
+                         [8, 16, 24, 40, 48, 60])
+        self.assertEqual(ctypes.sizeof(common.JobIoCounters), 48)
+        self.assertEqual(ctypes.sizeof(common.JobExtendedLimit), 144)
+        self.assertEqual([getattr(common.JobExtendedLimit, name).offset for name in ("IoInfo", "ProcessMemoryLimit", "JobMemoryLimit", "PeakJobMemoryUsed")], [64, 112, 120, 136])
+        self.assertEqual(ctypes.sizeof(common.ThreadEntry), 28)
+        self.assertEqual(common.ThreadEntry.th32OwnerProcessID.offset, 12)
+
+    def test_windows_program_path(self):
+        with tempfile.TemporaryDirectory() as folder:
+            self.assertEqual(common._windows_program(["./app", "1"], folder), [str(Path(folder) / "app"), "1"])  # 없으면 이름 그대로(실행이 FileNotFoundError를 낸다)
+            (Path(folder) / "app").write_bytes(b"")
+            self.assertEqual(common._windows_program(["./app"], folder), [str(Path(folder) / "app")])  # go·rustc는 이름 그대로 만든다
+            (Path(folder) / "app.exe").write_bytes(b"")
+            self.assertEqual(common._windows_program(["./app", "1"], folder), [str(Path(folder) / "app.exe"), "1"])  # g++(MinGW)는 .exe를 붙인다
+        self.assertEqual(common._windows_program([Path(sys.executable).name, "-c", "1"], ROOT)[1:], ["-c", "1"])
+
+
+@unittest.skipUnless(os.name == "nt", "Windows 작업 객체 시험은 Windows에서만 돈다")
+class WindowsJobTest(unittest.TestCase):
+    """Windows: 제출 코드는 작업 객체 안에서 돈다. 정상 종료 뒤의 자식, CPU 시간, 커밋 메모리를 작업이 막는다."""
+
+    def run_python(self, code, **limits):
+        return common.run_command([sys.executable, "-c", code], ROOT, **limits)
+
+    def test_job_is_used(self):
+        result = self.run_python("print('ok')")
+        self.assertEqual((result["status"], result["stdout"].strip()), ("passed", "ok"), result)
+        self.assertNotIn("warning", result)
+
+    def test_children_are_killed_after_normal_exit(self):
+        with tempfile.TemporaryDirectory() as folder:
+            marker = Path(folder) / "alive.txt"
+            child = f"import time; time.sleep(3); open(r'{marker}', 'w').write('alive')"
+            parent = f"import subprocess, sys; subprocess.Popen([sys.executable, '-c', {child!r}], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)"
+            self.assertEqual(self.run_python(parent)["status"], "passed")
+            common.time.sleep(4.5)
+            self.assertFalse(marker.exists(), "주 프로세스가 끝난 뒤에도 자식 프로세스가 살아 있다")
+
+    def test_commit_memory_is_capped(self):
+        big = common.MEMORY_LIMIT_MB * common.JOB_MEMORY_FACTOR + 1024  # 작업의 커밋 상한보다 1GB 크게 한 번에
+        result = self.run_python(f"b = bytearray({big} * 2**20); print(len(b))")
+        self.assertEqual(result["status"], "runtime_error", result)
+        self.assertIn("MemoryError", result["stderr"])
+
+    def test_without_job_it_still_runs_and_says_so(self):
+        with mock.patch.object(common, "_windows_job", side_effect=OSError(5, "막힘")):
+            result = self.run_python("print('ok')")
+        self.assertEqual(result["status"], "passed", result)
+        self.assertIn("막힘", result["warning"])
 
 
 class EfficiencyTest(unittest.TestCase):

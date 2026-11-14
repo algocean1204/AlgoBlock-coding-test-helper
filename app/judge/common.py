@@ -1,3 +1,5 @@
+import ctypes
+import functools
 import json
 import math
 import os
@@ -58,11 +60,165 @@ def _cpu_capped(seconds):
     return lambda: resource.setrlimit(resource.RLIMIT_CPU, (seconds, seconds))
 
 
+# --- Windows: 작업 객체(Job Object) ---
+# 제출 코드를 새 작업 하나에 넣는다. 작업을 끝내면(TerminateJobObject) 그 안의 손자까지 모두 끝나고, 작업 핸들이 닫히면(앱이 죽어도) 모두 끝난다.
+# 프로세스를 멈춘 채로 만들고(CREATE_SUSPENDED) 작업에 넣은 뒤 재개한다. 그래서 작업에 들기 전에 자식을 띄워 빠져나갈 틈이 없다.
+# subprocess는 주 스레드 핸들을 닫아 버리므로 스레드는 Toolhelp로 찾아 재개한다(멈춘 채 갓 만든 프로세스의 스레드는 하나다).
+# 다른 길을 고르지 않은 까닭: _winapi.CreateProcess를 직접 부르면 관(pipe)과 핸들 상속을 다시 짜야 하고, CREATE_BREAKAWAY_FROM_JOB는
+# 앱 자신이 든 작업이 빠져나가기를 허락하지 않으면 프로세스 만들기부터 실패한다. 작업 안의 작업(Windows 8부터)은 따로 할 일이 없다.
+CREATE_SUSPENDED = 0x00000004
+CREATE_NO_WINDOW = 0x08000000  # 창 없는 앱(설치 파일)에서 채점할 때마다 콘솔 창이 뜨지 않게
+JOB_LIMIT_PROCESS_TIME = 0x00000002  # PerProcessUserTimeLimit
+JOB_LIMIT_JOB_MEMORY = 0x00000200  # JobMemoryLimit(작업 전체의 커밋 메모리)
+JOB_LIMIT_DIE_ON_UNHANDLED_EXCEPTION = 0x00000400  # 죽은 프로그램이 오류 보고 창을 띄운 채 시간 초과까지 남지 않게
+JOB_LIMIT_KILL_ON_JOB_CLOSE = 0x00002000
+JOB_EXTENDED_LIMIT_INFORMATION = 9  # JOBOBJECTINFOCLASS의 JobObjectExtendedLimitInformation
+JOB_MEMORY_FACTOR = 2  # 작업의 커밋 상한 = memory_mb × 이것. 커밋은 실제로 쓰는 메모리(작업 집합)보다 앞서 잡힌다(JVM의 첫 힙 등).
+#                        memory_limit 판정은 POSIX처럼 0.25초마다 재는 작업 집합이 하고, 이 상한은 그 사이의 급한 증가를 막는 바닥이다
+TH32CS_SNAPTHREAD = 0x00000004
+THREAD_SUSPEND_RESUME = 0x0002
+JOB_LOCK = threading.Lock()  # 작업 핸들을 쓰는 것(끝내기)과 닫는 것이 겹치지 않게
+_warned = []
+
+
+class JobBasicLimit(ctypes.Structure):  # JOBOBJECT_BASIC_LIMIT_INFORMATION (x64: 64바이트)
+    _fields_ = [("PerProcessUserTimeLimit", ctypes.c_int64), ("PerJobUserTimeLimit", ctypes.c_int64), ("LimitFlags", ctypes.c_uint32),
+                ("MinimumWorkingSetSize", ctypes.c_size_t), ("MaximumWorkingSetSize", ctypes.c_size_t), ("ActiveProcessLimit", ctypes.c_uint32),
+                ("Affinity", ctypes.c_size_t), ("PriorityClass", ctypes.c_uint32), ("SchedulingClass", ctypes.c_uint32)]
+
+
+class JobIoCounters(ctypes.Structure):  # IO_COUNTERS (48바이트)
+    _fields_ = [(name, ctypes.c_uint64) for name in ("ReadOperationCount", "WriteOperationCount", "OtherOperationCount",
+                                                     "ReadTransferCount", "WriteTransferCount", "OtherTransferCount")]
+
+
+class JobExtendedLimit(ctypes.Structure):  # JOBOBJECT_EXTENDED_LIMIT_INFORMATION (x64: 144바이트)
+    _fields_ = [("BasicLimitInformation", JobBasicLimit), ("IoInfo", JobIoCounters), ("ProcessMemoryLimit", ctypes.c_size_t),
+                ("JobMemoryLimit", ctypes.c_size_t), ("PeakProcessMemoryUsed", ctypes.c_size_t), ("PeakJobMemoryUsed", ctypes.c_size_t)]
+
+
+class ThreadEntry(ctypes.Structure):  # THREADENTRY32 (28바이트)
+    _fields_ = [("dwSize", ctypes.c_uint32), ("cntUsage", ctypes.c_uint32), ("th32ThreadID", ctypes.c_uint32), ("th32OwnerProcessID", ctypes.c_uint32),
+                ("tpBasePri", ctypes.c_int32), ("tpDeltaPri", ctypes.c_int32), ("dwFlags", ctypes.c_uint32)]
+
+
+@functools.cache
+def _kernel32():
+    """kernel32의 함수에 형을 붙인다(핸들은 포인터 크기: 형이 없으면 64비트에서 잘린다). 다른 모듈의 ctypes.windll 설정과 섞이지 않게 따로 연다."""
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    handle, flag, dword, pointer = ctypes.c_void_p, ctypes.c_int, ctypes.c_uint32, ctypes.c_void_p
+    for name, result, args in (("CreateJobObjectW", handle, [pointer, ctypes.c_wchar_p]), ("SetInformationJobObject", flag, [handle, ctypes.c_int, pointer, dword]),
+                               ("AssignProcessToJobObject", flag, [handle, handle]), ("TerminateJobObject", flag, [handle, ctypes.c_uint]),
+                               ("CloseHandle", flag, [handle]), ("CreateToolhelp32Snapshot", handle, [dword, dword]),
+                               ("Thread32First", flag, [handle, pointer]), ("Thread32Next", flag, [handle, pointer]),
+                               ("OpenThread", handle, [dword, flag, dword]), ("ResumeThread", dword, [handle])):
+        function = getattr(kernel, name)
+        function.restype, function.argtypes = result, args
+    return kernel
+
+
+def _win_error(what):
+    code = ctypes.get_last_error()
+    return OSError(code, f"{what} 실패(Windows 오류 {code})")
+
+
+def _windows_job(process, cpu_seconds, memory_mb):
+    """멈춘 채 만든 process를 제한을 건 새 작업에 넣고 작업 핸들을 낸다. 실패하면 OSError(만든 작업은 닫는다. 프로세스는 건드리지 않는다)."""
+    kernel = _kernel32()
+    job = kernel.CreateJobObjectW(None, None)  # 보안 속성 없음: 핸들이 자식에게 상속되지 않는다
+    if not job:
+        raise _win_error("CreateJobObject")
+    try:
+        limit = JobExtendedLimit()
+        basic = limit.BasicLimitInformation
+        basic.LimitFlags = JOB_LIMIT_KILL_ON_JOB_CLOSE | JOB_LIMIT_DIE_ON_UNHANDLED_EXCEPTION | JOB_LIMIT_PROCESS_TIME
+        basic.PerProcessUserTimeLimit = int(cpu_seconds * 10_000_000)  # 100ns 단위. 넘으면 Windows가 그 프로세스를 끝낸다
+        if memory_mb:
+            basic.LimitFlags |= JOB_LIMIT_JOB_MEMORY
+            limit.JobMemoryLimit = min(memory_mb * JOB_MEMORY_FACTOR * 2**20, ctypes.c_size_t(-1).value)  # 32비트 파이썬에서 잘려 0이 되지 않게
+        if not kernel.SetInformationJobObject(job, JOB_EXTENDED_LIMIT_INFORMATION, ctypes.byref(limit), ctypes.sizeof(limit)):
+            raise _win_error("SetInformationJobObject")
+        if not kernel.AssignProcessToJobObject(job, int(process._handle)):
+            raise _win_error("AssignProcessToJobObject")
+    except BaseException:
+        kernel.CloseHandle(job)
+        raise
+    return job
+
+
+def _resume(pid):
+    """멈춘 채 만든 프로세스 pid의 스레드를 재개한다. 하나도 재개하지 못하면 OSError."""
+    kernel = _kernel32()
+    snapshot = kernel.CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0)
+    if snapshot in (None, ctypes.c_void_p(-1).value):  # INVALID_HANDLE_VALUE
+        raise _win_error("CreateToolhelp32Snapshot")
+    resumed = 0
+    try:
+        entry = ThreadEntry()
+        entry.dwSize = ctypes.sizeof(entry)
+        more = kernel.Thread32First(snapshot, ctypes.byref(entry))
+        while more:
+            if entry.th32OwnerProcessID == pid:
+                thread = kernel.OpenThread(THREAD_SUSPEND_RESUME, False, entry.th32ThreadID)
+                if thread:
+                    resumed += kernel.ResumeThread(thread) != 0xFFFFFFFF
+                    kernel.CloseHandle(thread)
+            more = kernel.Thread32Next(snapshot, ctypes.byref(entry))
+    finally:
+        kernel.CloseHandle(snapshot)
+    if not resumed:
+        raise _win_error(f"프로세스 {pid}의 스레드 재개")
+
+
+def _start_windows(process, cpu_seconds, memory_mb):
+    """멈춘 채 만든 process를 작업에 넣고 재개한다. 작업을 쓰지 못하면 제한 없이 그대로 돌리고 그 까닭을 낸다(조용히 넘기지 않는다)."""
+    warning = None
+    try:
+        process.algoblock_job = _windows_job(process, cpu_seconds, memory_mb)
+    except Exception as error:  # noqa: BLE001 - 작업 없이도 채점은 한다(시간 초과 때 taskkill로 끝낸다)
+        warning = f"Windows 작업 객체를 쓰지 못해 CPU 시간·메모리 상한과 남은 자식 정리 없이 돌렸습니다: {error}"
+    try:
+        _resume(process.pid)
+    except Exception as error:  # noqa: BLE001 - 멈춘 채 두면 시간 초과까지 기다린다: 끝내고 실행 오류로 남긴다
+        _kill_tree(process)
+        warning = f"제출 코드를 시작하지 못했습니다: {error}"
+    if warning and warning not in _warned:  # 서버 기록에 한 번
+        _warned.append(warning)
+        print(f"채점기: {warning}", file=sys.stderr)
+    return warning
+
+
+def _end_job(process, close=False):
+    """process의 작업(Windows)을 끝내 그 안의 모든 프로세스를 끝낸다. close면 작업 핸들도 닫는다. 작업이 없거나 끝내지 못하면 False."""
+    with JOB_LOCK:
+        job = getattr(process, "algoblock_job", None)
+        if not job:
+            return False
+        ended = bool(_kernel32().TerminateJobObject(job, 1))
+        if close:
+            _kernel32().CloseHandle(job)
+            process.algoblock_job = None
+        return ended
+
+
+def _windows_program(command, cwd):
+    """Windows의 CreateProcess는 상대 경로(./app)를 cwd가 아니라 부모의 현재 폴더에서 찾고, .exe만 붙여 찾아 .bat(kotlinc)을 못 찾는다.
+    그래서 첫 낱말을 절대 경로로 바꾼다. ./app은 작업 폴더의 app.exe(g++)나 app(go·rustc가 이름 그대로 만든 것)이다."""
+    first = command[0]
+    if first.startswith("./"):
+        base = Path(cwd) / first[2:]
+        found = next((str(path) for path in (base.with_name(base.name + ".exe"), base) if path.is_file()), str(base))
+    else:
+        found = shutil.which(first) or first
+    return [found, *command[1:]]
+
+
 def _kill_tree(process):
     """제출 코드가 띄운 자식 프로세스까지 끝낸다."""
     try:
         if os.name == "nt":
-            subprocess.run(["taskkill", "/F", "/T", "/PID", str(process.pid)], capture_output=True, timeout=10)
+            if not _end_job(process):  # 작업이 없을 때만: 지금 살아 있는 자식 트리를 찾아 끝낸다
+                subprocess.run(["taskkill", "/F", "/T", "/PID", str(process.pid)], capture_output=True, timeout=10)
         else:
             os.killpg(process.pid, signal.SIGKILL)
     except (OSError, subprocess.SubprocessError):
@@ -99,14 +255,19 @@ def _memory_mb(process):
 
 def run_command(command, cwd, stdin="", timeout=TIMEOUT_SECONDS, memory_mb=MEMORY_LIMIT_MB, cpu_seconds=None):
     """실행하고 {status, stdout, stderr, time_ms}. 시간(timeout), 출력 크기(OUTPUT_LIMIT), 메모리(memory_mb, None이면 안 봄)를 넘으면 자식까지 끝낸다.
-    CPU 시간은 cpu_seconds(없으면 cpu_limit(timeout))를 넘으면 자식이 스스로 끝난다(POSIX).
+    CPU 시간은 cpu_seconds(없으면 cpu_limit(timeout))를 넘으면 자식이 스스로 끝난다(POSIX는 RLIMIT_CPU, Windows는 작업 객체의 사용자 모드 시간).
+    Windows에서 작업 객체를 쓰지 못하면 제한 없이 돌리고 결과에 warning(까닭)을 붙인다.
 
     한계: 파일·네트워크 접근은 막지 않는다(사용자 기기에서 사용자 권한으로 도는 자기 코드다). 격리가 필요해지면 컨테이너나 OS 샌드박스로 감싼다.
     """
     started = time.perf_counter()
-    options = ({"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP} if os.name == "nt"
-               else {"start_new_session": True, "preexec_fn": _cpu_capped(cpu_seconds or cpu_limit(timeout))})
-    # 한계: Windows는 CPU 시간 상한을 걸지 않는다(앱이 끝날 때 kill_running만 믿는다). 걸려면 Job Object가 필요하다
+    cpu = cpu_seconds or cpu_limit(timeout)
+    windows = os.name == "nt"
+    if windows:
+        command = _windows_program(command, cwd)
+        options = {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW | CREATE_SUSPENDED}  # 작업에 넣은 뒤 _start_windows가 재개한다
+    else:
+        options = {"start_new_session": True, "preexec_fn": _cpu_capped(cpu)}
     env = {name: value for name, value in os.environ.items()
            if not any(word in name.upper() for word in SECRET_WORDS) and not name.upper().startswith(SECRET_PREFIXES)}  # API 키 같은 비밀 값은 넘기지 않는다
     process = subprocess.Popen(command, cwd=cwd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
@@ -114,10 +275,14 @@ def run_command(command, cwd, stdin="", timeout=TIMEOUT_SECONDS, memory_mb=MEMOR
     with RUNNING_LOCK:
         RUNNING.add(process)
     try:
-        return _collect(process, stdin, timeout, memory_mb, started)
+        warning = _start_windows(process, cpu, memory_mb) if windows else None
+        result = _collect(process, stdin, timeout, memory_mb, started)
+        return {**result, "warning": warning} if warning else result
     finally:
         with RUNNING_LOCK:
             RUNNING.discard(process)
+        if windows:
+            _end_job(process, close=True)
 
 
 def _collect(process, stdin, timeout, memory_mb, started):
@@ -164,10 +329,10 @@ def _collect(process, stdin, timeout, memory_mb, started):
     except subprocess.TimeoutExpired:
         stop("timeout")
         process.wait()
-    if os.name != "nt":
-        _kill_tree(process)  # 정상 종료여도 남은 자식(같은 프로세스 그룹)을 끝낸다. 출력 관을 물던 자식이 죽어 읽기가 곧 끝난다
-    # 한계: Windows는 끝난 주 프로세스의 자식을 taskkill /T로 찾지 못해(끝난 PID는 다시 쓰일 수도 있어 부르지 않는다) 남긴다. 잡으려면 Job Object가 필요하다
-    # 한계: setsid로 새 세션을 만든 자식은 그룹 밖이라 못 잡는다(격리가 필요). 그 자식이 관을 물어도 아래 1초 기다림 뒤 결과를 낸다
+    if os.name != "nt" or getattr(process, "algoblock_job", None):
+        _kill_tree(process)  # 정상 종료여도 남은 자식(같은 프로세스 그룹, Windows는 같은 작업)을 끝낸다. 출력 관을 물던 자식이 죽어 읽기가 곧 끝난다
+    # 한계: Windows에서 작업 객체를 쓰지 못했으면 끝난 주 프로세스의 자식은 taskkill /T로 찾지 못해(끝난 PID는 다시 쓰일 수도 있어 부르지 않는다) 남긴다
+    # 한계: setsid로 새 세션을 만든 자식은 그룹 밖이라 못 잡는다(격리가 필요. Windows의 작업에는 이 빈틈이 없다). 그 자식이 관을 물어도 아래 1초 기다림 뒤 결과를 낸다
     done.set()
     for thread in threads:
         thread.join(timeout=1)  # 주 프로세스가 끝났으니 남은 출력은 곧 다 읽힌다. 관을 문 자식을 기다리지 않는다
