@@ -179,7 +179,7 @@ def installing(folder: Path) -> None:
                     updater.install(lambda: None)
                     raise AssertionError("쓸 수 없는 곳의 앱은 바꾸지 않는다")
                 except updater.Refused as exc:
-                    assert "직접 바꿔 주세요" in str(exc) and str(folder / DMG) in str(exc)
+                    assert "직접 바꿔 주세요" in str(exc) and str(folder / DMG) in str(exc) and ("exe" if os.name == "nt" else "dmg를 열어") in str(exc)
             assert updater.NOW["state"] == "ready"
     finally:
         locked.chmod(stat.S_IRWXU)
@@ -439,6 +439,7 @@ def ps_script(folder: Path) -> None:
     for name in ("Move-Retry", "Remove-Retry", "Open-App", "Say", "Test-Served", "Stop-Tree", "Undo-Swap"):
         assert not re.search(rf"(?<!function ){name}\(", body), f"PowerShell 함수는 괄호 없이 부른다: {name}"
     assert "exit 1" in body and "finally" in body and "Remove-Retry $ready" in body
+    assert undo_only(Path("C:/앱/AlgoBlock.exe")).endswith("\nUndo-Swap\n")  # Windows 시험이 쓰는 '되돌리기만' 글이 본문을 빼고 만들어진다
 
 
 def env_cleaning(folder: Path) -> None:
@@ -517,6 +518,11 @@ def swap_notes(folder: Path) -> None:
     assert updater.last_swap_note() == ""  # 한 번만
     (folder / "swap.log").write_text("시작: A\n열었다: A\n바꿨다\n", encoding="utf-8")
     assert updater.last_swap_note() == ""
+    # 바꾸는 스크립트가 아직 도는 중이면(새 앱이 켜진 때) 기록을 건드리지 않는다
+    (folder / "swap.log").write_text("시작: A\n열었다: A\n", encoding="utf-8")
+    (folder / "swap.waiting").write_text("waiting", encoding="utf-8")
+    assert updater.last_swap_note() == "" and (folder / "swap.log").exists()
+    (folder / "swap.waiting").unlink()
 
 
 def windows_swapping(folder: Path) -> None:
@@ -593,7 +599,29 @@ def launch_probe(folder: Path) -> None:
         print(f"launch probe {name}: 종료 코드 {code}(7이면 끝까지 돌았다), 표시 {'있음' if mark.exists() else '없음'}, 출력 {updater.tail(out, 600)!r}", flush=True)
 
 
+def undo_only(app: Path) -> str:
+    """스크립트의 함수들만 두고 Undo-Swap 하나를 부르는 글(시험용). 첫 줄에서 시작하는 'try {'가 본문의 시작이다."""
+    functions = updater.swap_ps1(app, updater.beside(app, "new"), [], 5, 5).split("\ntry {\n", 1)[0]
+    assert "function Undo-Swap" in functions and "스크립트 시작" not in functions
+    return functions + "\nUndo-Swap\n"
+
+
 def windows_cases(folder, exe, alive, run, names, log, silent) -> None:
+    # 0. 되돌리기만(Undo-Swap): 새 exe가 이미 없으면(백신이 격리 등) 치우기를 건너뛰고 옛 exe를 제자리로. 있으면 치우고 제자리로
+    for has_new in (False, True):
+        app = folder / f"되돌리기만 {has_new}" / "AlgoBlock.exe"
+        exe(updater.beside(app, "old"), b"old")
+        if has_new:
+            exe(app, b"new")
+        script = folder / "undo.ps1"
+        script.write_text(undo_only(app), encoding="utf-8-sig")
+        out = subprocess.run([str(updater.POWERSHELL), "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", str(script)],
+                             capture_output=True, timeout=180)
+        text = (log.read_text(encoding="utf-8") if log.exists() else "") + out.stderr.decode("utf-8", "replace")
+        log.unlink(missing_ok=True)
+        assert "되돌렸다" in text, text
+        assert app.read_bytes().endswith(b"old") and names(app.parent) == ["AlgoBlock.exe"], names(app.parent)
+
     # 1. 바꾸기: 앱이 끝나기를 기다렸다가 새 exe를 넣고 열고, 서버가 응답하면 옛 exe를 지운다
     #    (앱 프로세스는 스크립트가 잡을 때까지 살아 있어야 한다. PowerShell이 뜨는 데 1~2초 걸린다)
     app = exe(folder / "바꾸기 'ok' 폴더" / "AlgoBlock.exe", b"old")
@@ -754,8 +782,8 @@ def exe_swapping(built: Path) -> None:
         log = finish(script, "성공", app)
         assert script.returncode == 0 and "바꿨다" in log and "응답했다" in log, log
         assert app.stat().st_mtime == new_time and not new.exists() and not updater.beside(app, "old").exists()
-        # 스크립트가 이미 새 앱의 / 200을 보고 성공으로 쳤다('응답했다'). 지금도 떠 있는지는 창 모드(WebView2)의 일이라 찍기만 한다
-        summary.append(f"성공: 바꾼 뒤 지금도 응답함: {served(8803)}")
+        assert served(8803), "바꾼 뒤 새 앱의 / 가 200을 주지 않는다"
+        summary.append("성공: 바꾼 뒤 새 앱의 / 가 200")
         kill_apps()
 
         # 2. 되돌리기

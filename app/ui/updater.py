@@ -111,7 +111,7 @@ function Open-App {
   try {
     $info = New-Object System.Diagnostics.ProcessStartInfo
     $info.FileName = $app
-    $info.UseShellExecute = $false
+    $info.UseShellExecute = $true  # 이 스크립트의 출력 파일(swap-out.log)을 새 앱에 물려주지 않는다(환경은 물려준다). 오류 창은 띄우지 않는다(ErrorDialog 기본 꺼짐)
     $info.WorkingDirectory = [IO.Path]::GetDirectoryName($app)
     $process = [Diagnostics.Process]::Start($info)
     $script:opened = $true
@@ -136,13 +136,17 @@ function Test-Served {
   }
 }
 function Stop-Tree($process) {
-  # onefile은 부모와 자식 둘이다. 자식(앱)까지 끝내야 exe를 놓는다
-  try { $null = & (Join-Path $env:SystemRoot 'System32\taskkill.exe') /PID ([string]$process.Id) /T /F 2>&1 } catch { }
+  # onefile은 부모와 자식 둘이다. 자식(앱)까지 끝내야 exe를 놓는다. 먼저 창을 닫게 해(/F 없이) 부모가 풀어 놓은 폴더를 치울 틈을 주고, 5초 안에 안 끝나면 강제로
+  $taskkill = Join-Path $env:SystemRoot 'System32\taskkill.exe'
+  try { $null = & $taskkill /PID ([string]$process.Id) /T 2>&1 } catch { }
+  try { if ($process.WaitForExit(5000)) { return } } catch { }
+  try { $null = & $taskkill /PID ([string]$process.Id) /T /F 2>&1 } catch { }
   try { $null = $process.WaitForExit(10000) } catch { }
 }
 function Undo-Swap {
-  # 새 exe를 옆으로 치우고 옛 exe를 제자리에. 옛 exe를 되돌리지 못하면 새 exe도 다시 제자리에 둔다(앱이 없어지지 않게)
-  if (-not (Move-Retry $app $new)) {
+  # 새 exe를 옆으로 치우고 옛 exe를 제자리에. 새 exe가 이미 없으면(백신이 격리 등) 치우기는 건너뛴다.
+  # 옛 exe를 되돌리지 못하면 새 exe도 다시 제자리에 둔다(앱이 없어지지 않게)
+  if ([IO.File]::Exists($app) -and -not (Move-Retry $app $new)) {
     Say '새 앱을 치우지 못해 되돌리지 못했다'
     return
   }
@@ -150,7 +154,7 @@ function Undo-Swap {
     Remove-Retry $new
     Say '되돌렸다'
   } else {
-    $null = Move-Retry $new $app
+    if ([IO.File]::Exists($new)) { $null = Move-Retry $new $app }
     Say '옛 앱을 되돌리지 못했다'
   }
 }
@@ -723,6 +727,13 @@ def swapping_now() -> bool:
         return False
 
 
+def by_hand(ending: str) -> str:
+    """직접 바꾸는 법(플랫폼마다). ending: '바꿔 주세요', '바꿀 수도 있어요' 같은 끝말."""
+    if os.name == "nt":
+        return f"앱을 끝낸 뒤 받은 exe로 지금 exe를 직접 {ending}"
+    return f"내려받은 dmg를 열어 직접 {ending}"
+
+
 def install(stop) -> None:
     app = current_app()
     with LOCK:
@@ -731,7 +742,7 @@ def install(stop) -> None:
         if not app:
             raise Refused("여기서는 바꿀 수 없어요. 앱을 끝낸 뒤 받은 파일로 바꿔 주세요.")
         if not writable(app):
-            raise Refused(f"이 앱이 있는 곳에 쓸 수 없어요(관리자만 쓰는 폴더 등). 앱을 끝낸 뒤 받은 파일로 직접 바꿔 주세요: {NOW['file']}")
+            raise Refused(f"이 앱이 있는 곳에 쓸 수 없어요(관리자만 쓰는 폴더 등). {by_hand('바꿔 주세요')}: {NOW['file']}")
         file, version, want = Path(NOW["file"]), NOW["latest"]["version"], NOW.get("sha256")
         NOW.update(state="installing", message="")
     if not want or file_sha256(file) != want:  # 받을 때 견준 해시와 지금 파일이 다르면(받은 뒤 바뀜) 설치하지 않는다
@@ -749,7 +760,7 @@ def replace_and_quit(app: Path, file: Path, version: str, want: str, stop) -> No
         return failed_install(str(exc))
     except Exception as exc:  # noqa: BLE001 - 무슨 일이든 '바꾸는 중'에 멈춰 있지 않게 한다
         print(f"update install: {type(exc).__name__}: {exc}"[:300], file=sys.stderr)
-        return failed_install(f"새 버전으로 바꾸지 못했어요. 지금 앱은 그대로예요. 앱을 끝낸 뒤 받은 파일로 직접 바꿀 수도 있어요: {file}")
+        return failed_install(f"새 버전으로 바꾸지 못했어요. 지금 앱은 그대로예요. {by_hand('바꿀 수도 있어요')}: {file}")
     with LOCK:
         NOW["state"] = "restarting"
     time.sleep(1)  # 화면이 '다시 켜는 중'을 받아 갈 틈
@@ -809,6 +820,8 @@ def last_swap_note() -> str:
     """지난번 바꾸기의 기록(swap.log)을 한 번 읽고 swap.prev.log로 옮긴다. 바꾸지 못했거나 되돌렸으면 화면에 띄울 글.
     (Windows에서 되돌린 뒤 다시 연 옛 앱이 같은 업데이트를 말없이 다시 권하지 않게)"""
     log, prev = DIR / "swap.log", DIR / "swap.prev.log"
+    if swapping_now():  # 바꾸는 스크립트가 아직 쓰는 중이다(새 앱이 켜진 때). 다음에 켤 때 끝난 기록을 읽는다
+        return ""
     try:
         text = log.read_text(encoding="utf-8", errors="replace")
         log.replace(prev)
