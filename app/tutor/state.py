@@ -94,7 +94,7 @@ class ChatMessage:
     at: str
     block_index: int | None = None
     quote_id: str | None = None
-    move: str | None = None  # 질문 유형(서비스 말만)
+    move: str | None = None  # 질문 유형(서비스 말). 사용자 말에는 블록 코드 확인의 판정 표시(talk_rules.CHECKED + Y·N·?)만
 
 
 @dataclass

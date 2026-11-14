@@ -30,7 +30,9 @@ def check_feedback(state: MainState) -> dict:
     if error:
         return {"error": error, "draft": None}
     sub = state["ctx"].latest_submission
+    # 통과한 제출에는 전략을 넘기지 않는다: 화면이 전략 제목('정석 순서로 다시 짜 보기')이 아니라 기본 제목을 쓴다
+    strategy = None if sub is not None and sub.ok else state.get("strategy")
     return {
-        "result": {"submission_id": None if sub is None else sub.id, **fields, "strategy": state.get("strategy"), "score": state.get("score")},
+        "result": {"submission_id": None if sub is None else sub.id, **fields, "strategy": strategy, "score": state.get("score")},
         "draft": None,
     }
