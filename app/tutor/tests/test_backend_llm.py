@@ -5,7 +5,7 @@ import unittest
 from dataclasses import dataclass
 from pathlib import Path
 
-from ..llm.client import _backend_session
+from ..llm.client import _backend_session, cached_user
 
 _session = _backend_session()  # 저장소 루트를 경로에 더해 app.llm을 부른다
 from app.llm.openai.oauth.pkce import make_pkce  # noqa: E402
@@ -190,6 +190,16 @@ class CacheTest(unittest.TestCase):
         self.assertNotIn("cache_prefix", str(self.seen["body"]))
         last = usage.RECENT[-1]
         self.assertEqual((last["task"], last["cache_read"], last["input"]), ("chair.judge", 900, 5))
+
+    def test_claude_marks_second_boundary(self):
+        """뒤쪽 경계가 있으면 블록이 셋이고 앞 둘에 cache_control이 붙는다. 이어 붙이면 원문이다."""
+        text = "문제:\n글\n지금 블록:b1\n목표:g\n사용자 말:네"
+        row = cached_user(text.split("\n"), 2, 4)
+        llm("claude/claude-haiku-5-5").use([{"role": "system", "content": "규칙"}, row], None, task="chair.judge")
+        blocks = self.seen["body"]["messages"][0]["content"]
+        self.assertEqual(["cache_control" in b for b in blocks], [True, True, False])
+        self.assertEqual("".join(b["text"] for b in blocks), text)
+        self.assertNotIn("cache_more", str(self.seen["body"]))
 
     def test_usage_log_and_prompt_copy(self):
         """호출마다 기록 파일에 한 줄(글·키 없음), 모양 재요청은 retry. 프롬프트 사본은 ALGOBLOCK_LLM_PROMPT_DIR을 켰을 때만. 보고 스크립트가 묶는다."""

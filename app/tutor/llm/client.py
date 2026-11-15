@@ -115,14 +115,18 @@ class FakeLlm:
         return coerce(schema, item)
 
 
-def cached_user(lines: list[str], head: int) -> dict:
+def cached_user(lines: list[str], head: int, *more: int) -> dict:
     """사용자 메시지 하나. 앞 head줄(시스템 다음의 고정 앞부분: 문제 글 등)이 캐시 대상이다.
 
     cache_prefix는 그 앞부분의 글자 수다. 공급자가 캐시 표시(Claude cache_control)를 그 경계에 붙이고,
     표시가 없는 공급자는 앞부분이 같다는 것만으로 자동 캐시를 탄다. 바뀌는 내용은 뒤 줄에 둔다.
+    more는 뒤쪽 경계(앞 몇 줄까지)다. 같은 블록 안에서 턴마다 같은 줄(블록 이름·목표 등)을 한 번 더 캐시한다(Claude는 경계 4개까지).
     """
     content = "\n".join(lines)
-    return {"role": "user", "content": content, "cache_prefix": len("\n".join(lines[:head]))}
+    row = {"role": "user", "content": content, "cache_prefix": len("\n".join(lines[:head]))}
+    if more:
+        row["cache_more"] = [len("\n".join(lines[:n])) for n in more]
+    return row
 
 
 DEFAULT_MODEL = "claude/claude-haiku-5-5"

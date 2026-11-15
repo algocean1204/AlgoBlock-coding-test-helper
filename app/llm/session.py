@@ -77,7 +77,7 @@ def _cache_plan(messages):
         clean.append({"role": message.get("role") or "user", "content": message.get("content") or ""})
         if cache_at is None:
             if at:
-                cache_at = (index, int(at))
+                cache_at = (index, int(at), tuple(int(n) for n in message.get("cache_more") or ()))
                 prefix.append(clean[-1]["content"][: int(at)])
             else:
                 prefix.append(clean[-1]["content"])

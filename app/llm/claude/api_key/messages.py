@@ -66,7 +66,7 @@ def _split(messages: list[dict], images, cache_at=None) -> tuple[str, list[dict]
             continue
         if role not in {"user", "assistant"}:
             role = "user"
-        blocks = cache_split(text, cache_at[1]) if cache_at and cache_at[0] == index else None
+        blocks = cache_split(text, cache_at[1], cache_at[2]) if cache_at and cache_at[0] == index else None
         rows.append({"role": role, "content": blocks or text})
     if not rows:
         rows = [{"role": "user", "content": ""}]

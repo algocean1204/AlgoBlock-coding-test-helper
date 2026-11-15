@@ -162,7 +162,7 @@ def code_messages(state: MainState, plan, index: int, code: str) -> list[dict]:
         "실행은 하지 않는다. 문법이 조금 틀려도 의도가 맞으면 해낸 것이다.",
         f"사용자 블록 코드:\n{code}",
     ]
-    return [{"role": "system", "content": system}, cached_user(lines, 2 + len(guide))]
+    return [{"role": "system", "content": system}, cached_user(lines, 2 + len(guide), 2 + len(guide) + 4 + len(checks))]
 
 
 def missing_name(report: dict) -> str:

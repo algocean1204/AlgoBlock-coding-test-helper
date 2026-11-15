@@ -27,12 +27,17 @@ def responses_input(messages: list[dict], images=None) -> list[dict]:
     return rows
 
 
-def cache_split(text: str, at: int | None) -> list[dict] | None:
-    """캐시 경계에서 글을 두 블록으로 나눈다. 앞 블록에 cache_control을 붙인다(Anthropic 모양)."""
-    if not at or at >= len(text):
+def cache_split(text: str, at: int | None, more=()) -> list[dict] | None:
+    """캐시 경계(글자 수 at, 뒤쪽 경계 more)에서 글을 나눈다. 경계 앞 블록마다 cache_control을 붙인다(Anthropic 모양)."""
+    cuts = sorted({n for n in (at, *more) if n and n < len(text)})
+    if not cuts:
         return None
     mark = {"type": "ephemeral"}
     ttl = os.environ.get("ALGOBLOCK_LLM_CACHE_TTL", "").strip()
     if ttl == "1h":
         mark["ttl"] = "1h"
-    return [{"type": "text", "text": text[:at], "cache_control": mark}, {"type": "text", "text": text[at:]}]
+    edges = [0, *cuts, len(text)]
+    blocks = [{"type": "text", "text": text[a:b]} for a, b in zip(edges, edges[1:])]
+    for block in blocks[:-1]:
+        block["cache_control"] = dict(mark)
+    return blocks

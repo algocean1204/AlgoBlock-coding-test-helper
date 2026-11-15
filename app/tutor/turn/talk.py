@@ -28,7 +28,9 @@ def speak_messages(state: MainState, turn: TurnContext, move: MovePlan, system: 
     if plan.link:
         lines.append(f"참고 — 사용자가 전에 풀어 본 같은 구조의 문제: {plan.link} (사용자가 막혔을 때 그 문제를 떠올리게 하는 한마디로만 쓴다. 그 풀이를 대신 말하지 않는다)")
     recent = turn.recent if move.target == turn.index else []
-    lines += [f"물을 블록:{block.name} ({kind_word(block.kind)})", f"이 블록에서 정할 것:{block.goal}", "이 블록의 최근 대화:", *(recent or ["없음"])]
+    lines += [f"물을 블록:{block.name} ({kind_word(block.kind)})", f"이 블록에서 정할 것:{block.goal}"]
+    same_block = len(lines)  # 여기까지는 같은 블록의 턴마다 같다(두 번째 캐시 경계). 최근 대화는 4개씩 밀려 앞부분 캐시로는 맞지 않는다
+    lines += ["이 블록의 최근 대화:", *(recent or ["없음"])]
     aside = getattr(state.get("verdict"), "aside", "")
     if turn.text and not aside:
         lines.append(f"사용자 말:{turn.text}")
@@ -48,7 +50,7 @@ def speak_messages(state: MainState, turn: TurnContext, move: MovePlan, system: 
         step += f" 가리킬 방향: {move.missing_signal}(그대로 말하지 않는다)."
     lines += learner_lines(ctx)  # 캐시 경계(head) 뒤라 앞부분 캐시는 그대로다
     lines += [f"질문 유형 지시: {step}", "출력: 말풍선 글만. 따옴표, 머리말, JSON 없이."]
-    return [{"role": "system", "content": system}, cached_user(lines, 2 + len(guide))]
+    return [{"role": "system", "content": system}, cached_user(lines, 2 + len(guide), same_block)]
 
 
 def clean_text(text: str) -> str:

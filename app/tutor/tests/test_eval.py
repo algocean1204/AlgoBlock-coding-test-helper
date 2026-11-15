@@ -116,6 +116,10 @@ class CachePrefixTest(unittest.TestCase):
             user = call["messages"][-1]
             head = user["content"][: user["cache_prefix"]]
             self.assertIn(head, (f"문제:\n{PROBLEM}", f"문제:\n{PROBLEM}\n언어:python"), call["task"])
+            more = user["cache_more"][0]  # 같은 블록의 턴마다 같은 줄까지(블록 이름·목표·신호). 사용자 말·직전 질문은 그 뒤
+            self.assertGreater(more, user["cache_prefix"], call["task"])
+            self.assertNotIn("사용자 말:", user["content"][:more], call["task"])
+            self.assertNotIn("직전 질문:", user["content"][:more], call["task"])
 
     def test_debug_turns_cache_code_and_diagnosis_and_one_shot_calls_do_not_mark(self):
         """같은 코드의 디버그 턴은 코드·진단까지 같은 앞부분을 읽는다. 한 번만 부르는 해설은 캐시 표시를 하지 않는다(쓰기 할증만 붙는다)."""

@@ -80,4 +80,4 @@ def judge_lines(state, turn, criteria: str) -> list[dict]:
         criteria,
         f"사용자 말:{state['request'].text or ''}",
     ]
-    return [{"role": "system", "content": JUDGE_SYSTEM}, cached_user(lines, 1 + len(guide))]
+    return [{"role": "system", "content": JUDGE_SYSTEM}, cached_user(lines, 1 + len(guide), 1 + len(guide) + 3 + len(checks))]
