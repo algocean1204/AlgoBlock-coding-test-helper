@@ -240,10 +240,21 @@ legend { float: left; width: 100%; padding: 0; } /* 띄우면 테두리 줄에 �
 .key-row input { flex: 1 1 200px; min-height: 40px; border: 2px solid var(--muted); }
 .key-row .btn { flex: none; min-height: 36px; }
 .conn .choice { min-height: 36px; }
-#key-status, #key-delete-row { flex-wrap: wrap; overflow-wrap: anywhere; }
+#key-status { flex-wrap: wrap; overflow-wrap: anywhere; }
 #key-status .btn { min-height: 36px; }
 #key-status .btn:first-of-type { margin-left: 0; }
-#key-delete-row .btn { min-height: 36px; }
+/* 공급자마다 키 한 줄 */
+.key-rows { display: grid; gap: 8px; justify-self: stretch; padding: 0; }
+.key-item { display: grid; gap: 4px; padding: 10px 12px; border-radius: var(--r-md); box-shadow: inset 0 0 0 1px var(--line-strong); }
+.key-item-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+.key-item-head strong { font-size: 14px; }
+.key-state { display: flex; align-items: flex-start; gap: 6px; font-size: 13.5px; font-weight: 600; line-height: 1.5; overflow-wrap: anywhere; }
+.key-state svg.ico { margin-top: 4px; }
+.key-state.ok { color: var(--success); } .key-state.warn { color: var(--warning); } .key-state.error { color: var(--danger); } .key-state.off { color: var(--muted); }
+.key-item-acts { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin-top: 2px; }
+.key-item .btn { min-height: 36px; }
+#key-delete-confirm { flex-wrap: wrap; row-gap: 4px; }
+#key-delete-confirm > span { flex-basis: 100%; }
 @media (max-width: 420px) { .conn { position: fixed; top: 60px; right: 12px; left: 12px; width: auto; } } /* 좁은 창: 머리글이 넓어져도 연결 창은 보이는 화면 안에 */
 #conn-note:empty { display: none; }
 @keyframes pop { from { opacity: 0; transform: scale(0.97) translateY(-4px); } }

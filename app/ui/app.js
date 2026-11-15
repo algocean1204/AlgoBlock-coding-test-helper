@@ -98,7 +98,7 @@ async function api(path, body) {
     const r = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}), keepalive: leaving });
     const data = await r.json();
     const out = r.ok ? { ok: true, data } : { ok: false, error: data.detail || { code: "unknown", message: "" } };
-    if (out.ok ? MODEL_PATHS.includes(path) || path.startsWith("/api/key") : out.error.code === "llm_auth_failed") setKeyBad(!out.ok);
+    if (out.ok ? MODEL_PATHS.includes(path) || ["/api/key", "/api/key/delete"].includes(path) : out.error.code === "llm_auth_failed") setKeyBad(!out.ok);
     return out;
   } catch (e) {
     return { ok: false, error: { code: "network", message: "" } };
@@ -2209,7 +2209,7 @@ function renderAccounts(a) {
   $("provider-now").textContent = provider ? `지금은 ${provider}` : "아직 없음";
   $("chatgpt-state").textContent = a.chatgpt ? "연결됨 · ChatGPT 요금제를 쓰는 중" : a.chatgpt_note || "연결 안 됨"; // 연결되지 않은 까닭(허락하지 않음, 자격 없음, 다시 로그인 필요)
   $("chatgpt-usage").hidden = !a.chatgpt;
-  document.querySelectorAll("[data-key]").forEach((el) => { el.textContent = a.keys[el.dataset.key] ? "넣음" : ""; });
+  renderKeyRows();
   renderKeyDelete();
   renderKeyStatus();
   if (a.chatgpt) { clearInterval(loginPoll); $("chatgpt-link").hidden = true; }
@@ -2221,14 +2221,54 @@ const KEY_LABEL = { claude: "Claude", openai: "OpenAI" };
 const KEY_PREFIX = { claude: "sk-ant-", openai: "sk-" }; // 서버(KEY_FORM)와 같은 꼴. 저장 전에 서버가 다시 본다
 const KEY_CONSOLE = { claude: "https://console.anthropic.com/settings/keys", openai: "https://platform.openai.com/api-keys" }; // 키를 받는 공식 콘솔
 const keyName = () => document.querySelector('input[name="keyname"]:checked').value;
-/** 고른 공급자의 키가 들어 있을 때만 '지우기'를 보인다(공급자를 바꾸면 확인은 접는다). */
+/** 지우기 확인은 누른 줄의 공급자 것만 묻는다. 줄이 다시 그려지면(키가 달라지면) 접는다. */
+let keyDeleting = null;
 function renderKeyDelete() {
-  const name = keyName(), has = !!(ACCOUNTS && ACCOUNTS.keys_saved[name]); // 화면에서 넣은 키만 지울 수 있다(.env·환경 변수의 키는 아니다)
-  $("key-delete-row").hidden = !has;
-  $("key-delete").textContent = `넣은 ${KEY_LABEL[name]} 키 지우기`;
-  $("key-delete-ask").textContent = `이 기기에 넣은 ${KEY_LABEL[name]} 키를 지울까요? 다른 키는 그대로예요.`;
-  $("key-delete").hidden = false;
-  $("key-delete-confirm").hidden = true;
+  const name = keyDeleting, has = !!(name && ACCOUNTS && ACCOUNTS.keys_saved[name]); // 화면에서 넣은 키만 지울 수 있다(.env·환경 변수의 키는 아니다)
+  if (!has) keyDeleting = null;
+  $("key-delete-confirm").hidden = !has;
+  if (has) $("key-delete-ask").textContent = `이 기기에 넣은 ${KEY_LABEL[name]} 키를 지울까요? 다른 키는 그대로예요.`;
+}
+/* ── 공급자마다 키 한 줄: 연결됨·안 됨, 끝 4자리, 마지막 확인, 다시 확인, 지우기 ── */
+const KEY_RESULT = { ok: ["ok", "쓸 수 있어요"], invalid: ["error", "거절됨 · 키가 틀려요"], denied: ["error", "거절됨 · 권한이나 한도를 확인해 주세요"], offline: ["warn", "확인하지 못했어요"] };
+const KEY_ICON = { ok: "i-check", error: "i-x", warn: "i-warn", off: "" };
+let keyRechecking = null; // 다시 확인하는 중인 공급자
+const keyTime = (iso) => { const d = new Date(iso); return Number.isNaN(d.getTime()) ? "" : d.toLocaleString("ko-KR", { month: "long", day: "numeric", hour: "numeric", minute: "2-digit" }); };
+function keyRowState(a, name) {
+  const r = a.key_rows[name];
+  if (!r.on) return ["off", "연결 안 됨"];
+  if (keyBad && a.using === name) return ["error", "거절됨 · 튜터 요청에서 키가 거절됐어요"]; // 튜터를 부르다 키 오류를 받았다
+  return KEY_RESULT[r.result] || ["off", "연결됨 · 아직 확인하지 않았어요"];
+}
+function renderKeyRows() {
+  if (!ACCOUNTS || !ACCOUNTS.key_rows) return;
+  const a = ACCOUNTS;
+  $("key-rows").innerHTML = ["claude", "openai"].map((name) => {
+    const r = a.key_rows[name], [kind, text] = keyRowState(a, name), working = keyRechecking === name, using = CONN.ready && a.client !== "cli" && a.using === name && r.on;
+    return `<li class="key-item">
+      <div class="key-item-head"><strong>${KEY_LABEL[name]} API 키</strong>${using ? '<span class="tag">지금 쓰는 중</span>' : ""}${r.tail ? `<span class="mono muted" title="키의 끝 네 글자">…${esc(r.tail)}</span>` : ""}</div>
+      <p class="key-state ${kind}">${KEY_ICON[kind] ? ico(KEY_ICON[kind]) : ""}<span>${esc(working ? "확인하는 중이에요…" : text)}</span></p>
+      ${r.at && !working ? `<p class="hint">마지막 확인 ${esc(keyTime(r.at))}</p>` : ""}
+      ${r.on ? `<div class="key-item-acts"><button type="button" id="key-recheck-${name}" class="btn small"${keyRechecking ? " disabled" : ""}>다시 확인</button>${a.keys_saved[name] ? `<button type="button" id="key-del-${name}" class="btn quiet small"${keyRechecking ? " disabled" : ""}>지우기</button>` : '<span class="hint">.env나 환경 변수의 키예요</span>'}</div>` : ""}
+    </li>`;
+  }).join("");
+}
+function askKeyDelete(name) { keyDeleting = name; renderKeyDelete(); $("key-delete-no").focus(); }
+async function recheckKey(name) {
+  if (keyRechecking) return;
+  keyRechecking = name;
+  renderKeyRows();
+  const r = await api("/api/key/check", { name });
+  keyRechecking = null;
+  if (r.ok) {
+    renderAccounts(r.data);
+    if (ACCOUNTS.using === name) setKeyBad(r.data.key_check === "invalid"); // 지금 쓰는 키가 거절되면 머리의 '키 확인 필요'도 따른다
+    const [, text] = KEY_RESULT[r.data.key_check] || ["", "확인하지 못했어요"];
+    say(`${KEY_LABEL[name]} 키를 다시 확인했어요. ${text}`);
+  } else $("conn-note").textContent = errorNote(r.error).text;
+  renderKeyRows();
+  const again = $(`key-recheck-${name}`);
+  if (again) again.focus();
 }
 /* ── 키 칸의 상태: 비어 있음 → 입력 중(꼴 맞음·틀림) → 확인하는 중 → 쓸 수 있어요 / 거절됨 / 확인하지 못함. 공급자마다 마지막 결과를 따로 둔다 ── */
 const KEYUI = { claude: null, openai: null }; // {kind: ok·warn·error, text, retry, raw}. raw: 그 결과를 받은 때의 입력(입력이 달라지면 그 결과는 보이지 않는다)
@@ -2287,11 +2327,14 @@ async function saveKey(force) {
 }
 
 async function deleteKey() {
-  const name = keyName();
+  const name = keyDeleting;
+  if (!name) return;
   $("key-delete-yes").disabled = $("key-delete-no").disabled = true; // 요청 중에는 다시 누르지 못하게
   const r = await accounts("/api/key/delete", { name }, `${KEY_LABEL[name]} 키를 지웠어요.`);
   $("key-delete-yes").disabled = $("key-delete-no").disabled = false;
+  keyDeleting = null;
   if (r.ok) { KEYUI[name] = null; renderKeyStatus(); }
+  renderKeyDelete();
   if (r.ok && ACCOUNTS.keys[name]) $("conn-note").textContent = `${KEY_LABEL[name]} 키를 지웠어요. 그래도 .env나 환경 변수에 키가 있어 계속 연결돼 있어요.`;
   $("conn-toggle").focus();
 }
@@ -2622,8 +2665,9 @@ document.addEventListener("click", (e) => {
     },
     "key-reveal": () => { const show = $("key-value").type === "password"; $("key-value").type = show ? "text" : "password"; el.textContent = show ? "숨기기" : "보기"; el.setAttribute("aria-pressed", String(show)); $("key-value").focus(); },
     "key-save": () => saveKey(false), "key-retry": () => saveKey(false), "key-force": () => saveKey(true),
-    "key-delete": () => { $("key-delete").hidden = true; $("key-delete-confirm").hidden = false; $("key-delete-no").focus(); },
-    "key-delete-no": () => { renderKeyDelete(); $("key-delete").focus(); }, "key-delete-yes": deleteKey,
+    "key-recheck-claude": () => recheckKey("claude"), "key-recheck-openai": () => recheckKey("openai"),
+    "key-del-claude": () => askKeyDelete("claude"), "key-del-openai": () => askKeyDelete("openai"),
+    "key-delete-no": () => { const name = keyDeleting; keyDeleting = null; renderKeyDelete(); if (name) $(`key-del-${name}`).focus(); }, "key-delete-yes": deleteKey,
     "models-open": () => { toggleConn(false); openModels(); }, "models-close": () => { $("models").close ? $("models").close() : $("models").removeAttribute("open"); $("conn-toggle").focus(); },
     "tour-open": openTour, "tour-skip": () => { const last = tourAt === TOUR.length - 1; closeTour(); if (last && !CONN.ready) toggleConn(true); }, "tour-prev": () => tourStep(-1), "tour-next": () => tourStep(1),
     "drop": () => $("new-files").click(), "read-files": readFiles, "asset-close": closeAsset,
@@ -2655,7 +2699,7 @@ document.addEventListener("change", (e) => {
   if (e.target.id === "new-theme") return syncForm();
   if (e.target.id === "p-lang-select") return void (e.target.value !== S.problem.language && wantLanguage(e.target.value));
   if (e.target.id === "upd-auto") return void updAct("auto", { on: e.target.checked });
-  if (e.target.name === "keyname") { renderKeyDelete(); return renderKeyStatus(); }
+  if (e.target.name === "keyname") return renderKeyStatus();
   if (e.target.name === "client") accounts("/api/client", { client: e.target.value }, e.target.value === "cli" ? "이 PC의 Claude Code로 튜터를 불러요." : "연결한 AI로 튜터를 불러요.");
 });
 
