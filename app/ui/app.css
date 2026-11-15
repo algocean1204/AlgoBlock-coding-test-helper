@@ -713,6 +713,10 @@ pre.code.bad { color: var(--danger); }
 .solo-sec h3 .ico { width: 16px; height: 16px; color: var(--accent-text); }
 .solo-sec h3 .muted { font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .solo-sec h4 { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 13px; font-weight: 700; color: var(--muted); }
+.solo-sec > .hint-blocks { justify-self: stretch; }
+.hint-blocks { display: grid; gap: 12px; }
+.hint-blocks > li { display: grid; gap: 8px; justify-items: start; }
+.hint-blocks .hints { justify-self: stretch; }
 .hints { display: grid; gap: 8px; }
 .hints li { padding: 10px 14px; border-radius: var(--r-md); background: var(--fill); animation: rise 0.25s var(--ease); }
 .hint-no { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; color: var(--muted); }

@@ -62,6 +62,7 @@ import casegen  # noqa: E402  (효율성 케이스의 큰 입력을 다시 만�
 import casemake  # noqa: E402  (등록한 문제의 풀이를 단순 풀이·생성기와 채점기로 대조해 숨은 케이스를 만든다)
 from problemkit import fits  # noqa: E402  (값이 형에 맞는가. 기본 문제를 검사할 때 쓰는 것)
 from stubs import program_stub, stub  # noqa: E402  (형에서 언어별 시작 코드, 표준 입출력 뼈대)
+import single  # noqa: E402  (데이터 폴더 잠금)
 import updater  # noqa: E402  (새 버전 확인과 업데이트)
 from app.llm import keycheck  # noqa: E402  (키를 저장하기 전에 공급자에 확인)
 
@@ -74,6 +75,7 @@ OWN_FILE = DATA / "own_way.json"  # '끝까지 내 방식으로 쓰기'를 켠 �
 CODES_FILE = DATA / "codes.json"  # 언어마다 쓰던 코드 {문항: {언어: 코드}}. 언어를 바꿨다 돌아와도 남아 있게
 ATTEND_FILE = DATA / "attendance.json"  # 출석한 날 ["YYYY-MM-DD", …](기기 현지 날짜)
 CHECKPOINTS_FILE = DATA / "checkpoints.json"  # 언어마다 마지막 체크포인트 {문항: {언어: {code: 직접 풀기 글, blocks: 블록 칸, at: ISO 시각}}}
+HINTS_FILE = DATA / "hints.json"  # 혼자 풀기에서 블록마다 이번 풀이에 본 힌트 수 {문항: {"from": 그때의 hints_at_reset, "seen": {블록 번호: 수}}}. 없거나 맞지 않으면 본 수를 블록 1부터 차례로 나눈다
 TOUCHED_FILE = DATA / "touched.json"  # 문제를 마지막으로 손댄 시각 {문항: ISO 시각}(코드 저장·실행·제출·힌트). '이어서 풀기'가 가장 최근에 쓰던 문제를 고른다
 KINDS = ("example", "accuracy", "efficiency")  # 케이스 종류: 공개 예시, 숨긴 정확성, 숨긴 효율성(큰 입력)
 STATIC = {"/": ("index.html", "text/html"), "/index.html": ("index.html", "text/html"),
@@ -1392,7 +1394,7 @@ def delete(body: dict) -> dict:
             t.store.delete_problem(pid)
             if t.index is not None:  # 비슷한 문항 찾기 색인에서도 뺀다
                 t.index.delete(pid)
-        for path in (BLOCKS_FILE, OWN_FILE, CODES_FILE, CHECKPOINTS_FILE, TOUCHED_FILE):
+        for path in (BLOCKS_FILE, OWN_FILE, CODES_FILE, CHECKPOINTS_FILE, TOUCHED_FILE, HINTS_FILE):
             write_json(path, {key: value for key, value in read_json(path, {}).items() if key != pid})
         shutil.rmtree(ASSETS / pid, ignore_errors=True)
         shutil.rmtree(LARGE / pid, ignore_errors=True)
@@ -1809,10 +1811,35 @@ def hint_rows(t, pid: str) -> list[dict]:
             for n, block in enumerate(blocks, 1) for k, hint in enumerate(block["hints"][:3], 1)]
 
 
-def hints_shown(rows: list[dict], seen: int) -> list[dict]:
-    """본 힌트까지. 블록 이름은 그 블록의 힌트를 모두 본 뒤에만 싣는다(이름이 답의 일부다. 화면에서 가리지 않고 보내지 않는다)."""
-    done = {row["block"] for row in rows[:seen] if row["last"]}
-    return [{key: value for key, value in row.items() if key != "last" and (key != "name" or row["block"] in done)} for row in rows[:seen]]
+def hint_counts(study: dict, rows: list[dict], saved) -> dict[int, int]:
+    """블록마다 이번 풀이에서 본 힌트 수 {블록 번호: 수}. 남겨 둔 수가 이번 풀이의 것이고 합이 본 힌트 수와 같을 때만 쓴다.
+    아니면(예전 기록, '처음부터' 뒤, 계획이 바뀜) 본 수를 블록 1부터 차례로 나눈다(블록마다 고르기 전과 같은 결과)."""
+    sizes = Counter(row["block"] for row in rows)
+    seen = saved.get("seen") if isinstance(saved, dict) and saved.get("from") == study["hints_at_reset"] else None
+    if isinstance(seen, dict):
+        got = {n: seen.get(str(n), 0) for n in sizes}
+        if all(isinstance(k, int) and 0 <= k <= sizes[n] for n, k in got.items()) and sum(got.values()) == hints_now(study, rows):
+            return got
+    left, out = hints_now(study, rows), {}
+    for n, size in sizes.items():
+        out[n] = min(size, left)
+        left -= out[n]
+    return out
+
+
+def hints_shown(rows: list[dict], counts: dict[int, int]) -> list[dict]:
+    """본 힌트(블록 차례, 그 안의 힌트 차례). 블록 이름은 그 블록의 힌트를 모두 본 뒤에만 싣는다(이름이 답의 일부다. 화면에서 가리지 않고 보내지 않는다)."""
+    seen = [row for row in rows if row["step"] <= counts.get(row["block"], 0)]
+    done = {row["block"] for row in seen if row["last"]}
+    return [{key: value for key, value in row.items() if key != "last" and (key != "name" or row["block"] in done)} for row in seen]
+
+
+def hint_blocks(rows: list[dict], counts: dict[int, int]) -> list[dict]:
+    """힌트 목차: 블록마다 번호, 종류, 본 수와 모두의 수. 이름은 그 블록의 힌트를 모두 본 뒤에만."""
+    sizes = Counter(row["block"] for row in rows)
+    firsts = {row["block"]: row for row in reversed(rows)}
+    return [{"block": n, "kind": firsts[n]["kind"], "seen": counts[n], "total": size, **({"name": firsts[n]["name"]} if counts[n] >= size else {})}
+            for n, size in sizes.items()]
 
 
 QUOTE_PAIRS = {"'": "'", '"': '"', "‘": "’", "“": "”"}
@@ -2402,15 +2429,25 @@ def handle(path: str, body: dict) -> tuple[int, dict]:
             if not rows:
                 raise Refuse("이 문제에는 미리 만들어 둔 힌트가 없어요. 튜터를 연결하면 질문으로 도와드려요.", 404, "not_found")
             study = t.store.study(pid)
-            seen = hints_now(study, rows)
+            by_block = hint_counts(study, rows, read_json(HINTS_FILE, {}).get(pid))
+            sizes = Counter(row["block"] for row in rows)
+            want = body.get("block")  # 막힌 블록의 힌트부터 연다(1부터). 주지 않으면 아직 다 보지 않은 첫 블록
+            if want is not None and (type(want) is not int or want not in sizes):
+                raise Refuse("힌트를 볼 블록을 다시 골라 주세요.", field="block")
+            seen = sum(by_block.values())
+            view = lambda: {"seen": seen, "total": len(rows), "done": seen == len(rows), "shown": hints_shown(rows, by_block), "blocks": hint_blocks(rows, by_block)}  # noqa: E731
             if body.get("peek") is True:  # 이번 풀이에서 본 힌트만 다시 보여 준다(문제를 다시 열었을 때). 새 힌트를 열지 않는다
-                return 200, {"seen": seen, "total": len(rows), "done": seen == len(rows), "shown": hints_shown(rows, seen)}
-            if seen < len(rows):  # 다 본 뒤에는 마지막 힌트를 다시 준다
+                return 200, view()
+            block = want or next((n for n in sizes if by_block[n] < sizes[n]), max(sizes))
+            if by_block[block] < sizes[block]:  # 그 블록의 힌트를 다 본 뒤에는 그 블록의 마지막 힌트를 다시 준다
+                by_block[block] += 1
                 seen += 1
-                t.store.set_study(pid, hints_seen=study["hints_seen"] + 1)  # 본 힌트 수는 누적이다
+                t.store.set_study(pid, hints_seen=study["hints_seen"] + 1)  # 본 힌트 수는 누적이다(도움으로 센다)
                 t.store.mark_help(pid)
-            shown = hints_shown(rows, seen)
-            return 200, {**shown[-1], "seen": seen, "total": len(rows), "done": seen == len(rows), "shown": shown}
+                write_json(HINTS_FILE, {**read_json(HINTS_FILE, {}), pid: {"from": study["hints_at_reset"], "seen": {str(n): k for n, k in by_block.items()}}})
+            body_now = view()
+            opened = next((row for row in reversed(body_now["shown"]) if row["block"] == block), None)
+            return 200, {**(opened or {}), **body_now}
         if path == "/api/solution":  # 기본 문제는 실린 해설, 등록한 문제는 엔진이 만들어 둔 그 언어의 풀이 가이드
             own_guide = None if row else t.store.load(pid).solution
             if row is None and own_guide is None:
@@ -2610,21 +2647,42 @@ def stop_grading(*_) -> None:
 atexit.register(stop_grading)
 
 
-def main() -> None:
+def start() -> "ThreadingHTTPServer | str":
+    """잠금과 포트를 잡고 서버를 돌릴 준비를 한다. 새로 띄우지 못하면(이미 켜져 있거나 포트가 막힘) 그 안내 글을 돌려준다."""
+    port = int(os.environ.get("ALGOBLOCK_UI_PORT", "8791"))
+    other = single.guard(DATA, port)  # 켜져 있으면 키 읽기·업데이트 확인·미리 준비를 하나 더 돌리지 않는다
+    if other is not None:
+        return single.running_message(other)
+    try:
+        httpd = ThreadingHTTPServer(("127.0.0.1", port), Handler)
+    except OSError as exc:  # 잠금은 잡았으니 다른 프로그램(또는 다른 데이터 폴더의 앱)이 이 포트를 쓰고 있다
+        return f"{port}번 포트를 이미 다른 프로그램이 쓰고 있어요. 새로 띄우지 않았습니다: {exc}"
     load_keys()
     updater.start()  # 켤 때(마지막 확인에서 24시간이 지났으면)와 24시간마다 새 버전을 뒤에서 본다(실패하면 1시간부터 늘려 다시)
     if threading.current_thread() is threading.main_thread():  # 창(window.py)에서 띄우면 스레드라 신호를 받을 수 없다
         signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))  # 끝내기 전에 atexit의 stop_grading이 돈다
-    port = int(os.environ.get("ALGOBLOCK_UI_PORT", "8791"))
-    server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
-    server.daemon_threads = True
+    httpd.daemon_threads = True
     print(f"AlgoBlock: http://127.0.0.1:{port}", flush=True)
+    return httpd
+
+
+def serve(httpd) -> None:
     try:
-        server.serve_forever()
+        httpd.serve_forever()
     except KeyboardInterrupt:
         pass
     finally:
         stop_grading()
+
+
+def main() -> bool:
+    """서버를 띄워 끝날 때까지 돈다. 새로 띄우지 못했으면 안내를 표준 오류에 쓰고 False."""
+    httpd = start()
+    if isinstance(httpd, str):
+        print(httpd, file=sys.stderr, flush=True)
+        return False
+    serve(httpd)
+    return True
 
 
 if __name__ == "__main__":

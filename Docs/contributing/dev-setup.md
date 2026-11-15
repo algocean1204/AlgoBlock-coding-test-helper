@@ -33,7 +33,7 @@ cd app && uv run --no-project --python 3.12 --with langgraph --with pypdf python
 cd app && uv run --no-project --python 3.12 --with langgraph --with pywebview python ui/window.py
 ```
 
-같은 포트에 서버가 이미 떠 있으면 새로 띄우지 않고 그 화면을 연다.
+같은 데이터 폴더를 이미 다른 AlgoBlock이 쓰고 있으면(앱을 두 번 켠 경우) 새로 띄우지 않고 안내만 한다. 포트를 다른 프로그램이 쓰고 있어도 새로 띄우지 않는다.
 
 ## 환경 변수
 
