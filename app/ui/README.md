@@ -89,7 +89,7 @@ GET
 | `/`, `/index.html`, `/app.css`, `/app.js`, `/icon.svg`, `/favicon.svg`, `/tour-demos.js`, `/tour-demos.css`, `/PretendardVariable.woff2` | 정적 파일 |
 | `/asset/<문제 id>/<번호>` | 등록할 때 올린 원본. 등록한 문제만 된다. `X-Content-Type-Options: nosniff` |
 
-POST, 문제와 무관한 것 15개
+POST, 문제와 무관한 것 16개
 
 | 경로 | 설명 |
 | --- | --- |

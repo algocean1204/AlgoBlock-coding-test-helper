@@ -2563,7 +2563,6 @@ const PANE = ["problem", "code", "tutor"], PANE_NAME = ["문제", "코드"];
 const PANE_DEFAULT = [25.83, 37.75, 36.42]; // 저장한 값이 없을 때의 몫. CSS 기본(0.78 : 1.14 : 1.1)과 같은 비율
 let paneShares = null; // 문제·코드·튜터 칸의 몫. null이면 CSS 기본 배치
 let paneTimer = null, paneDrag = null;
-const round2 = (x) => Math.round(x * 100) / 100;
 const paneWidth = (i) => $(`pane-${PANE[i]}`).getBoundingClientRect().width;
 const paneMin = (i) => parseFloat(getComputedStyle($("panes")).getPropertyValue(`--min-${PANE[i]}`)); // 최소 너비는 CSS의 한 곳(--min-*)에서 읽는다
 const narrowPanes = () => matchMedia("(max-width: 1179px)").matches; // 문제 칸이 위 띠가 되어 코드·튜터 둘만 나뉜다
@@ -2582,14 +2581,39 @@ function paneBase(sep) {
   return { left, right, shares, from: width[left], span: width[left] + width[left + 1], min: [paneMin(left), paneMin(left + 1)], sum: shares[left] + right.reduce((n, i) => n + shares[i], 0) };
 }
 
-/** 왼쪽 칸을 want(px)로 옮긴다. 두 칸의 최소 너비 밖으로는 가지 않는다. 두 칸 밖의 몫은 그대로다 */
-function paneMove(b, want, save) {
+/* pane-pure:start (DOM을 읽지 않는 계산. test_server.py가 이 둘레를 떼어 서버가 받는 범위와 맞는지 본다) */
+const round2 = (x) => Math.round(x * 100) / 100;
+
+/** 세 몫을 서버가 받는 범위(각각 5에서 90, 합 100)로 맞춘다. 범위 밖으로 나간 만큼은 keep(끈 칸)이 아닌 칸이 여유가 큰 쪽부터 받는다 */
+function paneFit(shares, keep) {
+  const out = shares.map((x) => Math.min(90, Math.max(5, x)));
+  let diff = 100 - out[0] - out[1] - out[2];
+  const order = [0, 1, 2].filter((i) => i !== keep).sort((a, b) => (diff > 0 ? out[a] - out[b] : out[b] - out[a]));
+  order.push(keep);
+  for (const i of order) {
+    const step = Math.min(90, Math.max(5, out[i] + diff)) - out[i];
+    out[i] += step;
+    diff -= step;
+  }
+  const fit = out.map(round2), room = fit.map((x) => Math.min(x - 5, 90 - x));
+  const at = room.indexOf(Math.max(...room)); // 반올림 오차는 여유가 가장 큰 칸이 받는다
+  fit[at] = round2(fit[at] + 100 - fit[0] - fit[1] - fit[2]);
+  return fit;
+}
+
+/** 왼쪽 칸을 want(px)로 옮긴 몫을 돌려준다. 두 칸의 최소 너비 밖으로는 가지 않는다. 두 칸 밖의 몫은 되도록 그대로다 */
+function paneNext(b, want) {
   const left = Math.min(Math.max(want, b.min[0]), Math.max(b.min[0], b.span - b.min[1]));
-  const next = b.shares.slice(), mine = round2(b.sum * left / b.span), rest = round2(b.sum - mine);
+  const next = b.shares.slice(), mine = round2(b.sum * left / b.span), rest = b.sum - mine;
   next[b.left] = mine;
   if (b.right.length === 1) next[b.right[0]] = rest;
-  else { next[1] = round2(rest * b.shares[1] / (b.shares[1] + b.shares[2])); next[2] = round2(rest - next[1]); }
-  paneSet(next, save);
+  else { next[1] = rest * b.shares[1] / (b.shares[1] + b.shares[2]); next[2] = rest - next[1]; }
+  return paneFit(next, b.left);
+}
+/* pane-pure:end */
+
+function paneMove(b, want, save) {
+  paneSet(paneNext(b, want), save);
 }
 
 /** 몫을 화면에 적는다(null이면 기본). save가 참이면 잠깐 뒤 서버에 한 번 적는다 */
@@ -2629,12 +2653,13 @@ function paneAria() {
 }
 
 function paneKey(e) {
-  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  if (e.ctrlKey || e.metaKey || e.altKey) return false;
   const b = paneBase(e.target), step = e.shiftKey ? 96 : 24;
   const want = { ArrowLeft: b.from - step, ArrowRight: b.from + step, Home: 0, End: Infinity }[e.key];
-  if (want === undefined) return;
+  if (want === undefined) return false; // 다루지 않는 키(Esc 등)는 다른 곳으로 넘긴다
   e.preventDefault();
   paneMove(b, want, true);
+  return true;
 }
 
 /** 끌기를 마친다. cancel이면 끌기 전 너비로 되돌린다(Esc·포인터를 빼앗길 때) */
@@ -2647,7 +2672,8 @@ function paneEnd(e, cancel) {
   document.body.classList.remove("resizing");
   try { d.sep.releasePointerCapture(d.id); } catch { /* 이미 놓았다 */ }
   if (cancel) return paneSet(d.before, false);
-  if (e.clientX === d.x) return; // 누르기만 했다(두 번 누르기의 첫 번째 같은)
+  if (!d.moved) return; // 누르기만 했다(두 번 누르기의 첫 번째 같은)
+  if (e.clientX === d.x) return paneSet(d.before, false); // 처음 자리로 돌아와 놓았다. 프레임에 적힌 너비를 걷는다
   paneMove(d.base, d.base.from + e.clientX - d.x, true);
 }
 
@@ -2665,6 +2691,7 @@ document.addEventListener("pointermove", (e) => {
   const d = paneDrag;
   if (!d || e.pointerId !== d.id) return;
   d.at = e.clientX;
+  d.moved = true;
   if (!d.frame) d.frame = requestAnimationFrame(() => { d.frame = 0; paneMove(d.base, d.base.from + d.at - d.x, false); }); // 한 프레임에 한 번
 });
 document.addEventListener("pointerup", (e) => paneEnd(e, false));
@@ -2862,7 +2889,7 @@ document.addEventListener("keydown", (e) => {
     return $(el.dataset.send).click();
   }
   if (e.key === "Escape" && paneDrag) return paneEnd(e, true); // 끌던 것은 처음 너비로
-  if (el.classList && el.classList.contains("sep")) return paneKey(e);
+  if (el.classList && el.classList.contains("sep") && paneKey(e)) return;
   if (e.key === "Escape" && $("more").open) { $("more").open = false; return $("more").querySelector("summary").focus(); }
   if (e.key === "Escape" && !$("conn-panel").hidden && !el.matches("textarea")) return toggleConn(false);
   if (el.getAttribute && el.getAttribute("role") === "tab" && (e.key === "ArrowRight" || e.key === "ArrowLeft")) {

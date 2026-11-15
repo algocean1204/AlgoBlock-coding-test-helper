@@ -2014,6 +2014,37 @@ def pane_widths() -> None:
         server.write_json(server.PREFS_FILE, saved)
 
 
+def pane_fit() -> None:
+    """칸 너비 계산(app.js의 paneNext)이 어떤 창 너비·몫·글쇠에서도 서버가 받는 범위(각각 5~90, 합 99~101)의 값만 내는지 본다.
+    혼자 풀기에서 남은 몫을 코드와 튜터로 나누는 길과 아주 넓은 창에서 최소 너비에 걸린 길을 모두 지난다."""
+    import re
+    import shutil
+    node = shutil.which("node")
+    if not node:
+        return print("node가 없어 칸 너비 계산 시험은 건너뜀")
+    source = re.search(r"/\* pane-pure:start.*?\*/(.*?)/\* pane-pure:end \*/", (HERE / "app.js").read_text(encoding="utf-8"), re.S).group(1)
+    script = source + """
+let seed = 7;
+const rnd = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
+const out = [];
+const triple = () => { const a = rnd() * 100, b = rnd() * (100 - a); return [a, b, 100 - a - b].sort(() => rnd() - 0.5); }; // 범위 밖 몫도 섞는다(아주 넓은 창에서 보이는 너비로 다시 잡은 값)
+for (let n = 0; n < 4000; n++) {
+  const left = rnd() < 0.5 ? 0 : 1, railed = left === 0 && rnd() < 0.5, span = 500 + rnd() * 12000, shares = n % 3 ? triple() : [25.83, 37.75, 36.42];
+  const right = railed ? [1, 2] : [left + 1];
+  const b = { left, right, shares, span, min: left === 0 ? [260, 390] : [rnd() < 0.5 ? 390 : 320, rnd() < 0.5 ? 370 : 300], sum: shares[left] + right.reduce((x, i) => x + shares[i], 0) };
+  for (const want of [0, Infinity, -1e9, rnd() * span, b.min[0], span - b.min[1]]) out.push([left, railed, want === Infinity ? 1e12 : want, paneNext(b, want)]);
+}
+// 혼자 풀기에서 문제 칸을 끝까지: 남은 몫을 나누어도 튜터 몫이 5 아래로 가지 않고, 끈 칸(문제)은 그대로다
+const repro = paneNext({ left: 0, right: [1, 2], shares: [10.37, 74.88, 14.75], span: 2000, min: [260, 390], sum: 100 }, 1e12);
+console.log(JSON.stringify({ out, repro }));
+"""
+    got = json.loads(subprocess.run([node, "-e", script], capture_output=True, text=True, check=True).stdout)
+    assert len(got["out"]) == 4000 * 6
+    bad = [row for row in got["out"] if not server.panes_ok(row[3])]
+    assert not bad, bad[:3]
+    assert server.panes_ok(got["repro"]) and got["repro"][0] == 80.5 and got["repro"][2] >= 5, got["repro"]
+
+
 def stages() -> None:
     """과정별 모델: 급과 추론 정도를 고르면 저장되고 바로 쓰인다. 빈 값은 기본값. 모르는 과정·급·정도는 거절한다.
     예전 설정(테마별 모델 이름, Grok·OpenRouter 키)은 조용히 옮기거나 버린다."""
@@ -2381,6 +2412,7 @@ def main() -> None:
         assert exc.status == 409
     color_tokens()
     pane_widths()
+    pane_fit()
     stages()
     newest_models()
     read_check()
