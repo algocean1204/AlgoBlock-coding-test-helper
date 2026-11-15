@@ -952,6 +952,20 @@ def chair_found() -> None:
     assert status == 200 and body["open_count"] == 2, body
 
 
+def guide_spoken() -> None:
+    """튜터와 차례로: 말로 빈칸을 맞혀도 다음 블록이 열리지 않는다(코드 칸이 빈 채 지나가 완료처럼 보였다). 블록 코드 확인이 통과해야 연다."""
+    from tutor.turn.moves import WRITE_TIP
+    pid = server.register({"title": FIRST["title"], "text": FIRST["text"], "cases": [{"input": e["input"], "expected": e["expected"]} for e in FIRST["examples"]]})["id"]
+    with server.tutor() as t:
+        t.adopt(pid, FIRST["ready"])
+    call("/api/turn", id=pid, mode="guide", event="start")
+    with use_llm(FakeLlm({"guide.judge": ["[check]Y g"]})):
+        body = call("/api/turn", id=pid, mode="guide", event="message", text="이름마다 몇 번 나왔는지 세요")[1]
+    assert body["open_count"] == 1 and body["messages"][-1]["text"] == WRITE_TIP and body["messages"][-1]["block_index"] == 0, body
+    body = call("/api/turn", id=pid, mode="guide", event="block_filled", block_id="b1", code="\n".join(LINES[:5]))[1]
+    assert body["open_count"] == 2, body
+
+
 def language_memory() -> None:
     """마지막으로 고른 언어를 기억한다: 처음 여는 기본 문제는 그 언어로(지원할 때), 이미 연 문제는 그 문제의 언어 그대로."""
     with server.tutor() as t:
@@ -2534,6 +2548,7 @@ def main() -> None:
         own_way_flow()
         state_names_by_mode()
         chair_found()
+        guide_spoken()
         language_memory()
         no_tool()
         results()

@@ -578,8 +578,8 @@ pre.code.bad { color: var(--danger); }
 .block-result { font-size: 13px; line-height: 1.5; }
 .block-result.is-pass { color: var(--success); font-weight: 600; }
 .block-result.is-fail { color: var(--text); }
-.block.is-found .no { background: var(--success-soft); color: var(--success); }
-.block.is-found:is(.st-wait, .st-stale, .st-skip, .st-fail) .no { background: var(--fill); color: var(--muted); } /* 통과하지 않은 앞 블록을 초록 원으로 두지 않는다 */
+.block.is-found .no { background: var(--fill); color: var(--muted); } /* 통과하지 않은 앞 블록(코드 칸이 빈 블록 포함)을 초록 원으로 두지 않는다 */
+.block.is-found.st-pass .no { background: var(--success-soft); color: var(--success); }
 .block.is-current { box-shadow: var(--shadow-lift); }
 .block.is-current .no { background: var(--accent); color: var(--on-accent); }
 .block.is-current .block-name { color: var(--accent-text); }
