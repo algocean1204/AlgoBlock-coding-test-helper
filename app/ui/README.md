@@ -169,7 +169,7 @@ POST, 문제 하나에 대한 것 19개. 본문에 `id`가 필요하다.
 
 ## 디자인
 
-- 색은 `app.css` 맨 위 `:root`의 토큰 이름으로만 쓴다. 바탕 `--bg`(#F5F5F7), 면 `--surface`(#FFFFFF), 강조 `--accent`(#0071E3) 하나, 글 `--text`(#1D1D1F). 블록 종류 색(`--k-*`)은 기호에만 쓴다. 밝은 화면과 어두운 화면을 모두 지원한다.
+- 색은 `app.css` 맨 위 `:root`의 토큰 이름으로만 쓴다. 바탕 `--bg`(#F5F5F7), 면 `--surface`(#FFFFFF), 강조 `--accent`(#0071E3) 하나, 글 `--text`(#1D1D1F). 블록 종류 색(`--k-*`)은 기호에만 쓴다. 밝은 화면과 어두운 화면을 모두 지원한다. 어두운 값은 `:root[data-scheme="dark"]` 한 블록에 있고, `<head>`의 작은 스크립트가 첫 그림 전에 `<html data-scheme>`을 `light`나 `dark`로 정한다(지금은 운영체제 설정을 따른다).
 - 글꼴은 맥에서 시스템 글꼴(`-apple-system`)을 먼저 쓰고, 그 밖에서는 `PretendardVariable.woff2`를 쓴다(`@font-face`).
 - 아이콘은 Phosphor Icons bold(MIT, phosphoricons.com) 한 벌이다. `index.html`의 `<symbol>`로 들어 있다.
 - 글꼴 라이선스는 SIL Open Font License 1.1이다. 전문은 `PretendardVariable-LICENSE.txt`에 있다.

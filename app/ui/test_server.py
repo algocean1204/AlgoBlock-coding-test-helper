@@ -1781,6 +1781,25 @@ def upload() -> None:
     httpd.server_close()
 
 
+def color_tokens() -> None:
+    """화면 색: 라이트는 :root, 다크는 :root[data-scheme="dark"] 한 벌. 부품 규칙에는 색 값을 박지 않는다."""
+    import re
+    css = (HERE / "app.css").read_text(encoding="utf-8")
+    html = (HERE / "index.html").read_text(encoding="utf-8")
+    assert "prefers-color-scheme" not in css  # 운영체제 설정은 머리의 스크립트가 읽어 data-scheme에 옮긴다
+    dark_open = '\n:root[data-scheme="dark"] {\n'
+    assert css.count(dark_open) == 1
+    dark = css.split(dark_open)[1].split("\n}")[0]
+    light = css.split("\n:root {\n")[1].split("\n}")[0]
+    for name in ("--thumb", "--scrim", "--code-gutter", "--code-selection", "--syn-keyword", "--syn-string", "--syn-comment", "--syn-number", "--syn-function", "--syn-type"):
+        assert f"{name}:" in light and f"{name}:" in dark, name  # 두 화면이 모두 값을 가진다
+    rest = css.split("/* ── 바탕 ── */", 1)[1]
+    assert [hit for hit in re.findall(r"#[0-9A-Fa-f]{3,8}\b|rgba?\([^)]*\)", rest) if hit != "rgb(255 255 255 / 0.2)"] == []  # 남긴 것: 강조색 면 위의 흰 칠 둘(위), 고르기 화살표 그림(%23)
+    assert "var(--code-gutter)" in rest and "var(--thumb)" in rest and "var(--scrim)" in rest
+    assert html.index("applyScheme(") < html.index('href="app.css"')  # 첫 그림 전에 정한다
+    assert html.count('name="theme-color"') == 1 and 'data-scheme-pref="system"' in html
+
+
 def stages() -> None:
     """과정별 모델: 급과 추론 정도를 고르면 저장되고 바로 쓰인다. 빈 값은 기본값. 모르는 과정·급·정도는 거절한다.
     예전 설정(테마별 모델 이름, Grok·OpenRouter 키)은 조용히 옮기거나 버린다."""
@@ -2144,6 +2163,7 @@ def main() -> None:
         raise AssertionError("받을 새 버전이 없으면 거절한다")
     except server.Refuse as exc:
         assert exc.status == 409
+    color_tokens()
     stages()
     newest_models()
     read_check()
