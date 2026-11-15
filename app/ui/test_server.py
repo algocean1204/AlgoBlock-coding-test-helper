@@ -1491,6 +1491,30 @@ def checks() -> None:
     assert call("/api/solution", id=other["id"], force="true")[0] == 409  # 문자열 "true"는 참이 아니다
 
 
+def key_flow() -> None:
+    """API 키: 그 공급자의 키 꼴이 아니면(빈칸·한글·다른 접두사) 저장하지 않고 까닭을 말한다. 지우기는 그 공급자의 키만, 화면에서 넣은 것만 지운다."""
+    claude, openai = "sk-ant-api03-" + "a" * 20, "sk-proj-" + "b" * 20
+    with patch.dict(os.environ, {}):
+        for name in ("ANTHROPIC_API_KEY", "OPENAI_API_KEY"):
+            os.environ.pop(name, None)
+        for name, bad in (("claude", "hello world 한글"), ("claude", "sk-ant-abc def"), ("claude", openai), ("openai", "sk-a b"), ("openai", "한글키"), ("openai", claude), ("openai", "abcdef")):
+            assert "꼴이 아니에요" in refuses("/api/key", name=name, value=bad) and bad not in refuses("/api/key", name=name, value=bad)  # 값은 글에 싣지 않는다
+        assert not server.KEY_FILE.exists() and not any(os.environ.get(env) for env in server.KEYS.values())  # 거절한 키는 파일에도 환경에도 없다
+        assert call("/api/key", name="claude", value=claude)[1]["keys"] == {"claude": True, "openai": False}
+        assert call("/api/key", name="openai", value=openai)[1]["keys"] == {"claude": True, "openai": True}
+        assert refuses("/api/key/delete", name="x") and refuses("/api/key/delete", name=["claude"])
+        after = call("/api/key/delete", name="openai")[1]["keys"]  # 지운 공급자만 빠진다
+        assert after == {"claude": True, "openai": False} and server.read_json(server.KEY_FILE, {}) == {"ANTHROPIC_API_KEY": claude}
+        try:
+            call("/api/key/delete", name="openai")
+            raise AssertionError("넣지 않은 키를 지울 수는 없다")
+        except server.Refuse as exc:
+            assert exc.status == 409 and exc.code == "key_outside", exc  # 화면에서 넣은 것이 아니면 환경(.env)은 건드리지 않는다
+        os.environ["OPENAI_API_KEY"] = "sk-outside"  # 밖(환경 변수)에서 준 키는 파일에 없으니 지우지 않는다
+        assert call("/api/accounts")[1]["keys"]["openai"] and os.environ["OPENAI_API_KEY"] == "sk-outside"
+        assert call("/api/key/delete", name="claude")[1]["keys"] == {"claude": False, "openai": True} and not server.read_json(server.KEY_FILE, {})
+
+
 def error_lines() -> None:
     """실행 오류 글에서 고른 한 줄(언어마다)."""
     samples = {
@@ -2022,6 +2046,7 @@ def main() -> None:
         edit_delete()
         checkpoints()
         prep_failed()
+        key_flow()
         stale_save()
         builtin_prepare()
         own_guide()

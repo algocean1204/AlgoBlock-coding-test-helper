@@ -80,6 +80,7 @@ STATIC = {"/": ("index.html", "text/html"), "/index.html": ("index.html", "text/
           "/tour-demos.js": ("tour-demos.js", "text/javascript"), "/tour-demos.css": ("tour-demos.css", "text/css"),  # 처음 안내의 움직이는 데모(stageshow/에서 미리 빌드, 안내를 열 때만 불러온다)
           "/PretendardVariable.woff2": ("PretendardVariable.woff2", "font/woff2")}  # 맥 밖에서 쓰는 글꼴(OFL)
 KEYS = {"claude": "ANTHROPIC_API_KEY", "openai": "OPENAI_API_KEY"}  # 지원하는 공급자는 Claude·OpenAI 둘이다(그 밖의 키는 저장돼 있어도 읽지 않는다)
+KEY_FORM = {"claude": ("Claude", "sk-ant-"), "openai": ("OpenAI", "sk-")}  # 공급자 키의 꼴: 접두사로 시작하고 영문·숫자·-·_만(빈칸·한글이 든 글은 키가 아니다)
 SAMPLE_TITLES = {"hash_library": "책을 돌려주지 않은 학생", "stack_brackets": "괄호 짝 맞추기", "brute_pairs": "카드 두 장의 합"}
 MAX_BODY = 1_000_000
 FILE_PATHS = ("/api/problems/read", "/api/problems/new", "/api/problems/edit")  # 파일을 실어 오는 요청만 본문 상한이 크다
@@ -115,8 +116,15 @@ def load_keys() -> None:
 
 
 def save_key(env_name: str, value: str) -> None:
-    saved = read_json(KEY_FILE, {})
-    saved[env_name] = value
+    write_keys({**read_json(KEY_FILE, {}), env_name: value})
+
+
+def drop_key(env_name: str) -> None:
+    """화면에서 넣은 키 가운데 그 공급자의 것만 파일에서 지운다(다른 공급자의 키와 .env는 건드리지 않는다)."""
+    write_keys({name: value for name, value in read_json(KEY_FILE, {}).items() if name != env_name})
+
+
+def write_keys(saved: dict) -> None:
     write_json(KEY_FILE, saved)
     try:
         KEY_FILE.chmod(0o600)
@@ -2217,8 +2225,21 @@ def handle(path: str, body: dict) -> tuple[int, dict]:
         value = value.strip()
         if len(value) > 400 or any(ch in value for ch in "\r\n\0"):
             raise Refuse("키가 너무 길거나 쓸 수 없는 글자가 있어요.")
+        label, prefix = KEY_FORM[body["name"]]
+        if not (value.startswith(prefix) and re.fullmatch(r"[A-Za-z0-9_-]+", value)) or (body["name"] == "openai" and value.startswith("sk-ant-")):  # Claude 키를 OpenAI 칸에 넣어도 거른다
+            raise Refuse(f"{label} 키의 꼴이 아니에요. {prefix}로 시작하고 영문·숫자·-·_만 있어야 해요. 빈칸이나 한글이 섞이지 않았는지 확인해 주세요.", field="value")
         os.environ[KEYS[body["name"]]] = value
         save_key(KEYS[body["name"]], value)  # 다음에 켜도 쓰게 이 기기에만 저장한다
+        return 200, accounts()
+    if path == "/api/key/delete":  # 화면에서 넣은 그 공급자의 키만 지운다
+        if not isinstance(body.get("name"), str) or body["name"] not in KEYS:
+            raise Refuse("지울 키 종류를 골라 주세요.")
+        env, saved = KEYS[body["name"]], read_json(KEY_FILE, {})
+        if env not in saved:
+            raise Refuse("이 키는 화면에서 넣은 것이 아니에요. 넣어 둔 곳(.env나 환경 변수)에서 지워 주세요.", 409, "key_outside")
+        if os.environ.get(env) == saved[env]:  # 환경 변수의 값이 다른 것이면(밖에서 준 키) 그대로 둔다
+            os.environ.pop(env)
+        drop_key(env)
         return 200, accounts()
     if path == "/api/update":  # 새 버전: 상태·확인·받기·바꾸기(action)
         try:

@@ -98,7 +98,7 @@ async function api(path, body) {
     const r = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}), keepalive: leaving });
     const data = await r.json();
     const out = r.ok ? { ok: true, data } : { ok: false, error: data.detail || { code: "unknown", message: "" } };
-    if (out.ok ? MODEL_PATHS.includes(path) || path === "/api/key" : out.error.code === "llm_auth_failed") setKeyBad(!out.ok);
+    if (out.ok ? MODEL_PATHS.includes(path) || path.startsWith("/api/key") : out.error.code === "llm_auth_failed") setKeyBad(!out.ok);
     return out;
   } catch (e) {
     return { ok: false, error: { code: "network", message: "" } };
@@ -2197,9 +2197,27 @@ function renderAccounts(a) {
   $("chatgpt-state").textContent = a.chatgpt ? "연결됨 · ChatGPT 요금제를 쓰는 중" : a.chatgpt_note || "연결 안 됨"; // 연결되지 않은 까닭(허락하지 않음, 자격 없음, 다시 로그인 필요)
   $("chatgpt-usage").hidden = !a.chatgpt;
   document.querySelectorAll("[data-key]").forEach((el) => { el.textContent = a.keys[el.dataset.key] ? "넣음" : ""; });
+  renderKeyDelete();
   if (a.chatgpt) { clearInterval(loginPoll); $("chatgpt-link").hidden = true; }
   if (S.view === "code" && S.problem) render();
   if (S.view === "list" && $("entries").innerHTML && !!$("note-conn") === ready) showList(); // 홈의 연결 한 줄을 새로 그린다
+}
+
+const KEY_LABEL = { claude: "Claude", openai: "OpenAI" };
+const keyName = () => document.querySelector('input[name="keyname"]:checked').value;
+/** 고른 공급자의 키가 들어 있을 때만 '지우기'를 보인다(공급자를 바꾸면 확인은 접는다). */
+function renderKeyDelete() {
+  const name = keyName(), has = !!(ACCOUNTS && ACCOUNTS.keys[name]);
+  $("key-delete-row").hidden = !has;
+  $("key-delete").textContent = `넣은 ${KEY_LABEL[name]} 키 지우기`;
+  $("key-delete-ask").textContent = `이 기기에 넣은 ${KEY_LABEL[name]} 키를 지울까요? 다른 키는 그대로예요.`;
+  $("key-delete").hidden = false;
+  $("key-delete-confirm").hidden = true;
+}
+async function deleteKey() {
+  const name = keyName(), r = await accounts("/api/key/delete", { name }, `${KEY_LABEL[name]} 키를 지웠어요.`);
+  if (r.ok && ACCOUNTS.keys[name]) $("conn-note").textContent = `${KEY_LABEL[name]} 키를 지웠어요. 그래도 .env나 환경 변수에 키가 있어 계속 연결돼 있어요.`;
+  $("conn-toggle").focus();
 }
 
 async function accounts(path, body, done) {
@@ -2527,10 +2545,11 @@ document.addEventListener("click", (e) => {
       if (r.data.latest) { toggleConn(false); openUpdate(); }
     },
     "key-save": async () => {
-      const name = document.querySelector('input[name="keyname"]:checked').value;
-      const r = await accounts("/api/key", { name, value: $("key-value").value }, "키를 넣었어요. 이제 튜터를 쓸 수 있어요.");
+      const r = await accounts("/api/key", { name: keyName(), value: $("key-value").value }, "키를 저장했어요. 키가 맞는지는 튜터를 처음 부를 때 확인해요.");
       if (r.ok) $("key-value").value = "";
     },
+    "key-delete": () => { $("key-delete").hidden = true; $("key-delete-confirm").hidden = false; $("key-delete-no").focus(); },
+    "key-delete-no": () => { renderKeyDelete(); $("key-delete").focus(); }, "key-delete-yes": deleteKey,
     "models-open": () => { toggleConn(false); openModels(); }, "models-close": () => { $("models").close ? $("models").close() : $("models").removeAttribute("open"); $("conn-toggle").focus(); },
     "tour-open": openTour, "tour-skip": () => { const last = tourAt === TOUR.length - 1; closeTour(); if (last && !CONN.ready) toggleConn(true); }, "tour-prev": () => tourStep(-1), "tour-next": () => tourStep(1),
     "drop": () => $("new-files").click(), "read-files": readFiles, "asset-close": closeAsset,
@@ -2559,6 +2578,7 @@ document.addEventListener("change", (e) => {
   if (e.target.id === "new-theme") return syncForm();
   if (e.target.id === "p-lang-select") return void (e.target.value !== S.problem.language && wantLanguage(e.target.value));
   if (e.target.id === "upd-auto") return void updAct("auto", { on: e.target.checked });
+  if (e.target.name === "keyname") return renderKeyDelete();
   if (e.target.name === "client") accounts("/api/client", { client: e.target.value }, e.target.value === "cli" ? "이 PC의 Claude Code로 튜터를 불러요." : "연결한 AI로 튜터를 불러요.");
 });
 
