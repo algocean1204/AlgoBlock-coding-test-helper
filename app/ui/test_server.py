@@ -208,7 +208,7 @@ def builtin(fake) -> None:
     assert (problem["builtin"], problem["theme"], problem["theme_name"], problem["level"], problem["languages"]) == (True, "hash", "해시", 1, ["python", "javascript"])
     assert problem["starter"].startswith("def solution(loans, k)") and problem["code"] == "" and len(problem["examples"]) == 3 and problem["examples"][0]["note"]
     assert problem["cases"]["example"] == 3 and problem["cases"]["accuracy"] >= 12 and problem["cases"]["efficiency"] == 2
-    assert problem["study"] == {"hints_seen": 0, "hints_total": 6, "solution_seen": False, "solution_open": False, "has_guide": True, "passed_now": False}
+    assert problem["study"] == {"hints_seen": 0, "hints_total": 6, "solution_seen": False, "solution_open": False, "has_guide": True, "passed_now": False, "unaided_open": True}
     assert len(opened["session"]["blocks"]) == 2  # 미리 만든 계획으로 바로 시작한다
     first = call("/api/turn", id=PID, mode="chair", event="start")[1]
     assert first["messages"][0]["text"] == FIRST["ready"]["plan"]["blocks"][0]["hints"][0]
@@ -275,7 +275,7 @@ def builtin(fake) -> None:
     passed = call("/api/submit", id=PID, code=CODE)[1]
     assert passed["ok"] and passed["score"]["efficiency"] == [2, 2] and all("input" not in case for case in passed["cases"] if case["kind"] != "example")
     study = call("/api/state", id=PID)[1]["problem"]["study"]
-    assert study == {"hints_seen": 6, "hints_total": 6, "solution_seen": True, "solution_open": True, "has_guide": True, "passed_now": True}
+    assert study == {"hints_seen": 6, "hints_total": 6, "solution_seen": True, "solution_open": True, "has_guide": True, "passed_now": True, "unaided_open": False}
     with server.tutor() as t:
         assert t.store.study(PID)["solution_before_pass"] and t.store.study(PID)["help_first_at"] and [sub["status"] for sub in t.store.submissions() if sub["problem_id"] == PID] == ["failed", "timeout", "passed"]
 
@@ -2081,6 +2081,33 @@ def tour_pictures() -> None:
     assert ".mini-head::before" in css and "padding: 28px 56px 0" in css  # 정적 그림의 틀이 움직이는 데모의 창과 같다
 
 
+def aid_note() -> None:
+    """문제 상태의 study.unaided_open: 도움 없이 푼 문제로 셀 수 있는 풀이인 동안만 참이다. 힌트, 통과, 제출 3번, 등록 문제에서는 거짓, '처음부터' 뒤에는 다시 참."""
+    from types import SimpleNamespace
+    state = lambda: call("/api/state", id=PID, mode="chair", open=True)[1]["problem"]["study"]["unaided_open"]  # noqa: E731
+    touched = server.read_json(server.TOUCHED_FILE, {})  # 제출하면 '손댄 문제'가 남는다: 뒤 시험의 '다음 문제'가 달라지지 않게 되돌린다
+    with tempfile.TemporaryDirectory() as folder, patch.object(server, "DB", Path(folder) / "aid.db"):
+        assert state() is True
+        call("/api/hint", id=PID)
+        assert state() is False  # 힌트를 쓰면 도움 없이 푼 문제에서 빠진다
+        call("/api/reset", id=PID)
+        assert state() is True  # 처음부터 뒤에는 새 풀이다
+    with tempfile.TemporaryDirectory() as folder, patch.object(server, "DB", Path(folder) / "aid.db"):
+        for n in range(2):
+            call("/api/submit", id=PID, code=f"def solution(*a):\n    return None  # {n}")
+        assert state() is True
+        call("/api/submit", id=PID, code="def solution(*a):\n    return None  # 2")
+        assert state() is False  # 제출 3번을 넘겼다
+    with tempfile.TemporaryDirectory() as folder, patch.object(server, "DB", Path(folder) / "aid.db"):
+        assert call("/api/submit", id=PID, code=f"{CODE}\n# 0")[1]["ok"] and state() is False  # 통과했다
+    server.write_json(server.TOUCHED_FILE, touched)
+    js = (HERE / "app.js").read_text(encoding="utf-8")
+    assert js.count("aidNote()") >= 4 and "‘도움 받아 통과’로 남아요" in js and "study.unaided_open" in js  # 고르는 칸, 힌트, 튜터 시작 칸, 결과 칸에서 같은 글, 서버가 준 값으로 거른다
+    study = {"reset_at": None, "help_after_reset_at": None, "help_first_at": None, "solution_before_pass": False, "hints_seen": 0}
+    assert server.unaided_open(SimpleNamespace(builtin=True), [], study, None, False) and not server.unaided_open(SimpleNamespace(builtin=False), [], study, None, False)  # 등록한 문제는 준비도에 들지 않는다
+    assert not server.unaided_open(SimpleNamespace(builtin=True), [], study, "2026-01-01T00:00:00+00:00", False)  # 튜터와 말했다
+
+
 def way_info() -> None:
     """푸는 방식 설명: 네 방식이 한 자료에서 나오고, ⓘ는 눌러 펴며(키보드·Esc), 잠긴 방식도 글이 읽히고 ⓘ가 열린다. 브라우저 동작은 화면 확인으로 본다."""
     import re
@@ -2558,6 +2585,7 @@ def main() -> None:
         report()
         pitfalls_repeated()
         home()
+        aid_note()
         own_theme()
         readiness()
         screen_flows()

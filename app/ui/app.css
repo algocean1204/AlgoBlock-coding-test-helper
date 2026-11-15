@@ -991,6 +991,7 @@ a.lv.done:hover { background: var(--lvc); color: var(--on-lv); filter: brightnes
 .rail-btn:hover { background: var(--fill-2); }
 .rail-btn .ico { width: 16px; height: 16px; color: var(--accent-text); }
 .note.kept { flex: none; margin: 8px 12px 0; }
+.aid-note { margin-top: 8px; }
 .flow-note { font-size: 13px; font-weight: 650; color: var(--accent-text); }
 .result-actions { align-items: center; }
 .next-title { max-width: 18em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
