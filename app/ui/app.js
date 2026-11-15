@@ -2230,7 +2230,8 @@ function renderKeyDelete() {
   if (has) $("key-delete-ask").textContent = `이 기기에 넣은 ${KEY_LABEL[name]} 키를 지울까요? 다른 키는 그대로예요.`;
 }
 /* ── 공급자마다 키 한 줄: 연결됨·안 됨, 끝 4자리, 마지막 확인, 다시 확인, 지우기 ── */
-const KEY_RESULT = { ok: ["ok", "쓸 수 있어요"], invalid: ["error", "거절됨 · 키가 틀려요"], denied: ["error", "거절됨 · 권한이나 한도를 확인해 주세요"], offline: ["warn", "확인하지 못했어요"] };
+const KEY_RESULT = { ok: ["ok", "쓸 수 있어요"], invalid: ["error", "거절됨 · 키가 틀려요"], denied: ["warn", "권한이 부족해요 · 모델 목록을 볼 수 없어요"],
+  limited: ["warn", "키는 맞아요 · 지금은 요청 한도에 걸려 있어요"], server: ["warn", "확인하지 못했어요 · 공급자 서버가 답하지 않았어요"], offline: ["warn", "확인하지 못했어요"] };
 const KEY_ICON = { ok: "i-check", error: "i-x", warn: "i-warn", off: "" };
 let keyRechecking = null; // 다시 확인하는 중인 공급자
 const keyTime = (iso) => { const d = new Date(iso); return Number.isNaN(d.getTime()) ? "" : d.toLocaleString("ko-KR", { month: "long", day: "numeric", hour: "numeric", minute: "2-digit" }); };
@@ -2243,30 +2244,36 @@ function keyRowState(a, name) {
 function renderKeyRows() {
   if (!ACCOUNTS || !ACCOUNTS.key_rows) return;
   const a = ACCOUNTS;
-  $("key-rows").innerHTML = ["claude", "openai"].map((name) => {
+  const html = ["claude", "openai"].map((name) => {
     const r = a.key_rows[name], [kind, text] = keyRowState(a, name), working = keyRechecking === name, using = CONN.ready && a.client !== "cli" && a.using === name && r.on;
     return `<li class="key-item">
       <div class="key-item-head"><strong>${KEY_LABEL[name]} API 키</strong>${using ? '<span class="tag">지금 쓰는 중</span>' : ""}${r.tail ? `<span class="mono muted" title="키의 끝 네 글자">…${esc(r.tail)}</span>` : ""}</div>
       <p class="key-state ${kind}">${KEY_ICON[kind] ? ico(KEY_ICON[kind]) : ""}<span>${esc(working ? "확인하는 중이에요…" : text)}</span></p>
       ${r.at && !working ? `<p class="hint">마지막 확인 ${esc(keyTime(r.at))}</p>` : ""}
-      ${r.on ? `<div class="key-item-acts"><button type="button" id="key-recheck-${name}" class="btn small"${keyRechecking ? " disabled" : ""}>다시 확인</button>${a.keys_saved[name] ? `<button type="button" id="key-del-${name}" class="btn quiet small"${keyRechecking ? " disabled" : ""}>지우기</button>` : '<span class="hint">.env나 환경 변수의 키예요</span>'}</div>` : ""}
+      ${r.on ? `<div class="key-item-acts"><button type="button" id="key-recheck-${name}" class="btn small"${keyRechecking || keyChecking ? " disabled" : ""}>다시 확인</button>${a.keys_saved[name] ? `<button type="button" id="key-del-${name}" class="btn quiet small"${keyRechecking || keyChecking ? " disabled" : ""}>지우기</button>` : '<span class="hint">.env나 환경 변수의 키예요</span>'}</div>` : ""}
     </li>`;
   }).join("");
+  if ($("key-rows").dataset.sig !== html) { // 같은 줄이면 다시 그리지 않는다(ChatGPT 로그인을 기다리며 3초마다 부를 때 초점이 달아나지 않게)
+    $("key-rows").dataset.sig = html;
+    $("key-rows").innerHTML = html;
+  }
 }
 function askKeyDelete(name) { keyDeleting = name; renderKeyDelete(); $("key-delete-no").focus(); }
 async function recheckKey(name) {
-  if (keyRechecking) return;
+  if (keyRechecking || keyChecking) return; // 키를 넣는 중이면 다시 확인하지 않는다(서로 기다린다)
   keyRechecking = name;
-  renderKeyRows();
+  renderKeyStatus();
   const r = await api("/api/key/check", { name });
   keyRechecking = null;
   if (r.ok) {
     renderAccounts(r.data);
-    if (ACCOUNTS.using === name) setKeyBad(r.data.key_check === "invalid"); // 지금 쓰는 키가 거절되면 머리의 '키 확인 필요'도 따른다
+    if (r.data.key_check === "invalid") KEYUI[name] = null; // 키가 틀렸다: 칸 아래의 옛 결과(쓸 수 있어요)는 걷는다
+    if (ACCOUNTS.using === name && ["ok", "limited"].includes(r.data.key_check)) setKeyBad(false); // 키가 맞다고 확인됐다
+    else if (ACCOUNTS.using === name && r.data.key_check === "invalid") setKeyBad(true); // 지금 쓰는 키가 거절되면 머리의 '키 확인 필요'도 따른다. 확인하지 못한 것은 그대로 둔다
     const [, text] = KEY_RESULT[r.data.key_check] || ["", "확인하지 못했어요"];
     say(`${KEY_LABEL[name]} 키를 다시 확인했어요. ${text}`);
   } else $("conn-note").textContent = errorNote(r.error).text;
-  renderKeyRows();
+  renderKeyStatus();
   const again = $(`key-recheck-${name}`);
   if (again) again.focus();
 }
@@ -2282,12 +2289,18 @@ function keyFormBad(name, raw) {
   if (v.length > 400 || !/^[A-Za-z0-9_-]+$/.test(v)) return "키에는 영문, 숫자, -, _만 있어요.";
   return "";
 }
+/** 입력한 키를 보이게(true)·가리게(false). 저장하거나 공급자를 바꾸거나 창을 닫으면 가린 상태로 돌린다. */
+function setKeyShown(show) {
+  $("key-value").type = show ? "text" : "password";
+  $("key-reveal").textContent = show ? "숨기기" : "보기";
+  $("key-reveal").setAttribute("aria-pressed", String(show));
+}
 function renderKeyStatus() {
   const name = keyName(), label = KEY_LABEL[name], raw = $("key-value").value.trim(), box = $("key-status"), saved = KEYUI[name];
   let kind = "", icon = "", text = "", retry = false;
   if (keyChecking) text = `${label}에 키를 확인하는 중이에요…`;
   else if (saved && saved.raw === raw) ({ kind, text, retry } = saved);
-  else if (!raw) text = "아직 키를 넣지 않았어요.";
+  else if (!raw) text = ACCOUNTS && ACCOUNTS.keys[name] ? "키를 바꾸려면 새 키를 붙여 넣어 주세요." : "아직 키를 넣지 않았어요.";
   else { const bad = keyFormBad(name, raw); kind = bad ? "error" : "form"; text = bad || `키 꼴이 맞아요. ‘키 넣기’를 누르면 ${label}에 확인해요.`; }
   icon = keyChecking ? DOTS : kind === "ok" || kind === "form" ? ico("i-check") : kind === "error" ? ico("i-x") : kind === "warn" ? ico("i-warn") : "";
   const sig = `${name}|${keyChecking}|${kind}|${text}|${retry}`;
@@ -2300,13 +2313,14 @@ function renderKeyStatus() {
   $("key-prefix").textContent = `${KEY_PREFIX[name]}로 시작해요.`;
   $("key-get").href = KEY_CONSOLE[name];
   $("key-get").textContent = `${label} 콘솔에서 키 받기`;
-  $("key-save").disabled = keyChecking;
+  $("key-save").disabled = keyChecking || !!keyRechecking;
   document.querySelectorAll('input[name="keyname"]').forEach((el) => { el.disabled = keyChecking; });
+  renderKeyRows(); // 줄의 단추도 넣는 중·다시 확인하는 중에 같이 잠근다
 }
 /** 키를 넣는다: 서버가 공급자에 확인한 뒤 쓸 수 있을 때만 저장한다. 확인하지 못했을 때는 force로 그래도 저장한다. */
 async function saveKey(force) {
   const name = keyName(), value = $("key-value").value;
-  if (keyChecking) return;
+  if (keyChecking || keyRechecking) return;
   const bad = value.trim() ? keyFormBad(name, value) : "키를 붙여 넣어 주세요.";
   if (bad) { KEYUI[name] = { kind: "error", text: bad, raw: value.trim() }; renderKeyStatus(); return void $("key-value").focus(); }
   KEYUI[name] = null;
@@ -2316,10 +2330,13 @@ async function saveKey(force) {
   keyChecking = false;
   if (r.ok) {
     $("key-value").value = "";
-    KEYUI[name] = r.data.key_check === "ok" ? { kind: "ok", text: "쓸 수 있는 키예요. 저장했어요.", raw: "" } : { kind: "warn", text: "확인하지 못했지만 저장했어요. 튜터를 처음 부를 때 다시 확인해요.", raw: "" };
+    setKeyShown(false);
+    KEYUI[name] = r.data.key_check === "ok" ? { kind: "ok", text: "쓸 수 있는 키예요. 저장했어요.", raw: "" }
+      : r.data.key_check === "limited" ? { kind: "warn", text: "키는 맞아요. 지금은 요청 한도에 걸려 있어요. 저장했어요.", raw: "" } // 429: 키는 맞다
+      : { kind: "warn", text: "확인하지 못했지만 저장했어요. 튜터를 처음 부를 때 다시 확인해요.", raw: "" };
     renderAccounts(r.data);
   } else {
-    const unverified = r.error.code === "key_unverified";
+    const unverified = ["key_unverified", "key_denied"].includes(r.error.code); // 확인하지 못함·권한 없음: 다시 시도하거나 그래도 저장할 수 있다
     KEYUI[name] = { kind: unverified ? "warn" : "error", text: r.error.message || errorNote(r.error).text, retry: unverified, raw: value.trim() };
   }
   renderKeyStatus();
@@ -2484,6 +2501,7 @@ function toggleConn(open) {
   $("conn-panel").hidden = !open;
   document.body.classList.toggle("conn-open", open); // 연결 창이 떠 있는 동안 주 동작은 창 안의 것 하나
   $("conn-toggle").setAttribute("aria-expanded", open ? "true" : "false");
+  if (!open) setKeyShown(false); // 창을 닫으면 입력한 키는 다시 가린다
   if (open) { $("conn-note").textContent = $("tools-note").textContent = ""; accounts(); loadTools(false); $("conn-close").focus(); } else $("conn-toggle").focus();
 }
 
@@ -2663,11 +2681,11 @@ document.addEventListener("click", (e) => {
       $("upd-note").textContent = r.data.latest ? "" : r.data.state === "latest" ? "최신 버전이에요." : r.data.message;
       if (r.data.latest) { toggleConn(false); openUpdate(); }
     },
-    "key-reveal": () => { const show = $("key-value").type === "password"; $("key-value").type = show ? "text" : "password"; el.textContent = show ? "숨기기" : "보기"; el.setAttribute("aria-pressed", String(show)); $("key-value").focus(); },
+    "key-reveal": () => { setKeyShown($("key-value").type === "password"); $("key-value").focus(); },
     "key-save": () => saveKey(false), "key-retry": () => saveKey(false), "key-force": () => saveKey(true),
     "key-recheck-claude": () => recheckKey("claude"), "key-recheck-openai": () => recheckKey("openai"),
     "key-del-claude": () => askKeyDelete("claude"), "key-del-openai": () => askKeyDelete("openai"),
-    "key-delete-no": () => { const name = keyDeleting; keyDeleting = null; renderKeyDelete(); if (name) $(`key-del-${name}`).focus(); }, "key-delete-yes": deleteKey,
+    "key-delete-no": () => { const name = keyDeleting; keyDeleting = null; renderKeyDelete(); const back = name && $(`key-del-${name}`); if (back) back.focus(); }, "key-delete-yes": deleteKey,
     "models-open": () => { toggleConn(false); openModels(); }, "models-close": () => { $("models").close ? $("models").close() : $("models").removeAttribute("open"); $("conn-toggle").focus(); },
     "tour-open": openTour, "tour-skip": () => { const last = tourAt === TOUR.length - 1; closeTour(); if (last && !CONN.ready) toggleConn(true); }, "tour-prev": () => tourStep(-1), "tour-next": () => tourStep(1),
     "drop": () => $("new-files").click(), "read-files": readFiles, "asset-close": closeAsset,
@@ -2699,7 +2717,7 @@ document.addEventListener("change", (e) => {
   if (e.target.id === "new-theme") return syncForm();
   if (e.target.id === "p-lang-select") return void (e.target.value !== S.problem.language && wantLanguage(e.target.value));
   if (e.target.id === "upd-auto") return void updAct("auto", { on: e.target.checked });
-  if (e.target.name === "keyname") return renderKeyStatus();
+  if (e.target.name === "keyname") { setKeyShown(false); return renderKeyStatus(); }
   if (e.target.name === "client") accounts("/api/client", { client: e.target.value }, e.target.value === "cli" ? "이 PC의 Claude Code로 튜터를 불러요." : "연결한 AI로 튜터를 불러요.");
 });
 

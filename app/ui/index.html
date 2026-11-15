@@ -1,13 +1,26 @@
 <!doctype html>
-<html lang="ko">
+<html lang="ko" data-scheme-pref="system">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
-<meta name="theme-color" content="#F5F5F7" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#111113" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" id="theme-color" content="#F5F5F7">
 <title>AlgoBlock</title>
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
+<script>
+  // 첫 그림 전에 화면 색을 정한다. data-scheme-pref가 system이면 운영체제 설정을 따른다
+  function applyScheme(pref) {
+    var root = document.documentElement;
+    var dark = pref === "dark" || (pref !== "light" && matchMedia("(prefers-color-scheme: dark)").matches);
+    root.setAttribute("data-scheme-pref", pref);
+    root.setAttribute("data-scheme", dark ? "dark" : "light");
+    document.getElementById("theme-color").content = dark ? "#111113" : "#F5F5F7";
+  }
+  applyScheme(document.documentElement.getAttribute("data-scheme-pref"));
+  matchMedia("(prefers-color-scheme: dark)").addEventListener("change", function () {
+    if (document.documentElement.getAttribute("data-scheme-pref") === "system") applyScheme("system");
+  });
+</script>
 <link rel="stylesheet" href="app.css">
 </head>
 <body>

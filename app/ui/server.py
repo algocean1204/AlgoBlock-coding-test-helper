@@ -10,6 +10,7 @@
 import ast
 import atexit
 import base64
+import hashlib
 import json
 import os
 import re
@@ -121,19 +122,29 @@ def save_key(env_name: str, value: str) -> None:
     write_keys({**read_json(KEY_FILE, {}), env_name: value})
 
 
-def note_key_check(name: str, result: str | None) -> None:
-    """공급자의 마지막 키 확인을 남긴다(result가 None이면 지운다)."""
-    rows = {key: value for key, value in read_json(KEY_CHECK_FILE, {}).items() if key != name}
-    write_json(KEY_CHECK_FILE, {**rows, **({name: {"at": now(), "result": result}} if result else {})})
+KEY_CHECK_LOCK = threading.Lock()  # 확인 기록을 읽고 고쳐 쓰는 동안(키 넣기와 다시 확인이 겹쳐도 서로 덮어쓰지 않게)
+
+
+def key_print(key: str) -> str:
+    """키의 지문(sha256 앞 12자). 확인 기록이 지금 키의 것인지 가릴 때만 쓰고, 키를 되살릴 수 없다."""
+    return hashlib.sha256(key.encode("utf-8")).hexdigest()[:12]
+
+
+def note_key_check(name: str, result: str | None, key: str = "") -> None:
+    """공급자의 마지막 키 확인을 그 키의 지문과 함께 남긴다(result가 None이면 지운다)."""
+    with KEY_CHECK_LOCK:
+        rows = {other: value for other, value in read_json(KEY_CHECK_FILE, {}).items() if other != name}
+        write_json(KEY_CHECK_FILE, {**rows, **({name: {"at": now(), "result": result, "fp": key_print(key)}} if result and key else {})})
 
 
 def key_rows() -> dict:
-    """연결 창의 공급자별 키 줄. 키는 끝 4자리만 싣는다(너무 짧은 글은 아예 싣지 않는다). 확인 기록은 지금 키에 대한 것만 보인다."""
+    """연결 창의 공급자별 키 줄. 키는 끝 4자리만 싣는다(너무 짧은 글은 아예 싣지 않는다). 확인 기록은 지금 키의 지문과 같을 때만 보인다(키가 바뀌었으면 옛 기록은 보이지 않는다)."""
     saved = read_json(KEY_CHECK_FILE, {})
     out = {}
     for name, env in KEYS.items():
         key, last = os.environ.get(env, ""), saved.get(name) if isinstance(saved.get(name), dict) else {}
-        out[name] = {"on": bool(key), "tail": key[-4:] if len(key) >= 12 else "", "at": last.get("at", "") if key else "", "result": last.get("result", "") if key else ""}
+        mine = bool(key) and last.get("fp") == key_print(key)
+        out[name] = {"on": bool(key), "tail": key[-4:] if len(key) >= 12 else "", "at": last.get("at", "") if mine else "", "result": last.get("result", "") if mine else ""}
     return out
 
 
@@ -2256,22 +2267,26 @@ def handle(path: str, body: dict) -> tuple[int, dict]:
         found = keycheck.check(body["name"], value)  # 공식 주소에 모델 목록 조회 한 번(요금 없음, 10초). 키 값은 어디에도 남기지 않는다
         if found == keycheck.INVALID:
             raise Refuse(f"{label}가 이 키를 받아 주지 않아요(401). 키를 다시 복사해 붙여 넣어 주세요.", 400, "key_invalid", "value")
-        if found == keycheck.DENIED:
-            raise Refuse(f"이 키로는 {label}를 쓸 수 없어요(403·429). 키의 권한과 사용 한도를 확인해 주세요.", 400, "key_denied", "value")
-        if found == keycheck.OFFLINE and body.get("force") is not True:  # 확인하지 못했다: 저장할지는 사용자가 고른다
-            raise Refuse(f"{label}에 연결하지 못해 키를 확인하지 못했어요. 인터넷 연결을 보고 다시 시도하거나, 확인 없이 저장할 수 있어요.", 409, "key_unverified", "value")
+        if body.get("force") is not True:  # 아래는 사용자가 '그래도 저장'을 고를 수 있다
+            if found == keycheck.DENIED:
+                raise Refuse(f"이 키로는 {label}의 모델 목록을 볼 권한이 없어요(403). 키의 권한을 확인하거나, 그래도 저장할 수 있어요.", 409, "key_denied", "value")
+            if found == keycheck.SERVER:
+                raise Refuse(f"{label} 서버가 답하지 않아 키를 확인하지 못했어요. 잠시 뒤 다시 시도하거나, 확인 없이 저장할 수 있어요.", 409, "key_unverified", "value")
+            if found == keycheck.OFFLINE:
+                raise Refuse(f"{label}에 연결하지 못해 키를 확인하지 못했어요. 인터넷 연결을 보고 다시 시도하거나, 확인 없이 저장할 수 있어요.", 409, "key_unverified", "value")
         os.environ[KEYS[body["name"]]] = value
         save_key(KEYS[body["name"]], value)  # 다음에 켜도 쓰게 이 기기에만 저장한다
-        note_key_check(body["name"], found)
+        note_key_check(body["name"], found, value)
         return 200, {**accounts(), "key_check": found}
     if path == "/api/key/check":  # 지금 쓰는 그 공급자의 키를 다시 확인한다(키 값은 요청으로 받지 않는다)
         if not isinstance(body.get("name"), str) or body["name"] not in KEYS:
             raise Refuse("확인할 키 종류를 골라 주세요.")
         if not os.environ.get(KEYS[body["name"]]):
             raise Refuse("넣은 키가 없어요.", 409, "key_missing")
-        found = keycheck.check(body["name"], os.environ[KEYS[body["name"]]])
-        note_key_check(body["name"], found)
-        return 200, {**accounts(), "key_check": found}  # found: ok, 또는 offline(확인 없이 저장)
+        key = os.environ[KEYS[body["name"]]]
+        found = keycheck.check(body["name"], key)
+        note_key_check(body["name"], found, key)
+        return 200, {**accounts(), "key_check": found}  # found: ok·limited(키는 맞음), 그 밖은 확인 없이 저장한 것
     if path == "/api/key/delete":  # 화면에서 넣은 그 공급자의 키만 지운다
         if not isinstance(body.get("name"), str) or body["name"] not in KEYS:
             raise Refuse("지울 키 종류를 골라 주세요.")
