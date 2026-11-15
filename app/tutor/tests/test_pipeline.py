@@ -283,6 +283,10 @@ class GuideTest(unittest.TestCase):
         # 말로 맞혀도 다음 블록을 열지 않는다(코드 칸이 빈 채 지나갔다). 그 블록의 코드를 적어 확인받게 한다(모델 0회의 고정 말)
         self.assertEqual((done["result"]["move"], done["result"]["advance"], done["open_count"], fakes.tasks(fake)), ("write", False, 1, ["guide.judge"]))
         self.assertEqual(done["result"]["reply"], WRITE_TIP)
+        from ..save.respond import messages_body
+        from ..state import ChatMessage
+        said = messages_body([ChatMessage(id="1", role="user", text="말", at="", move="check"), ChatMessage(id="2", role="service", text=WRITE_TIP, at="", move="write")])
+        self.assertEqual([m["move"] for m in said], [None, "write"])  # 화면은 튜터 말의 차례만 받는다(write면 블록 코드 확인을 권한다)
         self.assertNotIn("근거 수준", fakes.prompt(fake, "guide.judge"))
 
     def code_turn(self, code, open_count=1):
