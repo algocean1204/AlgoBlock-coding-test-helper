@@ -722,6 +722,20 @@ def screen_flows() -> None:
         with server.tutor() as t:
             assert t.store.study(PID)["help_first_at"] is None and t.store.study(PID)["help_after_reset_at"]
         judged(PID, CODE, 1)
+    stuck = datetime.now()
+
+    class Stopped(datetime):  # 시계가 멈춘 것처럼 늘 같은 순간을 준다(같은 초, 같은 밀리초)
+        @classmethod
+        def now(cls, tz=None):
+            return stuck
+    with fresh(), patch("tutor.store.sqlite.datetime", Stopped):  # 같은 순간의 실패 → '처음부터' → 통과 → (화면이 저절로 여는) 해설: 일어난 차례대로 판단한다
+        opened(PID)
+        assert not submit(PID, "def solution(loans, k):\n    return []\n")
+        again(PID)
+        judged(PID, CODE, 1)  # 첫 풀이에 도움이 없었다. 통과 뒤의 해설을 '처음부터' 뒤 통과 전의 도움으로 보지 않는다
+        with server.tutor() as t:
+            study, subs = t.store.study(PID), server.problem_subs(t, PID)
+        assert study["help_first_at"] is None and subs[0]["at"] < study["reset_at"] < subs[1]["at"], (study, subs)
     with fresh():  # 언어를 바꿨다 돌아오는 것은 '처음부터'가 아니다: 도움을 받고 푼 문제는 하루 뒤에 다시 내도 세지 않는다
         opened(PID)
         call("/api/hint", id=PID)
