@@ -1417,8 +1417,10 @@ class HonestCheckTest(unittest.TestCase):
                  f"{technique_list()}\n{LEVEL_TEXT} 위 code가 쓰는 방법으로 정한다.\n"
                  'JSON {"clues": ["..."], "approach", "steps": ["..."], "code", "tags": [id], "level"}\n')
         plain = 'JSON {"clues": ["..."], "approach", "steps": ["..."], "code"}\n'
-        for strategy, tail in (("fresh", asked), ("canonical", asked), ("keep_flow", plain)):
-            function = solve_messages({"ctx": fakes.context(problem_text=fakes.PROBLEM, starter=head, direct_code="x"), "strategy": strategy})[1]["content"]
+        follow = 'JSON {"clues": ["..."], "approach", "steps": ["..."], "code", "followed": true 또는 false}\n'  # 사용자 방법 따르기: 따랐는가를 묻고 태그·단계는 묻지 않는다
+        for strategy, tail in (("fresh", asked), ("canonical", asked), ("keep_flow", plain), ("follow", follow)):
+            function = solve_messages({"ctx": fakes.context(problem_text=fakes.PROBLEM, starter=head, direct_code="x"), "strategy": strategy,
+                                       "follow": "정렬해서 앞뒤로 센다"})[1]["content"]
             self.assertTrue(function.endswith(f"\n{tail}{starter_line}"), (strategy, function[-600:]))
 
     def test_unpassed_program_guide_asks_to_check_line_breaks(self):
