@@ -1819,6 +1819,11 @@ class StarterFrameTest(unittest.TestCase):
             rows = spliced([head + "\n\nfn main() {\n    let n = 3;", '    println!("{}", n);\n}'], 1, 'println!("{}", n);\n}', "rust", {}, None, True, rust_starter).split("\n")
             at = next(i for i, row in enumerate(rows) if row.startswith("use std::io::"))
             self.assertTrue(all(row.startswith(("#![", "//!", "use ")) for row in rows[:at]) and not any(row.startswith(("#![", "//!")) for row in rows[at:]), rows)
+        # 여러 줄에 걸친 내부 속성과 블록 문서 주석(겹친 블록 주석, 문자열 안의 ']' 포함)도 끝까지 머리말이다: 더한 use는 그 뒤에 온다
+        for head, last in (("#![allow(\n    unused,\n    dead_code\n)]\nuse std::io::{self, BufRead};", ")]"), ("/*! 풀이 */\nuse std::io::{self, BufRead};", "/*! 풀이 */"),
+                           ('/*! 풀이 /* 안 */\n끝 */\n// 보통 주석\n#![doc = "a]b"]', '#![doc = "a]b"]')):
+            rows = spliced([head + "\n\nfn main() {\n    let n = 3;", '    println!("{}", n);\n}'], 1, 'println!("{}", n);\n}', "rust", {}, None, True, rust_starter).split("\n")
+            self.assertGreater(next(i for i, row in enumerate(rows) if row.startswith("use std::io::Read") or row.startswith("use std::io::{self, Read}")), rows.index(last), rows)
 
         read = 'const input = require("fs").readFileSync(0, "utf8");\n'
         self.assertEqual(starter_imports(["function solve() {", "  return `${input.trim()}`;", "}"], read, "javascript"), [read.strip()])  # 템플릿의 ${…} 안도 쓰임이다

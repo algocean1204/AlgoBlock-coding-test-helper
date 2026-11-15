@@ -1010,16 +1010,56 @@ def _js_lead(text: str, starter: str) -> list[str]:
     return out
 
 
+def _rust_inner_end(rows: list[str]) -> int:
+    """Rust 파일 맨 앞의 내부 속성·내부 문서 주석이 끝나는 줄의 다음 줄 번호(없으면 0). 줄 꼴이 아니라 글을 처음부터 읽는다:
+    빈칸과 주석(줄 주석, 겹칠 수 있는 블록 주석)은 건너뛰고, '#!['은 짝 맞는 ']'까지(그 안의 문자열 포함), '//!'·'/*!'은 그 주석의 끝까지가 머리말이다.
+    여러 줄에 걸친 '#![allow(…)]'의 안이나 '/*! … */' 앞에 use가 들어가 컴파일 오류였다."""
+    text, i, end = "\n".join(rows), 0, 0
+    while i < len(text):
+        if text[i].isspace():
+            i += 1
+            continue
+        start = i
+        if text.startswith("//", i):
+            i = text.find("\n", i) if "\n" in text[i:] else len(text)
+        elif text.startswith("/*", i):
+            depth, i = 1, i + 2
+            while i < len(text) and depth:
+                depth += text.startswith("/*", i) - text.startswith("*/", i)
+                i += 2 if text.startswith(("/*", "*/"), i) else 1
+        elif text.startswith("#![", i):
+            depth, i = 0, i + 2
+            while i < len(text):
+                if text[i] == '"':
+                    i = _close_quote(text, i)
+                    continue
+                depth += (text[i] == "[") - (text[i] == "]")
+                i += 1
+                if depth == 0:
+                    break
+        else:
+            break
+        if text.startswith(("//!", "/*!", "#!["), start):
+            end = i
+    return text.count("\n", 0, end) + 1 if end else 0
+
+
+def _close_quote(text: str, at: int) -> int:
+    """text[at]의 '"'로 연 문자열의 바로 뒤 자리('\\'로 막은 글자는 건너뛴다)."""
+    i = at + 1
+    while i < len(text) and text[i] != '"':
+        i += 2 if text[i] == "\\" else 1
+    return i + 1
+
+
 def import_end(rows: list[str], language: str) -> int:
     """맨 앞 가져오기 줄(그 사이 빈 줄·주석 포함) 가운데 마지막 줄의 바로 뒤 자리(없으면 0). 시작 코드에서 더하는 가져오기 줄은 여기에 넣는다.
     맨 위에 놓은 'using namespace std;'가 '#include' 앞에 와 GCC에서 오류였고, Python 'from __future__' 앞에 놓인 줄은 SyntaxError다.
     Go는 맨 앞의 'package' 줄과 여러 줄 'import ( … )'도 머리말이다(import는 package 뒤에만 올 수 있다).
-    Rust는 맨 앞의 내부 속성('#![…]')과 내부 문서 주석('//!')도 머리말이다(그 앞에 use가 오면 컴파일 오류다)."""
-    at, group = 0, False
-    for i, row in enumerate(rows):
-        if language == "rust" and row.lstrip().startswith(("#![", "//!")):
-            at = i + 1
-            continue
+    Rust는 맨 앞의 내부 속성('#![…]')과 내부 문서 주석('//!', '/*! … */')도 머리말이다(그 앞이나 안에 use가 오면 컴파일 오류다. _rust_inner_end)."""
+    at = _rust_inner_end(rows) if language == "rust" else 0
+    group = False
+    for i, row in enumerate(rows[at:], at):
         plain = _plain(row, language)
         if not plain:
             continue
