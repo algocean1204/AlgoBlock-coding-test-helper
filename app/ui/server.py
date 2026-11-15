@@ -10,6 +10,7 @@
 import ast
 import atexit
 import base64
+import hashlib
 import json
 import os
 import re
@@ -62,6 +63,7 @@ import casemake  # noqa: E402  (등록한 문제의 풀이를 단순 풀이·생
 from problemkit import fits  # noqa: E402  (값이 형에 맞는가. 기본 문제를 검사할 때 쓰는 것)
 from stubs import program_stub, stub  # noqa: E402  (형에서 언어별 시작 코드, 표준 입출력 뼈대)
 import updater  # noqa: E402  (새 버전 확인과 업데이트)
+from app.llm import keycheck  # noqa: E402  (키를 저장하기 전에 공급자에 확인)
 
 updater.DIR = DATA / "updates"  # 받은 설치 파일과 업데이트 설정
 
@@ -80,6 +82,7 @@ STATIC = {"/": ("index.html", "text/html"), "/index.html": ("index.html", "text/
           "/tour-demos.js": ("tour-demos.js", "text/javascript"), "/tour-demos.css": ("tour-demos.css", "text/css"),  # 처음 안내의 움직이는 데모(stageshow/에서 미리 빌드, 안내를 열 때만 불러온다)
           "/PretendardVariable.woff2": ("PretendardVariable.woff2", "font/woff2")}  # 맥 밖에서 쓰는 글꼴(OFL)
 KEYS = {"claude": "ANTHROPIC_API_KEY", "openai": "OPENAI_API_KEY"}  # 지원하는 공급자는 Claude·OpenAI 둘이다(그 밖의 키는 저장돼 있어도 읽지 않는다)
+KEY_FORM = {"claude": ("Claude", "sk-ant-"), "openai": ("OpenAI", "sk-")}  # 공급자 키의 꼴: 접두사로 시작하고 영문·숫자·-·_만(빈칸·한글이 든 글은 키가 아니다)
 SAMPLE_TITLES = {"hash_library": "책을 돌려주지 않은 학생", "stack_brackets": "괄호 짝 맞추기", "brute_pairs": "카드 두 장의 합"}
 MAX_BODY = 1_000_000
 FILE_PATHS = ("/api/problems/read", "/api/problems/new", "/api/problems/edit")  # 파일을 실어 오는 요청만 본문 상한이 크다
@@ -92,8 +95,9 @@ ASSET_TYPES = {"png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg", "w
 OWN_ID = re.compile(r"u[0-9a-f]{8}")  # 사용자가 등록한 문항 id
 PREPARE = os.environ.get("ALGOBLOCK_UI_PREPARE", "1") != "0"  # 0이면 문항을 열 때 뼈대를 미리 뽑지 않는다(개발 중 모델 호출 아끼기)
 
+KEY_CHECK_FILE = DATA / "keychecks.json"  # 공급자마다 마지막 키 확인 {공급자: {"at": ISO 시각, "result": ok·invalid·denied·offline}}. 키 값은 싣지 않는다
 KEY_FILE = DATA / "keys.json"  # 화면에서 넣은 API 키. 이 기기에만, 소유자만 읽게(0600) 둔다
-PREFS_FILE = DATA / "prefs.json"  # 화면 설정: 처음 안내를 봤는지(tour_seen), 과정별 급과 추론 정도(stages. 예전에는 테마별 모델 themes), 마지막으로 고른 풀이 언어(language)
+PREFS_FILE = DATA / "prefs.json"  # 화면 설정: 처음 안내를 봤는지(tour_seen), 과정별 급과 추론 정도(stages. 예전에는 테마별 모델 themes), 마지막으로 고른 풀이 언어(language), 화면 색(scheme: light·dark. 없으면 운영체제 설정을 따른다)
 MODELS_FILE = DATA / "models.json"  # 공급자 목록에서 고른 시리즈마다 최신 이름 {연결: {"at": ISO 시각, "names": {시리즈: 이름}}}. 하루에 한 번까지만 다시 받는다
 KEPT_FILE = DATA / "kept.json"  # 언어를 바꿀 때 보관한 준비 결과 {문항: {언어: {"solution": 줄, "session": 줄}}}. 그 언어로 돌아오면 되살린다(모델 0회)
 
@@ -115,8 +119,41 @@ def load_keys() -> None:
 
 
 def save_key(env_name: str, value: str) -> None:
-    saved = read_json(KEY_FILE, {})
-    saved[env_name] = value
+    write_keys({**read_json(KEY_FILE, {}), env_name: value})
+
+
+KEY_CHECK_LOCK = threading.Lock()  # 확인 기록을 읽고 고쳐 쓰는 동안(키 넣기와 다시 확인이 겹쳐도 서로 덮어쓰지 않게)
+
+
+def key_print(key: str) -> str:
+    """키의 지문(sha256 앞 12자). 확인 기록이 지금 키의 것인지 가릴 때만 쓰고, 키를 되살릴 수 없다."""
+    return hashlib.sha256(key.encode("utf-8")).hexdigest()[:12]
+
+
+def note_key_check(name: str, result: str | None, key: str = "") -> None:
+    """공급자의 마지막 키 확인을 그 키의 지문과 함께 남긴다(result가 None이면 지운다)."""
+    with KEY_CHECK_LOCK:
+        rows = {other: value for other, value in read_json(KEY_CHECK_FILE, {}).items() if other != name}
+        write_json(KEY_CHECK_FILE, {**rows, **({name: {"at": now(), "result": result, "fp": key_print(key)}} if result and key else {})})
+
+
+def key_rows() -> dict:
+    """연결 창의 공급자별 키 줄. 키는 끝 4자리만 싣는다(너무 짧은 글은 아예 싣지 않는다). 확인 기록은 지금 키의 지문과 같을 때만 보인다(키가 바뀌었으면 옛 기록은 보이지 않는다)."""
+    saved = read_json(KEY_CHECK_FILE, {})
+    out = {}
+    for name, env in KEYS.items():
+        key, last = os.environ.get(env, ""), saved.get(name) if isinstance(saved.get(name), dict) else {}
+        mine = bool(key) and last.get("fp") == key_print(key)
+        out[name] = {"on": bool(key), "tail": key[-4:] if len(key) >= 12 else "", "at": last.get("at", "") if mine else "", "result": last.get("result", "") if mine else ""}
+    return out
+
+
+def drop_key(env_name: str) -> None:
+    """화면에서 넣은 키 가운데 그 공급자의 것만 파일에서 지운다(다른 공급자의 키와 .env는 건드리지 않는다)."""
+    write_keys({name: value for name, value in read_json(KEY_FILE, {}).items() if name != env_name})
+
+
+def write_keys(saved: dict) -> None:
     write_json(KEY_FILE, saved)
     try:
         KEY_FILE.chmod(0o600)
@@ -405,6 +442,9 @@ def cross_done(pid: str, verdict: dict) -> None:
 
 
 CROSS = SimpleNamespace(mode=cross_mode, run=cross_run, done=cross_done)
+UNVERIFIED = {"verified": "none", "calls": 0, "tiers": [], "doubts": [], "hidden": 0, "efficiency": 0,
+              "why": "AI의 풀이를 얻지 못해 검증하지 못했어요. 응답 오류였거나 예시가 문제 글과 맞지 않을 수 있어요."}
+
 FILE_LOCK_ROWS = threading.RLock()  # problems.json을 읽고 고쳐 쓰는 동안(뒤에서 도는 대조와 등록·수정이 서로 덮어쓰지 않게)
 VERIFIED_WORDS = {"all": "예시와 자동 테스트 모두 통과", "examples": "예시만 통과", "none": "검증하지 못함"}
 
@@ -442,8 +482,10 @@ def prepare_later(pid: str) -> None:
         try:
             with LOCKS[pid], model(), tutor() as t:
                 out = t.prepare(pid)
-            if out.status >= 400:  # 모델의 답이 어긋났거나 공급자 오류(엔진은 예외 대신 실패 결과를 돌려준다)
-                raise RuntimeError(f"{out.status} {out.body}")
+                if out.status >= 400:  # 모델의 답이 어긋났거나 공급자 오류(엔진은 예외 대신 실패 결과를 돌려준다)
+                    raise RuntimeError(f"{out.status} {out.body}")
+                if CROSS.mode(pid) and t.store.load(pid).canonical is None and not getattr(PROBLEMS.get(pid), "check", None):
+                    cross_done(pid, UNVERIFIED)  # 준비는 끝났는데 풀이 가이드를 얻지 못했다: 대조 결과가 없는 채로 두면 화면에서 '검증' 줄이 사라진다
         except Exception as exc:  # noqa: BLE001 - 덤이다
             PREPARED.discard(pid)
             PREP_FAILED.add(pid)
@@ -511,7 +553,9 @@ def accounts() -> dict:
                      "model": model, "model_label": themes.label(model)})
     return {"client": STATE["client"], "dev": dev_client(), "model": os.environ.get("ALGOBLOCK_LLM_MODEL", ""), "chatgpt": bool(chatgpt.get("connected")), "chatgpt_note": chatgpt.get("error") or "", "connected": connected(),
             "keys": {name: bool(os.environ.get(env)) for name, env in KEYS.items()},
-            "tour_seen": bool(read_json(PREFS_FILE, {}).get("tour_seen")), "language": last_language(),
+            "key_rows": key_rows(), "using": themes.provider(),  # using: 튜터가 쓰는 공급자(claude·chatgpt·openai)
+            "keys_saved": {name: env in read_json(KEY_FILE, {}) for name, env in KEYS.items()},  # 화면에서 넣은 키(keys.json에 있는 것. 지울 수 있는 것)
+            "tour_seen": bool(read_json(PREFS_FILE, {}).get("tour_seen")), "language": last_language(), "scheme": scheme_pref(),
             "themes": rows, "tiers": [{"key": tier, "label": themes.label(themes.model_of(tier))} for tier in themes.TIERS],
             "topics": [{"key": key, "name": theme_name(key)} for key in ALGORITHMS]}  # 등록 화면의 주제 고르기
 
@@ -548,6 +592,12 @@ def refresh_models() -> None:
         write_json(MODELS_FILE, {**read_json(MODELS_FILE, {}), here: {"at": datetime.now().astimezone().isoformat(timespec="seconds"), "names": names}})
 
     threading.Thread(target=run, daemon=True, name=f"models-{here}").start()
+
+
+def scheme_pref() -> str:
+    """고른 화면 색: light, dark, 없거나 모르는 값이면 system(운영체제 설정을 따른다)."""
+    scheme = read_json(PREFS_FILE, {}).get("scheme")
+    return scheme if scheme in ("light", "dark") else "system"
 
 
 def last_language() -> str:
@@ -2191,6 +2241,12 @@ def handle(path: str, body: dict) -> tuple[int, dict]:
     if path == "/api/tour":  # 처음 안내를 봤다고 적는다(창을 다시 켜도 또 뜨지 않게. 웹뷰는 localStorage를 남기지 않는다)
         write_json(PREFS_FILE, {**read_json(PREFS_FILE, {}), "tour_seen": True})
         return 200, accounts()
+    if path == "/api/prefs":  # 화면 설정. 지금은 화면 색(system이면 키를 지워 운영체제 설정을 따른다)
+        if body.get("scheme") not in ("system", "light", "dark"):
+            raise Refuse("화면 색은 시스템 설정대로, 라이트, 다크 가운데 하나예요.", field="scheme")
+        kept = {key: value for key, value in read_json(PREFS_FILE, {}).items() if key != "scheme"}
+        write_json(PREFS_FILE, kept if body["scheme"] == "system" else {**kept, "scheme": body["scheme"]})
+        return 200, accounts()
     if path == "/api/theme":  # 과정 하나의 급과 추론 정도. 빈 값은 기본값으로 돌린다는 뜻이다
         if not all(isinstance(body.get(key, ""), str) for key in ("theme", "tier", "effort")) or body.get("theme") not in themes.THEMES:
             raise Refuse("알 수 없는 과정이에요.")
@@ -2217,8 +2273,43 @@ def handle(path: str, body: dict) -> tuple[int, dict]:
         value = value.strip()
         if len(value) > 400 or any(ch in value for ch in "\r\n\0"):
             raise Refuse("키가 너무 길거나 쓸 수 없는 글자가 있어요.")
+        label, prefix = KEY_FORM[body["name"]]
+        if not (value.startswith(prefix) and re.fullmatch(r"[A-Za-z0-9_-]+", value)) or (body["name"] == "openai" and value.startswith("sk-ant-")):  # Claude 키를 OpenAI 칸에 넣어도 거른다
+            raise Refuse(f"{label} 키의 꼴이 아니에요. {prefix}로 시작하고 영문·숫자·-·_만 있어야 해요. 빈칸이나 한글이 섞이지 않았는지 확인해 주세요.", field="value")
+        found = keycheck.check(body["name"], value)  # 공식 주소에 모델 목록 조회 한 번(요금 없음, 10초). 키 값은 어디에도 남기지 않는다
+        if found == keycheck.INVALID:
+            raise Refuse(f"{label}가 이 키를 받아 주지 않아요(401). 키를 다시 복사해 붙여 넣어 주세요.", 400, "key_invalid", "value")
+        if body.get("force") is not True:  # 아래는 사용자가 '그래도 저장'을 고를 수 있다
+            if found == keycheck.DENIED:
+                raise Refuse(f"이 키로는 {label}의 모델 목록을 볼 권한이 없어요(403). 키의 권한을 확인하거나, 그래도 저장할 수 있어요.", 409, "key_denied", "value")
+            if found == keycheck.SERVER:
+                raise Refuse(f"{label} 서버가 답하지 않아 키를 확인하지 못했어요. 잠시 뒤 다시 시도하거나, 확인 없이 저장할 수 있어요.", 409, "key_unverified", "value")
+            if found == keycheck.OFFLINE:
+                raise Refuse(f"{label}에 연결하지 못해 키를 확인하지 못했어요. 인터넷 연결을 보고 다시 시도하거나, 확인 없이 저장할 수 있어요.", 409, "key_unverified", "value")
         os.environ[KEYS[body["name"]]] = value
         save_key(KEYS[body["name"]], value)  # 다음에 켜도 쓰게 이 기기에만 저장한다
+        note_key_check(body["name"], found, value)
+        return 200, {**accounts(), "key_check": found}
+    if path == "/api/key/check":  # 지금 쓰는 그 공급자의 키를 다시 확인한다(키 값은 요청으로 받지 않는다)
+        if not isinstance(body.get("name"), str) or body["name"] not in KEYS:
+            raise Refuse("확인할 키 종류를 골라 주세요.")
+        if not os.environ.get(KEYS[body["name"]]):
+            raise Refuse("넣은 키가 없어요.", 409, "key_missing")
+        key = os.environ[KEYS[body["name"]]]
+        found = keycheck.check(body["name"], key)
+        note_key_check(body["name"], found, key)
+        return 200, {**accounts(), "key_check": found}  # found: ok·limited(키는 맞음), 그 밖은 확인 없이 저장한 것
+    if path == "/api/key/delete":  # 화면에서 넣은 그 공급자의 키만 지운다
+        if not isinstance(body.get("name"), str) or body["name"] not in KEYS:
+            raise Refuse("지울 키 종류를 골라 주세요.")
+        env, saved = KEYS[body["name"]], read_json(KEY_FILE, {})
+        if env not in saved:
+            raise Refuse("이 키는 화면에서 넣은 것이 아니에요. 넣어 둔 곳(.env나 환경 변수)에서 지워 주세요.", 409, "key_outside")
+        if os.environ.get(env) == saved[env]:  # 환경 변수의 값이 다른 것이면(밖에서 준 키) 그대로 둔다
+            os.environ.pop(env)
+        drop_key(env)
+        note_key_check(body["name"], None)
+        load_keys()  # .env에 같은 공급자의 키가 있으면 다시 올린다(지운 뒤의 연결 상태가 실제와 같게)
         return 200, accounts()
     if path == "/api/update":  # 새 버전: 상태·확인·받기·바꾸기(action)
         try:
@@ -2398,7 +2489,10 @@ class Handler(BaseHTTPRequestHandler):
         path = self.path.split("?", 1)[0]
         if path in STATIC:
             name, kind = STATIC[path]
-            return self._send(200, (STATIC_DIR / name).read_bytes(), kind)
+            page = (STATIC_DIR / name).read_bytes()
+            if name == "index.html":  # 고른 화면 색을 첫 HTML에 실어 첫 그림 전에 맞춘다(웹뷰는 localStorage를 남기지 않고, 요청을 기다리면 깜빡인다)
+                page = page.replace(b'data-scheme-pref="system"', f'data-scheme-pref="{scheme_pref()}"'.encode(), 1)
+            return self._send(200, page, kind)
         found = re.fullmatch(r"/asset/([^/]+)/([^/]+)", path)  # 올린 원본: index.json에 적힌 것만
         if found and OWN_ID.fullmatch(found[1]) and re.fullmatch(r"\d{1,2}", found[2]):
             row = next((raw for raw in assets(found[1]) if isinstance(raw, dict) and raw.get("n") == int(found[2]) and raw.get("type") in ASSET_TYPES), None)

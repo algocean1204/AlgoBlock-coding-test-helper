@@ -26,13 +26,16 @@ from app.llm.openai.oauth import idtoken
 from app.llm.openai.oauth.pkce import ISSUER, PLAN_SCOPE, REGISTER_CLIENT, RESOURCE, TOKEN_URL, authorize_url, make_pkce
 from app.llm.wire import timeout_seconds
 
+# OpenAI 동의 화면이 "현재 워크스페이스와 플랜으로 계속할 수 없습니다"를 띄우는 계정은 연결할 수 없다. 앱은 그 화면을 볼 수 없으니
+# 막힌 뒤의 안내에 이 경우를 함께 적는다(취소하면 access_denied, 그대로 계속하면 코드 교환이 invalid_grant로 끝난다)
+PLAN_HINT = "OpenAI 동의 화면에 지금 워크스페이스나 플랜으로는 계속할 수 없다는 안내가 있었다면, 이 계정으로는 연결할 수 없어요. 그때는 API 키를 넣어 주세요."
 PORT = 1455  # 쓰고 있으면 빈 포트를 쓴다(바뀌어도 되는 것은 포트뿐이다)
 CALLBACK = "/auth/callback"
 REFRESH_BEFORE = 120  # 만료 이만큼(초) 전부터 갱신한다
 DEAD_REFRESH = {"invalid_grant", "invalid_refresh_token", "token_expired", "refresh_token_expired", "refresh_token_invalidated", "refresh_token_reused"}
-RELOGIN = "ChatGPT 연결이 끝났어요. ‘Continue with ChatGPT’로 다시 로그인해 주세요."
-NO_PLAN = "ChatGPT 요금제 사용을 허락하지 않아 튜터에 쓸 수 없어요. ‘Continue with ChatGPT’로 다시 허락하거나 API 키를 넣어 주세요."
-OLD = "예전 방식의 ChatGPT 로그인은 더 쓰지 않아요. ‘Continue with ChatGPT’로 다시 로그인해 주세요."
+RELOGIN = "ChatGPT 연결이 끝났어요. ‘ChatGPT로 로그인’으로 다시 로그인해 주세요."
+NO_PLAN = "ChatGPT 요금제 사용을 허락하지 않아 튜터에 쓸 수 없어요. ‘ChatGPT로 로그인’으로 다시 허락하거나 API 키를 넣어 주세요."
+OLD = "예전 방식의 ChatGPT 로그인은 더 쓰지 않아요. ‘ChatGPT로 로그인’으로 다시 로그인해 주세요."
 DONE = "연결됐어요. 이 창을 닫고 AlgoBlock으로 돌아가 주세요."
 
 _login = {"server": None, "error": None, "pending": None}
@@ -128,7 +131,7 @@ def begin_login(timeout: float = 300) -> dict:
 def finish_login(query: dict, pending: dict) -> dict:
     """state는 부르는 쪽이 이미 견줬다. 오류 → 발급 client_id → 코드 교환 → ID 토큰 검증 → 저장."""
     if query.get("error") == "access_denied":
-        raise LlmFailed("ChatGPT에서 허락하지 않아 연결하지 않았어요.")
+        raise LlmFailed(f"ChatGPT에서 허락하지 않아 연결하지 않았어요. {PLAN_HINT}")
     if query.get("error"):
         raise LlmFailed(f"ChatGPT 로그인이 끝나지 않았어요({query['error'][:60]}).")
     client, given = pending["client_id"], query.get("client_id") or ""
@@ -146,7 +149,7 @@ def finish_login(query: dict, pending: dict) -> dict:
                           "code_verifier": pending["verifier"], "redirect_uri": pending["redirect"], "resource": RESOURCE})
     except Refused as exc:
         if exc.code == "invalid_grant":
-            raise LlmFailed("로그인 코드가 지났어요. 다시 시도해 주세요.") from exc
+            raise LlmFailed(f"ChatGPT 로그인을 마치지 못했어요. 로그인 코드가 지났다면 다시 시도해 주세요. {PLAN_HINT}") from exc
         raise
     claims = idtoken.verify(payload.get("id_token") or "", client_id=client, nonce=pending["nonce"])
     if pending["subject"] and claims["sub"] != pending["subject"]:

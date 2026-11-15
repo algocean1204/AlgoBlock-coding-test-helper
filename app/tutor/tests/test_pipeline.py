@@ -656,7 +656,7 @@ class BlockCheckPairingTest(unittest.TestCase):
 
         done, seen = self.turn(SORT_BLOCKS, {}, "b1", "dp = sorted(items).maxx()", check)
         self.assertEqual((done["verdict"].seen, done["verdict"].hint, done["block_check"].verdict, len(seen)),
-                         ("내 블록 1번째 줄(`dp = sorted(items).maxx()`)에서 컴파일 오류가 났어요.\n`cannot find symbol: maxx` " + NOT_JOINED, False, "N", 2))  # 내 블록의 줄에서 난 오류라 틀렸다고 말한다(실행 둘)
+                         ("내 블록 1번째 줄(`dp = sorted(items).maxx()`)에서 컴파일 오류가 났어요.\n`cannot find symbol: maxx`\n" + NOT_JOINED, False, "N", 2))  # 내 블록의 줄에서 난 오류라 틀렸다고 말한다(실행 둘)
         self.assertIn("return dp[-1] - dp[0]", seen[0])  # 처음부터 짝지어 돌렸다
 
     def test_unreliable_pairs_ask_for_the_names(self):
@@ -803,9 +803,9 @@ class BlockCheckNewNameTest(unittest.TestCase):
              "line": next(n for n, row in enumerate(code.splitlines(), 1) if "// 0" in row)}]}
         done, seen = self.turn(blocks, {}, "b1", "s = q[0] // 0\nhi = q[1]\nextra = 0", broken)
         self.assertEqual((done["verdict"].seen, done["block_check"].verdict, len(seen) > 1),  # 어림 짝을 다 돌려 보고 모두 실패했다: 이어지지 않아요(난 곳을 말한다)
-                         ("내 블록 1번째 줄(`s = q[0] // 0`)에서 실행 오류가 났어요.\n`ZeroDivisionError: division by zero` " + assumed([["s", "start"]]) + " " + NOT_JOINED, "N", True))
+                         ("내 블록 1번째 줄(`s = q[0] // 0`)에서 실행 오류가 났어요.\n`ZeroDivisionError: division by zero`\n" + assumed([["s", "start"]]) + " " + NOT_JOINED, "N", True))
         done, seen = self.turn(blocks, {}, "b1", "s = q[0] // 0\nhi = q[1]", broken)  # 확실한 짝: 첫 시도가 내 코드의 일이다
-        self.assertEqual((done["verdict"].seen, done["block_check"].verdict), ("내 블록 1번째 줄(`s = q[0] // 0`)에서 실행 오류가 났어요.\n`ZeroDivisionError: division by zero` " + NOT_JOINED, "N"))
+        self.assertEqual((done["verdict"].seen, done["block_check"].verdict), ("내 블록 1번째 줄(`s = q[0] // 0`)에서 실행 오류가 났어요.\n`ZeroDivisionError: division by zero`\n" + NOT_JOINED, "N"))
         self.assertIn("return s + hi", seen[0])
 
 
@@ -852,6 +852,26 @@ class BlockCheckEntryAndGroupTest(unittest.TestCase):
         program = spliced(go, 0, "sz := len(parent)", "go")
         self.assertIn("func solution(parent []int, files []int, limit int) int {\n\tsz := len(parent)", program)  # 탭 들여쓰기도 탭으로
         self.assertEqual(spliced(go, 0, "package main\n\n// 내 주석\nfunc solution(parent []int, files []int, limit int) int {\n\tsz := len(parent)", "go").count("func solution"), 1)
+
+    def test_entry_head_in_other_forms_is_head(self):
+        """블록 1의 진입 함수 머리를 시작 코드와 다른 같은 뜻의 꼴로 적어도 머리로 떼고 계획의 머리로 잇는다:
+        JavaScript의 함수 식·화살표 함수(const·let·var), C++의 'std::'·참조가 붙은 반환형. async·제너레이터·중괄호 없는 화살표는 뜻이 달라 머리가 아니다."""
+        from ..common.solution import frame_line, spliced
+
+        for row in ("const solution = (a, k) => {", "let solution=(a, k = 0)=>{", "var solution = function (a, k) {", "const solution = function solve(a, k) {", "const solution = a => {"):
+            self.assertTrue(frame_line(row, "javascript"), row)
+        for row in ("const solution = async (a, k) => {", "const solution = function* (a, k) {", "const solution = (a, k) => a + k;", "const total = (a, k) => {",
+                    "const answer = solution(a, k);"):
+            self.assertFalse(frame_line(row, "javascript"), row)
+        for row in ("std::vector<int> solution(std::vector<int> a) {", "vector<int>& solution(vector<int> a) {", "long long solution(vector<int> a, int k = 0) {"):
+            self.assertTrue(frame_line(row, "cpp"), row)
+        self.assertFalse(frame_line("for (auto x : solution(a)) {", "cpp"))
+        js = ["function solution(a, k) {\n    let total = 0;", "    return total + k;\n}"]
+        program = spliced(js, 0, "const solution = (a, k) => {\n    let total = 0;", "javascript")
+        self.assertEqual(program, "function solution(a, k) {\n    let total = 0;\n    return total + k;\n}")
+        self.assertEqual(spliced(js, 1, "    return total + k;\n};", "javascript"), "function solution(a, k) {\n    let total = 0;\n    return total + k;\n}")  # 화살표 함수를 닫는 '};'
+        cpp = ["#include <vector>\nusing namespace std;\n\nint solution(vector<int> a, int k) {\n    int total = 0;", "    return total + k;\n}"]
+        self.assertEqual(spliced(cpp, 0, "std::int64_t solution(std::vector<int> a, int k) {\n    int total = 0;", "cpp").count("solution("), 1)
 
     def test_entry_missing_is_not_my_fault(self):
         """이어 붙이기가 진입 함수를 잃으면 모델로 넘기지 않고 '확인하지 못했다'는 고정 말로 끝낸다(진행·힌트 없음)."""
@@ -992,7 +1012,7 @@ class BlockCheckInvariantTest(unittest.TestCase):
         self.assertNotIn(fakes.HINTS2[1], done["result"]["reply"])
         done, _ = fakes.go(fakes.make_state("turn", ctx, mode="guide", event="block_filled", block_id="b2", code="i = 1\nwhile i <= n:\n    total += 10 // (i - 1)"), {},
                            exec_check([], [([3], 6)]))  # 시간 초과가 아닌 실패도 계획이 for로 연 자리면 while 문장
-        self.assertTrue(done["verdict"].seen.endswith("ZeroDivisionError: integer division or modulo by zero` " + NOT_JOINED + " " + WHILE_NOTE), done["verdict"].seen)
+        self.assertTrue(done["verdict"].seen.endswith("ZeroDivisionError: integer division or modulo by zero`\n" + NOT_JOINED + " " + WHILE_NOTE), done["verdict"].seen)
         states = {"b1": passed_block("b1", "def solution(n):\n    acc = 0\n    t = 5", [("acc", "total")]),  # 짝(acc)이 뜻과 다르다(t가 답)
                   "b2": passed_block("b2", "for i in range(1, n + 1):\n    t += i")}
         ctx = fakes.context(plan=fakes.planned(SUM3), open_count=3, block_states=states)
@@ -1387,6 +1407,20 @@ class HonestCheckTest(unittest.TestCase):
                 got = solve({"ctx": ctx, "strategy": "fresh", "abstract": fact}, config)
             self.assertNotIn("abstract", got)
 
+    def test_abstract_takes_a_loose_level(self):
+        """뼈대의 단계는 모양을 따지지 않고 받는다("2"·2.0·null로 뼈대 전체를 잃지 않는다). 1~5의 정수로 바꿀 수 없으면 0(모름)이다."""
+        from ..llm import FakeLlm, use_llm
+        from ..plan.nodes import abstract
+
+        ctx = fakes.context(spec="")
+        for level, want in ((3, 3), ("2", 2), (2.0, 2), (" 4 ", 4), (None, 0), (2.5, 0), (9, 0), ("어려움", 0), (True, 0), ([2], 0)):
+            reply = {"spec": "문자열 배열 둘", "patterns": [], "skills": [], "size": 0, "level": level, "tags": []}
+            with use_llm(FakeLlm({"plan.abstract": [reply]})):
+                got = abstract({"ctx": ctx})
+            self.assertEqual((got["abstract"].spec, got["abstract"].level), ("문자열 배열 둘", want), level)
+        with use_llm(FakeLlm({"plan.abstract": [{"spec": "문자열 배열 둘"}]})):
+            self.assertEqual(abstract({"ctx": ctx})["abstract"].level, 0)  # 단계를 빠뜨려도 뼈대는 남는다
+
     def test_program_guide_follows_the_starter_reading(self):
         """표준 입출력 가이드에도 시작 코드를 넘기고 그 읽기 꼴을 따르게 한다(커서를 블록 사이로 넘기지 않게). 정해 둔 코드를 쓸 때는 넘기지 않는다."""
         from ..knowledge.ontology import technique_list
@@ -1403,8 +1437,10 @@ class HonestCheckTest(unittest.TestCase):
                  f"{technique_list()}\n{LEVEL_TEXT} 위 code가 쓰는 방법으로 정한다.\n"
                  'JSON {"clues": ["..."], "approach", "steps": ["..."], "code", "tags": [id], "level"}\n')
         plain = 'JSON {"clues": ["..."], "approach", "steps": ["..."], "code"}\n'
-        for strategy, tail in (("fresh", asked), ("canonical", asked), ("keep_flow", plain)):
-            function = solve_messages({"ctx": fakes.context(problem_text=fakes.PROBLEM, starter=head, direct_code="x"), "strategy": strategy})[1]["content"]
+        follow = 'JSON {"clues": ["..."], "approach", "steps": ["..."], "code", "followed": true 또는 false}\n'  # 사용자 방법 따르기: 따랐는가를 묻고 태그·단계는 묻지 않는다
+        for strategy, tail in (("fresh", asked), ("canonical", asked), ("keep_flow", plain), ("follow", follow)):
+            function = solve_messages({"ctx": fakes.context(problem_text=fakes.PROBLEM, starter=head, direct_code="x"), "strategy": strategy,
+                                       "follow": "정렬해서 앞뒤로 센다"})[1]["content"]
             self.assertTrue(function.endswith(f"\n{tail}{starter_line}"), (strategy, function[-600:]))
 
     def test_unpassed_program_guide_asks_to_check_line_breaks(self):
@@ -1582,10 +1618,17 @@ class OtherFeatureTest(unittest.TestCase):
 
     def test_feedback_record_names_skipped_blocks(self):
         from ..feedback.prompts import record_lines
-        from ..common.talk_rules import SKIPPED
+        from ..common.talk_rules import CHECKED, SKIPPED
         guide = [fakes.user("x = 1", 0, "u1"), fakes.service(SKIPPED + " 다음 블록이에요.", 0, "m1", "done")]
         lines = "\n".join(record_lines(fakes.context(guide=guide, block_states={"b1": BlockState("b1", "x = 1", "h", "?", None, 1)}), fakes.planned(fakes.two())))
-        self.assertIn("블록 1(입력받기): '이대로 넘어가기'로 확인 없이 넘어감", lines)
+        self.assertIn("블록 1(입력받기): 확인하지 않고 '이대로 넘어가기'로 넘어감(확인 전. 맞았다고도 틀렸다고도 하지 않는다)", lines)
+        # 확인을 눌러 통과하지 못한 뒤 넘긴 블록은 '확인하지 않고'가 아니다. 그 뒤의 제출이 통과했으면 실행해 보지 않았다고 말하지 않게 한다
+        tried = [fakes.user("x = 0", 0, "u0"), fakes.service("이어지지 않아요.", 0, "m0", "done"), *guide]
+        tried[0].move = CHECKED + "N"
+        skipped = {"b1": BlockState("b1", "x = 1", "h", "?", None, 2)}
+        for ok, want in ((True, "그 뒤 이 풀이의 제출이 모든 테스트를 통과했다"), (False, "확인 전. 맞았다고도 틀렸다고도 하지 않는다")):
+            got = "\n".join(record_lines(fakes.context(guide=tried, block_states=skipped, latest_submission=Submission("s1", "x = 1", ok)), fakes.planned(fakes.two())))
+            self.assertIn(f"블록 1(입력받기): 블록 코드 확인에서 통과하지 못한 뒤 '이대로 넘어가기'로 넘어감({want}", got)
         self.assertNotIn("넘어감", "\n".join(record_lines(fakes.context(guide=guide, block_states={"b1": BlockState("b1", "x = 1", "h", "Y", None, 1)}), fakes.planned(fakes.two()))))
 
     def test_llm_failure_clears_new_plan(self):
@@ -1779,6 +1822,23 @@ class StarterFrameTest(unittest.TestCase):
             self.assertEqual(starter_imports(program.split("\n"), read, "javascript"), [], program)  # 쓰지 않음, 이미 선언함, 글자일 뿐, 표준 입력을 이미 읽음
         self.assertEqual(starter_imports(["const n = readFileSync('a').length + EOL.length;"], "const { readFileSync } = require('fs');\nconst { EOL: EOL } = require('os');", "javascript"),
                          ["const { readFileSync } = require('fs');", "const { EOL: EOL } = require('os');"])
+
+    def test_empty_blocks_keep_only_their_frame_when_composed(self):
+        """빈 블록(튜터가 건너뛰어도 된다고 한 뒤 블록)은 계획 코드의 틀 줄만 남긴다: 그 블록이 닫던 괄호와 main() 부르기가 모은 코드에 남는다(블록 코드 확인의 '내 블록만 이은 프로그램'과 같다)."""
+        from ..common.solution import composed_parts, spliced
+
+        java = ["import java.util.*;\n\nclass Solution {\n    public int solution(int[] a) {\n        int total = 0;", "        for (int x : a) total += x;",
+                "        return total;\n    }\n}"]
+        blocks = [fakes.block(n + 1, f"b{n + 1}", ref) for n, ref in enumerate(java)]
+        codes = {"b1": {"code": "int total = 0;"}, "b2": {"code": "for (int x : a) total += x;\nreturn total;"}}
+        text = "\n".join(part for _, part in composed_parts(blocks, codes, "java"))
+        self.assertEqual((text.count("{"), text.count("}"), text.rstrip().endswith("    }\n}")), (2, 2, True), text)
+        self.assertEqual("\n".join(row for row in text.split("\n") if "// 블록" not in row),
+                         spliced(java, 1, codes["b2"]["code"], "java", {0: "int total = 0;"}, own_only=True))
+        py = ["import sys\n\ndef main():\n    n = int(sys.stdin.readline())", "    print(n * 2)", "    return\n\nmain()"]
+        blocks = [fakes.block(n + 1, f"b{n + 1}", ref) for n, ref in enumerate(py)]
+        parts = composed_parts(blocks, {"b1": {"code": "n = int(sys.stdin.readline())"}, "b2": {"code": "print(n * 2)"}}, "python", program=True)
+        self.assertEqual((parts[-1][0], parts[-1][1].strip()), (2, "main()"))  # 빈 끝 블록의 main() 부르기
 
     def test_unverified_guide_composes_into_the_starter_frame(self):
         from ..common.solution import composed_parts

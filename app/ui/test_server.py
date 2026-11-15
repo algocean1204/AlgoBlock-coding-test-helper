@@ -1387,6 +1387,29 @@ def prep_failed() -> None:
     assert not call("/api/state", id=pid)[1]["problem"]["prepare_failed"]
 
 
+def prep_unverified() -> None:
+    """준비가 끝났는데 풀이 가이드를 얻지 못했으면(고친 예시를 통과하는 풀이가 없는 문제 등) 검증하지 못함과 까닭이 남는다. 이미 대조 결과가 있으면 덮지 않는다."""
+    import time
+    from tutor.main import Outcome
+
+    pid = server.register(GOOD)["id"]
+    def prepare_and_wait():
+        call("/api/state", id=pid, open=True)
+        for _ in range(200):
+            if pid not in server.PREPARING:
+                break
+            time.sleep(0.02)
+        return call("/api/state", id=pid)[1]["problem"]
+    with patch.object(server, "PREPARE", True), patch.object(server, "connected", lambda: True), patch.object(server.Tutor, "prepare", lambda self, problem_id: Outcome(200, {"blocks": 0, "patterns": []})):
+        before = call("/api/state", id=pid)[1]["problem"]
+        assert before["verified"] == "" and not before["preparing"], before  # 준비 전에는 줄이 비어 있다
+        body = prepare_and_wait()
+        assert body["verified"] == "none" and body["check"]["why"] == server.UNVERIFIED["why"] and not body["prepare_failed"], body
+        server.PREPARED.discard(pid)
+        server.cross_done(pid, {"verified": "all", "calls": 2, "tiers": ["middle"], "doubts": [], "why": "", "hidden": 3, "efficiency": 0})
+        assert prepare_and_wait()["verified"] == "all"  # 앞의 대조 결과를 '검증하지 못함'으로 덮지 않는다
+
+
 def stale_save() -> None:
     """언어를 바꾸는 사이에 온 옛 언어의 코드·블록은 저장하지 않는다(어느 언어의 코드인지 같이 온다)."""
     pid = server.register(GOOD)["id"]  # 언어는 python
@@ -1455,6 +1478,7 @@ def checkpoints() -> None:
 def compose() -> None:
     """모으기는 서버 한 곳에서 블록 코드 확인과 같은 framed로 한다. 빈 블록은 빠지고, 블록 2에 머리 줄을 적어도 확인이 돌린 프로그램과 같은 글이다."""
     from tutor.common.solution import spliced
+    from tutor.common.talk_rules import ALONE_OK
 
     def text(parts):  # 블록 주석과 빈 줄을 뺀 글
         return "\n".join(row for _, part in parts for row in part.split("\n") if row.strip() and not row.strip().startswith("# 블록"))
@@ -1462,7 +1486,10 @@ def compose() -> None:
     b1 = "\n".join(row[4:] for row in LINES[1:5])
     parts = call("/api/compose", id=PID, mode="guide", blocks={"b1": {"code": b1, "by": "me"}, "b2": {"code": "\n".join(LINES[5:]), "by": "tutor"}})[1]["parts"]
     assert [i for i, _ in parts] == [0, 1] and parts[0][1].startswith("def solution(loans, k):\n    # 블록 1 · ") and text(parts) == CODE, parts
-    assert [i for i, _ in call("/api/compose", id=PID, mode="guide", blocks={"b1": {"code": "  ", "by": "me"}, "b2": {"code": "return []", "by": "me"}})[1]["parts"]] == [1]
+    parts = call("/api/compose", id=PID, mode="guide", blocks={"b1": {"code": "  ", "by": "me"}, "b2": {"code": "return []", "by": "me"}})[1]["parts"]
+    assert [i for i, _ in parts] == [0, 1] and parts[0][1] == "def solution(loans, k):" and parts[1][1].endswith(" return []"), parts  # 빈 블록은 틀 줄만(머리가 빠지면 함수 밖의 return이었다)
+    # 튜터가 '남은 블록은 건너뛰어도 된다'고 한 뒤의 빈 블록은 화면이 모으기에서 막지 않는다(화면은 그 말로 안다)
+    assert ALONE_OK.split(".")[0] in (Path(__file__).parent / "app.js").read_text(encoding="utf-8")
     head2 = "def solution(loans, k):\n" + "\n".join(LINES[5:])  # 블록 2에 머리 줄을 적었다
     parts = call("/api/compose", id=PID, mode="guide", blocks={"b1": {"code": b1, "by": "me"}, "b2": {"code": head2, "by": "me"}})[1]["parts"]
     ran = spliced(["\n".join(LINES[:5]), "\n".join(LINES[5:])], 1, head2, "python", {0: b1})
@@ -1515,6 +1542,224 @@ def checks() -> None:
     assert refuses("/api/theme", theme=["talk"]) and refuses("/api/theme", theme="talk", tier=1)
     other = next(row for row in ROWS if row["id"] != PID)
     assert call("/api/solution", id=other["id"], force="true")[0] == 409  # 문자열 "true"는 참이 아니다
+
+
+def key_flow() -> None:
+    """API 키: 그 공급자의 키 꼴이 아니면(빈칸·한글·다른 접두사) 저장하지 않고 까닭을 말한다. 지우기는 그 공급자의 키만, 화면에서 넣은 것만 지운다."""
+    claude, openai = "sk-ant-api03-" + "a" * 20, "sk-proj-" + "b" * 20
+    with patch.dict(os.environ, {}), patch.object(server.keycheck, "check", lambda provider, key, **kw: server.keycheck.OK):  # 확인은 아래 key_check_flow에서 따로 본다(네트워크를 쓰지 않는다)
+        for name in ("ANTHROPIC_API_KEY", "OPENAI_API_KEY"):
+            os.environ.pop(name, None)
+        for name, bad in (("claude", "hello world 한글"), ("claude", "sk-ant-abc def"), ("claude", openai), ("openai", "sk-a b"), ("openai", "한글키"), ("openai", claude), ("openai", "abcdef")):
+            assert "꼴이 아니에요" in refuses("/api/key", name=name, value=bad) and bad not in refuses("/api/key", name=name, value=bad)  # 값은 글에 싣지 않는다
+        assert not server.KEY_FILE.exists() and not any(os.environ.get(env) for env in server.KEYS.values())  # 거절한 키는 파일에도 환경에도 없다
+        assert call("/api/key", name="claude", value=claude)[1]["keys"] == {"claude": True, "openai": False}
+        assert call("/api/key", name="openai", value=openai)[1]["keys"] == {"claude": True, "openai": True}
+        assert refuses("/api/key/delete", name="x") and refuses("/api/key/delete", name=["claude"])
+        after = call("/api/key/delete", name="openai")[1]["keys"]  # 지운 공급자만 빠진다
+        assert after == {"claude": True, "openai": False} and server.read_json(server.KEY_FILE, {}) == {"ANTHROPIC_API_KEY": claude}
+        try:
+            call("/api/key/delete", name="openai")
+            raise AssertionError("넣지 않은 키를 지울 수는 없다")
+        except server.Refuse as exc:
+            assert exc.status == 409 and exc.code == "key_outside", exc  # 화면에서 넣은 것이 아니면 환경(.env)은 건드리지 않는다
+        env_file = server.DATA / ".env"  # .env에도 같은 공급자의 키가 있으면: 지운 뒤에는 그 키로 연결된 채이고, 지울 수 있는 키(keys_saved)는 아니다
+        env_file.write_text("OPENAI_API_KEY=sk-from-dotenv\n", encoding="utf-8")
+        try:
+            assert call("/api/key", name="openai", value=openai)[1]["keys_saved"] == {"claude": True, "openai": True}
+            got = call("/api/key/delete", name="openai")[1]
+            assert got["keys"]["openai"] and got["keys_saved"] == {"claude": True, "openai": False} and os.environ["OPENAI_API_KEY"] == "sk-from-dotenv", got
+        finally:
+            env_file.unlink()
+        os.environ["OPENAI_API_KEY"] = "sk-outside"  # 밖(환경 변수)에서 준 키는 파일에 없으니 지우지 않는다
+        assert call("/api/accounts")[1]["keys"]["openai"] and os.environ["OPENAI_API_KEY"] == "sk-outside"
+        assert call("/api/key/delete", name="claude")[1]["keys"] == {"claude": False, "openai": True} and not server.read_json(server.KEY_FILE, {})
+
+
+def key_check_flow() -> None:
+    """키 확인(가짜 응답과 루프백 서버, 외부 네트워크 없음): 공식 주소에 모델 목록 조회 한 번(10초), 결과 여섯. 리다이렉트는 따라가지 않는다. 키 값은 결과·오류 글에 없다."""
+    import io
+    import urllib.error
+    from app.llm import keycheck
+
+    class Reply:  # urlopen이 주는 응답
+        def __init__(self, status):
+            self.status = status
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+    seen = []
+
+    def opener(result):
+        def open_(request, timeout):
+            seen.append((request.full_url, request.get_method(), {k.lower(): v for k, v in request.header_items()}, timeout))
+            if isinstance(result, BaseException):
+                raise result
+            return Reply(result)
+        return open_
+
+    http = lambda code: urllib.error.HTTPError("https://example.invalid", code, "x", {}, io.BytesIO(b""))
+    secret = "sk-ant-api03-" + "q" * 20
+    for result, want in ((200, "ok"), (http(401), "invalid"), (http(403), "denied"), (http(429), "limited"), (http(500), "server"), (http(529), "server"), (http(404), "offline"), (http(302), "offline"),
+                         (urllib.error.URLError(f"연결하지 못함 {secret}"), "offline"), (TimeoutError(secret), "offline"), (Reply(302).status, "offline")):
+        assert keycheck.check("claude", secret, opener=opener(result)) == want, (result, want)
+    seen.clear()
+    keycheck.check("claude", secret, opener=opener(200))
+    keycheck.check("openai", "sk-proj-" + "r" * 20, opener=opener(200))
+    assert [(url, method, timeout) for url, method, _, timeout in seen] == [("https://api.anthropic.com/v1/models?limit=1000", "GET", 10.0), ("https://api.openai.com/v1/models", "GET", 10.0)], seen  # 공식 주소로만, 한 번씩
+    assert seen[0][2]["x-api-key"] == secret and seen[0][2]["anthropic-version"] and seen[1][2]["authorization"] == "Bearer sk-proj-" + "r" * 20
+    try:
+        keycheck.request_for("other", "x")
+        raise AssertionError("모르는 공급자는 거절해야 한다")
+    except ValueError:
+        pass
+
+    # 리다이렉트는 따라가지 않는다: 첫 주소가 302로 다른 호스트를 가리켜도 그 호스트는 키 헤더를 받지 않는다(루프백 서버 둘)
+    import http.server
+    import threading
+
+    got = []
+
+    class Second(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            got.append(dict(self.headers))
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"{}")
+
+        def log_message(self, *args):
+            pass
+
+    second = http.server.HTTPServer(("127.0.0.1", 0), Second)
+
+    class First(Second):
+        def do_GET(self):
+            self.send_response(302)
+            self.send_header("Location", f"http://127.0.0.1:{second.server_port}/")
+            self.end_headers()
+
+    first = http.server.HTTPServer(("127.0.0.1", 0), First)
+    for one in (first, second):
+        threading.Thread(target=one.serve_forever, daemon=True).start()
+
+    def to_first(request, timeout):  # 공식 주소 대신 첫 루프백 서버로 보내되, 헤더와 기본 opener(리다이렉트를 따르지 않는 것)는 그대로 쓴다
+        return keycheck.OPENER.open(urllib.request.Request(f"http://127.0.0.1:{first.server_port}/", headers=dict(request.header_items())), timeout=timeout)
+
+    try:
+        assert keycheck.check("claude", secret, opener=to_first) == "offline" and keycheck.check("openai", "sk-proj-" + "r" * 20, opener=to_first) == "offline"
+        assert got == [], got  # 두 번째 호스트에는 요청도 헤더도 가지 않았다
+    finally:
+        for one in (first, second):
+            one.shutdown()
+            one.server_close()
+
+    calls = []
+
+    def fake(result):
+        def check(provider, key, **kw):
+            calls.append((provider, key))
+            return result
+        return check
+
+    def put(result, **more):
+        with patch.object(server.keycheck, "check", fake(result)):
+            return call("/api/key", name="claude", value=f"  {secret}  ", **more)[1]
+
+    def refused(result, **more):
+        try:
+            put(result, **more)
+        except server.Refuse as exc:
+            return exc
+        raise AssertionError(f"{result}는 거절해야 한다")
+
+    with patch.dict(os.environ, {}):
+        os.environ.pop("ANTHROPIC_API_KEY", None)
+        server.KEY_FILE.unlink(missing_ok=True)
+        # 401은 저장하지 않고 '그래도 저장'도 없다. 403·5xx·연결 못 함은 저장하지 않되 '그래도 저장'을 연다. 429는 키가 맞으니 저장한다
+        for result, status, code in (("invalid", 400, "key_invalid"), ("denied", 409, "key_denied"), ("server", 409, "key_unverified"), ("offline", 409, "key_unverified")):
+            exc = refused(result)
+            assert (exc.status, exc.code, exc.field) == (status, code, "value") and secret not in str(exc), (result, exc.status, exc.code)  # 글에 키 값이 없다
+            assert not os.environ.get("ANTHROPIC_API_KEY") and not server.KEY_FILE.exists(), result  # 쓸 수 없는 키, 확인하지 못한 키는 저장하지 않는다
+        assert calls == [("claude", secret)] * 4  # 앞뒤 공백은 뗀 값으로 확인한다
+        assert "권한" in str(refused("denied")) and "서버가 답하지 않아" in str(refused("server")) and "인터넷" not in str(refused("server")) and "인터넷" in str(refused("offline"))  # 까닭을 단정하지 않고 맞게 말한다
+        assert refused("invalid", force=True).code == "key_invalid"  # 틀린 키는 그래도 저장할 수 없다
+        assert refused("offline", force="true").code == "key_unverified"  # 정확히 true일 때만 확인 없이 저장한다
+        for result in ("denied", "server", "offline"):
+            saved = put(result, force=True)
+            assert saved["key_check"] == result and saved["keys"]["claude"] and server.read_json(server.KEY_FILE, {}) == {"ANTHROPIC_API_KEY": secret}, result
+            server.KEY_FILE.unlink()
+            os.environ.pop("ANTHROPIC_API_KEY")
+        saved = put("limited")  # 429: 키는 맞다. 물음 없이 저장한다
+        assert saved["key_check"] == "limited" and server.read_json(server.KEY_FILE, {}) == {"ANTHROPIC_API_KEY": secret}
+        server.KEY_FILE.unlink()
+        os.environ.pop("ANTHROPIC_API_KEY")
+        saved = put("ok")
+        assert saved["key_check"] == "ok" and secret not in json.dumps(saved) and server.read_json(server.KEY_FILE, {}) == {"ANTHROPIC_API_KEY": secret}
+        server.drop_key("ANTHROPIC_API_KEY")
+
+
+def key_rows_flow() -> None:
+    """공급자별 키 줄: 연결 여부, 끝 4자리(나머지 글자는 응답 어디에도 없다), 마지막 확인과 그 결과. 다시 확인은 서버에 있는 키로 하고, 지우면 줄의 확인 기록도 지운다."""
+    secret = "sk-ant-api03-" + "Zq7" * 6 + "wxyz"
+    short = "sk-abc"
+    seen = []
+
+    def fake(result):
+        def check(provider, key, **kw):
+            seen.append((provider, key))
+            return result
+        return check
+
+    with patch.dict(os.environ, {}):
+        for name in ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "ALGOBLOCK_LLM_PROVIDER"):
+            os.environ.pop(name, None)
+        server.KEY_FILE.unlink(missing_ok=True)
+        server.KEY_CHECK_FILE.unlink(missing_ok=True)
+        empty = call("/api/accounts")[1]
+        assert empty["key_rows"] == {name: {"on": False, "tail": "", "at": "", "result": ""} for name in ("claude", "openai")}, empty["key_rows"]
+        with patch.object(server.keycheck, "check", fake("ok")):
+            body = call("/api/key", name="claude", value=secret)[1]
+        row = body["key_rows"]["claude"]
+        assert (row["on"], row["tail"], row["result"]) == (True, "wxyz", "ok") and row["at"] and body["using"] == "claude", row
+        assert secret[:-4] not in json.dumps(body, ensure_ascii=False) and secret[:-4] not in server.KEY_CHECK_FILE.read_text(encoding="utf-8")  # 끝 4자리 말고는 응답에도 확인 기록에도 없다
+        record = server.KEY_CHECK_FILE.read_text(encoding="utf-8")
+        assert secret not in record and server.key_print(secret) in record and server.key_print(secret) != secret  # 기록에는 키가 아니라 지문만 있다
+        other = "sk-ant-api03-" + "Nn5" * 6 + "9988"  # 키만 바뀐 경우(.env의 키 B를 두고 화면에서 넣은 키 A를 확인한 뒤 다시 켬): 옛 기록은 지금 키의 것이 아니다
+        os.environ["ANTHROPIC_API_KEY"] = other
+        changed = call("/api/accounts")[1]["key_rows"]["claude"]
+        assert changed == {"on": True, "tail": "9988", "at": "", "result": ""}, changed
+        os.environ["ANTHROPIC_API_KEY"] = secret
+        assert call("/api/accounts")[1]["key_rows"]["claude"]["result"] == "ok"  # 같은 키로 돌아오면 그 기록이 다시 보인다
+        import threading  # 키 넣기와 다시 확인이 겹쳐도 공급자의 기록이 서로 덮이지 않는다
+        pool = [threading.Thread(target=server.note_key_check, args=(name, "ok", key)) for _ in range(8) for name, key in (("claude", secret), ("openai", "sk-proj-" + "b" * 20))]
+        [t.start() for t in pool]
+        [t.join() for t in pool]
+        assert sorted(server.read_json(server.KEY_CHECK_FILE, {})) == ["claude", "openai"]
+        server.note_key_check("openai", None)
+        os.environ["OPENAI_API_KEY"] = short  # 너무 짧은 글은 끝자리도 싣지 않는다
+        assert call("/api/accounts")[1]["key_rows"]["openai"] == {"on": True, "tail": "", "at": "", "result": ""}
+        del os.environ["OPENAI_API_KEY"]
+        for result in ("invalid", "denied", "offline", "ok"):  # 다시 확인: 서버에 있는 키로 한 번, 결과와 시각을 남긴다
+            seen.clear()
+            with patch.object(server.keycheck, "check", fake(result)):
+                got = call("/api/key/check", name="claude")[1]
+            assert seen == [("claude", secret)] and got["key_check"] == result and got["key_rows"]["claude"]["result"] == result, (result, seen)
+            assert secret[:-4] not in json.dumps(got, ensure_ascii=False)
+        for bad in ({"name": "x"}, {"name": ["claude"]}):
+            assert refuses("/api/key/check", **bad)
+        try:
+            call("/api/key/check", name="openai")
+            raise AssertionError("넣지 않은 키는 확인하지 못한다")
+        except server.Refuse as exc:
+            assert (exc.status, exc.code) == (409, "key_missing")
+        deleted = call("/api/key/delete", name="claude")[1]
+        assert deleted["key_rows"]["claude"] == {"on": False, "tail": "", "at": "", "result": ""} and "claude" not in server.read_json(server.KEY_CHECK_FILE, {})
+        os.environ["ANTHROPIC_API_KEY"] = secret  # 밖에서 준 키는 확인 기록이 없다(예전 기록이 남았어도 지금 키의 것이 아니면 보이지 않게 지운 상태)
+        assert call("/api/accounts")[1]["key_rows"]["claude"]["result"] == ""
 
 
 def error_lines() -> None:
@@ -1724,6 +1969,100 @@ def upload() -> None:
     assert get(f"/asset/{pid}/1")[0] == 404 and not (server.ASSETS / pid).exists()
     httpd.shutdown()
     httpd.server_close()
+
+
+def color_tokens() -> None:
+    """화면 색: 라이트는 :root, 다크는 :root[data-scheme="dark"] 한 벌. 부품 규칙에는 색 값을 박지 않는다."""
+    import re
+    css = (HERE / "app.css").read_text(encoding="utf-8")
+    html = (HERE / "index.html").read_text(encoding="utf-8")
+    assert "prefers-color-scheme" not in css  # 운영체제 설정은 머리의 스크립트가 읽어 data-scheme에 옮긴다
+    dark_open = '\n:root[data-scheme="dark"] {\n'
+    assert css.count(dark_open) == 1
+    dark = css.split(dark_open)[1].split("\n}")[0]
+    light = css.split("\n:root {\n")[1].split("\n}")[0]
+    for name in ("--thumb", "--scrim", "--code-gutter", "--code-selection", "--syn-keyword", "--syn-string", "--syn-comment", "--syn-number", "--syn-function", "--syn-type"):
+        assert f"{name}:" in light and f"{name}:" in dark, name  # 두 화면이 모두 값을 가진다
+    rest = css.split("/* ── 바탕 ── */", 1)[1]
+    assert [hit for hit in re.findall(r"#[0-9A-Fa-f]{3,8}\b|rgba?\([^)]*\)", rest) if hit != "rgb(255 255 255 / 0.2)"] == []  # 남긴 것: 강조색 면 위의 흰 칠 둘(위), 고르기 화살표 그림(%23)
+    assert "var(--code-gutter)" in rest and "var(--thumb)" in rest and "var(--scrim)" in rest
+    assert html.index("applyScheme(") < html.index('href="app.css"')  # 첫 그림 전에 정한다
+    assert html.count('name="theme-color"') == 1 and 'data-scheme-pref="system"' in html
+
+
+def scheme_setting() -> None:
+    """화면 색: /api/prefs로 저장하고, 서버가 첫 HTML에 저장한 값을 실어 첫 그림 전에 맞춘다."""
+    import threading
+    from http.client import HTTPConnection
+
+    httpd = server.ThreadingHTTPServer(("127.0.0.1", 0), server.Handler)
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+
+    def first_page() -> str:
+        conn = HTTPConnection("127.0.0.1", httpd.server_port, timeout=60)
+        conn.request("GET", "/")
+        page = conn.getresponse().read().decode("utf-8")
+        conn.close()
+        return page
+
+    assert [f'name="scheme" value="{value}"' in first_page() for value in ("system", "light", "dark")] == [True] * 3  # 설정 창의 라디오 셋
+    saved = server.read_json(server.PREFS_FILE, {})
+    server.write_json(server.PREFS_FILE, {**saved, "language": "javascript", "stages": {"keep": "me"}})  # 다른 설정이 같이 남는지 보려고 심는다
+    try:
+        assert call("/api/accounts")[1]["scheme"] == "system" and 'data-scheme-pref="system"' in first_page()  # 고르지 않았으면 운영체제를 따른다
+        for bad in ({}, {"scheme": "sepia"}, {"scheme": ""}, {"scheme": None}, {"scheme": ["dark"]}, {"scheme": 1}):
+            assert "화면 색" in refuses("/api/prefs", **bad), bad
+        assert "scheme" not in server.read_json(server.PREFS_FILE, {})  # 거절한 값은 적히지 않는다
+        for scheme in ("dark", "light"):
+            assert call("/api/prefs", scheme=scheme)[1]["scheme"] == scheme
+            assert server.read_json(server.PREFS_FILE, {})["scheme"] == scheme and call("/api/accounts")[1]["scheme"] == scheme
+            page = first_page()
+            assert f'<html lang="ko" data-scheme-pref="{scheme}">' in page
+            assert 'data-scheme-pref="system"' in (HERE / "index.html").read_text(encoding="utf-8")  # 파일은 그대로, 내보낼 때만 바꾼다
+            assert page.index("applyScheme(") < page.index('href="app.css"')  # 적용하는 스크립트가 스타일시트보다 앞이다
+        server.write_json(server.PREFS_FILE, {**server.read_json(server.PREFS_FILE, {}), "scheme": "<x>"})  # 손으로 고친 이상한 값은 system으로 본다
+        assert call("/api/accounts")[1]["scheme"] == "system" and 'data-scheme-pref="system"' in first_page()
+        call("/api/prefs", scheme="dark")
+        assert call("/api/prefs", scheme="system")[1]["scheme"] == "system"
+        kept = server.read_json(server.PREFS_FILE, {})
+        assert "scheme" not in kept and kept["language"] == "javascript" and kept["stages"] == {"keep": "me"}  # system은 키를 지우고 다른 설정은 그대로
+    finally:
+        server.write_json(server.PREFS_FILE, saved)
+        httpd.shutdown()
+        httpd.server_close()
+
+
+def window_background() -> None:
+    """창 바탕색: 고른 색을 따르고, 시스템 설정대로일 때 운영체제를 읽지 못하면 밝은 바탕으로 연다."""
+    import types
+    from unittest.mock import MagicMock
+
+    sys.modules.setdefault("webview", types.ModuleType("webview"))  # pywebview 없이 함수만 부른다
+    import window
+
+    saved = server.read_json(server.PREFS_FILE, {})
+    out = lambda text: SimpleNamespace(stdout=text)  # noqa: E731
+    try:
+        with patch.object(window.sys, "platform", "darwin"):
+            with patch.object(window.subprocess, "run", return_value=out("Dark\n")):
+                assert window.os_dark() is True
+            with patch.object(window.subprocess, "run", return_value=out("")):  # 라이트 운영체제는 값이 없어 빈 글이 온다
+                assert window.os_dark() is False
+            with patch.object(window.subprocess, "run", side_effect=OSError("defaults 없음")):  # 읽지 못함: 밝게
+                assert window.os_dark() is False
+            with patch.object(window.subprocess, "run", side_effect=subprocess.TimeoutExpired("defaults", 3)):
+                assert window.os_dark() is False
+        with patch.object(window.sys, "platform", "linux"):  # 읽는 길이 없는 운영체제
+            assert window.os_dark() is False
+        for scheme, dark_os, want in (("dark", False, "#111113"), ("light", True, "#F5F5F7"), ("system", True, "#111113"), ("system", False, "#F5F5F7")):
+            server.write_json(server.PREFS_FILE, {**saved, **({} if scheme == "system" else {"scheme": scheme})})
+            with patch.object(window, "os_dark", MagicMock(return_value=dark_os)):
+                assert window.background() == want, (scheme, dark_os)
+        server.write_json(server.PREFS_FILE, {**saved, "scheme": "<x>"})  # 이상한 저장 값은 system으로 본다
+        with patch.object(window, "os_dark", MagicMock(return_value=False)):
+            assert window.background() == "#F5F5F7"
+    finally:
+        server.write_json(server.PREFS_FILE, saved)
 
 
 def stages() -> None:
@@ -2049,6 +2388,10 @@ def main() -> None:
         edit_delete()
         checkpoints()
         prep_failed()
+        key_flow()
+        key_check_flow()
+        key_rows_flow()
+        prep_unverified()
         stale_save()
         builtin_prepare()
         own_guide()
@@ -2076,6 +2419,7 @@ def main() -> None:
     assert call("/api/tour")[1]["tour_seen"] and call("/api/accounts")[1]["tour_seen"]
     for path, (name, _) in server.STATIC.items():  # 화면이 부르는 파일이 모두 있다(글꼴 포함)
         assert (server.STATIC_DIR / name).is_file(), path
+    assert "Continue with" not in (server.STATIC_DIR / "index.html").read_text(encoding="utf-8")  # 화면 글은 한국어다(ChatGPT 로그인 단추도)
 
     import test_update  # 업데이트(가짜 네트워크, 임시 폴더의 가짜 앱)
     test_update.run()
@@ -2086,6 +2430,9 @@ def main() -> None:
         raise AssertionError("받을 새 버전이 없으면 거절한다")
     except server.Refuse as exc:
         assert exc.status == 409
+    color_tokens()
+    scheme_setting()
+    window_background()
     stages()
     newest_models()
     read_check()

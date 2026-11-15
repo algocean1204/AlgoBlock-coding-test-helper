@@ -790,6 +790,10 @@ class GrammarRuleTest(unittest.TestCase):
             ("kotlin", 'println("count=$count ${count + 1}")\nval p = Pair(first = a, second = first)', {"count": "c", "first": "f"},
              'println("count=$c ${c + 1}")\nval p = Pair(first = a, second = f)'),
             ("javascript", 'console.log(`count: ${count}`, "count", count)', {"count": "c"}, 'console.log(`count: ${c}`, "count", c)'),
+            ("javascript", "const r = /x[/]x\\/x/gi; if (/^x$/.test(x)) return /x/;", {"x": "Y"}, "const r = /x[/]x\\/x/gi; if (/^x$/.test(Y)) return /x/;"),  # 정규식 글자는 글자다
+            ("javascript", "y = a[x] / x / 2 + (x) / x + i++ / x;", {"x": "Y"}, "y = a[Y] / Y / 2 + (Y) / Y + i++ / Y;"),  # 값 뒤의 '/'는 나눗셈이다
+            ("javascript", "const a = `x ${x} ${`in ${count} x`} x`;", {"x": "Y", "count": "cnt"}, "const a = `x ${Y} ${`in ${cnt} x`} x`;"),  # 겹친 템플릿의 글자 부분
+            ("javascript", "const a = `${x > 0 ? `${'}'}x` : x / 2} x`;", {"x": "Y"}, "const a = `${Y > 0 ? `${'}'}x` : Y / 2} x`;"),  # ${…} 안 문자열의 '}'는 끝이 아니다
             ("rust", "fn longest<'a>(x: &'a str, y: &'a str) -> &'a str { if x.len() > y.len() { x } else { y } }", {"x": "first", "y": "second"},
              "fn longest<'a>(first: &'a str, second: &'a str) -> &'a str { if first.len() > second.len() { first } else { second } }"),  # 수명 표기는 문자열이 아니다
             ("rust", "let c = 'x'; let q = '\\''; let n = x + 1;", {"x": "z"}, "let c = 'x'; let q = '\\''; let n = z + 1;"),
@@ -813,8 +817,6 @@ class GrammarRuleTest(unittest.TestCase):
         from ..common.solution import swap_names
 
         rows = [
-            ("javascript", "const r = /x/g;", {"x": "Y"}, "const r = /Y/g;"),  # 정규식 글자
-            ("javascript", "const a = `x ${x} ${`in ${count} x`} x`;", {"x": "Y", "count": "cnt"}, "const a = `x ${Y} ${`in ${cnt} Y`} x`;"),  # 겹친 백틱
             ("kotlin", 'val a = "${f("x")} $x"\nval b = "${ if (x > 0) "x" else "y" }"', {"x": "Y"},
              'val a = "${f("Y")} $Y"\nval b = "${ if (x > 0) "Y" else "y" }"'),  # ${} 안의 문자열
             ("rust", 'let a = r#"x "quoted" x"#;', {"x": "Y"}, 'let a = r#"x "quoted" Y"#;'),  # r#"…"#

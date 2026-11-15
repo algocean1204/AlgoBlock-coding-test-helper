@@ -98,7 +98,7 @@ async function api(path, body) {
     const r = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}), keepalive: leaving });
     const data = await r.json();
     const out = r.ok ? { ok: true, data } : { ok: false, error: data.detail || { code: "unknown", message: "" } };
-    if (out.ok ? MODEL_PATHS.includes(path) || path === "/api/key" : out.error.code === "llm_auth_failed") setKeyBad(!out.ok);
+    if (out.ok ? MODEL_PATHS.includes(path) || ["/api/key", "/api/key/delete"].includes(path) : out.error.code === "llm_auth_failed") setKeyBad(!out.ok);
     return out;
   } catch (e) {
     return { ok: false, error: { code: "network", message: "" } };
@@ -145,7 +145,7 @@ function applyBusy() {
 
 async function work(label, where, fn, slow) { // slow: 10초를 넘기면 덧붙일 말(모델이 아니라 코드를 돌리는 기다림)
   if (S.busy) return null;
-  S.busy = { label, where, t0: Date.now(), slow };
+  S.busy = { label, where, t0: Date.now(), slow, pid: S.pid }; // pid: 이 기다림을 시작한 문제(다른 문제 화면에서 진행 글을 그 문제의 것으로 보이지 않게)
   say(label);
   render();
   ticker = setInterval(applyBusy, 1000);
@@ -791,6 +791,7 @@ function formMode(editing) {
   $("new-lead").textContent = editing ? "바꿀 곳을 고친 뒤 저장해요." : "가진 문제를 글이나 사진으로 넣어 같은 방식으로 풀어요.";
   $("new-submit").textContent = editing ? "바꿔서 저장" : "등록하고 풀러 가기";
   document.querySelector('#wsteps li[data-wstep="3"]').lastChild.textContent = editing ? "저장" : "등록";
+  $("new-title-note").hidden = editing; // '글의 첫 줄에서 채웠어요'는 새로 넣을 때만(수정의 제목은 저장해 둔 것이다)
   $("new-lang-field").hidden = editing; // 언어는 코드 화면에서 바꾼다
   $("new-mode").disabled = editing; // 푸는 방식은 등록할 때만 고른다(바꾸면 케이스와 코드가 모두 달라진다)
   $("new-mode-note").hidden = !editing;
@@ -1045,12 +1046,20 @@ function renderCode() {
   renderSteps(stage, applyPrimary(stage));
 }
 
+let prepAsking = false; // 다시 준비 요청 중(두 번 눌러 겹치지 않게)
+async function prepAgain() {
+  if (prepAsking) return;
+  prepAsking = true;
+  document.querySelectorAll("#prep-again, #prep-again-top").forEach((el) => { el.disabled = true; });
+  try { S.note.start = null; S.problem.prepare_failed = false; S.prepAt = 0; await loadState(true); say(S.problem.preparing ? "튜터가 풀이 순서를 다시 준비해요." : ""); } finally { prepAsking = false; }
+}
+
 /** 등록한 문제의 준비·검증 한 줄: "풀이 준비 중 · 숨은 테스트 n개 만듦 · 검증: 예시와 대조 모두 통과" */
 function renderCheckLine(p) {
   const c = p.check || {}, made = (Number(c.hidden) || 0) + (Number(c.efficiency) || 0);
-  const parts = p.sample ? [] : [p.preparing ? "풀이 준비 중" : "", made ? `숨은 테스트 ${made}개 만듦` : "", p.verified_name ? `검증: ${p.verified_name}` : "", c.why && p.verified !== "all" ? String(c.why) : ""].filter(Boolean).map(esc);
+  const parts = p.sample ? [] : [p.preparing ? "풀이 준비 중" : "", made ? `숨은 테스트 ${made}개 만듦` : "", p.verified_name ? `검증: ${p.verified_name}` : "", c.why && p.verified !== "all" ? String(c.why) : "", p.prepare_failed && !p.preparing ? "튜터가 풀이 순서를 준비하지 못했어요." : ""].filter(Boolean).map(esc); // 준비가 실패로 끝났으면 말하고 다시 준비하는 길을 둔다
   if (p.preparing) parts[0] += ` <span class="secs" data-since="${S.prepAt}">${since(S.prepAt)}초</span> · 보통 1분 안팎`; // 다른 기다림 표시처럼 지난 초
-  $("p-check").innerHTML = parts.length ? `${p.preparing ? DOTS : ""}<span>${parts.join(" · ")}</span>` : "";
+  $("p-check").innerHTML = parts.length ? `${p.preparing ? DOTS : ""}<span>${parts.join(" · ")}</span>${p.prepare_failed && !p.preparing ? ' <button type="button" class="btn small" id="prep-again-top" data-model>다시 준비</button>' : ""}` : "";
   $("p-check").hidden = !parts.length;
 }
 
@@ -1078,7 +1087,7 @@ const slowOnlyOf = (r) => !r.ok && !r.run && r.cases.length > 0 && !!r.score && 
 /** '끝까지 내 방식으로 쓰기'가 지금 보이는 튜터 차례(가이드)에 켜져 있다. */
 const ownWayOn = () => !!S.ownWay && S.mode === "guide" && S.talk === "guide";
 /** 튜터 블록을 다 열고(의자는 다 찾고) 빈 칸이 없다: 모아서 실행할 때. */
-const blocksReady = () => S.session.blocks.length > 0 && (S.mode === "chair" ? allFound() : S.session.open_count >= S.session.blocks.length) && !emptyBlocks().length;
+const blocksReady = () => S.session.blocks.length > 0 && (S.mode === "chair" ? allFound() : S.session.open_count >= S.session.blocks.length || passedAloneAt() >= 0) && !emptyBlocks().length;
 
 /** 지금 가장 먼저 할 일 하나. 그 단추만 채워서 보여 준다. */
 function nextAction() {
@@ -1252,11 +1261,22 @@ function warnBraces(parts) {
   if (n || box.textContent.startsWith("모은 코드의 중괄호")) box.hidden = !n; // 다시 모아 맞으면 지난 알림을 걷는다
 }
 
-/** 열린 블록 가운데 코드 칸이 빈 것의 순번(0부터). 잠긴 블록과, 의자에서 아직 찾지 못한 지금 블록(칸이 없다)은 보지 않는다. */
+/** 튜터가 '지금까지 쓴 코드만으로 이미 통과해요'(엔진 ALONE_OK)라 말한 마지막 확인의 블록 순번(0부터). 그 뒤 블록은 건너뛰어도 된다고 했다. 없으면 -1. */
+function passedAloneAt() {
+  let at = -1;
+  for (const chat of [S.session.guide, S.session.chair]) chat.forEach((m, n) => {
+    if (m.role === "service" && m.text.startsWith("지금까지 쓴 코드만으로 이미 통과해요") && n > 0 && chat[n - 1].role === "user") at = Math.max(at, chat[n - 1].block_index);
+  });
+  return at;
+}
+
+/** 열린 블록 가운데 코드 칸이 빈 것의 순번(0부터). 잠긴 블록과, 의자에서 아직 찾지 못한 지금 블록(칸이 없다), 튜터가 건너뛰어도 된다고 한 블록(passedAloneAt 뒤)은 보지 않는다. */
 function emptyBlocks() {
   harvest();
-  return S.session ? S.session.blocks.map((b, i) => [b, i, blockState(b, i)])
-    .filter(([b, , state]) => state !== "locked" && !(state === "current" && S.talk === "chair") && !((S.blockCode[b.id] || {}).code || "").trim()).map(([, i]) => i) : [];
+  if (!S.session) return [];
+  const alone = passedAloneAt();
+  return S.session.blocks.map((b, i) => [b, i, blockState(b, i)])
+    .filter(([b, i, state]) => state !== "locked" && !(state === "current" && S.talk === "chair") && !(alone >= 0 && i > alone) && !((S.blockCode[b.id] || {}).code || "").trim()).map(([, i]) => i);
 }
 const gapText = (gaps) => `블록 ${gaps.map((i) => i + 1).join(", ")}의 코드 칸이 비어 있어요. 직접 적거나 ‘이 블록 채우기’를 눌러 주세요.`;
 
@@ -1327,11 +1347,13 @@ function renderCodePane() {
   $("pull-blocks").hidden = !direct || !S.session.blocks.length || !tutor;
   $("code-note").textContent = direct ? S.codeNote : "제출하면 ‘코드 전체’ 칸의 코드를 채점해요";
   $("run").hidden = !(S.problem.cases && S.problem.cases.example);
+  const away = S.busy && S.busy.where === "result" && S.busy.pid !== S.pid; // 다른 문제에서 실행·채점하는 중이면 실행·제출이 잠긴다
   const why = noTool() ? `이 기기에 ${LANG[S.problem.language] || S.problem.language} 도구가 없어 실행과 제출을 할 수 없어요.` : "";
-  $("tool-note").textContent = $("run").title = $("submit").title = $("run-own-go").title = why;
+  $("tool-note").textContent = why || (away ? "다른 문제에서 실행·채점하는 중이에요. 끝나면 이 문제도 실행하고 제출할 수 있어요." : "");
+  $("run").title = $("submit").title = $("run-own-go").title = why;
   $("run-input").placeholder = (S.problem.examples[0] || { input: "" }).input; // 그 문제 첫 예시의 입력
   $("code").placeholder = program() ? "여기에 전체 코드를 써요. 표준 입력을 읽고 답을 출력해요." : "여기에 전체 코드를 써요. 풀이는 solution 함수에 담아요.";
-  $("tool-note").hidden = !why;
+  $("tool-note").hidden = !why && !away;
   $("starter-note").hidden = S.problem.sample || program() || !!S.problem.starter || !direct; // 등록한 함수 문제인데 케이스에서 형을 정하지 못했다
   const line = S.debug && !S.debug.passed ? S.debug.line : null;
   $("line-note").hidden = !line;
@@ -1559,10 +1581,10 @@ function failGuide(r, slowOnly) {
 }
 
 function renderResult() {
-  const box = $("result"), r = S.result, judging = S.busy && S.busy.where === "result";
-  box.hidden = !r && !judging;
-  if (judging) return void (box.innerHTML = `<div class="note">${waitLine("result").replace(" · 보통 5~25초 걸려요", "")}</div>`);
-  if (!r) return;
+  const box = $("result"), r = S.result, judging = S.busy && S.busy.where === "result", mine = judging && S.busy.pid === S.pid;
+  box.hidden = !r && !mine;
+  if (mine) return void (box.innerHTML = `<div class="note">${waitLine("result").replace(" · 보통 5~25초 걸려요", "")}</div>`);
+  if (!r) return void (box.innerHTML = "");
   if (r.alert) return void (box.innerHTML = noteHtml(r.alert));
   const notice = r.notice ? `<p class="hint">${esc(r.notice)}</p>` : ""; // 채점 실행 제한을 걸지 못했다(Windows 작업 객체)
   if (r.own) return void (box.innerHTML = ownHtml(r) + notice + (r.stale ? '<div class="note warn" role="status">코드를 고쳤어요. 다시 실행하면 새로 돌려요.</div>' : ""));
@@ -2195,13 +2217,170 @@ function renderAccounts(a) {
   $("conn-now").classList.toggle("warn", keyBad);
   document.querySelector(".dev-conn").hidden = !a.dev; // 개발용 연결로 띄웠을 때만 이 칸이 있다
   document.querySelectorAll('input[name="client"]').forEach((el) => { el.checked = el.value === a.client; });
+  renderScheme();
   $("provider-now").textContent = provider ? `지금은 ${provider}` : "아직 없음";
   $("chatgpt-state").textContent = a.chatgpt ? "연결됨 · ChatGPT 요금제를 쓰는 중" : a.chatgpt_note || "연결 안 됨"; // 연결되지 않은 까닭(허락하지 않음, 자격 없음, 다시 로그인 필요)
   $("chatgpt-usage").hidden = !a.chatgpt;
-  document.querySelectorAll("[data-key]").forEach((el) => { el.textContent = a.keys[el.dataset.key] ? "넣음" : ""; });
+  renderKeyRows();
+  renderKeyDelete();
+  renderKeyStatus();
   if (a.chatgpt) { clearInterval(loginPoll); $("chatgpt-link").hidden = true; }
   if (S.view === "code" && S.problem) render();
   if (S.view === "list" && $("entries").innerHTML && !!$("note-conn") === ready) showList(); // 홈의 연결 한 줄을 새로 그린다
+}
+
+/** 화면 색: 라디오를 고른 값(저장 중이면 그 값, 아니면 저장된 값)에 맞추고 화면에도 적용한다(적용 함수는 index.html 머리에 있다). */
+let schemePicked = null; // 방금 고른 값. 늦게 온 /api/accounts 응답이 예전 값으로 되돌리지 못하게 응답보다 앞선다
+function renderScheme() {
+  const pref = schemePicked || (ACCOUNTS && ACCOUNTS.scheme) || "system";
+  document.querySelectorAll('input[name="scheme"]').forEach((el) => { el.checked = el.value === pref; });
+  applyScheme(pref);
+}
+async function chooseScheme(scheme) {
+  schemePicked = scheme;
+  renderScheme(); // 응답을 기다리지 않고 바로 칠한다
+  const r = await accounts("/api/prefs", { scheme }, "");
+  if (r.ok) say("화면 색을 바꿨어요.");
+  else if (schemePicked === scheme) { schemePicked = null; renderScheme(); } // 저장하지 못했으면 저장돼 있는 값으로 되돌린다(그사이 다른 값을 골랐으면 그대로)
+}
+
+const KEY_LABEL = { claude: "Claude", openai: "OpenAI" };
+const KEY_PREFIX = { claude: "sk-ant-", openai: "sk-" }; // 서버(KEY_FORM)와 같은 꼴. 저장 전에 서버가 다시 본다
+const KEY_CONSOLE = { claude: "https://console.anthropic.com/settings/keys", openai: "https://platform.openai.com/api-keys" }; // 키를 받는 공식 콘솔
+const keyName = () => document.querySelector('input[name="keyname"]:checked').value;
+/** 지우기 확인은 누른 줄의 공급자 것만 묻는다. 줄이 다시 그려지면(키가 달라지면) 접는다. */
+let keyDeleting = null;
+function renderKeyDelete() {
+  const name = keyDeleting, has = !!(name && ACCOUNTS && ACCOUNTS.keys_saved[name]); // 화면에서 넣은 키만 지울 수 있다(.env·환경 변수의 키는 아니다)
+  if (!has) keyDeleting = null;
+  $("key-delete-confirm").hidden = !has;
+  if (has) $("key-delete-ask").textContent = `이 기기에 넣은 ${KEY_LABEL[name]} 키를 지울까요? 다른 키는 그대로예요.`;
+}
+/* ── 공급자마다 키 한 줄: 연결됨·안 됨, 끝 4자리, 마지막 확인, 다시 확인, 지우기 ── */
+const KEY_RESULT = { ok: ["ok", "쓸 수 있어요"], invalid: ["error", "거절됨 · 키가 틀려요"], denied: ["warn", "권한이 부족해요 · 모델 목록을 볼 수 없어요"],
+  limited: ["warn", "키는 맞아요 · 지금은 요청 한도에 걸려 있어요"], server: ["warn", "확인하지 못했어요 · 공급자 서버가 답하지 않았어요"], offline: ["warn", "확인하지 못했어요"] };
+const KEY_ICON = { ok: "i-check", error: "i-x", warn: "i-warn", off: "" };
+let keyRechecking = null; // 다시 확인하는 중인 공급자
+const keyTime = (iso) => { const d = new Date(iso); return Number.isNaN(d.getTime()) ? "" : d.toLocaleString("ko-KR", { month: "long", day: "numeric", hour: "numeric", minute: "2-digit" }); };
+function keyRowState(a, name) {
+  const r = a.key_rows[name];
+  if (!r.on) return ["off", "연결 안 됨"];
+  if (keyBad && a.using === name) return ["error", "거절됨 · 튜터 요청에서 키가 거절됐어요"]; // 튜터를 부르다 키 오류를 받았다
+  return KEY_RESULT[r.result] || ["off", "연결됨 · 아직 확인하지 않았어요"];
+}
+function renderKeyRows() {
+  if (!ACCOUNTS || !ACCOUNTS.key_rows) return;
+  const a = ACCOUNTS;
+  const html = ["claude", "openai"].map((name) => {
+    const r = a.key_rows[name], [kind, text] = keyRowState(a, name), working = keyRechecking === name, using = CONN.ready && a.client !== "cli" && a.using === name && r.on;
+    return `<li class="key-item">
+      <div class="key-item-head"><strong>${KEY_LABEL[name]} API 키</strong>${using ? '<span class="tag">지금 쓰는 중</span>' : ""}${r.tail ? `<span class="mono muted" title="키의 끝 네 글자">…${esc(r.tail)}</span>` : ""}</div>
+      <p class="key-state ${kind}">${KEY_ICON[kind] ? ico(KEY_ICON[kind]) : ""}<span>${esc(working ? "확인하는 중이에요…" : text)}</span></p>
+      ${r.at && !working ? `<p class="hint">마지막 확인 ${esc(keyTime(r.at))}</p>` : ""}
+      ${r.on ? `<div class="key-item-acts"><button type="button" id="key-recheck-${name}" class="btn small"${keyRechecking || keyChecking ? " disabled" : ""}>다시 확인</button>${a.keys_saved[name] ? `<button type="button" id="key-del-${name}" class="btn quiet small"${keyRechecking || keyChecking ? " disabled" : ""}>지우기</button>` : '<span class="hint">.env나 환경 변수의 키예요</span>'}</div>` : ""}
+    </li>`;
+  }).join("");
+  if ($("key-rows").dataset.sig !== html) { // 같은 줄이면 다시 그리지 않는다(ChatGPT 로그인을 기다리며 3초마다 부를 때 초점이 달아나지 않게)
+    $("key-rows").dataset.sig = html;
+    $("key-rows").innerHTML = html;
+  }
+}
+function askKeyDelete(name) { keyDeleting = name; renderKeyDelete(); $("key-delete-no").focus(); }
+async function recheckKey(name) {
+  if (keyRechecking || keyChecking) return; // 키를 넣는 중이면 다시 확인하지 않는다(서로 기다린다)
+  keyRechecking = name;
+  renderKeyStatus();
+  const r = await api("/api/key/check", { name });
+  keyRechecking = null;
+  if (r.ok) {
+    renderAccounts(r.data);
+    if (r.data.key_check === "invalid") KEYUI[name] = null; // 키가 틀렸다: 칸 아래의 옛 결과(쓸 수 있어요)는 걷는다
+    if (ACCOUNTS.using === name && ["ok", "limited"].includes(r.data.key_check)) setKeyBad(false); // 키가 맞다고 확인됐다
+    else if (ACCOUNTS.using === name && r.data.key_check === "invalid") setKeyBad(true); // 지금 쓰는 키가 거절되면 머리의 '키 확인 필요'도 따른다. 확인하지 못한 것은 그대로 둔다
+    const [, text] = KEY_RESULT[r.data.key_check] || ["", "확인하지 못했어요"];
+    say(`${KEY_LABEL[name]} 키를 다시 확인했어요. ${text}`);
+  } else $("conn-note").textContent = errorNote(r.error).text;
+  renderKeyStatus();
+  const again = $(`key-recheck-${name}`);
+  if (again) again.focus();
+}
+/* ── 키 칸의 상태: 비어 있음 → 입력 중(꼴 맞음·틀림) → 확인하는 중 → 쓸 수 있어요 / 거절됨 / 확인하지 못함. 공급자마다 마지막 결과를 따로 둔다 ── */
+const KEYUI = { claude: null, openai: null }; // {kind: ok·warn·error, text, retry, raw}. raw: 그 결과를 받은 때의 입력(입력이 달라지면 그 결과는 보이지 않는다)
+let keyChecking = false;
+/** 입력한 키의 꼴이 맞지 않으면 까닭을, 맞으면 "". */
+function keyFormBad(name, raw) {
+  const v = raw.trim(), label = KEY_LABEL[name], prefix = KEY_PREFIX[name];
+  if (/\s|[^\x21-\x7e]/.test(v)) return "빈칸이나 한글이 섞여 있어요. 키만 붙여 넣어 주세요.";
+  if (name === "openai" && v.startsWith("sk-ant-")) return "Claude 키 같아요. 위에서 Claude 키를 골라 주세요.";
+  if (!v.startsWith(prefix)) return `${label} 키는 ${prefix}로 시작해요.`;
+  if (v.length > 400 || !/^[A-Za-z0-9_-]+$/.test(v)) return "키에는 영문, 숫자, -, _만 있어요.";
+  return "";
+}
+/** 입력한 키를 보이게(true)·가리게(false). 저장하거나 공급자를 바꾸거나 창을 닫으면 가린 상태로 돌린다. */
+function setKeyShown(show) {
+  $("key-value").type = show ? "text" : "password";
+  $("key-reveal").textContent = show ? "숨기기" : "보기";
+  $("key-reveal").setAttribute("aria-pressed", String(show));
+}
+function renderKeyStatus() {
+  const name = keyName(), label = KEY_LABEL[name], raw = $("key-value").value.trim(), box = $("key-status"), saved = KEYUI[name];
+  let kind = "", icon = "", text = "", retry = false;
+  if (keyChecking) text = `${label}에 키를 확인하는 중이에요…`;
+  else if (saved && saved.raw === raw) ({ kind, text, retry } = saved);
+  else if (!raw) text = ACCOUNTS && ACCOUNTS.keys[name] ? "키를 바꾸려면 새 키를 붙여 넣어 주세요." : "아직 키를 넣지 않았어요.";
+  else { const bad = keyFormBad(name, raw); kind = bad ? "error" : "form"; text = bad || `키 꼴이 맞아요. ‘키 넣기’를 누르면 ${label}에 확인해요.`; }
+  icon = keyChecking ? DOTS : kind === "ok" || kind === "form" ? ico("i-check") : kind === "error" ? ico("i-x") : kind === "warn" ? ico("i-warn") : "";
+  const sig = `${name}|${keyChecking}|${kind}|${text}|${retry}`;
+  if (box.dataset.sig !== sig) { // 같은 글이면 다시 그리지 않는다(글자를 칠 때마다 화면 읽기 도구가 같은 글을 읽지 않게)
+    box.dataset.sig = sig;
+    box.className = `note${kind === "ok" ? " ok" : kind === "error" ? " error" : kind === "warn" ? " warn" : ""}`;
+    box.innerHTML = `${icon}<span>${esc(text)}</span>${retry ? '<button type="button" id="key-retry" class="btn small">다시 시도</button><button type="button" id="key-force" class="btn small">그래도 저장</button>' : ""}`;
+  }
+  $("key-label").textContent = `${label} API 키`; // 칸 위의 이름표와 안내는 고른 공급자를 따른다
+  $("key-prefix").textContent = `${KEY_PREFIX[name]}로 시작해요.`;
+  $("key-get").href = KEY_CONSOLE[name];
+  $("key-get").textContent = `${label} 콘솔에서 키 받기`;
+  $("key-save").disabled = keyChecking || !!keyRechecking;
+  document.querySelectorAll('input[name="keyname"]').forEach((el) => { el.disabled = keyChecking; });
+  renderKeyRows(); // 줄의 단추도 넣는 중·다시 확인하는 중에 같이 잠근다
+}
+/** 키를 넣는다: 서버가 공급자에 확인한 뒤 쓸 수 있을 때만 저장한다. 확인하지 못했을 때는 force로 그래도 저장한다. */
+async function saveKey(force) {
+  const name = keyName(), value = $("key-value").value;
+  if (keyChecking || keyRechecking) return;
+  const bad = value.trim() ? keyFormBad(name, value) : "키를 붙여 넣어 주세요.";
+  if (bad) { KEYUI[name] = { kind: "error", text: bad, raw: value.trim() }; renderKeyStatus(); return void $("key-value").focus(); }
+  KEYUI[name] = null;
+  keyChecking = true;
+  renderKeyStatus();
+  const r = await api("/api/key", { name, value, ...(force ? { force: true } : {}) });
+  keyChecking = false;
+  if (r.ok) {
+    $("key-value").value = "";
+    setKeyShown(false);
+    KEYUI[name] = r.data.key_check === "ok" ? { kind: "ok", text: "쓸 수 있는 키예요. 저장했어요.", raw: "" }
+      : r.data.key_check === "limited" ? { kind: "warn", text: "키는 맞아요. 지금은 요청 한도에 걸려 있어요. 저장했어요.", raw: "" } // 429: 키는 맞다
+      : { kind: "warn", text: "확인하지 못했지만 저장했어요. 튜터를 처음 부를 때 다시 확인해요.", raw: "" };
+    renderAccounts(r.data);
+  } else {
+    const unverified = ["key_unverified", "key_denied"].includes(r.error.code); // 확인하지 못함·권한 없음: 다시 시도하거나 그래도 저장할 수 있다
+    KEYUI[name] = { kind: unverified ? "warn" : "error", text: r.error.message || errorNote(r.error).text, retry: unverified, raw: value.trim() };
+  }
+  renderKeyStatus();
+  if (!r.ok) ($("key-retry") || $("key-value")).focus();
+}
+
+async function deleteKey() {
+  const name = keyDeleting;
+  if (!name) return;
+  $("key-delete-yes").disabled = $("key-delete-no").disabled = true; // 요청 중에는 다시 누르지 못하게
+  const r = await accounts("/api/key/delete", { name }, `${KEY_LABEL[name]} 키를 지웠어요.`);
+  $("key-delete-yes").disabled = $("key-delete-no").disabled = false;
+  keyDeleting = null;
+  if (r.ok) { KEYUI[name] = null; renderKeyStatus(); }
+  renderKeyDelete();
+  if (r.ok && ACCOUNTS.keys[name]) $("conn-note").textContent = `${KEY_LABEL[name]} 키를 지웠어요. 그래도 .env나 환경 변수에 키가 있어 계속 연결돼 있어요.`;
+  $("conn-toggle").focus();
 }
 
 async function accounts(path, body, done) {
@@ -2349,6 +2528,7 @@ function toggleConn(open) {
   $("conn-panel").hidden = !open;
   document.body.classList.toggle("conn-open", open); // 연결 창이 떠 있는 동안 주 동작은 창 안의 것 하나
   $("conn-toggle").setAttribute("aria-expanded", open ? "true" : "false");
+  if (!open) setKeyShown(false); // 창을 닫으면 입력한 키는 다시 가린다
   if (open) { $("conn-note").textContent = $("tools-note").textContent = ""; accounts(); loadTools(false); $("conn-close").focus(); } else $("conn-toggle").focus();
 }
 
@@ -2467,7 +2647,7 @@ document.addEventListener("click", (e) => {
     "lang-yes": () => changeLanguage(S.langWant), "lang-no": () => { S.langWant = null; render(); $("p-lang-select").focus(); }, "debug-start": debugStart, "to-feedback": askFeedback, "fb-again": askFeedback, "fb-get": askFeedback,
     "old-feedback": () => { location.hash = `#/p/${S.pid}/feedback`; },
     "goto-line": gotoLine,
-    "prep-again": async () => { S.note.start = null; S.problem.prepare_failed = false; S.prepAt = 0; await loadState(true); say(S.problem.preparing ? "튜터가 풀이 순서를 다시 준비해요." : ""); },
+    "prep-again": prepAgain, "prep-again-top": prepAgain,
     "cp-save": saveCheckpoint, "cp-restore": () => askCode("restore"), "code-clear": () => askCode("clear"),
     "code-yes": async () => {
       const run = S.codeAsk === "pull" && S.pullThenRun;
@@ -2528,11 +2708,11 @@ document.addEventListener("click", (e) => {
       $("upd-note").textContent = r.data.latest ? "" : r.data.state === "latest" ? "최신 버전이에요." : r.data.message;
       if (r.data.latest) { toggleConn(false); openUpdate(); }
     },
-    "key-save": async () => {
-      const name = document.querySelector('input[name="keyname"]:checked').value;
-      const r = await accounts("/api/key", { name, value: $("key-value").value }, "키를 넣었어요. 이제 튜터를 쓸 수 있어요.");
-      if (r.ok) $("key-value").value = "";
-    },
+    "key-reveal": () => { setKeyShown($("key-value").type === "password"); $("key-value").focus(); },
+    "key-save": () => saveKey(false), "key-retry": () => saveKey(false), "key-force": () => saveKey(true),
+    "key-recheck-claude": () => recheckKey("claude"), "key-recheck-openai": () => recheckKey("openai"),
+    "key-del-claude": () => askKeyDelete("claude"), "key-del-openai": () => askKeyDelete("openai"),
+    "key-delete-no": () => { const name = keyDeleting; keyDeleting = null; renderKeyDelete(); const back = name && $(`key-del-${name}`); if (back) back.focus(); }, "key-delete-yes": deleteKey,
     "models-open": () => { toggleConn(false); openModels(); }, "models-close": () => { $("models").close ? $("models").close() : $("models").removeAttribute("open"); $("conn-toggle").focus(); },
     "tour-open": openTour, "tour-skip": () => { const last = tourAt === TOUR.length - 1; closeTour(); if (last && !CONN.ready) toggleConn(true); }, "tour-prev": () => tourStep(-1), "tour-next": () => tourStep(1),
     "drop": () => $("new-files").click(), "read-files": readFiles, "asset-close": closeAsset,
@@ -2564,12 +2744,15 @@ document.addEventListener("change", (e) => {
   if (e.target.id === "new-theme") return syncForm();
   if (e.target.id === "p-lang-select") return void (e.target.value !== S.problem.language && wantLanguage(e.target.value));
   if (e.target.id === "upd-auto") return void updAct("auto", { on: e.target.checked });
+  if (e.target.name === "keyname") { setKeyShown(false); return renderKeyStatus(); }
+  if (e.target.name === "scheme") return void chooseScheme(e.target.value);
   if (e.target.name === "client") accounts("/api/client", { client: e.target.value }, e.target.value === "cli" ? "이 PC의 Claude Code로 튜터를 불러요." : "연결한 AI로 튜터를 불러요.");
 });
 
 document.addEventListener("input", (e) => {
   const el = e.target;
   if (el.id === "code") return codeChanged();
+  if (el.id === "key-value") return renderKeyStatus(); // 글자를 고치면 앞의 결과 대신 꼴을 바로 본다
   if (el.closest("#new-form")) { syncForm(); if (el.getAttribute("aria-invalid")) clearError(); }
   if (el.classList.contains("case-val")) markTableDiff();
   if (el.id.startsWith("case-input-")) return showCall(el);

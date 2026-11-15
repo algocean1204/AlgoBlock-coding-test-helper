@@ -1,13 +1,26 @@
 <!doctype html>
-<html lang="ko">
+<html lang="ko" data-scheme-pref="system">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
-<meta name="theme-color" content="#F5F5F7" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#111113" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" id="theme-color" content="#F5F5F7">
 <title>AlgoBlock</title>
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
+<script>
+  // 첫 그림 전에 화면 색을 정한다. data-scheme-pref가 system이면 운영체제 설정을 따른다
+  function applyScheme(pref) {
+    var root = document.documentElement;
+    var dark = pref === "dark" || (pref !== "light" && matchMedia("(prefers-color-scheme: dark)").matches);
+    root.setAttribute("data-scheme-pref", pref);
+    root.setAttribute("data-scheme", dark ? "dark" : "light");
+    document.getElementById("theme-color").content = dark ? "#111113" : "#F5F5F7";
+  }
+  applyScheme(document.documentElement.getAttribute("data-scheme-pref"));
+  matchMedia("(prefers-color-scheme: dark)").addEventListener("change", function () {
+    if (document.documentElement.getAttribute("data-scheme-pref") === "system") applyScheme("system");
+  });
+</script>
 <link rel="stylesheet" href="app.css">
 </head>
 <body>
@@ -58,27 +71,47 @@
   <p id="conn-state" class="conn-state"></p>
   <fieldset>
     <legend>API 키</legend>
+    <ul id="key-rows" class="key-rows" aria-label="넣은 키"></ul>
     <div class="choice-row" id="key-kinds">
-      <label class="choice"><input type="radio" name="keyname" value="claude" checked> Claude 키 <span class="muted" data-key="claude"></span></label>
-      <label class="choice"><input type="radio" name="keyname" value="openai"> OpenAI 키 <span class="muted" data-key="openai"></span></label>
+      <label class="choice"><input type="radio" name="keyname" value="claude" checked> Claude 키</label>
+      <label class="choice"><input type="radio" name="keyname" value="openai"> OpenAI 키</label>
     </div>
-    <div class="inline-form">
-      <input id="key-value" type="password" aria-label="API 키" autocomplete="off" placeholder="키를 붙여 넣어요" data-send="key-save">
-      <button type="button" id="key-save" class="btn small">키 넣기</button>
+    <div class="key-field">
+      <label for="key-value" id="key-label">Claude API 키</label>
+      <p class="hint" id="key-hint"><span id="key-prefix"></span> <a id="key-get" class="link" target="_blank" rel="noopener"></a></p>
+      <div class="inline-form key-row">
+        <input id="key-value" type="password" aria-describedby="key-hint key-status" autocomplete="off" spellcheck="false" placeholder="키를 붙여 넣어요" data-send="key-save">
+        <button type="button" id="key-reveal" class="btn small quiet" aria-pressed="false">보기</button>
+        <button type="button" id="key-save" class="btn small">키 넣기</button>
+      </div>
     </div>
+    <div id="key-status" class="note" role="status" aria-live="polite"></div>
     <p class="hint">키는 이 기기에만 저장해요. 다음에 켜도 그대로 쓸 수 있어요.</p>
+    <div id="key-delete-confirm" class="confirm" hidden>
+      <span id="key-delete-ask"></span>
+      <button type="button" id="key-delete-yes" class="btn danger small">지우기</button>
+      <button type="button" id="key-delete-no" class="btn quiet small">그대로 두기</button>
+    </div>
   </fieldset>
   <fieldset>
     <legend>ChatGPT 요금제 쓰기</legend>
     <p class="hint">ChatGPT 계정으로 로그인하면 튜터의 AI 요청이 내 ChatGPT 요금제(포함된 사용량이나 크레딧)로 처리돼요. AlgoBlock은 따로 요금을 받지 않아요.</p>
     <p class="hint">OpenAI가 미리 보기(preview)로 연 기능이라 바뀔 수 있고, 지원하는 요청 방식에 제한이 있어요.</p>
     <p id="chatgpt-state" class="muted">연결 안 됨</p>
-    <button type="button" id="chatgpt-login" class="btn small" lang="en">Continue with ChatGPT</button>
+    <button type="button" id="chatgpt-login" class="btn small">ChatGPT로 로그인</button>
     <a id="chatgpt-link" class="link" target="_blank" rel="noopener" hidden>브라우저에서 로그인 열기</a>
     <a id="chatgpt-usage" class="link" href="https://chatgpt.com/settings/usage" target="_blank" rel="noopener" hidden>사용량 관리</a>
   </fieldset>
   <details class="more-set">
-    <summary>더 정하기 <span class="muted">과정별 모델 · 업데이트 · 언어 도구</span></summary>
+    <summary>더 정하기 <span class="muted">화면 색 · 과정별 모델 · 업데이트 · 언어 도구</span></summary>
+    <fieldset>
+      <legend>화면 색</legend>
+      <div class="picks" id="scheme-kinds">
+        <label class="choice"><input type="radio" name="scheme" value="system" checked> 시스템 설정대로</label>
+        <label class="choice"><input type="radio" name="scheme" value="light"> 라이트</label>
+        <label class="choice"><input type="radio" name="scheme" value="dark"> 다크</label>
+      </div>
+    </fieldset>
     <fieldset>
       <legend>과정별 모델</legend>
       <p class="hint" id="themes-now"></p>
@@ -421,7 +454,7 @@
       <div class="mini">
         <div class="mini-head"><span class="mini-title">AlgoBlock</span></div>
         <div class="mini-form mini-entries">
-          <div class="entry main a1"><span class="label">문제 풀기</span><strong>추천 서가에 꽂히는 책</strong><span class="hint">해시 1단계 · 막히면 튜터가 질문으로 이끌어요</span><span class="btn primary small">첫 문제 풀기</span></div>
+          <div class="entry main a1"><span class="label">문제 풀기</span><strong>글 제목으로 주소 만들기</strong><span class="hint">구현 1단계 · 막히면 튜터가 질문으로 이끌어요</span><span class="btn primary small">첫 문제 풀기</span></div>
           <div class="entry a2"><span class="label">내 문제 넣기</span><span class="hint">가진 문제를 글이나 사진으로 넣어요</span></div>
           <div class="entry a3"><span class="label">내 기록</span><span class="hint">통과 0 / 75 · 출석 1일</span></div>
         </div>
@@ -479,7 +512,7 @@
         </div>
         <div class="mini-form">
           <span class="label">ChatGPT 요금제 쓰기</span>
-          <div><span class="btn small" lang="en">Continue with ChatGPT</span></div>
+          <div><span class="btn small">ChatGPT로 로그인</span></div>
         </div>
       </div>
     </div>
