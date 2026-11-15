@@ -45,6 +45,8 @@ FIRST["languages"] = ["python", "javascript"]
 Path(os.environ["ALGOBLOCK_UI_BUILTIN"]).write_text(json.dumps(ROWS, ensure_ascii=False), encoding="utf-8")
 
 import server  # noqa: E402
+
+server.ROOT = TMP  # 저장소의 .env를 읽지 않는다(키 지우기 흐름이 load_keys를 다시 불러도 진짜 키가 환경에 올라오지 않게)
 from tutor.common.scope import ALGORITHMS  # noqa: E402
 from tutor.common.talk_rules import MANY_ANSWERS  # noqa: E402
 from dataclasses import replace  # noqa: E402
@@ -1478,6 +1480,7 @@ def checkpoints() -> None:
 def compose() -> None:
     """모으기는 서버 한 곳에서 블록 코드 확인과 같은 framed로 한다. 빈 블록은 빠지고, 블록 2에 머리 줄을 적어도 확인이 돌린 프로그램과 같은 글이다."""
     from tutor.common.solution import spliced
+    from tutor.common.talk_rules import ALONE_OK
 
     def text(parts):  # 블록 주석과 빈 줄을 뺀 글
         return "\n".join(row for _, part in parts for row in part.split("\n") if row.strip() and not row.strip().startswith("# 블록"))
@@ -1485,7 +1488,10 @@ def compose() -> None:
     b1 = "\n".join(row[4:] for row in LINES[1:5])
     parts = call("/api/compose", id=PID, mode="guide", blocks={"b1": {"code": b1, "by": "me"}, "b2": {"code": "\n".join(LINES[5:]), "by": "tutor"}})[1]["parts"]
     assert [i for i, _ in parts] == [0, 1] and parts[0][1].startswith("def solution(loans, k):\n    # 블록 1 · ") and text(parts) == CODE, parts
-    assert [i for i, _ in call("/api/compose", id=PID, mode="guide", blocks={"b1": {"code": "  ", "by": "me"}, "b2": {"code": "return []", "by": "me"}})[1]["parts"]] == [1]
+    parts = call("/api/compose", id=PID, mode="guide", blocks={"b1": {"code": "  ", "by": "me"}, "b2": {"code": "return []", "by": "me"}})[1]["parts"]
+    assert [i for i, _ in parts] == [0, 1] and parts[0][1] == "def solution(loans, k):" and parts[1][1].endswith(" return []"), parts  # 빈 블록은 틀 줄만(머리가 빠지면 함수 밖의 return이었다)
+    # 튜터가 '남은 블록은 건너뛰어도 된다'고 한 뒤의 빈 블록은 화면이 모으기에서 막지 않는다(화면은 그 말로 안다)
+    assert ALONE_OK.split(".")[0] in (Path(__file__).parent / "app.js").read_text(encoding="utf-8")
     head2 = "def solution(loans, k):\n" + "\n".join(LINES[5:])  # 블록 2에 머리 줄을 적었다
     parts = call("/api/compose", id=PID, mode="guide", blocks={"b1": {"code": b1, "by": "me"}, "b2": {"code": head2, "by": "me"}})[1]["parts"]
     ran = spliced(["\n".join(LINES[:5]), "\n".join(LINES[5:])], 1, head2, "python", {0: b1})
@@ -2008,8 +2014,91 @@ def pane_widths() -> None:
         assert call("/api/accounts")[1]["panes"] is None
         call("/api/prefs", panes=[26.1, 38.3, 35.6])
         assert call("/api/prefs", panes=None)[1]["panes"] is None  # null은 기본으로 돌린다
+        both = call("/api/prefs", scheme="dark", panes=[26.1, 38.3, 35.6])[1]  # 둘을 한 번에 보내도 되고, 하나만 보내면 다른 하나는 그대로다
+        assert both["scheme"] == "dark" and both["panes"] == [26.1, 38.3, 35.6]
+        assert call("/api/prefs", panes=None)[1]["scheme"] == "dark" and call("/api/prefs", scheme="light")[1]["panes"] is None
+        call("/api/prefs", panes=[26.1, 38.3, 35.6])
+        assert call("/api/prefs", scheme="system")[1]["panes"] == [26.1, 38.3, 35.6] and "scheme" not in server.read_json(server.PREFS_FILE, {})
+        assert "칸 너비" in refuses("/api/prefs", scheme="dark", panes=[1, 2])  # 하나가 어긋나면 다른 하나도 적지 않는다
+        assert server.read_json(server.PREFS_FILE, {}).get("scheme") is None
+        call("/api/prefs", panes=None)
         kept = server.read_json(server.PREFS_FILE, {})
         assert "panes" not in kept and kept["language"] == "javascript" and kept["stages"] == {"keep": "me"}  # 다른 설정은 그대로
+    finally:
+        server.write_json(server.PREFS_FILE, saved)
+
+
+def scheme_setting() -> None:
+    """화면 색: /api/prefs로 저장하고, 서버가 첫 HTML에 저장한 값을 실어 첫 그림 전에 맞춘다."""
+    import threading
+    from http.client import HTTPConnection
+
+    httpd = server.ThreadingHTTPServer(("127.0.0.1", 0), server.Handler)
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+
+    def first_page() -> str:
+        conn = HTTPConnection("127.0.0.1", httpd.server_port, timeout=60)
+        conn.request("GET", "/")
+        page = conn.getresponse().read().decode("utf-8")
+        conn.close()
+        return page
+
+    assert [f'name="scheme" value="{value}"' in first_page() for value in ("system", "light", "dark")] == [True] * 3  # 설정 창의 라디오 셋
+    saved = server.read_json(server.PREFS_FILE, {})
+    server.write_json(server.PREFS_FILE, {**saved, "language": "javascript", "stages": {"keep": "me"}})  # 다른 설정이 같이 남는지 보려고 심는다
+    try:
+        assert call("/api/accounts")[1]["scheme"] == "system" and 'data-scheme-pref="system"' in first_page()  # 고르지 않았으면 운영체제를 따른다
+        for bad in ({}, {"scheme": "sepia"}, {"scheme": ""}, {"scheme": None}, {"scheme": ["dark"]}, {"scheme": 1}):
+            assert "화면 색" in refuses("/api/prefs", **bad), bad
+        assert "scheme" not in server.read_json(server.PREFS_FILE, {})  # 거절한 값은 적히지 않는다
+        for scheme in ("dark", "light"):
+            assert call("/api/prefs", scheme=scheme)[1]["scheme"] == scheme
+            assert server.read_json(server.PREFS_FILE, {})["scheme"] == scheme and call("/api/accounts")[1]["scheme"] == scheme
+            page = first_page()
+            assert f'<html lang="ko" data-scheme-pref="{scheme}">' in page
+            assert 'data-scheme-pref="system"' in (HERE / "index.html").read_text(encoding="utf-8")  # 파일은 그대로, 내보낼 때만 바꾼다
+            assert page.index("applyScheme(") < page.index('href="app.css"')  # 적용하는 스크립트가 스타일시트보다 앞이다
+        server.write_json(server.PREFS_FILE, {**server.read_json(server.PREFS_FILE, {}), "scheme": "<x>"})  # 손으로 고친 이상한 값은 system으로 본다
+        assert call("/api/accounts")[1]["scheme"] == "system" and 'data-scheme-pref="system"' in first_page()
+        call("/api/prefs", scheme="dark")
+        assert call("/api/prefs", scheme="system")[1]["scheme"] == "system"
+        kept = server.read_json(server.PREFS_FILE, {})
+        assert "scheme" not in kept and kept["language"] == "javascript" and kept["stages"] == {"keep": "me"}  # system은 키를 지우고 다른 설정은 그대로
+    finally:
+        server.write_json(server.PREFS_FILE, saved)
+        httpd.shutdown()
+        httpd.server_close()
+
+
+def window_background() -> None:
+    """창 바탕색: 고른 색을 따르고, 시스템 설정대로일 때 운영체제를 읽지 못하면 밝은 바탕으로 연다."""
+    import types
+    from unittest.mock import MagicMock
+
+    sys.modules.setdefault("webview", types.ModuleType("webview"))  # pywebview 없이 함수만 부른다
+    import window
+
+    saved = server.read_json(server.PREFS_FILE, {})
+    out = lambda text: SimpleNamespace(stdout=text)  # noqa: E731
+    try:
+        with patch.object(window.sys, "platform", "darwin"):
+            with patch.object(window.subprocess, "run", return_value=out("Dark\n")):
+                assert window.os_dark() is True
+            with patch.object(window.subprocess, "run", return_value=out("")):  # 라이트 운영체제는 값이 없어 빈 글이 온다
+                assert window.os_dark() is False
+            with patch.object(window.subprocess, "run", side_effect=OSError("defaults 없음")):  # 읽지 못함: 밝게
+                assert window.os_dark() is False
+            with patch.object(window.subprocess, "run", side_effect=subprocess.TimeoutExpired("defaults", 3)):
+                assert window.os_dark() is False
+        with patch.object(window.sys, "platform", "linux"):  # 읽는 길이 없는 운영체제
+            assert window.os_dark() is False
+        for scheme, dark_os, want in (("dark", False, "#111113"), ("light", True, "#F5F5F7"), ("system", True, "#111113"), ("system", False, "#F5F5F7")):
+            server.write_json(server.PREFS_FILE, {**saved, **({} if scheme == "system" else {"scheme": scheme})})
+            with patch.object(window, "os_dark", MagicMock(return_value=dark_os)):
+                assert window.background() == want, (scheme, dark_os)
+        server.write_json(server.PREFS_FILE, {**saved, "scheme": "<x>"})  # 이상한 저장 값은 system으로 본다
+        with patch.object(window, "os_dark", MagicMock(return_value=False)):
+            assert window.background() == "#F5F5F7"
     finally:
         server.write_json(server.PREFS_FILE, saved)
 
@@ -2086,10 +2175,9 @@ def stages() -> None:
     call("/api/theme", theme="read", tier="", effort=""), call("/api/theme", theme="guide", tier="", effort=""), call("/api/theme", theme="blocks", tier="", effort=""), call("/api/theme", theme="talk", tier="", effort="")
     assert all(row["tier"] == row["default_tier"] and row["effort"] == row["default_effort"] for row in call("/api/accounts")[1]["themes"])
 
-    # keys.json의 값이 글이 아니면 그 항목만 건너뛰고, 걷어 낸 공급자의 키(Grok·OpenRouter)는 읽지 않는다(프로젝트의 .env는 읽지 않게 바꿔 끼운다)
+    # keys.json의 값이 글이 아니면 그 항목만 건너뛰고, 걷어 낸 공급자의 키(Grok·OpenRouter)는 읽지 않는다
     server.write_json(server.KEY_FILE, {"OPENAI_API_KEY": 123, "XAI_API_KEY": "xai-test", "OPENROUTER_API_KEY": "or-test"})
-    with patch.object(server, "ROOT", TMP):
-        server.load_keys()
+    server.load_keys()
     assert not {"OPENAI_API_KEY", "XAI_API_KEY", "OPENROUTER_API_KEY"} & set(os.environ)
     assert set(call("/api/accounts")[1]["keys"]) == {"claude", "openai"} and not call("/api/accounts")[1]["connected"]
 
@@ -2411,6 +2499,8 @@ def main() -> None:
     except server.Refuse as exc:
         assert exc.status == 409
     color_tokens()
+    scheme_setting()
+    window_background()
     pane_widths()
     pane_fit()
     stages()

@@ -1087,7 +1087,7 @@ const slowOnlyOf = (r) => !r.ok && !r.run && r.cases.length > 0 && !!r.score && 
 /** '끝까지 내 방식으로 쓰기'가 지금 보이는 튜터 차례(가이드)에 켜져 있다. */
 const ownWayOn = () => !!S.ownWay && S.mode === "guide" && S.talk === "guide";
 /** 튜터 블록을 다 열고(의자는 다 찾고) 빈 칸이 없다: 모아서 실행할 때. */
-const blocksReady = () => S.session.blocks.length > 0 && (S.mode === "chair" ? allFound() : S.session.open_count >= S.session.blocks.length) && !emptyBlocks().length;
+const blocksReady = () => S.session.blocks.length > 0 && (S.mode === "chair" ? allFound() : S.session.open_count >= S.session.blocks.length || passedAloneAt() >= 0) && !emptyBlocks().length;
 
 /** 지금 가장 먼저 할 일 하나. 그 단추만 채워서 보여 준다. */
 function nextAction() {
@@ -1261,11 +1261,22 @@ function warnBraces(parts) {
   if (n || box.textContent.startsWith("모은 코드의 중괄호")) box.hidden = !n; // 다시 모아 맞으면 지난 알림을 걷는다
 }
 
-/** 열린 블록 가운데 코드 칸이 빈 것의 순번(0부터). 잠긴 블록과, 의자에서 아직 찾지 못한 지금 블록(칸이 없다)은 보지 않는다. */
+/** 튜터가 '지금까지 쓴 코드만으로 이미 통과해요'(엔진 ALONE_OK)라 말한 마지막 확인의 블록 순번(0부터). 그 뒤 블록은 건너뛰어도 된다고 했다. 없으면 -1. */
+function passedAloneAt() {
+  let at = -1;
+  for (const chat of [S.session.guide, S.session.chair]) chat.forEach((m, n) => {
+    if (m.role === "service" && m.text.startsWith("지금까지 쓴 코드만으로 이미 통과해요") && n > 0 && chat[n - 1].role === "user") at = Math.max(at, chat[n - 1].block_index);
+  });
+  return at;
+}
+
+/** 열린 블록 가운데 코드 칸이 빈 것의 순번(0부터). 잠긴 블록과, 의자에서 아직 찾지 못한 지금 블록(칸이 없다), 튜터가 건너뛰어도 된다고 한 블록(passedAloneAt 뒤)은 보지 않는다. */
 function emptyBlocks() {
   harvest();
-  return S.session ? S.session.blocks.map((b, i) => [b, i, blockState(b, i)])
-    .filter(([b, , state]) => state !== "locked" && !(state === "current" && S.talk === "chair") && !((S.blockCode[b.id] || {}).code || "").trim()).map(([, i]) => i) : [];
+  if (!S.session) return [];
+  const alone = passedAloneAt();
+  return S.session.blocks.map((b, i) => [b, i, blockState(b, i)])
+    .filter(([b, i, state]) => state !== "locked" && !(state === "current" && S.talk === "chair") && !(alone >= 0 && i > alone) && !((S.blockCode[b.id] || {}).code || "").trim()).map(([, i]) => i);
 }
 const gapText = (gaps) => `블록 ${gaps.map((i) => i + 1).join(", ")}의 코드 칸이 비어 있어요. 직접 적거나 ‘이 블록 채우기’를 눌러 주세요.`;
 
@@ -2207,6 +2218,7 @@ function renderAccounts(a) {
   $("conn-now").classList.toggle("warn", keyBad);
   document.querySelector(".dev-conn").hidden = !a.dev; // 개발용 연결로 띄웠을 때만 이 칸이 있다
   document.querySelectorAll('input[name="client"]').forEach((el) => { el.checked = el.value === a.client; });
+  renderScheme();
   $("provider-now").textContent = provider ? `지금은 ${provider}` : "아직 없음";
   $("chatgpt-state").textContent = a.chatgpt ? "연결됨 · ChatGPT 요금제를 쓰는 중" : a.chatgpt_note || "연결 안 됨"; // 연결되지 않은 까닭(허락하지 않음, 자격 없음, 다시 로그인 필요)
   $("chatgpt-usage").hidden = !a.chatgpt;
@@ -2216,6 +2228,21 @@ function renderAccounts(a) {
   if (a.chatgpt) { clearInterval(loginPoll); $("chatgpt-link").hidden = true; }
   if (S.view === "code" && S.problem) render();
   if (S.view === "list" && $("entries").innerHTML && !!$("note-conn") === ready) showList(); // 홈의 연결 한 줄을 새로 그린다
+}
+
+/** 화면 색: 라디오를 고른 값(저장 중이면 그 값, 아니면 저장된 값)에 맞추고 화면에도 적용한다(적용 함수는 index.html 머리에 있다). */
+let schemePicked = null; // 방금 고른 값. 늦게 온 /api/accounts 응답이 예전 값으로 되돌리지 못하게 응답보다 앞선다
+function renderScheme() {
+  const pref = schemePicked || (ACCOUNTS && ACCOUNTS.scheme) || "system";
+  document.querySelectorAll('input[name="scheme"]').forEach((el) => { el.checked = el.value === pref; });
+  applyScheme(pref);
+}
+async function chooseScheme(scheme) {
+  schemePicked = scheme;
+  renderScheme(); // 응답을 기다리지 않고 바로 칠한다
+  const r = await accounts("/api/prefs", { scheme }, "");
+  if (r.ok) say("화면 색을 바꿨어요.");
+  else if (schemePicked === scheme) { schemePicked = null; renderScheme(); } // 저장하지 못했으면 저장돼 있는 값으로 되돌린다(그사이 다른 값을 골랐으면 그대로)
 }
 
 const KEY_LABEL = { claude: "Claude", openai: "OpenAI" };
@@ -2862,6 +2889,7 @@ document.addEventListener("change", (e) => {
   if (e.target.id === "p-lang-select") return void (e.target.value !== S.problem.language && wantLanguage(e.target.value));
   if (e.target.id === "upd-auto") return void updAct("auto", { on: e.target.checked });
   if (e.target.name === "keyname") { setKeyShown(false); return renderKeyStatus(); }
+  if (e.target.name === "scheme") return void chooseScheme(e.target.value);
   if (e.target.name === "client") accounts("/api/client", { client: e.target.value }, e.target.value === "cli" ? "이 PC의 Claude Code로 튜터를 불러요." : "연결한 AI로 튜터를 불러요.");
 });
 
