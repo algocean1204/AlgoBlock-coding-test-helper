@@ -310,7 +310,8 @@ def report() -> None:
     assert (hash_["solved"], hash_["level_reached"], hash_["first_try"], hash_["solution_before_pass"], hash_["hints"]) == (1, 1, 0, 1, 6), hash_  # 본 힌트 수는 '처음부터' 뒤에도 누적이다
     assert hash_["fails"] == {"failed": 1, "runtime_error": 0, "timeout": 1, "compile_error": 0} and hash_["submissions"] >= 3 and hash_["state"] in ("progress", "weak")
     assert sum(row["unaided"] for row in body["themes"]) == body["readiness"]["solved"] and all(row["unaided"] <= row["solved"] for row in body["themes"])  # 주제별 '도움 없이'의 합 = 준비도의 수
-    assert str(server.UNAIDED_MAX_SUBMITS) in body["readiness"]["rule_short"] and "도움 받아 통과" not in body["readiness"]["rule_short"][:0]
+    short = body["readiness"]["rule_short"]  # 한 문장이 '그 밖의 통과' 셋(도움을 쓴 것, 제출이 많은 것, 처음부터 뒤 하루 안)을 모두 말한다. 숫자는 상수에서 나온다
+    assert all(word in short for word in ("힌트·튜터·해설을 썼거나", f"제출이 {server.UNAIDED_MAX_SUBMITS}번을 넘었거나", f"'처음부터' 뒤 {server.REPEAT_GAP_HOURS}시간 안에", "'그 밖의 통과'")) and "도움 받아 통과" not in short
     assert body["summary"]["solved"] == 1 and body["summary"]["total"] == len(ROWS) and body["summary"]["languages"]["python"] >= 5
     assert body["recent"][0]["id"] == PID and len(body["recent"]) <= 10
     assert [group["key"] for group in body["signals"]] == ["hash"] and body["signals"][0]["items"][0]["title"] == FIRST["title"]  # 푼 문제의 신호만
@@ -2092,7 +2093,8 @@ def home_screen() -> None:
     home = js[js.index("async function showHome()"):js.index("async function showList()")]
     assert 'api("/api/problems")' in home and "nextOf(d.next)" in home and "nextOf(d.next)" in js[js.index("async function showReport()"):js.index("async function showReport()") + 1500]
     status = js[js.index("function homeStatus(d)"):js.index("async function showList()")]
-    assert "rd.solved" in status and "sum.solved - rd.solved" in status and "rd.rule_short" in status and 'role="img"' in status  # 도움 없이·도움 받아를 갈라 보이고 기준을 ⓘ로 편다
+    assert "rd.solved" in status and "sum.solved - rd.solved" in status and "rd.rule_short" in status and 'role="img"' in status  # 도움 없이·그 밖의 통과를 갈라 보이고 기준을 ⓘ로 편다
+    assert "도움 받아 통과" not in js and "그 밖의 통과" in status and js.count("그 밖의 통과") >= 6  # 도움을 쓰지 않은 통과(제출 4번째, 처음부터 뒤 하루 안)도 들어 있어서 '도움 받아'라 부르지 않는다
     assert "weaknesses.find" not in js[js.index("async function showReport()"):js.index("async function showReport()") + 1500]  # 보고서 단추가 약한 주제를 따로 앞세우지 않는다
 
 
@@ -2135,7 +2137,7 @@ def aid_note() -> None:
         assert call("/api/submit", id=PID, code=f"{CODE}\n# 0")[1]["ok"] and state() is False  # 통과했다
     server.write_json(server.TOUCHED_FILE, touched)
     js = (HERE / "app.js").read_text(encoding="utf-8")
-    assert js.count("aidNote()") >= 4 and "‘도움 받아 통과’로 남아요" in js and "study.unaided_open" in js  # 고르는 칸, 힌트, 튜터 시작 칸, 결과 칸에서 같은 글, 서버가 준 값으로 거른다
+    assert js.count("aidNote()") >= 4 and "‘그 밖의 통과’로 남아요" in js and "study.unaided_open" in js  # 고르는 칸, 힌트, 튜터 시작 칸, 결과 칸에서 같은 글, 서버가 준 값으로 거른다
     study = {"reset_at": None, "help_after_reset_at": None, "help_first_at": None, "solution_before_pass": False, "hints_seen": 0}
     assert server.unaided_open(SimpleNamespace(builtin=True), [], study, None, False) and not server.unaided_open(SimpleNamespace(builtin=False), [], study, None, False)  # 등록한 문제는 준비도에 들지 않는다
     assert not server.unaided_open(SimpleNamespace(builtin=True), [], study, "2026-01-01T00:00:00+00:00", False)  # 튜터와 말했다

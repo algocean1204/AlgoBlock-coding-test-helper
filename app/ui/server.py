@@ -2129,7 +2129,7 @@ def readiness(unaided: dict, started: set, fresh: dict) -> dict:
             "remaining": [left(key, need[key], unaided.get(key, []), fresh.get(key, []), [theme_name(p) for p in PREREQS[key] if not basic[p]])
                           for key in PREREQS if key in need],
             "basis": "이 앱의 기본 문제 기준이에요.",
-            "rule_short": f"힌트·튜터·해설을 쓰기 전에 제출 {UNAIDED_MAX_SUBMITS}번 안에 통과한 기본 문제만 ‘도움 없이’로 세요. 도움을 받아 통과한 문제도 통과로 남아요.",
+            "rule_short": f"도움 없이, 제출 {UNAIDED_MAX_SUBMITS}번 안에 통과한 기본 문제만 준비도에 세요. 힌트·튜터·해설을 썼거나, 제출이 {UNAIDED_MAX_SUBMITS}번을 넘었거나, '처음부터' 뒤 {REPEAT_GAP_HOURS}시간 안에 다시 푼 통과는 '그 밖의 통과'로 남아요.",
             "rules": [f"도움 없이 푼 문제: 튜터 기능(대화, 블록 채우기, 해설 모드, 틀린 곳 같이 찾기, AI 피드백), 힌트, 해설을 쓰기 전에 제출 {UNAIDED_MAX_SUBMITS}번 안에 "
                       f"통과한 기본 문제예요. '이 문제 처음부터'로 다시 시작했다면 {REPEAT_GAP_HOURS}시간이 지난 뒤에 그렇게 통과해도 세요. "
                       "통과한 뒤에 쓴 도움은 판정을 바꾸지 않아요. 등록한 문제는 세지 않아요.",
