@@ -941,8 +941,12 @@ def _rust_items(body: str) -> list[tuple[str, str]] | None:
 def _rust_lead(text: str, starter: str) -> list[str]:
     code = _code_only(text, "rust")
     uses = [m.group(1) for m in _RUST_USE.finditer(code)]
-    # 프로그램이 이미 쓰는 이름: use 안의 모든 낱말(읽지 못하는 꼴의 use도 넉넉히 센다 — 덜 더할 뿐이다), 들여온 '…::*', 프로그램이 정의한 항목
-    have = {word for body in uses for word in re.findall(r"\w+", body)} | {path for body in uses for _, path in (_rust_items(body) or [])} | set(_RUST_ITEM.findall(code))
+    # 프로그램이 이미 쓰는 이름: use가 들여온 이름과 '…::*', 프로그램이 정의한 항목. 읽지 못하는 꼴의 use는 그 안의 낱말을 모두 센다(덜 더할 뿐이다).
+    # 경로 가운데의 낱말은 들여온 이름이 아니다('use std::io::stdin;'은 io를 들여오지 않는다)
+    have = set(_RUST_ITEM.findall(code))
+    for body in uses:
+        items = _rust_items(body)
+        have |= set(re.findall(r"\w+", body)) if items is None else {name for name, _ in items} | {path for _, path in items}
     out = []
     for m in _RUST_USE.finditer(_code_only(starter, "rust")):
         items = _rust_items(m.group(1))
@@ -1009,9 +1013,13 @@ def _js_lead(text: str, starter: str) -> list[str]:
 def import_end(rows: list[str], language: str) -> int:
     """맨 앞 가져오기 줄(그 사이 빈 줄·주석 포함) 가운데 마지막 줄의 바로 뒤 자리(없으면 0). 시작 코드에서 더하는 가져오기 줄은 여기에 넣는다.
     맨 위에 놓은 'using namespace std;'가 '#include' 앞에 와 GCC에서 오류였고, Python 'from __future__' 앞에 놓인 줄은 SyntaxError다.
-    Go는 맨 앞의 'package' 줄과 여러 줄 'import ( … )'도 머리말이다(import는 package 뒤에만 올 수 있다)."""
+    Go는 맨 앞의 'package' 줄과 여러 줄 'import ( … )'도 머리말이다(import는 package 뒤에만 올 수 있다).
+    Rust는 맨 앞의 내부 속성('#![…]')과 내부 문서 주석('//!')도 머리말이다(그 앞에 use가 오면 컴파일 오류다)."""
     at, group = 0, False
     for i, row in enumerate(rows):
+        if language == "rust" and row.lstrip().startswith(("#![", "//!")):
+            at = i + 1
+            continue
         plain = _plain(row, language)
         if not plain:
             continue

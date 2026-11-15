@@ -1814,6 +1814,11 @@ class StarterFrameTest(unittest.TestCase):
         for have in ("use std::io::{self, Read};", "use std::{io::{self, Read}};", "use std::io; use std::io::Read;", "use std::io::*;\nuse std::io::Read;\nmod io {}"):
             self.assertEqual(starter_imports(have.split("\n"), rust_starter, "rust"), [], have)  # 같은 이름을 두 번 들여오지 않는다(읽지 못하는 꼴은 넉넉히 센다)
         self.assertEqual(starter_imports(["use std::io::*;"], "use std::io::*;\nuse std::fmt::*;", "rust"), ["use std::fmt::*;"])
+        self.assertEqual(starter_imports(["use std::io::stdin;", "use std::io::BufRead;"], rust_starter, "rust"), ["use std::io::{self, Read};"])  # 경로 가운데의 io는 들여온 이름이 아니다
+        for head in ("#![allow(unused)]\nuse std::io::{self, BufRead};", "//! 두 배를 낸다\n#![allow(dead_code)]", "//! 두 배를 낸다"):  # 내부 속성·내부 문서 주석은 맨 앞에 남는다
+            rows = spliced([head + "\n\nfn main() {\n    let n = 3;", '    println!("{}", n);\n}'], 1, 'println!("{}", n);\n}', "rust", {}, None, True, rust_starter).split("\n")
+            at = next(i for i, row in enumerate(rows) if row.startswith("use std::io::"))
+            self.assertTrue(all(row.startswith(("#![", "//!", "use ")) for row in rows[:at]) and not any(row.startswith(("#![", "//!")) for row in rows[at:]), rows)
 
         read = 'const input = require("fs").readFileSync(0, "utf8");\n'
         self.assertEqual(starter_imports(["function solve() {", "  return `${input.trim()}`;", "}"], read, "javascript"), [read.strip()])  # 템플릿의 ${…} 안도 쓰임이다
