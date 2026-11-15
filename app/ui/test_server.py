@@ -415,6 +415,23 @@ def fail(pid: str, status: str, detail: dict | None, language: str = "python"):
     return step
 
 
+def pitfalls_repeated() -> None:
+    """되풀이한 실수는 두 번 이상 나온 것만, 나온 문제와 함께 온다. 뜻이 겹치는 함정은 한 줄로 합친다."""
+    one, two = ROWS[0]["id"], ROWS[1]["id"]
+    assert call("/api/report")[1]["pitfalls"] == []
+    with server.tutor() as t:
+        for pid in (one, two):
+            t.store.put_problem(pid, "python", "글", title=pid)
+        for pid, pitfall, h in ((one, "off_by_one", "a"), (two, "wrong_compare", "b"), (one, "wrong_init", "c")):  # wrong_compare는 off_by_one과 한 줄
+            t.store.conn.execute("INSERT INTO pitfall_hit(problem_id, pitfall, code_hash, at) VALUES(?, ?, ?, 't')", (pid, pitfall, h))
+        t.store.conn.commit()
+    rows = call("/api/report")[1]["pitfalls"]
+    assert [(x["count"], sorted(p["id"] for p in x["problems"])) for x in rows] == [(2, sorted([one, two]))], rows  # wrong_init은 한 번이라 빠진다
+    with server.tutor() as t:
+        t.store.conn.execute("DELETE FROM pitfall_hit")
+        t.store.conn.commit()
+
+
 def readiness() -> None:
     """준비도(도움 없이 푼 기본 문제로만), 남은 것과 학습 지도, 주제를 가로지른 실패 꼴, 바뀐 강·약 규칙. 모델 0회."""
     import random
@@ -2508,6 +2525,7 @@ def main() -> None:
         builtin(fake)
         compose()
         report()
+        pitfalls_repeated()
         home()
         own_theme()
         readiness()
