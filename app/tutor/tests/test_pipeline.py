@@ -853,6 +853,26 @@ class BlockCheckEntryAndGroupTest(unittest.TestCase):
         self.assertIn("func solution(parent []int, files []int, limit int) int {\n\tsz := len(parent)", program)  # 탭 들여쓰기도 탭으로
         self.assertEqual(spliced(go, 0, "package main\n\n// 내 주석\nfunc solution(parent []int, files []int, limit int) int {\n\tsz := len(parent)", "go").count("func solution"), 1)
 
+    def test_entry_head_in_other_forms_is_head(self):
+        """블록 1의 진입 함수 머리를 시작 코드와 다른 같은 뜻의 꼴로 적어도 머리로 떼고 계획의 머리로 잇는다:
+        JavaScript의 함수 식·화살표 함수(const·let·var), C++의 'std::'·참조가 붙은 반환형. async·제너레이터·중괄호 없는 화살표는 뜻이 달라 머리가 아니다."""
+        from ..common.solution import frame_line, spliced
+
+        for row in ("const solution = (a, k) => {", "let solution=(a, k = 0)=>{", "var solution = function (a, k) {", "const solution = function solve(a, k) {", "const solution = a => {"):
+            self.assertTrue(frame_line(row, "javascript"), row)
+        for row in ("const solution = async (a, k) => {", "const solution = function* (a, k) {", "const solution = (a, k) => a + k;", "const total = (a, k) => {",
+                    "const answer = solution(a, k);"):
+            self.assertFalse(frame_line(row, "javascript"), row)
+        for row in ("std::vector<int> solution(std::vector<int> a) {", "vector<int>& solution(vector<int> a) {", "long long solution(vector<int> a, int k = 0) {"):
+            self.assertTrue(frame_line(row, "cpp"), row)
+        self.assertFalse(frame_line("for (auto x : solution(a)) {", "cpp"))
+        js = ["function solution(a, k) {\n    let total = 0;", "    return total + k;\n}"]
+        program = spliced(js, 0, "const solution = (a, k) => {\n    let total = 0;", "javascript")
+        self.assertEqual(program, "function solution(a, k) {\n    let total = 0;\n    return total + k;\n}")
+        self.assertEqual(spliced(js, 1, "    return total + k;\n};", "javascript"), "function solution(a, k) {\n    let total = 0;\n    return total + k;\n}")  # 화살표 함수를 닫는 '};'
+        cpp = ["#include <vector>\nusing namespace std;\n\nint solution(vector<int> a, int k) {\n    int total = 0;", "    return total + k;\n}"]
+        self.assertEqual(spliced(cpp, 0, "std::int64_t solution(std::vector<int> a, int k) {\n    int total = 0;", "cpp").count("solution("), 1)
+
     def test_entry_missing_is_not_my_fault(self):
         """이어 붙이기가 진입 함수를 잃으면 모델로 넘기지 않고 '확인하지 못했다'는 고정 말로 끝낸다(진행·힌트 없음)."""
         from ..common.talk_rules import CANNOT_RUN
