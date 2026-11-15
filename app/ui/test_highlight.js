@@ -5,7 +5,7 @@
 // 4. macOS 12의 웹뷰(Safari 15쯤)가 모르는 문법을 화면 스크립트에 쓰지 않는다
 "use strict";
 const fs = require("fs"), path = require("path"), assert = require("assert");
-const { tokens, highlight, LANGS } = require("./highlight.js");
+const { tokens, lines, LANGS } = require("./highlight.js");
 
 const EXT = { python: "py", javascript: "js", java: "java", cpp: "cpp", go: "go", kotlin: "kt", rust: "rs" };
 assert.deepStrictEqual([...LANGS].sort(), Object.keys(EXT).sort());
@@ -14,6 +14,7 @@ assert.deepStrictEqual([...LANGS].sort(), Object.keys(EXT).sort());
 const walk = (dir) => fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(path.join(dir, e.name)) : [path.join(dir, e.name)]));
 const files = walk(path.join(__dirname, "problems"));
 let count = 0;
+const unhtml = (h) => h.replace(/<[^>]*>/g, "").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
 for (const [lang, ext] of Object.entries(EXT)) {
   const mine = files.filter((f) => path.basename(f) === `solution.${ext}`);
   assert.ok(mine.length > 0, `${lang} 풀이가 없다`);
@@ -22,6 +23,12 @@ for (const [lang, ext] of Object.entries(EXT)) {
     const got = tokens(code, lang);
     assert.strictEqual(got.map((t) => t[1]).join(""), code, f);
     assert.ok(got.some((t) => t[0] === "k"), `${f}: 키워드가 하나도 없다`);
+    const rows = lines(code, lang); // 줄마다의 HTML: 줄 수가 같고, 태그를 걷으면 그 줄의 글이며, 줄마다 span이 닫힌다
+    assert.strictEqual(rows.length, code.split("\n").length, f);
+    rows.forEach((row, i) => {
+      assert.strictEqual(unhtml(row), code.split("\n")[i], `${f}:${i + 1}`);
+      assert.strictEqual((row.match(/<span /g) || []).length, (row.match(/<\/span>/g) || []).length, `${f}:${i + 1}`);
+    });
     count++;
   }
 }
@@ -42,6 +49,12 @@ const CASES = [
   ["kotlin", 'fun f(a: Int): String { val s = """x\ny"""; return "a$s" }\nfun <T> g() = listOf(1L)', 'k:fun|f:f|t:Int|t:String|k:val|s:"""x\ny"""|k:return|s:"a$s"|k:fun|v:T|f:g|b:listOf|n:1L'],
   ["rust", 'fn f<\'a>(x: &\'a str) -> usize { let c = \'x\'; let s = r#"a"b"#; println!("{}", s); if a!=b { 1_000u64 } else { 0 } }', 'k:fn|f:f|t:str|t:usize|k:let|s:\'x\'|k:let|s:r#"a"b"#|b:println!|s:"{}"|k:if|n:1_000u64|k:else|n:0'],
   ["rust", 'let v: Vec<i64> = Vec::new(); let b = b"xy"; let o = Some(x.0); /* c */', 'k:let|t:Vec|t:i64|t:Vec|f:new|k:let|s:b"xy"|k:let|v:Some|n:0|c:/* c */'],
+  // 삼중 따옴표 안의 \"""는 문자열을 끝내지 않는다(Python·Java). Kotlin의 """에는 이스케이프가 없다
+  ["python", 's = """a \\""" b"""\nx = 1', 's:"""a \\""" b"""|n:1'],
+  ["java", 'String q = """\nx \\""" y"""; int n;', 't:String|s:"""\nx \\""" y"""|t:int'],
+  ["kotlin", 'val q = """a\\"""; val n = 1', 'k:val|s:"""a\\"""|k:val|n:1'],
+  // 정규식 리터럴 안의 백틱이 뒤를 문자열로 물들이지 않는다. 나눗셈은 정규식이 아니다
+  ["javascript", 's = t.replace(/`[a/]\\//g, ""); const h = a / 2 / b;\nlet z = 1;', 'f:replace|s:/`[a/]\\//g|s:""|k:const|n:2|k:let|n:1'],
 ];
 let bad = 0;
 for (const [lang, code, want] of CASES) {
@@ -51,10 +64,12 @@ for (const [lang, code, want] of CASES) {
 }
 assert.strictEqual(bad, 0, `대표 토큰 ${bad}개가 어긋났다`);
 assert.deepStrictEqual(tokens("a < b", "brainfuck"), [["", "a < b"]]); // 모르는 언어는 본문 그대로
+assert.deepStrictEqual(lines("/* a\n<b */ x", "java"), ['<span class="t-c">/* a</span>', '<span class="t-c">&lt;b */</span> x']); // 여러 줄 주석은 줄마다 다시 연다
+assert.deepStrictEqual(lines("a<\n", "brainfuck"), ["a&lt;", ""]); // 모르는 언어(색을 끈 때)는 글만
 
 // 3. 사용자의 코드가 innerHTML로 들어간다: &, <, >가 모두 바뀌어 태그가 생기지 않는다
 for (const lang of LANGS) {
-  const html = highlight('x = "<script>alert(1)</script>" // <b>&amp;</b>\n<img src=x onerror=alert(1)> & y', lang);
+  const html = lines('x = "<script>alert(1)</script>" // <b>&amp;</b>\n<img src=x onerror=alert(1)> & y', lang).join("\n");
   assert.ok(!/<(?!\/?span[ >])/.test(html), `${lang}: 바꾸지 않은 < 가 있다: ${html}`);
   assert.ok(!/&(?!amp;|lt;|gt;)/.test(html), `${lang}: 바꾸지 않은 & 가 있다`);
 }
@@ -71,7 +86,7 @@ const base = fs.readFileSync(files.find((f) => f.endsWith("solution.py")), "utf8
 const speed = [300, 1000, 2000].map((n) => {
   const code = Array.from({ length: n }, (_, i) => base[i % base.length]).join("\n");
   const t = process.hrtime.bigint();
-  for (let i = 0; i < 20; i++) highlight(code, "python");
+  for (let i = 0; i < 20; i++) lines(code, "python");
   return `${n}줄 ${(Number(process.hrtime.bigint() - t) / 20e6).toFixed(2)}ms`;
 });
 console.log(`문법 색 시험 통과: 기본 풀이 ${count}개, 대표 ${CASES.length}개 · ${speed.join(", ")}`);

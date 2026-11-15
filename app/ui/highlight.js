@@ -11,12 +11,13 @@
   // 한 줄 문자열은 닫는 따옴표나 줄 끝에서 멈춘다(닫지 않아도 아랫줄이 물들지 않는다)
   const DQ = String.raw`"(?:\\.|[^"\\\n])*"?`, SQ = String.raw`'(?:\\.|[^'\\\n])*'?`;
   const CH = String.raw`'(?:\\[^\n][^'\n]{0,9}|[^'\\\n])'`; // 글자 하나('a', '\n', '\''). 닫는 따옴표가 없으면 문자열이 아니다(Rust의 수명 'a)
-  const TRIPLE = (q) => `${q}${q}${q}[\\s\\S]*?(?:${q}${q}${q}|${END})`;
+  // 삼중 따옴표 문자열. esc면 \" 같은 이스케이프를 건너뛴다(Python·Java). Kotlin의 """는 이스케이프가 없다
+  const TRIPLE = (q, esc) => `${q}${q}${q}${esc ? "(?:\\\\[\\s\\S]|[^\\\\])" : "[\\s\\S]"}*?(?:${q}${q}${q}|${END})`;
   const NUM = String.raw`\b(?:0[xX][\da-fA-F_]+|0[bB][01_]+|0[oO][0-7_]+|\d[\d_]*(?:\.\d[\d_]*)?(?:[eE][+-]?\d+)?)\w*|\B\.\d[\d_]*(?:[eE][+-]?\d+)?\w*`;
   const L = {
     python: {
       c: "#[^\\n]*",
-      s: String.raw`(?:\b[rRbBfFuU]{1,2})?(?:${TRIPLE('"')}|${TRIPLE("'")}|${DQ}|${SQ})`,
+      s: String.raw`(?:\b[rRbBfFuU]{1,2})?(?:${TRIPLE('"', true)}|${TRIPLE("'", true)}|${DQ}|${SQ})`,
       k: W("and as assert async await break class continue def del elif else except finally for from global if import in is lambda nonlocal not or pass raise return try while with yield"),
       v: W("True False None"),
       b: W("print len range enumerate zip map filter sorted reversed sum min max abs any all int float str bool list dict set tuple frozenset input open isinstance iter next divmod pow round ord chr type super"),
@@ -28,10 +29,11 @@
       k: W("async await break case catch class const continue debugger default delete do else export extends finally for function if import in instanceof let new return static super switch this throw try typeof var void while yield"),
       v: W("true false null undefined NaN Infinity"),
       b: W("console require module exports process parseInt parseFloat isNaN globalThis"),
+      regex: true, // 정규식 리터럴(/…/): ( , = : [ ! & | ? { } ; 바로 뒤의 /만. 나눗셈과 헷갈리지 않게
     },
     java: {
       c: C_COMMENT,
-      s: `${TRIPLE('"')}|${DQ}|${CH}`,
+      s: `${TRIPLE('"', true)}|${DQ}|${CH}`,
       k: W("abstract assert break case catch class const continue default do else enum extends final finally for goto if implements import instanceof interface native new package private protected public record return static strictfp super switch synchronized this throw throws transient try var volatile while yield"),
       t: W("boolean byte char double float int long short void"),
       v: W("true false null"),
@@ -80,6 +82,7 @@
       `(?<c>${d.c})|(?<s>${d.s})|(?<n>${NUM})` +
       (d.pre ? String.raw`|(?<p>^[ \t]*#[ \t]*[a-z]+)(?<ph>[ \t]*<[^>\n]*>)?` : "") + // #include <vector>: 지시어는 키워드, 머리 파일 이름은 문자열
       (d.deco ? String.raw`|(?<d>@[A-Za-z_][\w.]*)` : "") +
+      (d.regex ? String.raw`|(?<rp>[(,=:[!&|?{};][ \t]*)(?<re>\/(?![\/*])(?:\\.|\[(?:\\.|[^\]\\\n])*\]|[^\/\\\n])+\/[a-z]*)` : "") +
       String.raw`|(?<w>[A-Za-z_$][\w$]*${d.macro ? "(?:!(?!=))?" : ""})`, "gm"));
   }
   function kindOf(d, g, call, named) {
@@ -88,6 +91,7 @@
     if (g.n !== undefined) return "n";
     if (g.p !== undefined) return "k";
     if (g.d !== undefined) return "b";
+    if (g.re !== undefined) return "s";
     const w = g.w;
     if (d.k.has(w)) return "k";
     if (d.v && d.v.has(w)) return "v";
@@ -116,6 +120,7 @@
       if (!kind) continue; // 보통 이름은 앞뒤 본문과 한 조각으로
       if (m.index > at) out.push(["", code.slice(at, m.index)]);
       if (m.groups.ph) out.push(["k", m.groups.p], ["s", m.groups.ph]);
+      else if (m.groups.re) out.push(["", m.groups.rp], ["s", m.groups.re]); // 앞의 기호는 본문
       else out.push([kind, m[0]]);
       at = end;
     }
@@ -123,9 +128,19 @@
     return out;
   }
   const esc = (s) => s.replace(/[&<>]/g, (ch) => (ch === "&" ? "&amp;" : ch === "<" ? "&lt;" : "&gt;"));
-  /** innerHTML에 넣을 글. 사용자의 코드가 그대로 들어오는 자리라 &, <, >를 모두 바꾼다. */
-  const highlight = (code, lang) => tokens(code, lang).map(([k, text]) => (k ? `<span class="t-${k}">${esc(text)}</span>` : esc(text))).join("");
-  const api = { tokens, highlight, LANGS: Object.keys(L) };
+  /** 줄마다의 HTML(줄바꿈은 빼고). innerHTML에 들어가는 사용자의 코드라 &, <, >를 모두 바꾼다.
+      여러 줄에 걸친 주석·문자열은 줄마다 span을 다시 연다. 화면은 바뀐 줄만 바꿔 넣는다. 모르는 언어는 색 없이 글만. */
+  function lines(code, lang) {
+    const out = [""];
+    for (const [k, text] of tokens(code, lang)) {
+      text.split("\n").forEach((part, i) => {
+        if (i) out.push("");
+        if (part) out[out.length - 1] += k ? `<span class="t-${k}">${esc(part)}</span>` : esc(part);
+      });
+    }
+    return out;
+  }
+  const api = { tokens, lines, LANGS: Object.keys(L) };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.AlgoBlockHighlight = api;
 })(typeof window !== "undefined" ? window : globalThis);

@@ -1377,17 +1377,26 @@ function syncGutter() {
 }
 
 /* 문법 색: 글상자 바로 앞의 pre에 같은 글을 칠해 겹친다(highlight.js). 입력은 글상자가 그대로 받는다.
-   한 프레임에 한 번, 글이나 언어가 바뀌었을 때만 칠한다. 너무 긴 코드는 색 없이 글만 둔다(pre는 크기만 맡는다). */
-const PAINT_MAX_LINES = 2000, PAINT_MAX_CHARS = 100000, painting = new Set();
+   pre에는 줄마다 div 하나를 두고, 한 프레임에 한 번 바뀐 줄만 바꿔 넣는다(전체를 다시 넣으면 긴 코드에서 배치가 입력을 늦춘다).
+   너무 긴 코드는 색 없이 글만 둔다(pre는 크기만 맡는다). */
+const PAINT_MAX_LINES = 500, PAINT_MAX_CHARS = 30000, painting = new Set();
 function paintCode(ta) {
-  const pre = ta.previousElementSibling, lang = (S.problem && S.problem.language) || "", code = ta.value, key = lang + "\0" + code;
+  const pre = ta.previousElementSibling, lang = (S.problem && S.problem.language) || "", code = ta.value;
+  const plain = code.length > PAINT_MAX_CHARS || code.split("\n").length > PAINT_MAX_LINES, key = (plain ? "" : lang) + "\0" + code;
   if (!pre || pre._key === key) return;
   pre._key = key;
-  const plain = code.length > PAINT_MAX_CHARS || code.split("\n").length > PAINT_MAX_LINES;
   ta.parentElement.classList.toggle("plain", plain);
-  // ponytail: 전체 다시 칠하기(맥 웹뷰에서 100줄 3ms, 300줄 8ms쯤). 긴 코드에서 느리면 바뀐 줄만 고치는 갱신으로
-  if (plain) pre.textContent = code + "\n"; // 끝의 줄바꿈: 마지막 빈 줄이 접히지 않게
-  else pre.innerHTML = window.AlgoBlockHighlight.highlight(code, lang) + "\n";
+  // ponytail: 글 전체를 매번 다시 나눈다(맥 웹뷰 500줄에서 2~5ms). 한도를 올리려면 바뀐 줄 근처만 다시 나누기로
+  const rows = window.AlgoBlockHighlight.lines(code, plain ? "" : lang), old = pre._rows || [];
+  let head = 0, tail = 0; // 앞뒤에서 같은 줄을 건너뛰고 가운데만 바꾼다
+  while (head < old.length && head < rows.length && old[head] === rows[head]) head++;
+  while (tail < old.length - head && tail < rows.length - head && old[old.length - 1 - tail] === rows[rows.length - 1 - tail]) tail++;
+  for (let i = old.length - tail - 1; i >= head; i--) pre.children[i].remove();
+  const html = rows.slice(head, rows.length - tail).map((row) => `<div>${row}\n</div>`).join(""); // 줄 끝의 \n: 글이 글상자와 같아 커서 자리 계산이 맞는다
+  const next = pre.children[head];
+  if (html && next) next.insertAdjacentHTML("beforebegin", html);
+  else if (html) pre.insertAdjacentHTML("beforeend", html);
+  pre._rows = rows;
   ta.scrollTop = ta.scrollLeft = 0; // 글상자가 제 안에서 밀렸으면(긴 글을 붙여 넣은 때) 되돌린다. 스크롤은 바깥 칸의 몫이다
 }
 function paintSoon(ta) {

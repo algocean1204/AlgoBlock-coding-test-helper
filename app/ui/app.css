@@ -615,7 +615,9 @@ pre.code.bad { color: var(--danger); }
 .code-stack > textarea:focus-visible { outline: none; box-shadow: none; }
 .code-stack > textarea::selection { background: var(--code-selection); color: transparent; }
 .code-stack.plain > textarea { color: var(--text); } /* 너무 긴 코드: 색을 끄고 글상자의 글을 보인다(pre는 크기만 맡는다) */
+.code-stack.plain > textarea::selection { color: var(--text); } /* 색을 끈 동안은 글상자의 글이 보이는 글이라 선택해도 남는다 */
 .code-stack.plain > .hl { color: transparent; }
+.code-stack > .hl > div { min-height: var(--code-line); } /* 줄 하나에 div 하나(빈 줄도 한 줄 높이) */
 .code-stack > .hl { position: relative; z-index: 1; padding-right: 60px; pointer-events: none; user-select: none; overflow: visible; background: none; color: var(--text); } /* 오른쪽 여유: 줄 끝에서 칠 때 다시 칠하기 전에도 글상자가 제 안에서 밀리지 않게 */
 .t-k { color: var(--syn-keyword); }
 .t-s { color: var(--syn-string); }
