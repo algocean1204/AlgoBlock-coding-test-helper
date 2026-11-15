@@ -217,6 +217,17 @@ def _job_events(process):
     return events
 
 
+def _apply_job_events(result, events, processes):
+    """작업의 알림(events)으로 결과를 다듬는다. 커밋 상한이 할당을 거절해 죽었으면 memory_limit(POSIX의 메모리 측정과 같은 판정),
+    프로세스 수 상한에 걸렸고 통과하지 못했으면 표준 오류 끝에 한 줄(알림 전달은 보장되지 않는다)."""
+    if result["status"] == "runtime_error" and JOB_MSG_JOB_MEMORY_LIMIT in events:
+        result = {**result, "status": "memory_limit"}
+    if JOB_MSG_ACTIVE_PROCESS_LIMIT in events and result["status"] != "passed":
+        stderr = result["stderr"]
+        result = {**result, "stderr": (stderr if not stderr or stderr.endswith("\n") else stderr + "\n") + f"프로세스 수 상한({processes})에 걸렸어요\n"}
+    return result
+
+
 def _resume(pid):
     """멈춘 채 만든 프로세스 pid의 스레드를 재개한다. 하나도 재개하지 못하면 OSError."""
     kernel = _kernel32()
@@ -358,12 +369,7 @@ def run_command(command, cwd, stdin="", timeout=TIMEOUT_SECONDS, memory_mb=MEMOR
             kind, warning = _start_windows(process, cpu, memory_mb, processes)
             started = time.perf_counter()  # 작업 준비(작업 만들기, 스레드 찾기)는 실행 시간에 넣지 않는다. 프로세스는 재개한 뒤에야 돈다
         result = _collect(process, stdin, timeout, memory_mb, started)
-        events = _job_events(process) if windows else ()
-        if result["status"] == "runtime_error" and JOB_MSG_JOB_MEMORY_LIMIT in events:
-            result = {**result, "status": "memory_limit"}  # 커밋 상한이 할당을 거절해 죽었다(POSIX의 메모리 측정과 같은 판정)
-        if JOB_MSG_ACTIVE_PROCESS_LIMIT in events and result["status"] != "passed":  # 알림이 오면 끝난 이유를 알 수 있게 한 줄 덧붙인다(전달은 보장되지 않는다)
-            stderr = result["stderr"]
-            result = {**result, "stderr": (stderr if not stderr or stderr.endswith("\n") else stderr + "\n") + f"프로세스 수 상한({processes})에 걸렸어요\n"}
+        result = _apply_job_events(result, _job_events(process) if windows else (), processes)
         return {**result, "warning": warning, "warning_kind": kind} if warning else result
     finally:
         with RUNNING_LOCK:

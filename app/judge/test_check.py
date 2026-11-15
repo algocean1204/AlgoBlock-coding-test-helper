@@ -515,6 +515,25 @@ class LimitTest(unittest.TestCase):
         self.assertEqual([c["status"] for c in report["cases"]], ["timeout", "timeout", "passed", "timeout", "timeout"])
 
 
+class JobEventsTest(unittest.TestCase):
+    """작업의 알림으로 결과를 다듬는 판정(포트 없이 함수만 부른다. 어느 OS에서나 돈다)."""
+
+    def test_process_limit_adds_one_line_unless_passed(self):
+        events = {common.JOB_MSG_ACTIVE_PROCESS_LIMIT}
+        failed = common._apply_job_events({"status": "runtime_error", "stdout": "", "stderr": "Traceback\n"}, events, 64)
+        self.assertEqual((failed["status"], failed["stderr"]), ("runtime_error", "Traceback\n프로세스 수 상한(64)에 걸렸어요\n"))
+        self.assertEqual(common._apply_job_events({"status": "runtime_error", "stderr": ""}, events, 64)["stderr"], "프로세스 수 상한(64)에 걸렸어요\n")
+        self.assertEqual(common._apply_job_events({"status": "runtime_error", "stderr": "끝에 줄바꿈 없음"}, events, 64)["stderr"], "끝에 줄바꿈 없음\n프로세스 수 상한(64)에 걸렸어요\n")
+        passed = {"status": "passed", "stdout": "ok", "stderr": ""}
+        self.assertEqual(common._apply_job_events(passed, events, 64), passed)
+        self.assertEqual(common._apply_job_events({"status": "runtime_error", "stderr": "x"}, set(), 64)["stderr"], "x")  # 알림이 없으면 그대로
+
+    def test_memory_event_decides_memory_limit_only_for_runtime_error(self):
+        events = {common.JOB_MSG_JOB_MEMORY_LIMIT}
+        self.assertEqual(common._apply_job_events({"status": "runtime_error", "stderr": ""}, events, 64)["status"], "memory_limit")
+        self.assertEqual(common._apply_job_events({"status": "timeout", "stderr": ""}, events, 64)["status"], "timeout")
+
+
 class WindowsShapeTest(unittest.TestCase):
     """Windows API에 넘기는 구조체의 크기와 자리(Microsoft 문서의 x64 배치). 순수 ctypes라 어느 64비트 OS에서나 돈다."""
 
@@ -601,6 +620,17 @@ class WindowsJobTest(unittest.TestCase):
         self.assertEqual(result["status"], "passed", result)
         self.assertEqual(int(result["stdout"]) & common.ERROR_MODE, common.ERROR_MODE, result)
         self.assertEqual(after, 0, "실행이 끝난 뒤 이 프로세스의 오류 모드가 되돌려지지 않았다")
+
+    def test_process_limit_line_is_added_to_a_failed_run_only(self):
+        """작업이 '프로세스 수 상한' 알림을 보냈다고 하면(알림만 고정한다) 실패한 실행의 stderr 끝에 한 줄이 붙고, 통과한 실행에는 붙지 않는다."""
+        line = f"프로세스 수 상한({common.JOB_PROCESS_LIMIT})에 걸렸어요"
+        with mock.patch.object(common, "_job_events", return_value={common.JOB_MSG_ACTIVE_PROCESS_LIMIT}):
+            failed = self.run_python("raise SystemExit(1)")
+            passed = self.run_python("print('ok')")
+        self.assertEqual(failed["status"], "runtime_error", failed)
+        self.assertTrue(failed["stderr"].endswith(line + "\n"), failed)
+        self.assertEqual(passed["status"], "passed", passed)
+        self.assertNotIn(line, passed["stderr"])
 
     def test_without_job_it_still_runs_and_says_so(self):
         with mock.patch.object(common, "_windows_job", side_effect=OSError(5, "막힘")):
