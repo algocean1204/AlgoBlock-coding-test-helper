@@ -62,6 +62,7 @@ import casegen  # noqa: E402  (효율성 케이스의 큰 입력을 다시 만�
 import casemake  # noqa: E402  (등록한 문제의 풀이를 단순 풀이·생성기와 채점기로 대조해 숨은 케이스를 만든다)
 from problemkit import fits  # noqa: E402  (값이 형에 맞는가. 기본 문제를 검사할 때 쓰는 것)
 from stubs import program_stub, stub  # noqa: E402  (형에서 언어별 시작 코드, 표준 입출력 뼈대)
+import single  # noqa: E402  (데이터 폴더 잠금)
 import updater  # noqa: E402  (새 버전 확인과 업데이트)
 from app.llm import keycheck  # noqa: E402  (키를 저장하기 전에 공급자에 확인)
 
@@ -2596,13 +2597,22 @@ def stop_grading(*_) -> None:
 atexit.register(stop_grading)
 
 
-def main() -> None:
+def main() -> bool:
+    """서버를 띄워 끝날 때까지 돈다. 새로 띄우지 못했으면(이미 켜져 있거나 포트가 막힘) 알리고 False."""
+    port = int(os.environ.get("ALGOBLOCK_UI_PORT", "8791"))
+    other = single.guard(DATA, port)  # 켜져 있으면 키 읽기·업데이트 확인·미리 준비를 하나 더 돌리지 않는다
+    if other is not None:
+        print(single.running_message(other), file=sys.stderr, flush=True)
+        return False
+    try:
+        server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
+    except OSError as exc:  # 잠금은 잡았으니 다른 프로그램(또는 다른 데이터 폴더의 앱)이 이 포트를 쓰고 있다
+        print(f"{port}번 포트를 이미 다른 프로그램이 쓰고 있어요. 새로 띄우지 않았습니다: {exc}", file=sys.stderr, flush=True)
+        return False
     load_keys()
     updater.start()  # 켤 때(마지막 확인에서 24시간이 지났으면)와 24시간마다 새 버전을 뒤에서 본다(실패하면 1시간부터 늘려 다시)
     if threading.current_thread() is threading.main_thread():  # 창(window.py)에서 띄우면 스레드라 신호를 받을 수 없다
         signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))  # 끝내기 전에 atexit의 stop_grading이 돈다
-    port = int(os.environ.get("ALGOBLOCK_UI_PORT", "8791"))
-    server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
     server.daemon_threads = True
     print(f"AlgoBlock: http://127.0.0.1:{port}", flush=True)
     try:
@@ -2611,6 +2621,7 @@ def main() -> None:
         pass
     finally:
         stop_grading()
+    return True
 
 
 if __name__ == "__main__":

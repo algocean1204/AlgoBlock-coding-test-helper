@@ -1,7 +1,7 @@
 """화면을 브라우저 없이 네이티브 창으로 연다(macOS는 WKWebView, Windows는 WebView2). pywebview가 있어야 한다.
 
 실행: cd app && uv run --no-project --python 3.12 --with langgraph --with pywebview python ui/window.py
-서버(server.py)를 같은 프로세스에서 같이 띄운다. 이미 떠 있으면 그 서버의 화면을 연다.
+서버(server.py)를 같은 프로세스에서 같이 띄운다. 이미 켜져 있으면(데이터 폴더 잠금) 알리고 끝난다.
 """
 
 import os
@@ -19,11 +19,11 @@ import webview  # noqa: E402
 import server  # noqa: E402
 
 
+SERVED = []  # server.main의 결과: 서버가 돌다 끝나면 True, 새로 띄우지 못했으면 False
+
+
 def serve() -> None:
-    try:
-        server.main()
-    except OSError as exc:  # 포트를 이미 쓰고 있다: 떠 있는 서버를 그대로 쓴다
-        print(f"서버를 새로 띄우지 않았습니다: {exc}", file=sys.stderr)
+    SERVED.append(server.main())
 
 
 def os_dark() -> bool:
@@ -51,6 +51,8 @@ def main() -> None:
     url = f"http://127.0.0.1:{os.environ.get('ALGOBLOCK_UI_PORT', '8791')}/"
     threading.Thread(target=serve, daemon=True).start()
     for _ in range(50):  # 서버가 받을 때까지 최대 10초
+        if SERVED:  # 서버를 띄우지 못했다(이미 켜져 있거나 포트가 막힘): 이유는 server.main이 이미 알렸다. 창을 하나 더 열지 않는다
+            return
         try:
             urllib.request.urlopen(url, timeout=1).close()
             break
