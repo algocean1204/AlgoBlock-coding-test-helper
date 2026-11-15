@@ -549,7 +549,8 @@ async function fillCases(sure, quiet) {
   }
   // 글자 읽기로 읽은 글은 줄이 깨져 빠질 수 있다. 채운 수를 원본과 견주게 한다
   $("case-note").textContent = (cases.length ? `글의 입출력 예에서 케이스 ${cases.length}개를 채웠어요. ${readOcr ? "원본의 예시 수와 견줘 주세요. " : ""}` : "") + missed
-    || "글에서 입출력 예를 찾지 못했어요. 아래에 직접 넣어 주세요."; // 문장으로만 적힌 예시는 읽지 못한다: 조용히 넘어가지 않고 알린다
+    || (r.data.other > 0 && !EDIT ? `${stdin ? "함수(solution)" : "표준 입출력"} 꼴의 예시 ${r.data.other}개를 찾았어요. 푸는 방식을 바꾸면 채워요.` // 다른 방식으로는 찾았다: 위 알림과 어긋나지 않게 한 가지로 말한다
+      : "글에서 입출력 예를 찾지 못했어요. 아래에 직접 넣어 주세요."); // 문장으로만 적힌 예시는 읽지 못한다: 조용히 넘어가지 않고 알린다
   $("case-note").hidden = false;
   if (!cases.length) return void ($("case-fill").hidden = !skipped);
   TABLE = cases;
@@ -842,7 +843,7 @@ async function showEdit(pid) {
   $("new-mode").value = p.mode || "function";
   $("new-title").value = p.title;
   $("new-theme").value = p.theme || "";
-  $("new-level").value = p.level ? String(p.level) : "";
+  $("new-level").value = p.level_by === "user" ? String(p.level) : ""; // 분석이 어림한 단계는 내가 고른 것이 아니다: 그대로 저장하면 고른 단계로 굳는다
   $("new-text").value = p.text;
   resetCases();
   findTable();
@@ -954,8 +955,8 @@ async function showCode(pid) {
 }
 
 async function loadState(open) {
-  const pid = S.pid;
-  const r = await api("/api/state", { id: pid, mode: S.talk, open: !!open });
+  const pid = S.pid, asked = S.talk;
+  const r = await api("/api/state", { id: pid, mode: asked, open: !!open });
   if (S.pid !== pid) return;
   $("code-error").hidden = r.ok;
   if (!r.ok && r.error.code === "not_found") { // 지워진(없는) 문제: 목록으로 보낸다
@@ -965,6 +966,7 @@ async function loadState(open) {
   }
   if (!r.ok) return void ($("code-error").textContent = errorNote(r.error).text);
   applyState(r.data);
+  if (S.talk !== asked && S.pid === pid) return loadState(); // 처음 열며 그 문제의 방식이 정해졌다: 서버가 이름을 가리는 것은 방식마다 달라, 정해진 방식으로 다시 받는다
 }
 
 /** 서버가 준 문제 상태를 화면 상태로 옮긴다. 처음 받았을 때만 코드 칸과 문제 글을 채운다(적던 글을 덮지 않게). */
@@ -2536,7 +2538,10 @@ document.addEventListener("click", (e) => {
     "tour-open": openTour, "tour-skip": () => { const last = tourAt === TOUR.length - 1; closeTour(); if (last && !CONN.ready) toggleConn(true); }, "tour-prev": () => tourStep(-1), "tour-next": () => tourStep(1),
     "drop": () => $("new-files").click(), "read-files": readFiles, "asset-close": closeAsset,
     "case-add": () => { addCaseRow(); $("case-rows").lastElementChild.querySelector("input").focus(); },
-    "mode-switch": () => { $("new-mode").value = $("new-mode").value === "program" ? "function" : "program"; setCaseMode(); say(`푸는 방식을 바꿨어요: ${$("new-mode").value === "program" ? "표준 입출력" : "함수(solution)"}`); $("new-mode").focus(); },
+    "mode-switch": async () => {
+      $("new-mode").value = $("new-mode").value === "program" ? "function" : "program"; setCaseMode(); say(`푸는 방식을 바꿨어요: ${$("new-mode").value === "program" ? "표준 입출력" : "함수(solution)"}`); $("new-mode").focus();
+      if (!formCases().some((x) => x.input.trim() || x.expected.trim())) await fillCases(true, true); // 찾아 둔 예시를 바로 채운다(비어 있을 때만. 적은 케이스는 덮지 않는다)
+    },
     "new-clear": () => { $("new-clear").hidden = true; $("new-clear-confirm").hidden = false; $("new-clear-no").focus(); },
     "new-clear-no": () => { $("new-clear-confirm").hidden = true; syncForm(); $("new-clear").focus(); },
     "new-clear-yes": () => { $("new-clear-confirm").hidden = true; emptyForm(); fillLangs(); formMode(false); findTable(); setStep(1, false); say("등록 화면을 비웠어요."); $("new-text").focus(); },

@@ -885,6 +885,18 @@ def own_way_flow() -> None:
     assert not call("/api/state", id=PID)[1]["own_way"]
 
 
+def state_names_by_mode() -> None:
+    """상태는 요청의 방식으로 블록 이름을 가린다: 가이드는 지금 블록 이름이 보이고, 의자는 아직 찾지 못한 지금 블록 이름이 가려진다.
+    화면은 문제를 열 때 그 문제에 기억한 방식을 보내야 한다(직전 방식이 아니라) — 아니면 가이드가 이름을 가린 채 열린다."""
+    call("/api/reset", id=PID)
+    call("/api/turn", id=PID, mode="guide", event="start")
+    guide, chair = (call("/api/state", id=PID, mode=m)[1]["session"] for m in ("guide", "chair"))
+    assert guide["open_count"] == chair["open_count"] == 1
+    assert [b["name"] for b in guide["blocks"]] == ["개수 세기", None], guide["blocks"]
+    assert [b["name"] for b in chair["blocks"]] == [None, None], chair["blocks"]
+    call("/api/reset", id=PID)
+
+
 def chair_found() -> None:
     """의자에서 찾은 블록의 블록 코드 확인(모델 0회): 맞다고만 하고 진행은 그대로, 그 말은 그 블록을 겨눈다. 가이드는 지금 블록만.
     계획 코드와 글자 그대로 같으면 실행 없이, 틀 줄을 빼고 적으면 실행해 본다(그 문제의 예시만 있는 등록 문제라 그렇다고 말한다)."""
@@ -1315,6 +1327,20 @@ def program_tutor() -> None:
             assert said == "통과예요. 이 블록의 코드는 할 일을 해내요.", (language, said)
             # 가짜 모델에 단순 풀이가 없다: 대조를 하지 못하고(예시만 통과) 블록을 짠다
             assert [c["task"] for c in fake.calls] == ["plan.solve", "plan.brute", "plan.draft_blocks"], [c["task"] for c in fake.calls]
+
+
+def guessed_level() -> None:
+    """단계를 고르지 않은 등록 문제는 분석이 어림한 단계를 level_by가 analysis로 싣는다(화면은 수정 칸에 이것을 넣지 않는다). 고른 단계는 user. 어림한 채 고쳐 저장해도 어림으로 남는다."""
+    pid = server.register(GOOD)["id"]
+    with server.tutor() as t:
+        t.adopt(pid, {**FIRST["ready"], "fact": {**FIRST["ready"]["fact"], "level": 2}})  # 분석이 어림한 단계
+    state = call("/api/state", id=pid)[1]["problem"]
+    assert state["level"] == 2 and state["level_by"] == "analysis", (state["level"], state["level_by"])
+    call("/api/problems/edit", id=pid, title="두 수의 합", text=GOOD["text"], cases=GOOD["cases"][:1] + GOOD["cases"][2:], level=0)  # 수정 칸이 비어 있으면 0을 보낸다
+    assert call("/api/state", id=pid)[1]["problem"]["level_by"] == "analysis"
+    call("/api/problems/edit", id=pid, title="두 수의 합", text=GOOD["text"], cases=GOOD["cases"][:1] + GOOD["cases"][2:], level=4)
+    state = call("/api/state", id=pid)[1]["problem"]
+    assert (state["level"], state["level_by"]) == (4, "user"), state
 
 
 def own_guide() -> None:
@@ -2014,6 +2040,7 @@ def main() -> None:
         screen_flows()
         debug_pass()
         own_way_flow()
+        state_names_by_mode()
         chair_found()
         language_memory()
         no_tool()
@@ -2025,6 +2052,7 @@ def main() -> None:
         stale_save()
         builtin_prepare()
         own_guide()
+        guessed_level()
         kept_languages()
         edit_changes()
         explicit_mode()
