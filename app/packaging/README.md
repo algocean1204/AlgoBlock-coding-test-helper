@@ -156,6 +156,6 @@ app\packaging\dist\AlgoBlock.exe --check-embed
 
 ## 버전 바꾸기
 
-- 버전은 `app/ui/updater.py`의 `VERSION` 한 곳(지금 `0.1.0`)에서 고친다. `algoblock.spec`은 이 값을 `CFBundleShortVersionString`에, `build_mac.sh`는 버전이 붙은 `.dmg` 파일 이름에 쓴다. 고정 이름의 사본에는 버전이 없다.
+- 버전은 `app/ui/updater.py`의 `VERSION` 한 곳에서 고친다. `algoblock.spec`은 이 값을 `CFBundleShortVersionString`에, `build_mac.sh`는 버전이 붙은 `.dmg` 파일 이름에 쓴다. 고정 이름의 사본에는 버전이 없다.
 - 앱의 업데이트는 이 값과 릴리스 태그(`v<버전>`)를 숫자로 견준다. 태그와 이 값이 다르면 새 버전을 설치한 뒤에도 또 새 버전이 있다고 알린다. 그래서 바꿔 끼우기 전에 dmg 안 앱의 `CFBundleShortVersionString`이 태그와 같은지 본다.
 - Windows: 파일 이름에 버전이 없다(`AlgoBlock.exe`, `AlgoBlock-windows-x64.exe`). 실행 파일에 버전 정보를 넣지 않는다.
