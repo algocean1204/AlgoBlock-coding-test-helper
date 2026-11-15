@@ -1478,6 +1478,7 @@ def checkpoints() -> None:
 def compose() -> None:
     """모으기는 서버 한 곳에서 블록 코드 확인과 같은 framed로 한다. 빈 블록은 빠지고, 블록 2에 머리 줄을 적어도 확인이 돌린 프로그램과 같은 글이다."""
     from tutor.common.solution import spliced
+    from tutor.common.talk_rules import ALONE_OK
 
     def text(parts):  # 블록 주석과 빈 줄을 뺀 글
         return "\n".join(row for _, part in parts for row in part.split("\n") if row.strip() and not row.strip().startswith("# 블록"))
@@ -1485,7 +1486,10 @@ def compose() -> None:
     b1 = "\n".join(row[4:] for row in LINES[1:5])
     parts = call("/api/compose", id=PID, mode="guide", blocks={"b1": {"code": b1, "by": "me"}, "b2": {"code": "\n".join(LINES[5:]), "by": "tutor"}})[1]["parts"]
     assert [i for i, _ in parts] == [0, 1] and parts[0][1].startswith("def solution(loans, k):\n    # 블록 1 · ") and text(parts) == CODE, parts
-    assert [i for i, _ in call("/api/compose", id=PID, mode="guide", blocks={"b1": {"code": "  ", "by": "me"}, "b2": {"code": "return []", "by": "me"}})[1]["parts"]] == [1]
+    parts = call("/api/compose", id=PID, mode="guide", blocks={"b1": {"code": "  ", "by": "me"}, "b2": {"code": "return []", "by": "me"}})[1]["parts"]
+    assert [i for i, _ in parts] == [0, 1] and parts[0][1] == "def solution(loans, k):" and parts[1][1].endswith(" return []"), parts  # 빈 블록은 틀 줄만(머리가 빠지면 함수 밖의 return이었다)
+    # 튜터가 '남은 블록은 건너뛰어도 된다'고 한 뒤의 빈 블록은 화면이 모으기에서 막지 않는다(화면은 그 말로 안다)
+    assert ALONE_OK.split(".")[0] in (Path(__file__).parent / "app.js").read_text(encoding="utf-8")
     head2 = "def solution(loans, k):\n" + "\n".join(LINES[5:])  # 블록 2에 머리 줄을 적었다
     parts = call("/api/compose", id=PID, mode="guide", blocks={"b1": {"code": b1, "by": "me"}, "b2": {"code": head2, "by": "me"}})[1]["parts"]
     ran = spliced(["\n".join(LINES[:5]), "\n".join(LINES[5:])], 1, head2, "python", {0: b1})

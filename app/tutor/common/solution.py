@@ -803,7 +803,7 @@ def scoped_names(references: list[str], language: str, program: bool = False) ->
 
 
 def composed_parts(blocks, codes: dict, language: str, names: list | None = None, program: bool = False, starter: str = "", trusted: bool = True) -> list[list]:
-    """블록 칸의 글을 실행되는 한 파일의 조각으로 [[블록 순번, 글], …](글이 빈 블록은 없다). 블록 코드 확인이 잇는 것과 같은 framed를 쓴다.
+    """블록 칸의 글을 실행되는 한 파일의 조각으로 [[블록 순번, 글], …](글이 빈 블록은 틀 줄만, 틀도 없으면 빠진다). 블록 코드 확인이 잇는 것과 같은 framed를 쓴다.
     조각마다 알맹이 첫 줄 위에 블록 주석을 그 줄의 들여쓰기로 넣는다. names: 블록마다 보여 줄 이름(없으면 종류). program: 문항이 표준 입출력 방식이다.
     trusted가 거짓이면(튜터의 풀이를 확인하지 못했다) 계획 코드의 틀을 믿지 않고 시작 코드(starter)의 틀 안에 내 블록을 차례로 놓는다:
     블록마다 내 글 맨 앞의 틀 줄(진입 머리·가져오기)을 떼고(_my_head. 뗀 가져오기는 맨 위로), 끝 블록에서 시작 코드의 꼬리와 같은 줄을 떼어(_drop_tail)
@@ -813,8 +813,14 @@ def composed_parts(blocks, codes: dict, language: str, names: list | None = None
     unit = plan_unit(refs, language)
     mark = "#" if language == "python" else "//"
     items = [(i, ((codes.get(block.id) or {}).get("code") or "").rstrip()) for i, block in enumerate(blocks)]
-    items = [(i, code) for i, code in items if code.strip()]
     frame = frame_of(starter, language, program) if not trusted and starter.strip() else None
+    shells = {}  # 글이 빈 블록은 계획 코드의 틀(머리·꼬리)만 둔다(블록 코드 확인의 '내 블록만 이은 프로그램'과 같다). 빼면 그 블록이 닫던 괄호·main() 부르기가 빠졌다
+    for i, code in items:
+        if frame is None and not code.strip() and refs[i].strip() and any(other.strip() for _, other in items):  # 적은 블록이 하나도 없으면 모을 것이 없다
+            shell = frame_of(refs[i], language, program)
+            if any(row.strip() for row in [*shell["head"], *shell["tail"]]):
+                shells[i] = [*shell["head"], *shell["tail"]]
+    items = [(i, code) for i, code in items if code.strip() or i in shells]
     if frame is not None:
         extra, bodies = [], []
         for _, code in items:
@@ -828,6 +834,9 @@ def composed_parts(blocks, codes: dict, language: str, names: list | None = None
         if frame is not None:
             lines = placed(bodies[n], frame["indent"], frame["outer"], 0, frame["tab"])
             lines = [*(extra + frame["head"] if n == 0 else []), *lines, *(frame["tail"] if n == len(items) - 1 else [])]
+        elif i in shells:
+            out.append([i, "\n".join(shells[i])])
+            continue
         else:
             lines = framed(code, refs[i], language, program, unit).split("\n") if refs[i].strip() else code.split("\n")
         at = next((k for k, row in enumerate(lines) if row.strip() and _plain(row, language) and not frame_line(row, language)), 0)
