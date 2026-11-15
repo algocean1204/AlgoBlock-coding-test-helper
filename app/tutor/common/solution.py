@@ -636,9 +636,10 @@ _JS_BEFORE_REGEX = {"return", "typeof", "instanceof", "in", "of", "new", "delete
 
 def _js_lex(code: str, at: int = 0, hole: bool = False) -> tuple[list[tuple[int, int, str]], int]:
     """JavaScript를 _LEX와 같은 종류(s 글자, c 주석, n 이름, d 수, o 괄호)의 (시작, 끝, 종류)로 가른다. 정규식으로 셀 수 없는 두 가지를 손으로 읽는다:
-    템플릿 문자열은 ${…} 안의 중첩 템플릿·문자열·중괄호까지 짝을 맞춰 한 글자로, 정규식 글자('/…/g')는 '/' 앞이 값이 아닐 때(이름·수·닫는 괄호 뒤가 아닐 때, return 뒤 등) 글자로 본다.
+    템플릿 문자열은 ${…} 안의 중첩 템플릿·문자열·중괄호까지 짝을 맞춰 한 글자로, 정규식 글자('/…/g')는 '/' 바로 앞이 값의 끝이 아닐 때 글자로 본다.
+    값의 끝: 이름(return·typeof 같은 낱말은 점 뒤의 속성일 때만), 수, 글자(문자열·템플릿·정규식), 닫는 괄호, 뒤에 붙은 '++'·'--'. 값 뒤의 '/'는 나눗셈이다.
     hole이면 템플릿의 ${ 바로 뒤에서 시작해 짝 없는 '}'에서 멈추고 그 자리를 돌려준다(없으면 글의 끝)."""
-    out, depth, last, i = [], 0, "", at
+    out, depth, value, i = [], 0, False, at
     while i < len(code):
         ch, kind, j = code[i], "", i + 1
         if code.startswith("//", i) or code.startswith("/*", i):
@@ -652,7 +653,7 @@ def _js_lex(code: str, at: int = 0, hole: bool = False) -> tuple[list[tuple[int,
             while j < len(code) and code[j] != "`":
                 j = _js_lex(code, j + 2, True)[1] + 1 if code.startswith("${", j) else j + (2 if code[j] == "\\" else 1)
             kind, j = "s", min(j + 1, len(code))
-        elif ch == "/" and (not last or last in _JS_BEFORE_REGEX or not re.match(r"[\w$)\]}]", last[-1])) and last not in ("++", "--"):
+        elif ch == "/" and not value:
             klass = False
             while j < len(code) and code[j] != "\n" and (klass or code[j] != "/"):
                 klass = (klass or code[j] == "[") and code[j] != "]"
@@ -670,8 +671,14 @@ def _js_lex(code: str, at: int = 0, hole: bool = False) -> tuple[list[tuple[int,
             kind = "o"
         if kind:
             out.append((i, j, kind))
-        if kind != "c" and not ch.isspace():
-            last = ch * 2 if ch in "+-" and last == ch and code[i - 1] == ch else code[i:j]  # 'i++ / 2'의 '/'는 나눗셈이다
+        if kind == "n":
+            value = code[i:j] not in _JS_BEFORE_REGEX or code[i - 1:i] == "."  # 'o.return'은 속성이다
+        elif kind in ("s", "d"):
+            value = True
+        elif kind == "o":
+            value = ch in ")]}"
+        elif kind != "c" and not ch.isspace():
+            value = ch in "+-" and code[i - 1:i] == ch  # 'i++ / 2'의 '/'는 나눗셈이다
         i = j
     return out, len(code)
 
