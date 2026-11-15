@@ -54,7 +54,7 @@ from tutor.save.respond import blocks_body, shown_count  # noqa: E402
 from tutor.ingest import IngestError, ocr_doubts, read_pages, reread  # noqa: E402
 from tutor.ingest.files import split_files  # noqa: E402
 from tutor.eval.scenarios import all_scenarios  # noqa: E402
-from tutor.knowledge.ontology import PITFALLS, TECHNIQUES, techniques_of  # noqa: E402
+from tutor.knowledge.ontology import PITFALL_GROUPS, PITFALLS, TECHNIQUES, techniques_of  # noqa: E402
 from tutor.llm import LlmNotConfigured, themes, use_llm  # noqa: E402
 from tutor.store.sqlite import now  # noqa: E402
 
@@ -62,6 +62,7 @@ import casegen  # noqa: E402  (효율성 케이스의 큰 입력을 다시 만�
 import casemake  # noqa: E402  (등록한 문제의 풀이를 단순 풀이·생성기와 채점기로 대조해 숨은 케이스를 만든다)
 from problemkit import fits  # noqa: E402  (값이 형에 맞는가. 기본 문제를 검사할 때 쓰는 것)
 from stubs import program_stub, stub  # noqa: E402  (형에서 언어별 시작 코드, 표준 입출력 뼈대)
+import single  # noqa: E402  (데이터 폴더 잠금)
 import updater  # noqa: E402  (새 버전 확인과 업데이트)
 from app.llm import keycheck  # noqa: E402  (키를 저장하기 전에 공급자에 확인)
 
@@ -2123,6 +2124,18 @@ def readiness(unaided: dict, started: set, fresh: dict) -> dict:
                       f"실전 연습 단계: 필수 주제를 모두 실전 익힘, 자주 나오는 주제({', '.join(theme_name(key) for key in FREQUENT)})를 모두 기초 익힘."]}
 
 
+def repeated_pitfalls(store) -> list[dict]:
+    """두 번 이상 밟은 함정과, 그 함정이 나온 문제. 한 번만 나온 것은 되풀이가 아니라서 뺀다."""
+    where: dict[str, list[str]] = {}
+    for row in store.conn.execute("SELECT DISTINCT problem_id, pitfall FROM pitfall_hit ORDER BY rowid").fetchall():
+        ids = where.setdefault(PITFALL_GROUPS.get(row["pitfall"], row["pitfall"]), [])
+        if row["problem_id"] in PROBLEMS and row["problem_id"] not in ids:
+            ids.append(row["problem_id"])
+    return [{"name": PITFALLS[pid][1] if pid in PITFALLS else pid, "count": count,
+             "problems": [{"id": x, "title": PROBLEMS[x].title} for x in where.get(pid, [])]}
+            for pid, count in store._frequent_pitfalls(5) if count >= 2]
+
+
 def learning_report(t) -> dict:
     """학습 보고서. 저장된 제출·학습 기록에서 규칙으로만 계산한다(모델 0회).
 
@@ -2249,7 +2262,7 @@ def learning_report(t) -> dict:
         "strengths": [{"key": row["key"], "name": row["name"], "why": row["why"]} for row in strong],
         "weaknesses": [{"key": row["key"], "name": row["name"], "why": row["why"], "next": {"id": (row["review"] or row["next"])["id"], "title": (row["review"] or row["next"])["title"]}
                         if row["review"] or row["next"] else None} for row in weak],
-        "pitfalls": [{"name": PITFALLS[pid][1] if pid in PITFALLS else pid, "count": count} for pid, count in t.store._frequent_pitfalls(5)],
+        "pitfalls": repeated_pitfalls(t.store),
         "recent": [{"id": sub["problem_id"], "title": PROBLEMS[sub["problem_id"]].title, "ok": sub["ok"], "status": sub["status"], "language": sub["language"], "at": sub["at"]}
                    for sub in reversed(subs) if sub["problem_id"] in PROBLEMS][:10],
         "signals": signals, "feedbacks": feedbacks, "next": todo_rows, "attendance": attendance(),
@@ -2632,21 +2645,42 @@ def stop_grading(*_) -> None:
 atexit.register(stop_grading)
 
 
-def main() -> None:
+def start() -> "ThreadingHTTPServer | str":
+    """잠금과 포트를 잡고 서버를 돌릴 준비를 한다. 새로 띄우지 못하면(이미 켜져 있거나 포트가 막힘) 그 안내 글을 돌려준다."""
+    port = int(os.environ.get("ALGOBLOCK_UI_PORT", "8791"))
+    other = single.guard(DATA, port)  # 켜져 있으면 키 읽기·업데이트 확인·미리 준비를 하나 더 돌리지 않는다
+    if other is not None:
+        return single.running_message(other)
+    try:
+        httpd = ThreadingHTTPServer(("127.0.0.1", port), Handler)
+    except OSError as exc:  # 잠금은 잡았으니 다른 프로그램(또는 다른 데이터 폴더의 앱)이 이 포트를 쓰고 있다
+        return f"{port}번 포트를 이미 다른 프로그램이 쓰고 있어요. 새로 띄우지 않았습니다: {exc}"
     load_keys()
     updater.start()  # 켤 때(마지막 확인에서 24시간이 지났으면)와 24시간마다 새 버전을 뒤에서 본다(실패하면 1시간부터 늘려 다시)
     if threading.current_thread() is threading.main_thread():  # 창(window.py)에서 띄우면 스레드라 신호를 받을 수 없다
         signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))  # 끝내기 전에 atexit의 stop_grading이 돈다
-    port = int(os.environ.get("ALGOBLOCK_UI_PORT", "8791"))
-    server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
-    server.daemon_threads = True
+    httpd.daemon_threads = True
     print(f"AlgoBlock: http://127.0.0.1:{port}", flush=True)
+    return httpd
+
+
+def serve(httpd) -> None:
     try:
-        server.serve_forever()
+        httpd.serve_forever()
     except KeyboardInterrupt:
         pass
     finally:
         stop_grading()
+
+
+def main() -> bool:
+    """서버를 띄워 끝날 때까지 돈다. 새로 띄우지 못했으면 안내를 표준 오류에 쓰고 False."""
+    httpd = start()
+    if isinstance(httpd, str):
+        print(httpd, file=sys.stderr, flush=True)
+        return False
+    serve(httpd)
+    return True
 
 
 if __name__ == "__main__":

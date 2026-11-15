@@ -578,8 +578,8 @@ pre.code.bad { color: var(--danger); }
 .block-result { font-size: 13px; line-height: 1.5; }
 .block-result.is-pass { color: var(--success); font-weight: 600; }
 .block-result.is-fail { color: var(--text); }
-.block.is-found .no { background: var(--success-soft); color: var(--success); }
-.block.is-found:is(.st-wait, .st-stale, .st-skip, .st-fail) .no { background: var(--fill); color: var(--muted); } /* 통과하지 않은 앞 블록을 초록 원으로 두지 않는다 */
+.block.is-found .no { background: var(--fill); color: var(--muted); } /* 통과하지 않은 앞 블록(코드 칸이 빈 블록 포함)을 초록 원으로 두지 않는다 */
+.block.is-found.st-pass .no { background: var(--success-soft); color: var(--success); }
 .block.is-current { box-shadow: var(--shadow-lift); }
 .block.is-current .no { background: var(--accent); color: var(--on-accent); }
 .block.is-current .block-name { color: var(--accent-text); }
@@ -964,8 +964,24 @@ a.lv.done:hover { background: var(--lvc); color: var(--on-lv); filter: brightnes
 .way-card.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
 .way-card.primary span { color: var(--on-accent); }
 .way-card.primary .tag { background: rgb(255 255 255 / 0.2); color: var(--on-accent); }
-.way-card:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
 .way-card .tag { font-size: 11.5px; }
+.wayrow { position: relative; display: grid; gap: 6px; } .wayrow .way-card { padding-right: 52px; }
+.way-card.main { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.way-card[aria-disabled="true"] { cursor: not-allowed; } .way-card[aria-disabled="true"]:hover { border-color: var(--line); }
+.way-card .tag.lock { gap: 4px; } .way-card .tag.lock .ico { width: 12px; height: 12px; }
+.ways-gap { display: flex; align-items: center; gap: 10px; font-size: 12.5px; color: var(--muted); } .ways-gap::before, .ways-gap::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+.info-btn { display: inline-grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 999px; background: transparent; color: var(--muted); cursor: pointer; flex: none; }
+.info-btn:hover, .info-btn[aria-expanded="true"] { color: var(--accent-text); background: var(--fill); } .info-btn .ico { width: 18px; height: 18px; }
+.wayrow > .info-btn { position: absolute; top: 10px; right: 12px; }
+.btn-info { display: inline-flex; align-items: center; gap: 4px; }
+.info { padding: 12px 14px; border-radius: var(--r-md); background: var(--fill); color: var(--text); font-size: 13.5px; line-height: 1.55; } .info[hidden] { display: none; }
+.info dl { display: grid; grid-template-columns: 6.5em minmax(0, 1fr); gap: 6px 10px; } .info dt { color: var(--muted); font-weight: 600; } .info dd { margin: 0; }
+/* 칸이 150px로 접힌 혼자 풀기에서는 설명을 칸 안에 펴지 않고 화면 오른쪽 위에 겹침 상자로 접힌 칸 왼쪽에 띄운다(좁은 칸에서 글이 한 글자씩 갈라지고 ⓘ를 가리지 않게) */
+.panes.railed .head-info { position: fixed; right: 180px; top: 150px; z-index: 20; width: min(380px, calc(100vw - 196px)); padding: 0; }
+.panes.railed .head-info .info { margin: 0; background: var(--surface); box-shadow: var(--shadow-float); }
+.head-info { padding: 0 16px; } .head-info:empty { display: none; } .head-info .info { margin: 0 0 8px; }
+#way-info { display: inline-flex; align-items: center; margin: 0 auto 0 -4px; } #way-info:empty { display: none; }
+
 .panes.railed { grid-template-columns: minmax(var(--min-problem), var(--col-problem, 0.78fr)) 14px minmax(var(--min-code), var(--col-code-wide, 2fr)) 14px 150px; }
 .panes.folded.railed { grid-template-columns: minmax(var(--min-code), 1fr) 14px 150px; }
 .panes.railed #sep-tutor { visibility: hidden; } /* 오른쪽 칸 150px는 고정이라 끌 곳이 없다. 간격은 남긴다 */
@@ -985,6 +1001,11 @@ a.lv.done:hover { background: var(--lvc); color: var(--on-lv); filter: brightnes
 details.fold { margin-bottom: 20px; }
 details.fold > summary { display: flex; align-items: baseline; gap: 8px; font-size: 16px; font-weight: 650; cursor: pointer; }
 details.fold[open] > summary { margin-bottom: 12px; }
+details.fold > summary, .signal-group > summary { list-style: none; } details.fold > summary::-webkit-details-marker, .signal-group > summary::-webkit-details-marker { display: none; }
+details.fold > summary .ico, .signal-group > summary .ico { flex: none; align-self: center; width: 14px; height: 14px; color: var(--muted); transition: transform 150ms; }
+details.fold[open] > summary > .ico, .signal-group[open] > summary > .ico { transform: rotate(90deg); }
+.signal-group > summary { display: flex; align-items: center; gap: 8px; }
+.points.plain .pit-from { grid-column: 1 / -1; font-size: 13px; } .pit-from a { color: var(--accent-text); }
 details.fold .ladders { box-shadow: none; } details.fold .legend { margin: 0 0 8px; }
 
 /* ── 연결 창·피드백 ── */

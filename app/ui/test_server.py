@@ -415,6 +415,23 @@ def fail(pid: str, status: str, detail: dict | None, language: str = "python"):
     return step
 
 
+def pitfalls_repeated() -> None:
+    """되풀이한 실수는 두 번 이상 나온 것만, 나온 문제와 함께 온다. 뜻이 겹치는 함정은 한 줄로 합친다."""
+    one, two = ROWS[0]["id"], ROWS[1]["id"]
+    assert call("/api/report")[1]["pitfalls"] == []
+    with server.tutor() as t:
+        for pid in (one, two):
+            t.store.put_problem(pid, "python", "글", title=pid)
+        for pid, pitfall, h in ((one, "off_by_one", "a"), (two, "wrong_compare", "b"), (one, "wrong_init", "c")):  # wrong_compare는 off_by_one과 한 줄
+            t.store.conn.execute("INSERT INTO pitfall_hit(problem_id, pitfall, code_hash, at) VALUES(?, ?, ?, 't')", (pid, pitfall, h))
+        t.store.conn.commit()
+    rows = call("/api/report")[1]["pitfalls"]
+    assert [(x["count"], sorted(p["id"] for p in x["problems"])) for x in rows] == [(2, sorted([one, two]))], rows  # wrong_init은 한 번이라 빠진다
+    with server.tutor() as t:
+        t.store.conn.execute("DELETE FROM pitfall_hit")
+        t.store.conn.commit()
+
+
 def readiness() -> None:
     """준비도(도움 없이 푼 기본 문제로만), 남은 것과 학습 지도, 주제를 가로지른 실패 꼴, 바뀐 강·약 규칙. 모델 0회."""
     import random
@@ -933,6 +950,20 @@ def chair_found() -> None:
         assert t.store.load(pid).block_states["b1"].code == indented, t.store.load(pid).block_states["b1"].code
     status, body = call("/api/turn", id=pid, mode="guide", event="block_filled", block_id="b1", code="\n".join(LINES[:5]))  # 가이드도 앞 블록을 고쳐 다시 확인한다
     assert status == 200 and body["open_count"] == 2, body
+
+
+def guide_spoken() -> None:
+    """튜터와 차례로: 말로 빈칸을 맞혀도 다음 블록이 열리지 않는다(코드 칸이 빈 채 지나가 완료처럼 보였다). 블록 코드 확인이 통과해야 연다."""
+    from tutor.turn.moves import WRITE_TIP
+    pid = server.register({"title": FIRST["title"], "text": FIRST["text"], "cases": [{"input": e["input"], "expected": e["expected"]} for e in FIRST["examples"]]})["id"]
+    with server.tutor() as t:
+        t.adopt(pid, FIRST["ready"])
+    call("/api/turn", id=pid, mode="guide", event="start")
+    with use_llm(FakeLlm({"guide.judge": ["[check]Y g"]})):
+        body = call("/api/turn", id=pid, mode="guide", event="message", text="이름마다 몇 번 나왔는지 세요")[1]
+    assert body["open_count"] == 1 and body["messages"][-1]["text"] == WRITE_TIP and body["messages"][-1]["block_index"] == 0, body
+    body = call("/api/turn", id=pid, mode="guide", event="block_filled", block_id="b1", code="\n".join(LINES[:5]))[1]
+    assert body["open_count"] == 2, body
 
 
 def language_memory() -> None:
@@ -2068,6 +2099,23 @@ def settings_screen() -> None:
     assert 'a === "settings"' in js and "setKeyShown(false)" in js[js.index("function route()"):js.index("function render()")]  # 화면을 떠나면 키를 가린다
 
 
+def way_info() -> None:
+    """푸는 방식 설명: 네 방식이 한 자료에서 나오고, ⓘ는 눌러 펴며(키보드·Esc), 잠긴 방식도 글이 읽히고 ⓘ가 열린다. 브라우저 동작은 화면 확인으로 본다."""
+    import re
+    js, css = (HERE / "app.js").read_text(encoding="utf-8"), (HERE / "app.css").read_text(encoding="utf-8")
+    table = js[js.index("const WAY_INFO = {"):js.index("const WAYS = ")]
+    for key in ("solo", "chair", "guide", "explain"):
+        row = re.search(rf"\b{key}: \{{(.*?)\}},\n", table, re.S).group(1)
+        assert all(f"{field}:" in row for field in ("name", "line", "needsAi", "does", "when", "ai", "ready")), key
+    assert "START = {\n  chair: [WAY_INFO.chair.name, WAY_INFO.chair.does" in js  # 시작 칸의 글도 같은 자료다
+    way = js[js.index("function renderWay()"):js.index("function renderTutor()")]
+    assert 'aria-disabled="true"' in way and "disabled" not in way.replace("aria-disabled", "")  # 잠가도 Tab이 닿는다
+    assert way.index('card("solo")') < way.index('card("chair")') < way.index('card("guide")')  # 도움이 적은 것부터
+    assert 'aria-expanded=' in js and 'S.wayInfo = null' in js and '.way-card[aria-disabled="true"]' in css
+    assert ".panes.railed .head-info { position: fixed" in css  # 접힌(150px) 칸에서는 머리의 설명을 칸 밖 겹침 상자로 띄운다
+    assert "way-card:disabled" not in css and not re.search(r"\.way-card\[aria-disabled[^}]*opacity", css)  # 잠긴 카드의 글은 흐리지 않는다
+
+
 def new_draft() -> None:
     """내 문제 넣기: 걸음마다 기록을 쌓아 뒤로 가기가 앞 걸음으로 가고, 적던 글은 이 탭의 sessionStorage에만 둔다(서버나 localStorage로 나가지 않는다). 브라우저 동작은 화면 확인으로 본다."""
     js = (HERE / "app.js").read_text(encoding="utf-8")
@@ -2526,6 +2574,7 @@ def main() -> None:
         builtin(fake)
         compose()
         report()
+        pitfalls_repeated()
         home()
         own_theme()
         readiness()
@@ -2534,6 +2583,7 @@ def main() -> None:
         own_way_flow()
         state_names_by_mode()
         chair_found()
+        guide_spoken()
         language_memory()
         no_tool()
         results()
@@ -2559,6 +2609,7 @@ def main() -> None:
         table()
         tour_pictures()
         settings_screen()
+        way_info()
         new_draft()
         hidden_cases()
         hint_by_block()
@@ -2587,6 +2638,8 @@ def main() -> None:
         raise AssertionError("받을 새 버전이 없으면 거절한다")
     except server.Refuse as exc:
         assert exc.status == 409
+    import test_single  # 앱을 두 번 켰을 때
+    test_single.run()
     color_tokens()
     scheme_setting()
     window_background()

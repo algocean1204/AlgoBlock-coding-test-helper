@@ -28,8 +28,10 @@ def shown_count(ctx, mode: str | None) -> int:
 
 
 def messages_body(items) -> list[dict]:
-    """block_index: 그 말이 겨눈 블록 번호(0부터, 없으면 null). 화면이 말 위 블록 종류 구분선을 그 블록 것으로 그린다."""
-    return [{"id": item.id, "role": item.role, "text": item.text, "at": item.at, "block_index": item.block_index} for item in items]
+    """block_index: 그 말이 겨눈 블록 번호(0부터, 없으면 null). 화면이 말 위 블록 종류 구분선을 그 블록 것으로 그린다.
+    move: 튜터 말의 차례 이름(사용자 말은 null). 화면이 다음 할 일을 고른다(write면 블록 코드 확인)."""
+    return [{"id": item.id, "role": item.role, "text": item.text, "at": item.at, "block_index": item.block_index,
+             "move": item.move if item.role == "service" else None} for item in items]
 
 
 def explain_json(explain: Explain | None):
