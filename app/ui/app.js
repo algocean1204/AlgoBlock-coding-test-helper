@@ -119,7 +119,7 @@ function setKeyBad(bad) {
 function errorNote(error) {
   const known = ERR[error.code];
   const text = known || error.message || "알 수 없는 오류가 났어요. 다시 해 보세요.";
-  return { type: "error", text, conn: error.code === "llm_not_configured" || error.code === "llm_auth_failed" }; // 키가 틀렸으면 연결 창으로 가는 단추
+  return { type: "error", text, conn: error.code === "llm_not_configured" || error.code === "llm_auth_failed" }; // 키가 틀렸으면 설정의 AI 연결로 가는 단추
 }
 
 const noteHtml = (n) => !n ? "" : `<div class="note ${n.type || ""}" role="${n.type === "error" ? "alert" : "status"}"><span>${esc(n.text)}</span>${n.conn ? '<button type="button" class="btn small" id="note-conn">연결하기</button>' : ""}${n.again ? '<button type="button" class="btn small" id="prep-again" data-model>다시 준비</button>' : ""}</div>`;
@@ -3031,7 +3031,7 @@ document.addEventListener("click", (e) => {
     "key-recheck-claude": () => recheckKey("claude"), "key-recheck-openai": () => recheckKey("openai"),
     "key-del-claude": () => askKeyDelete("claude"), "key-del-openai": () => askKeyDelete("openai"),
     "key-delete-no": () => { const name = keyDeleting; keyDeleting = null; renderKeyDelete(); const back = name && $(`key-del-${name}`); if (back) back.focus(); }, "key-delete-yes": deleteKey,
-        "tour-open": openTour, "tour-skip": () => { const last = tourAt === TOUR.length - 1; closeTour(); if (last && !CONN.ready) openConn(); }, "tour-prev": () => tourStep(-1), "tour-next": () => tourStep(1),
+    "tour-open": openTour, "tour-skip": () => { const last = tourAt === TOUR.length - 1; closeTour(); if (last && !CONN.ready) openConn(); }, "tour-prev": () => tourStep(-1), "tour-next": () => tourStep(1),
     "drop": () => $("new-files").click(), "read-files": readFiles, "asset-close": closeAsset,
     "case-add": () => { addCaseRow(); $("case-rows").lastElementChild.querySelector("input").focus(); },
     "mode-switch": async () => {
