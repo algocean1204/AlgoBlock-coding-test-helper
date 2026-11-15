@@ -67,6 +67,14 @@
       <button type="button" id="key-save" class="btn small">키 넣기</button>
     </div>
     <p class="hint">키는 이 기기에만 저장해요. 다음에 켜도 그대로 쓸 수 있어요.</p>
+    <div class="inline-form" id="key-delete-row" hidden>
+      <button type="button" id="key-delete" class="btn quiet small"></button>
+      <span id="key-delete-confirm" class="confirm" hidden>
+        <span id="key-delete-ask"></span>
+        <button type="button" id="key-delete-yes" class="btn danger small">지우기</button>
+        <button type="button" id="key-delete-no" class="btn quiet small">그대로 두기</button>
+      </span>
+    </div>
   </fieldset>
   <fieldset>
     <legend>ChatGPT 요금제 쓰기</legend>
