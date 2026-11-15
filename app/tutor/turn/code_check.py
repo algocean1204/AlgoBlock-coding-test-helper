@@ -559,8 +559,8 @@ def failure_verdict(report: dict, spans: list[dict], program: bool, lead: str, a
 
 
 def _add(seen: str, note: str) -> str:
-    """말 뒤에 문장을 잇는다(글상자로 끝난 말 뒤에는 줄을 바꿔서)."""
-    return f"{seen}{chr(10) if seen.endswith('```') else ' '}{note}"
+    """말 뒤에 문장을 잇는다. 글상자나 오류 원문 줄(`…`)로 끝난 말 뒤에는 줄을 바꿔서(원문이 어디서 끝나는지 보이게)."""
+    return f"{seen}{chr(10) if seen.endswith('`') else ' '}{note}"
 
 
 def _tick(text: str) -> str:

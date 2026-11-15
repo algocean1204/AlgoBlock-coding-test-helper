@@ -656,7 +656,7 @@ class BlockCheckPairingTest(unittest.TestCase):
 
         done, seen = self.turn(SORT_BLOCKS, {}, "b1", "dp = sorted(items).maxx()", check)
         self.assertEqual((done["verdict"].seen, done["verdict"].hint, done["block_check"].verdict, len(seen)),
-                         ("내 블록 1번째 줄(`dp = sorted(items).maxx()`)에서 컴파일 오류가 났어요.\n`cannot find symbol: maxx` " + NOT_JOINED, False, "N", 2))  # 내 블록의 줄에서 난 오류라 틀렸다고 말한다(실행 둘)
+                         ("내 블록 1번째 줄(`dp = sorted(items).maxx()`)에서 컴파일 오류가 났어요.\n`cannot find symbol: maxx`\n" + NOT_JOINED, False, "N", 2))  # 내 블록의 줄에서 난 오류라 틀렸다고 말한다(실행 둘)
         self.assertIn("return dp[-1] - dp[0]", seen[0])  # 처음부터 짝지어 돌렸다
 
     def test_unreliable_pairs_ask_for_the_names(self):
@@ -803,9 +803,9 @@ class BlockCheckNewNameTest(unittest.TestCase):
              "line": next(n for n, row in enumerate(code.splitlines(), 1) if "// 0" in row)}]}
         done, seen = self.turn(blocks, {}, "b1", "s = q[0] // 0\nhi = q[1]\nextra = 0", broken)
         self.assertEqual((done["verdict"].seen, done["block_check"].verdict, len(seen) > 1),  # 어림 짝을 다 돌려 보고 모두 실패했다: 이어지지 않아요(난 곳을 말한다)
-                         ("내 블록 1번째 줄(`s = q[0] // 0`)에서 실행 오류가 났어요.\n`ZeroDivisionError: division by zero` " + assumed([["s", "start"]]) + " " + NOT_JOINED, "N", True))
+                         ("내 블록 1번째 줄(`s = q[0] // 0`)에서 실행 오류가 났어요.\n`ZeroDivisionError: division by zero`\n" + assumed([["s", "start"]]) + " " + NOT_JOINED, "N", True))
         done, seen = self.turn(blocks, {}, "b1", "s = q[0] // 0\nhi = q[1]", broken)  # 확실한 짝: 첫 시도가 내 코드의 일이다
-        self.assertEqual((done["verdict"].seen, done["block_check"].verdict), ("내 블록 1번째 줄(`s = q[0] // 0`)에서 실행 오류가 났어요.\n`ZeroDivisionError: division by zero` " + NOT_JOINED, "N"))
+        self.assertEqual((done["verdict"].seen, done["block_check"].verdict), ("내 블록 1번째 줄(`s = q[0] // 0`)에서 실행 오류가 났어요.\n`ZeroDivisionError: division by zero`\n" + NOT_JOINED, "N"))
         self.assertIn("return s + hi", seen[0])
 
 
@@ -992,7 +992,7 @@ class BlockCheckInvariantTest(unittest.TestCase):
         self.assertNotIn(fakes.HINTS2[1], done["result"]["reply"])
         done, _ = fakes.go(fakes.make_state("turn", ctx, mode="guide", event="block_filled", block_id="b2", code="i = 1\nwhile i <= n:\n    total += 10 // (i - 1)"), {},
                            exec_check([], [([3], 6)]))  # 시간 초과가 아닌 실패도 계획이 for로 연 자리면 while 문장
-        self.assertTrue(done["verdict"].seen.endswith("ZeroDivisionError: integer division or modulo by zero` " + NOT_JOINED + " " + WHILE_NOTE), done["verdict"].seen)
+        self.assertTrue(done["verdict"].seen.endswith("ZeroDivisionError: integer division or modulo by zero`\n" + NOT_JOINED + " " + WHILE_NOTE), done["verdict"].seen)
         states = {"b1": passed_block("b1", "def solution(n):\n    acc = 0\n    t = 5", [("acc", "total")]),  # 짝(acc)이 뜻과 다르다(t가 답)
                   "b2": passed_block("b2", "for i in range(1, n + 1):\n    t += i")}
         ctx = fakes.context(plan=fakes.planned(SUM3), open_count=3, block_states=states)
