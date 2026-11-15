@@ -38,7 +38,8 @@ _FRAME_PY = re.compile(r"def (?:solution|main)\b.*:|class Solution\b.*:|import \
                        r"|if __name__ == .+:|main\(\)")
 _FRAME = re.compile(
     r"import\b.*|#include\b.*|using\s.+;|use\s.+;|package\s.+|\"[\w./-]+\"|\)"  # 머리말(go의 여러 줄 import 포함)
-    r"|(public\s+)?class (?:Solution|Main)\b.*\{|[\w<>\[\],\s]*\b(?:solution|main)\s*\([^;]*\)[^;=]*\{|\}\s*;?"
+    r"|(public\s+)?class (?:Solution|Main)\b.*\{|[\w<>\[\],:&*\s]*\b(?:solution|main)\s*\([^;]*\)[^;=]*\{|\}\s*;?"  # 머리의 반환형은 'std::vector<int>&'처럼 적어도 된다
+    r"|(?:const|let|var)\s+(?:solution|main)\s*=\s*(?:function(?:\s+[A-Za-z_$][\w$]*)?\s*\([^;]*\)|\([^;]*\)\s*=>|[A-Za-z_$][\w$]*\s*=>)\s*\{"  # js의 함수 식·화살표 함수로 적은 진입 함수 머리(async는 뜻이 달라 뺀다)
     r"|(?:const|let|var) .+ = require\([\"']fs[\"']\)(?:\.readFileSync\(.*)?;?"  # js의 표준 입력 전체 읽기
 )
 
@@ -490,11 +491,12 @@ def _brace_count(rows: list[str]) -> int:
 def _drop_tail(lines: list[str], tail: list[str], need: int) -> list[str]:
     """화면 app.js dropTail과 같다: 적은 코드의 마지막 줄들이 tail의 앞부분과 같으면(공백 무시) 뺀다. 내 반복문을 닫는 '}'는 지우지 않는다.
     need: 뗀 뒤 남은 코드의 중괄호 차가 계획 알맹이의 차(frame_of braces)와 같을 때만 뗀다."""
+    flat = lambda row: "}" if re.sub(r"\s+", "", row) == "};" else re.sub(r"\s+", "", row)  # noqa: E731 - '};'(JavaScript 화살표 함수를 닫는 줄)도 '}'와 같다
     want = [row for row in tail if row.strip()]
-    rows = [(re.sub(r"\s+", "", row), i) for i, row in enumerate(lines) if row.strip()]
+    rows = [(flat(row), i) for i, row in enumerate(lines) if row.strip()]
     for k in range(min(len(want), len(rows)), 0, -1):
         last, kept = rows[-k:], lines[:rows[-k][1]]
-        if all(flat == re.sub(r"\s+", "", want[j]) for j, (flat, _) in enumerate(last)) and _brace_count(kept) == need:
+        if all(text == flat(want[j]) for j, (text, _) in enumerate(last)) and _brace_count(kept) == need:
             while kept and not kept[-1].strip():
                 kept.pop()
             return kept
