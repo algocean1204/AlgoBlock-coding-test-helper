@@ -764,12 +764,16 @@ def case_args(given: str) -> list:
 RESULT_HEADS = {"result", "return", "answer", "결과", "반환", "출력"}  # 입출력 예 표 머리의 마지막 칸
 
 
-def table_cells(line: str) -> tuple[bool, list[str]]:
-    """표 한 줄의 (마크다운인가, 칸들). 마크다운은 | a | b |, 아니면 탭이나 둘 이상의 공백으로 가른다(화면에서 복사한 표 꼴)."""
+def table_cells(line: str) -> tuple[str, list[str]]:
+    """표 한 줄의 (꼴, 칸들). 꼴은 마크다운("md": | a | b |), 줄 앞 | 없이 |로만 나눈 표("bar": a | b | c), 그 밖("")은 탭이나 둘 이상의 공백(화면에서 복사한 표 꼴)."""
     row = line.strip()
     if row.startswith("|"):
-        return True, [cell.strip() for cell in row.strip("|").split("|")]
-    return False, [cell for cell in re.split(r"\t|\s{2,}", row) if cell.strip()]
+        return "md", [cell.strip() for cell in row.strip("|").split("|")]
+    if "|" in row:
+        cells = [cell.strip() for cell in row.rstrip("|").split("|")]
+        if all(cells):
+            return "bar", cells
+    return "", [cell for cell in re.split(r"\t|\s{2,}", row) if cell.strip()]
 
 
 def plain(value):
@@ -820,7 +824,7 @@ def table_cases(text: str) -> dict:
             if md and all(re.fullmatch(r":?-+:?", cell) for cell in cells):  # 마크다운 구분 줄
                 continue
             if len(cells) != len(head):
-                if not md:  # 탭 표는 칸 수가 다른 줄(설명 글)에서 끝난다
+                if md != "md":  # 탭 표와 |로만 나눈 표는 칸 수가 다른 줄(설명 글)에서 끝난다
                     missed = missed_after(lines, k)
                     break
                 skipped += 1
@@ -828,6 +832,8 @@ def table_cases(text: str) -> dict:
             try:
                 values = [cell_value(cell) for cell in cells]
             except ValueError:
+                if md == "bar":  # 값이 아닌 칸(비트 연산 `a | b` 같은 글)이 있으면 표가 아니다
+                    break
                 skipped += 1
                 continue
             cases.append({"input": json.dumps(values[:-1], ensure_ascii=False), "expected": json.dumps(values[-1], ensure_ascii=False)})

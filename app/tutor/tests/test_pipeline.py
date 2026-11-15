@@ -1795,6 +1795,44 @@ class StarterFrameTest(unittest.TestCase):
         parts = composed_parts(blocks, {"b1": {"code": "int total = 0;"}, "b2": {"code": "return total;"}}, "java", starter=starter)
         self.assertTrue(parts[0][1].startswith("import java.util.ArrayDeque;\nimport java.util.*;"), parts[0][1])
 
+    def test_starter_imports_follow_go_rust_javascript_rules(self):
+        """Go·Rust·JavaScript도 시작 코드의 가져오기에 기댄 블록이 이어 돌게 한다. 언어의 규칙을 지킨다:
+        Go는 쓰는 꾸러미만 package·import 뒤에, Rust는 아직 들여오지 않은 이름만, JavaScript는 쓰는데 선언하지 않은 이름만(표준 입력은 두 번 읽지 않는다)."""
+        from ..common.solution import spliced, starter_imports
+
+        go = ['package main\n\nimport (\n\t"bufio"\n\t"fmt"\n\t"os"\n)\n\nfunc main() {\n\treader := bufio.NewReader(os.Stdin)\n\tvar n int\n\tfmt.Fscan(reader, &n)', "\tfmt.Println(n)\n}"]
+        go_starter = 'package main\n\nimport (\n\t"fmt"\n\t"strconv"\n\tst "strings"\n\t"sort"\n)\n'
+        text = spliced(go, 1, "\tfmt.Println(strconv.Itoa(n) + st.Repeat(\"!\", 1))\n}", "go", {}, None, True, go_starter)
+        self.assertIn(')\nimport "strconv"\nimport st "strings"\n\nfunc main() {', text)  # 쓰는 것만, import 묶음 뒤에(fmt는 이미 있고 sort는 쓰지 않는다)
+        self.assertNotIn("sort", text)
+        self.assertEqual(spliced(['package main\n\nfunc main() {\n\tvar n int', '\tfmt.Println("strconv.", n)\n}'], 1, '\tfmt.Println("strconv.", n)\n}', "go", {}, None, True,
+                                 go_starter).split("\n")[:3], ["package main", 'import "fmt"', ""])  # package 바로 뒤. 문자열 안의 'strconv.'는 쓰임이 아니다
+
+        rust_starter = "use std::io::{self, Read};\n\nfn main() {\n}\n"
+        self.assertEqual(starter_imports(["use std::io::{self, BufRead};"], rust_starter, "rust"), ["use std::io::Read;"])  # io는 이미 있다: 없는 이름만 한 줄씩
+        self.assertEqual(starter_imports(["fn main() {", "}"], rust_starter, "rust"), ["use std::io::{self, Read};"])
+        for have in ("use std::io::{self, Read};", "use std::{io::{self, Read}};", "use std::io; use std::io::Read;", "use std::io::*;\nuse std::io::Read;\nmod io {}"):
+            self.assertEqual(starter_imports(have.split("\n"), rust_starter, "rust"), [], have)  # 같은 이름을 두 번 들여오지 않는다(읽지 못하는 꼴은 넉넉히 센다)
+        self.assertEqual(starter_imports(["use std::io::*;"], "use std::io::*;\nuse std::fmt::*;", "rust"), ["use std::fmt::*;"])
+        self.assertEqual(starter_imports(["use std::io::stdin;", "use std::io::BufRead;"], rust_starter, "rust"), ["use std::io::{self, Read};"])  # 경로 가운데의 io는 들여온 이름이 아니다
+        for head in ("#![allow(unused)]\nuse std::io::{self, BufRead};", "//! 두 배를 낸다\n#![allow(dead_code)]", "//! 두 배를 낸다"):  # 내부 속성·내부 문서 주석은 맨 앞에 남는다
+            rows = spliced([head + "\n\nfn main() {\n    let n = 3;", '    println!("{}", n);\n}'], 1, 'println!("{}", n);\n}', "rust", {}, None, True, rust_starter).split("\n")
+            at = next(i for i, row in enumerate(rows) if row.startswith("use std::io::"))
+            self.assertTrue(all(row.startswith(("#![", "//!", "use ")) for row in rows[:at]) and not any(row.startswith(("#![", "//!")) for row in rows[at:]), rows)
+        # 여러 줄에 걸친 내부 속성과 블록 문서 주석(겹친 블록 주석, 문자열 안의 ']' 포함)도 끝까지 머리말이다: 더한 use는 그 뒤에 온다
+        for head, last in (("#![allow(\n    unused,\n    dead_code\n)]\nuse std::io::{self, BufRead};", ")]"), ("/*! 풀이 */\nuse std::io::{self, BufRead};", "/*! 풀이 */"),
+                           ('/*! 풀이 /* 안 */\n끝 */\n// 보통 주석\n#![doc = "a]b"]', '#![doc = "a]b"]')):
+            rows = spliced([head + "\n\nfn main() {\n    let n = 3;", '    println!("{}", n);\n}'], 1, 'println!("{}", n);\n}', "rust", {}, None, True, rust_starter).split("\n")
+            self.assertGreater(next(i for i, row in enumerate(rows) if row.startswith("use std::io::Read") or row.startswith("use std::io::{self, Read}")), rows.index(last), rows)
+
+        read = 'const input = require("fs").readFileSync(0, "utf8");\n'
+        self.assertEqual(starter_imports(["function solve() {", "  return `${input.trim()}`;", "}"], read, "javascript"), [read.strip()])  # 템플릿의 ${…} 안도 쓰임이다
+        for program in ("console.log(1);", "let a = 1, input = 2; console.log(input);", "for (const input of xs) console.log(input);", "console.log('input');",
+                        'const data = require("fs").readFileSync(0, "utf8"); console.log(input);', "process.stdin.on('data', d => console.log(input));"):
+            self.assertEqual(starter_imports(program.split("\n"), read, "javascript"), [], program)  # 쓰지 않음, 이미 선언함, 글자일 뿐, 표준 입력을 이미 읽음
+        self.assertEqual(starter_imports(["const n = readFileSync('a').length + EOL.length;"], "const { readFileSync } = require('fs');\nconst { EOL: EOL } = require('os');", "javascript"),
+                         ["const { readFileSync } = require('fs');", "const { EOL: EOL } = require('os');"])
+
     def test_empty_blocks_keep_only_their_frame_when_composed(self):
         """빈 블록(튜터가 건너뛰어도 된다고 한 뒤 블록)은 계획 코드의 틀 줄만 남긴다: 그 블록이 닫던 괄호와 main() 부르기가 모은 코드에 남는다(블록 코드 확인의 '내 블록만 이은 프로그램'과 같다)."""
         from ..common.solution import composed_parts, spliced
