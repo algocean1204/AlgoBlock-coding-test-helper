@@ -1543,7 +1543,7 @@ def checks() -> None:
 def key_flow() -> None:
     """API 키: 그 공급자의 키 꼴이 아니면(빈칸·한글·다른 접두사) 저장하지 않고 까닭을 말한다. 지우기는 그 공급자의 키만, 화면에서 넣은 것만 지운다."""
     claude, openai = "sk-ant-api03-" + "a" * 20, "sk-proj-" + "b" * 20
-    with patch.dict(os.environ, {}):
+    with patch.dict(os.environ, {}), patch.object(server.keycheck, "check", lambda provider, key, **kw: server.keycheck.OK):  # 확인은 아래 key_check_flow에서 따로 본다(네트워크를 쓰지 않는다)
         for name in ("ANTHROPIC_API_KEY", "OPENAI_API_KEY"):
             os.environ.pop(name, None)
         for name, bad in (("claude", "hello world 한글"), ("claude", "sk-ant-abc def"), ("claude", openai), ("openai", "sk-a b"), ("openai", "한글키"), ("openai", claude), ("openai", "abcdef")):
@@ -1570,6 +1570,85 @@ def key_flow() -> None:
         os.environ["OPENAI_API_KEY"] = "sk-outside"  # 밖(환경 변수)에서 준 키는 파일에 없으니 지우지 않는다
         assert call("/api/accounts")[1]["keys"]["openai"] and os.environ["OPENAI_API_KEY"] == "sk-outside"
         assert call("/api/key/delete", name="claude")[1]["keys"] == {"claude": False, "openai": True} and not server.read_json(server.KEY_FILE, {})
+
+
+def key_check_flow() -> None:
+    """키 확인(가짜 응답, 네트워크 없음): 공식 주소에 모델 목록 조회 한 번(10초), 결과 넷. 쓸 수 있을 때만 저장하고, 확인하지 못하면 사용자가 고르면 저장한다. 키 값은 결과·오류 글에 없다."""
+    import io
+    import urllib.error
+    from app.llm import keycheck
+
+    class Reply:  # urlopen이 주는 응답
+        def __init__(self, status):
+            self.status = status
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+    seen = []
+
+    def opener(result):
+        def open_(request, timeout):
+            seen.append((request.full_url, request.get_method(), {k.lower(): v for k, v in request.header_items()}, timeout))
+            if isinstance(result, BaseException):
+                raise result
+            return Reply(result)
+        return open_
+
+    http = lambda code: urllib.error.HTTPError("https://example.invalid", code, "x", {}, io.BytesIO(b""))
+    secret = "sk-ant-api03-" + "q" * 20
+    for result, want in ((200, "ok"), (http(401), "invalid"), (http(403), "denied"), (http(429), "denied"), (http(500), "offline"), (http(404), "offline"),
+                         (urllib.error.URLError(f"연결하지 못함 {secret}"), "offline"), (TimeoutError(secret), "offline"), (Reply(302).status, "offline")):
+        assert keycheck.check("claude", secret, opener=opener(result)) == want, (result, want)
+    seen.clear()
+    keycheck.check("claude", secret, opener=opener(200))
+    keycheck.check("openai", "sk-proj-" + "r" * 20, opener=opener(200))
+    assert [(url, method, timeout) for url, method, _, timeout in seen] == [("https://api.anthropic.com/v1/models?limit=1000", "GET", 10.0), ("https://api.openai.com/v1/models", "GET", 10.0)], seen  # 공식 주소로만, 한 번씩
+    assert seen[0][2]["x-api-key"] == secret and seen[0][2]["anthropic-version"] and seen[1][2]["authorization"] == "Bearer sk-proj-" + "r" * 20
+    try:
+        keycheck.request_for("other", "x")
+        raise AssertionError("모르는 공급자는 거절해야 한다")
+    except ValueError:
+        pass
+
+    calls = []
+
+    def fake(result):
+        def check(provider, key, **kw):
+            calls.append((provider, key))
+            return result
+        return check
+
+    def put(result, **more):
+        with patch.object(server.keycheck, "check", fake(result)):
+            return call("/api/key", name="claude", value=f"  {secret}  ", **more)[1]
+
+    def refused(result, **more):
+        try:
+            put(result, **more)
+        except server.Refuse as exc:
+            return exc
+        raise AssertionError(f"{result}는 거절해야 한다")
+
+    with patch.dict(os.environ, {}):
+        os.environ.pop("ANTHROPIC_API_KEY", None)
+        server.KEY_FILE.unlink(missing_ok=True)
+        for result, status, code in (("invalid", 400, "key_invalid"), ("denied", 400, "key_denied"), ("offline", 409, "key_unverified")):
+            exc = refused(result)
+            assert (exc.status, exc.code, exc.field) == (status, code, "value") and secret not in str(exc), (result, exc.status, exc.code)  # 글에 키 값이 없다
+            assert not os.environ.get("ANTHROPIC_API_KEY") and not server.KEY_FILE.exists(), result  # 쓸 수 없는 키, 확인하지 못한 키는 저장하지 않는다
+        assert calls == [("claude", secret)] * 3  # 앞뒤 공백은 뗀 값으로 확인한다
+        assert refused("offline", force="true").code == "key_unverified"  # 정확히 true일 때만 확인 없이 저장한다
+        saved = put("offline", force=True)
+        assert saved["key_check"] == "offline" and saved["keys"]["claude"] and server.read_json(server.KEY_FILE, {}) == {"ANTHROPIC_API_KEY": secret}
+        server.KEY_FILE.unlink()
+        os.environ.pop("ANTHROPIC_API_KEY")
+        saved = put("ok")
+        assert saved["key_check"] == "ok" and secret not in json.dumps(saved) and server.read_json(server.KEY_FILE, {}) == {"ANTHROPIC_API_KEY": secret}
+        server.drop_key("ANTHROPIC_API_KEY")
 
 
 def error_lines() -> None:
@@ -2105,6 +2184,7 @@ def main() -> None:
         checkpoints()
         prep_failed()
         key_flow()
+        key_check_flow()
         prep_unverified()
         stale_save()
         builtin_prepare()

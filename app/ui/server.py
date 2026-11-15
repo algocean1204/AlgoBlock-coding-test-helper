@@ -62,6 +62,7 @@ import casemake  # noqa: E402  (등록한 문제의 풀이를 단순 풀이·생
 from problemkit import fits  # noqa: E402  (값이 형에 맞는가. 기본 문제를 검사할 때 쓰는 것)
 from stubs import program_stub, stub  # noqa: E402  (형에서 언어별 시작 코드, 표준 입출력 뼈대)
 import updater  # noqa: E402  (새 버전 확인과 업데이트)
+from app.llm import keycheck  # noqa: E402  (키를 저장하기 전에 공급자에 확인)
 
 updater.DIR = DATA / "updates"  # 받은 설치 파일과 업데이트 설정
 
@@ -2234,9 +2235,16 @@ def handle(path: str, body: dict) -> tuple[int, dict]:
         label, prefix = KEY_FORM[body["name"]]
         if not (value.startswith(prefix) and re.fullmatch(r"[A-Za-z0-9_-]+", value)) or (body["name"] == "openai" and value.startswith("sk-ant-")):  # Claude 키를 OpenAI 칸에 넣어도 거른다
             raise Refuse(f"{label} 키의 꼴이 아니에요. {prefix}로 시작하고 영문·숫자·-·_만 있어야 해요. 빈칸이나 한글이 섞이지 않았는지 확인해 주세요.", field="value")
+        found = keycheck.check(body["name"], value)  # 공식 주소에 모델 목록 조회 한 번(요금 없음, 10초). 키 값은 어디에도 남기지 않는다
+        if found == keycheck.INVALID:
+            raise Refuse(f"{label}가 이 키를 받아 주지 않아요(401). 키를 다시 복사해 붙여 넣어 주세요.", 400, "key_invalid", "value")
+        if found == keycheck.DENIED:
+            raise Refuse(f"이 키로는 {label}를 쓸 수 없어요(403·429). 키의 권한과 사용 한도를 확인해 주세요.", 400, "key_denied", "value")
+        if found == keycheck.OFFLINE and body.get("force") is not True:  # 확인하지 못했다: 저장할지는 사용자가 고른다
+            raise Refuse(f"{label}에 연결하지 못해 키를 확인하지 못했어요. 인터넷 연결을 보고 다시 시도하거나, 확인 없이 저장할 수 있어요.", 409, "key_unverified", "value")
         os.environ[KEYS[body["name"]]] = value
         save_key(KEYS[body["name"]], value)  # 다음에 켜도 쓰게 이 기기에만 저장한다
-        return 200, accounts()
+        return 200, {**accounts(), "key_check": found}  # found: ok, 또는 offline(확인 없이 저장)
     if path == "/api/key/delete":  # 화면에서 넣은 그 공급자의 키만 지운다
         if not isinstance(body.get("name"), str) or body["name"] not in KEYS:
             raise Refuse("지울 키 종류를 골라 주세요.")
