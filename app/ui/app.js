@@ -2219,6 +2219,7 @@ function renderAccounts(a) {
 
 const KEY_LABEL = { claude: "Claude", openai: "OpenAI" };
 const KEY_PREFIX = { claude: "sk-ant-", openai: "sk-" }; // 서버(KEY_FORM)와 같은 꼴. 저장 전에 서버가 다시 본다
+const KEY_CONSOLE = { claude: "https://console.anthropic.com/settings/keys", openai: "https://platform.openai.com/api-keys" }; // 키를 받는 공식 콘솔
 const keyName = () => document.querySelector('input[name="keyname"]:checked').value;
 /** 고른 공급자의 키가 들어 있을 때만 '지우기'를 보인다(공급자를 바꾸면 확인은 접는다). */
 function renderKeyDelete() {
@@ -2246,7 +2247,7 @@ function renderKeyStatus() {
   let kind = "", icon = "", text = "", retry = false;
   if (keyChecking) text = `${label}에 키를 확인하는 중이에요…`;
   else if (saved && saved.raw === raw) ({ kind, text, retry } = saved);
-  else if (!raw) text = `${label} 키를 붙여 넣어 주세요. ${KEY_PREFIX[name]}로 시작해요.`;
+  else if (!raw) text = "아직 키를 넣지 않았어요.";
   else { const bad = keyFormBad(name, raw); kind = bad ? "error" : "form"; text = bad || `키 꼴이 맞아요. ‘키 넣기’를 누르면 ${label}에 확인해요.`; }
   icon = keyChecking ? DOTS : kind === "ok" || kind === "form" ? ico("i-check") : kind === "error" ? ico("i-x") : kind === "warn" ? ico("i-warn") : "";
   const sig = `${name}|${keyChecking}|${kind}|${text}|${retry}`;
@@ -2255,6 +2256,10 @@ function renderKeyStatus() {
     box.className = `note${kind === "ok" ? " ok" : kind === "error" ? " error" : kind === "warn" ? " warn" : ""}`;
     box.innerHTML = `${icon}<span>${esc(text)}</span>${retry ? '<button type="button" id="key-retry" class="btn small">다시 시도</button><button type="button" id="key-force" class="btn small">그래도 저장</button>' : ""}`;
   }
+  $("key-label").textContent = `${label} API 키`; // 칸 위의 이름표와 안내는 고른 공급자를 따른다
+  $("key-prefix").textContent = `${KEY_PREFIX[name]}로 시작해요.`;
+  $("key-get").href = KEY_CONSOLE[name];
+  $("key-get").textContent = `${label} 콘솔에서 키 받기`;
   $("key-save").disabled = keyChecking;
   document.querySelectorAll('input[name="keyname"]').forEach((el) => { el.disabled = keyChecking; });
 }
@@ -2615,6 +2620,7 @@ document.addEventListener("click", (e) => {
       $("upd-note").textContent = r.data.latest ? "" : r.data.state === "latest" ? "최신 버전이에요." : r.data.message;
       if (r.data.latest) { toggleConn(false); openUpdate(); }
     },
+    "key-reveal": () => { const show = $("key-value").type === "password"; $("key-value").type = show ? "text" : "password"; el.textContent = show ? "숨기기" : "보기"; el.setAttribute("aria-pressed", String(show)); $("key-value").focus(); },
     "key-save": () => saveKey(false), "key-retry": () => saveKey(false), "key-force": () => saveKey(true),
     "key-delete": () => { $("key-delete").hidden = true; $("key-delete-confirm").hidden = false; $("key-delete-no").focus(); },
     "key-delete-no": () => { renderKeyDelete(); $("key-delete").focus(); }, "key-delete-yes": deleteKey,
