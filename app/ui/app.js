@@ -145,7 +145,7 @@ function applyBusy() {
 
 async function work(label, where, fn, slow) { // slow: 10초를 넘기면 덧붙일 말(모델이 아니라 코드를 돌리는 기다림)
   if (S.busy) return null;
-  S.busy = { label, where, t0: Date.now(), slow };
+  S.busy = { label, where, t0: Date.now(), slow, pid: S.pid }; // pid: 이 기다림을 시작한 문제(다른 문제 화면에서 진행 글을 그 문제의 것으로 보이지 않게)
   say(label);
   render();
   ticker = setInterval(applyBusy, 1000);
@@ -1325,11 +1325,13 @@ function renderCodePane() {
   $("pull-blocks").hidden = !direct || !S.session.blocks.length || !tutor;
   $("code-note").textContent = direct ? S.codeNote : "제출하면 ‘코드 전체’ 칸의 코드를 채점해요";
   $("run").hidden = !(S.problem.cases && S.problem.cases.example);
+  const away = S.busy && S.busy.where === "result" && S.busy.pid !== S.pid; // 다른 문제를 채점하는 중이면 실행·제출이 잠긴다
   const why = noTool() ? `이 기기에 ${LANG[S.problem.language] || S.problem.language} 도구가 없어 실행과 제출을 할 수 없어요.` : "";
-  $("tool-note").textContent = $("run").title = $("submit").title = $("run-own-go").title = why;
+  $("tool-note").textContent = why || (away ? "다른 문제를 채점하는 중이에요. 끝나면 이 문제도 실행하고 제출할 수 있어요." : "");
+  $("run").title = $("submit").title = $("run-own-go").title = why;
   $("run-input").placeholder = (S.problem.examples[0] || { input: "" }).input; // 그 문제 첫 예시의 입력
   $("code").placeholder = program() ? "여기에 전체 코드를 써요. 표준 입력을 읽고 답을 출력해요." : "여기에 전체 코드를 써요. 풀이는 solution 함수에 담아요.";
-  $("tool-note").hidden = !why;
+  $("tool-note").hidden = !why && !away;
   $("starter-note").hidden = S.problem.sample || program() || !!S.problem.starter || !direct; // 등록한 함수 문제인데 케이스에서 형을 정하지 못했다
   const line = S.debug && !S.debug.passed ? S.debug.line : null;
   $("line-note").hidden = !line;
@@ -1557,10 +1559,10 @@ function failGuide(r, slowOnly) {
 }
 
 function renderResult() {
-  const box = $("result"), r = S.result, judging = S.busy && S.busy.where === "result";
-  box.hidden = !r && !judging;
-  if (judging) return void (box.innerHTML = `<div class="note">${waitLine("result").replace(" · 보통 5~25초 걸려요", "")}</div>`);
-  if (!r) return;
+  const box = $("result"), r = S.result, judging = S.busy && S.busy.where === "result", mine = judging && S.busy.pid === S.pid;
+  box.hidden = !r && !mine;
+  if (mine) return void (box.innerHTML = `<div class="note">${waitLine("result").replace(" · 보통 5~25초 걸려요", "")}</div>`);
+  if (!r) return void (box.innerHTML = "");
   if (r.alert) return void (box.innerHTML = noteHtml(r.alert));
   const notice = r.notice ? `<p class="hint">${esc(r.notice)}</p>` : ""; // 채점 실행 제한을 걸지 못했다(Windows 작업 객체)
   if (r.own) return void (box.innerHTML = ownHtml(r) + notice + (r.stale ? '<div class="note warn" role="status">코드를 고쳤어요. 다시 실행하면 새로 돌려요.</div>' : ""));
