@@ -95,7 +95,7 @@ OWN_ID = re.compile(r"u[0-9a-f]{8}")  # 사용자가 등록한 문항 id
 PREPARE = os.environ.get("ALGOBLOCK_UI_PREPARE", "1") != "0"  # 0이면 문항을 열 때 뼈대를 미리 뽑지 않는다(개발 중 모델 호출 아끼기)
 
 KEY_FILE = DATA / "keys.json"  # 화면에서 넣은 API 키. 이 기기에만, 소유자만 읽게(0600) 둔다
-PREFS_FILE = DATA / "prefs.json"  # 화면 설정: 처음 안내를 봤는지(tour_seen), 과정별 급과 추론 정도(stages. 예전에는 테마별 모델 themes), 마지막으로 고른 풀이 언어(language)
+PREFS_FILE = DATA / "prefs.json"  # 화면 설정: 처음 안내를 봤는지(tour_seen), 과정별 급과 추론 정도(stages. 예전에는 테마별 모델 themes), 마지막으로 고른 풀이 언어(language), 문제·코드·튜터 세 칸의 너비 몫(panes. 합 100. 없으면 기본 배치)
 MODELS_FILE = DATA / "models.json"  # 공급자 목록에서 고른 시리즈마다 최신 이름 {연결: {"at": ISO 시각, "names": {시리즈: 이름}}}. 하루에 한 번까지만 다시 받는다
 KEPT_FILE = DATA / "kept.json"  # 언어를 바꿀 때 보관한 준비 결과 {문항: {언어: {"solution": 줄, "session": 줄}}}. 그 언어로 돌아오면 되살린다(모델 0회)
 
@@ -526,7 +526,7 @@ def accounts() -> dict:
     return {"client": STATE["client"], "dev": dev_client(), "model": os.environ.get("ALGOBLOCK_LLM_MODEL", ""), "chatgpt": bool(chatgpt.get("connected")), "chatgpt_note": chatgpt.get("error") or "", "connected": connected(),
             "keys": {name: bool(os.environ.get(env)) for name, env in KEYS.items()},
             "keys_saved": {name: env in read_json(KEY_FILE, {}) for name, env in KEYS.items()},  # 화면에서 넣은 키(keys.json에 있는 것. 지울 수 있는 것)
-            "tour_seen": bool(read_json(PREFS_FILE, {}).get("tour_seen")), "language": last_language(),
+            "tour_seen": bool(read_json(PREFS_FILE, {}).get("tour_seen")), "language": last_language(), "panes": panes_pref(),
             "themes": rows, "tiers": [{"key": tier, "label": themes.label(themes.model_of(tier))} for tier in themes.TIERS],
             "topics": [{"key": key, "name": theme_name(key)} for key in ALGORITHMS]}  # 등록 화면의 주제 고르기
 
@@ -563,6 +563,18 @@ def refresh_models() -> None:
         write_json(MODELS_FILE, {**read_json(MODELS_FILE, {}), here: {"at": datetime.now().astimezone().isoformat(timespec="seconds"), "names": names}})
 
     threading.Thread(target=run, daemon=True, name=f"models-{here}").start()
+
+
+def panes_ok(panes: object) -> bool:
+    """세 칸의 몫: 수 셋, 각각 5~90, 합 99~101(화면은 합 100으로 보낸다. 반올림 오차만 받는다)."""
+    return (isinstance(panes, list) and len(panes) == 3 and all(isinstance(x, (int, float)) and not isinstance(x, bool) and 5 <= x <= 90 for x in panes)
+            and 99 <= sum(panes) <= 101)
+
+
+def panes_pref() -> list | None:
+    """저장한 칸 너비 몫. 없거나 손으로 고쳐 꼴이 어긋났으면 None(기본 배치)."""
+    panes = read_json(PREFS_FILE, {}).get("panes")
+    return panes if panes_ok(panes) else None
 
 
 def last_language() -> str:
@@ -2205,6 +2217,13 @@ def handle(path: str, body: dict) -> tuple[int, dict]:
         return 200, accounts()
     if path == "/api/tour":  # 처음 안내를 봤다고 적는다(창을 다시 켜도 또 뜨지 않게. 웹뷰는 localStorage를 남기지 않는다)
         write_json(PREFS_FILE, {**read_json(PREFS_FILE, {}), "tour_seen": True})
+        return 200, accounts()
+    if path == "/api/prefs":  # 화면 설정. 지금은 세 칸의 너비 몫(null이면 기본 배치로 돌린다)
+        panes = body.get("panes", "")
+        if panes is not None and not panes_ok(panes):
+            raise Refuse("칸 너비는 문제·코드·튜터 세 몫이고, 각각 5에서 90 사이, 합은 100이에요.", field="panes")
+        kept = {key: value for key, value in read_json(PREFS_FILE, {}).items() if key != "panes"}
+        write_json(PREFS_FILE, kept if panes is None else {**kept, "panes": [round(float(x), 2) for x in panes]})
         return 200, accounts()
     if path == "/api/theme":  # 과정 하나의 급과 추론 정도. 빈 값은 기본값으로 돌린다는 뜻이다
         if not all(isinstance(body.get(key, ""), str) for key in ("theme", "tier", "effort")) or body.get("theme") not in themes.THEMES:

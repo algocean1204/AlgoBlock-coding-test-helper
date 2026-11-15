@@ -101,8 +101,9 @@ POST, 문제와 무관한 것 15개
 | `/api/problems/read` | 올린 파일에서 글 읽기(저장하지 않는다) |
 | `/api/problems/cases` | 입출력 예 표나 예제 구역에서 케이스 찾기(모델 0회) |
 | `/api/tools` | 언어 도구 있음·없음. `refresh: true`면 다시 센다 |
-| `/api/accounts` | 연결 상태, 키 있음, 과정별 급과 모델 이름, 주제 목록, 마지막 언어, `tour_seen` |
+| `/api/accounts` | 연결 상태, 키 있음, 과정별 급과 모델 이름, 주제 목록, 마지막 언어, `tour_seen`, 칸 너비 `panes` |
 | `/api/tour` | 처음 안내를 봤다고 적는다 |
+| `/api/prefs` | 문제·코드·튜터 칸의 너비 몫 `panes`(수 셋, 각각 5에서 90, 합 100)를 저장한다. `null`이면 기본 배치 |
 | `/api/theme` | 과정 하나의 급과 추론 정도를 저장한다(빈 값은 기본값) |
 | `/api/client` | 연결 방식 바꾸기(`cli` 또는 `provider`) |
 | `/api/key` | API 키 넣기(400자까지) |

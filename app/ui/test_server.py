@@ -1926,6 +1926,34 @@ def color_tokens() -> None:
     assert html.count('name="theme-color"') == 1 and 'data-scheme-pref="system"' in html
 
 
+def pane_widths() -> None:
+    """칸 너비: /api/prefs로 세 칸의 몫을 적고, 어긋난 값은 거절한다. 없으면(null) 기본 배치. 다른 설정은 지우지 않는다."""
+    import re
+    html = (HERE / "index.html").read_text(encoding="utf-8")
+    assert re.search(r'id="pane-problem".*?id="sep-problem" role="separator".*?id="pane-code".*?id="sep-tutor" role="separator".*?id="pane-tutor"', html, re.S)  # 칸 사이마다 손잡이(DOM 차례가 Tab 차례)
+    saved = server.read_json(server.PREFS_FILE, {})
+    server.write_json(server.PREFS_FILE, {**saved, "language": "javascript", "stages": {"keep": "me"}})  # 다른 설정이 같이 남는지 보려고 심는다
+    try:
+        assert call("/api/accounts")[1]["panes"] is None  # 고르지 않았으면 기본 배치
+        for bad in ({}, {"panes": []}, {"panes": [30, 30]}, {"panes": [26, 38, 36, 0]}, {"panes": [4, 50, 46]}, {"panes": [26, 91, -17]}, {"panes": [20, 30, 30]}, {"panes": [40, 40, 40]},
+                    {"panes": ["26", "38", "36"]}, {"panes": [True, 50, 49]}, {"panes": [None, 50, 50]}, {"panes": "26,38,36"}, {"panes": {"a": 1}}, {"panes": float("nan")}, {"panes": [float("nan"), 50, 50]}, {"panes": 100}):
+            assert "칸 너비" in refuses("/api/prefs", **bad), bad
+        assert "panes" not in server.read_json(server.PREFS_FILE, {})  # 거절한 값은 적히지 않는다
+        got = call("/api/prefs", panes=[26.1, 38.3, 35.6])[1]
+        assert got["panes"] == [26.1, 38.3, 35.6] and server.read_json(server.PREFS_FILE, {})["panes"] == [26.1, 38.3, 35.6] and call("/api/accounts")[1]["panes"] == [26.1, 38.3, 35.6]
+        assert call("/api/prefs", panes=[26, 38, 36])[1]["panes"] == [26.0, 38.0, 36.0]  # 정수도 받는다
+        assert call("/api/prefs", panes=[25.834, 37.751, 36.42])[1]["panes"] == [25.83, 37.75, 36.42]  # 소수 둘째 자리로 적는다
+        assert call("/api/prefs", panes=[5, 90, 5])[1]["panes"] == [5.0, 90.0, 5.0] and call("/api/prefs", panes=[33.33, 33.33, 33.34])[1]["panes"] == [33.33, 33.33, 33.34]  # 끝값과 합 100
+        server.write_json(server.PREFS_FILE, {**server.read_json(server.PREFS_FILE, {}), "panes": [1, 2]})  # 손으로 고친 이상한 값은 기본으로 본다
+        assert call("/api/accounts")[1]["panes"] is None
+        call("/api/prefs", panes=[26.1, 38.3, 35.6])
+        assert call("/api/prefs", panes=None)[1]["panes"] is None  # null은 기본으로 돌린다
+        kept = server.read_json(server.PREFS_FILE, {})
+        assert "panes" not in kept and kept["language"] == "javascript" and kept["stages"] == {"keep": "me"}  # 다른 설정은 그대로
+    finally:
+        server.write_json(server.PREFS_FILE, saved)
+
+
 def stages() -> None:
     """과정별 모델: 급과 추론 정도를 고르면 저장되고 바로 쓰인다. 빈 값은 기본값. 모르는 과정·급·정도는 거절한다.
     예전 설정(테마별 모델 이름, Grok·OpenRouter 키)은 조용히 옮기거나 버린다."""
@@ -2291,6 +2319,7 @@ def main() -> None:
     except server.Refuse as exc:
         assert exc.status == 409
     color_tokens()
+    pane_widths()
     stages()
     newest_models()
     read_check()
