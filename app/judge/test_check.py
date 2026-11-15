@@ -595,32 +595,12 @@ class WindowsJobTest(unittest.TestCase):
         original = kernel.SetErrorMode(0)  # 읽으면서 0으로 둔다: 아래에서 자식이 0이 아니면 run_command가 켠 것이다
         try:
             result = self.run_python("import ctypes; print(ctypes.windll.kernel32.SetErrorMode(0))")
-            after = kernel.SetErrorMode(0)
+            after = kernel.GetErrorMode()
         finally:
             kernel.SetErrorMode(original)
         self.assertEqual(result["status"], "passed", result)
         self.assertEqual(int(result["stdout"]) & common.ERROR_MODE, common.ERROR_MODE, result)
         self.assertEqual(after, 0, "실행이 끝난 뒤 이 프로세스의 오류 모드가 되돌려지지 않았다")
-
-    def test_running_list_is_filled_after_the_job_is_attached(self):
-        """실행 목록(RUNNING)에는 작업에 넣은 뒤, 재개하기 전에 올린다. 끝나면 빠진다."""
-        seen = {}
-        real_job, real_resume = common._windows_job, common._resume
-
-        def job(process, *args):
-            seen["process"], seen["at_job"] = process, process in common.RUNNING
-            return real_job(process, *args)
-
-        def resume(pid):
-            seen["at_resume"] = seen["process"] in common.RUNNING
-            return real_resume(pid)
-
-        with mock.patch.object(common, "_windows_job", job), mock.patch.object(common, "_resume", resume):
-            result = self.run_python("print('ok')")
-        self.assertEqual(result["status"], "passed", result)
-        self.assertFalse(seen["at_job"], "작업에 넣기 전에 실행 목록에 올라 있다")
-        self.assertTrue(seen["at_resume"], "재개할 때 실행 목록에 없다")
-        self.assertNotIn(seen["process"], common.RUNNING)
 
     def test_without_job_it_still_runs_and_says_so(self):
         with mock.patch.object(common, "_windows_job", side_effect=OSError(5, "막힘")):
