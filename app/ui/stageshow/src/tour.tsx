@@ -6,13 +6,13 @@ import './look.css'
 const roots = new WeakMap<Element, Root>()
 let run = 0
 
-/** el 안에 index번째 장의 데모를 처음부터 틀어 준다. 같은 장을 다시 부르면 처음부터 다시 튼다. */
-export function show(el: HTMLElement, index: number) {
+/** el 안에 index번째 장의 데모를 처음부터 틀어 준다. 같은 장을 다시 부르면 처음부터 다시 튼다. props는 그 장에 넘기는 지금 상태다. */
+export function show(el: HTMLElement, index: number, props: { conn?: string } = {}) {
   const Demo = DEMOS[index]
   if (!Demo) return
   let root = roots.get(el)
   if (!root) roots.set(el, (root = createRoot(el)))
-  root.render(<Demo key={`${index}:${++run}`} />)
+  root.render(<Demo key={`${index}:${++run}`} {...props} />)
 }
 
 /** 안내를 닫을 때: 데모를 내린다. */

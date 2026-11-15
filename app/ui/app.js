@@ -35,6 +35,10 @@ const GROUP = { hash: "ds", stack_queue: "ds", heap: "ds", brute_force: "search"
 const GROUP_NAME = { ds: "자료구조", search: "탐색", graph: "그래프", design: "설계", impl: "구현" };
 const lvBadge = (n, guess) => (n ? `<span class="lvb l${n}"${guess ? ' title="문제 글을 보고 어림한 단계예요"' : ""}>${n}단계${guess ? " · 어림" : ""}</span>` : "");
 const themeChip = (key, name) => (name ? `<span class="theme-chip g-${GROUP[key] || "none"}"${GROUP[key] ? ` title="${GROUP_NAME[GROUP[key]]} 갈래"` : ""}>${esc(name)}</span>` : "");
+/** 문제 화면의 풀이법 태그: 풀기 전에는 가리고 '풀이법 태그 보기'로 연다. 통과했거나 힌트·해설을 봤으면 이미 보인다.
+    연 것은 화면에서만 바뀌고 도움으로 세지 않는다(준비도·기록에 영향 없음). 목록은 통과한 문제의 태그만 보인다. */
+const tagsHtml = (p) => (!(p.tags || []).length ? "" : p.passed > 0 || p.study.hints_seen > 0 || p.study.solution_open || S.tagsOpen ? tagChips(p.tags)
+  : '<button type="button" id="tags-open" class="chip chip-btn">풀이법 태그 보기</button>');
 const tagChips = (tags) => (tags || []).map((t) => `<span class="chip">${esc(t)}</span>`).join("");
 const VERIFIED = { all: ["ok", "검증됨"], examples: ["mid", "예시만"], none: ["warn", "검증 못 함"] };
 const verifiedBadge = (p) => (VERIFIED[p.verified] ? `<span class="vbadge ${VERIFIED[p.verified][0]}" title="${esc(p.verified_name)}"><i aria-hidden="true"></i>${VERIFIED[p.verified][1]}</span>` : "");
@@ -351,7 +355,7 @@ async function showList() {
   const group = (id, title, list, filter) => (!list.length ? "" : `<div class="list-head"><h2 class="list-label" id="${id}">${title} ${list.length}개</h2>${filter ? chips(list) : ""}</div>
     <ul class="rows" aria-labelledby="${id}">${list.map((p) => `<li${filter ? ` data-lang="${esc(p.language)}"${LIST_LANG && p.language !== LIST_LANG && list.length >= 6 ? " hidden" : ""}` : ""}><a class="row" href="#/p/${esc(p.id)}">
       <span><span class="row-title">${esc(p.title)}</span>
-        <span class="badges">${lvBadge(p.level, p.level_by === "analysis")}${themeChip(p.theme, p.theme_name)}${verifiedBadge(p)}${tagChips(p.tags)}</span>
+        <span class="badges">${lvBadge(p.level, p.level_by === "analysis")}${themeChip(p.theme, p.theme_name)}${verifiedBadge(p)}${p.passed > 0 ? tagChips(p.tags) : ""}</span>
         <span class="row-meta">${esc(LANG[p.language] || p.language)} · ${p.submitted ? `통과 ${p.passed} · 제출 ${p.submitted}` : "아직 풀지 않았어요"}</span></span>
       <span></span>${ico("i-caret")}<span class="sr-only">열기</span></a></li>`).join("")}</ul>`);
   let html = group("list-own", "내 문제", all.filter((p) => !p.sample), true);
@@ -982,7 +986,7 @@ const closeAsset = () => { const box = $("asset"); box.close ? box.close() : box
 /* ── 05–08 코드 화면 ── */
 function clearProblem(pid) {
   Object.assign(S, { pid, problem: null, session: null, hasFeedback: false, mode: null, choosing: false, soloOpen: null, talk: "chair", codeTab: "direct", blockCode: {}, result: null,
-    quote: null, sending: null, debug: null, note: {}, codeNote: "", fb: null, solo: null, langWant: null, codeAsk: null, fillAsk: null, prepAt: 0, keptNote: false, keptSeen: false, nextUp: null, pullThenRun: false });
+    quote: null, sending: null, debug: null, note: {}, codeNote: "", fb: null, solo: null, langWant: null, codeAsk: null, fillAsk: null, prepAt: 0, keptNote: false, keptSeen: false, nextUp: null, pullThenRun: false, tagsOpen: false });
   for (const id of ["code", "say", "fq-text", "debug-say", "run-input"]) $(id).value = "";
   for (const id of ["p-title", "p-text", "blocks", "chat-log", "explain-box", "start-box", "result", "solo-box"]) $(id).innerHTML = "";
   for (const id of ["result", "debug-sheet", "composer", "fq-composer", "chat-log", "explain-box", "old-feedback", "solo-box", "lang-confirm"]) $(id).hidden = true;
@@ -1068,7 +1072,7 @@ function renderCode() {
   $("p-title").textContent = p.title;
   if (!connected() && S.mode && S.mode !== "solo") S.mode = "solo"; // 모델이 없으면 혼자 풀기뿐이다(고르기 전이면 고르는 칸에서 까닭을 말한다)
   if (!connected()) S.codeTab = "direct"; // 블록은 튜터와 쌓는 것이라, 모델이 없으면 코드 전체만 보여 준다
-  $("p-badges").innerHTML = lvBadge(p.level, p.level_by === "analysis") + themeChip(p.theme, p.theme_name) + (p.sample ? "" : verifiedBadge(p)) + tagChips(p.tags);
+  $("p-badges").innerHTML = lvBadge(p.level, p.level_by === "analysis") + themeChip(p.theme, p.theme_name) + (p.sample ? "" : verifiedBadge(p)) + tagsHtml(p);
   renderCheckLine(p);
   $("p-own").hidden = p.sample; // 내가 등록한 문제만 고치고 지운다
   const picker = $("p-lang-select"), many = p.languages.length > 1, key = p.languages.join(",") + JSON.stringify(TOOLS);
@@ -1095,6 +1099,7 @@ function renderCode() {
   renderCodePane();
   renderResult();
   syncGutter(); // 결과 칸을 그린 뒤(편집기 높이가 정해진 뒤)에 짚은 줄을 맞춘다
+  paintCode($("code")); // 글이나 언어가 바뀌었으면 바로 칠한다(입력 중에는 codeChanged가 한 프레임에 한 번)
   renderTutor();
   renderDebug();
   const stage = nextAction();
@@ -1119,12 +1124,12 @@ function renderCheckLine(p) {
 }
 
 /** 상태마다 주 동작 하나(파란 채움): 그 단추에만 primary를 붙이고 나머지에서는 뗀다. 붙인 단추를 돌려준다. */
-const PRIMARY = { choose: '[data-way="solo"]', run: "#run", submit: "#submit", compose: "#compose-run", start: "#start", talk: "#send", follow: "#fq-send",
+const PRIMARY = { run: "#run", submit: "#submit", compose: "#compose-run", start: "#start", talk: "#send", follow: "#fq-send",
   debug: "#debug-send", find: "#debug-start", hint: "#result-hint", next: "#result-next", review: "#result-next", feedback: "#to-feedback" };
 function applyPrimary(stage) {
   document.querySelectorAll("#view-code .primary").forEach((el) => el.classList.remove("primary"));
   const shown = (sel) => { const el = document.querySelector(`#view-code ${sel}`); return el && !el.closest("[hidden]") && !el.disabled ? el : null; };
-  const el = shown(PRIMARY[stage]) || shown("#run") || shown("#submit");
+  const el = stage === "choose" ? null : shown(PRIMARY[stage]) || shown("#run") || shown("#submit"); // 방식을 고르기 전에는 어느 것도 고른 것처럼 칠하지 않는다
   if (el) el.classList.add("primary");
   return el;
 }
@@ -1221,7 +1226,6 @@ function renderBlocks() {
       const current = state === "current";
       const empty = !saved.code.trim();
       const cell = !current || !empty || S.talk === "guide";
-      const rows = Math.min(10, Math.max(2, saved.code.split("\n").length));
       const check = showCheck(b, state, current), st = empty ? "" : blockStatus(b, saved), line = saved.line || {};
       const result = st && st !== "pass" && sameCode(b, saved) && line.text ? `<p class="block-result is-${line.ok === false ? "fail" : "wait"}">${inline(line.text)}${line.skipped ? "" : ' <span class="muted">자세한 말은 오른쪽 튜터의 말에 있어요.</span>'}</p>` : "";
       const skip = current && S.talk === "guide" && (st === "fail" || st === "wait") && sameCode(b, saved) && !!line.text; // 마지막 확인이 통과가 아니면 갇히지 않게 넘어갈 길을 준다
@@ -1230,7 +1234,7 @@ function renderBlocks() {
         <div class="block-head"><span class="sr-only">블록 ${n}.</span>${kindChip(b.kind)}<span class="block-name">${esc(b.name || "지금 찾는 블록")}</span>
           ${st ? `<span class="st">${saved.by === "tutor" ? '<span class="by">튜터가 채움</span>' : ""}<span class="st-chip">${STATUS[st]}</span></span>` : ""}</div>
         ${current && KIND[b.kind] ? `<p class="kind-desc">${esc(KIND[b.kind][1])}</p>` : ""}
-        ${cell ? `<textarea class="codey" data-block="${esc(b.id)}" rows="${rows}" aria-label="블록 ${n} 코드" spellcheck="false" autocapitalize="off" wrap="off" placeholder="이 블록의 코드 (들여쓰기는 쓴 그대로 모여요)">${esc(saved.code)}</textarea>` : ""}
+        ${cell ? `<div class="code-stack codey-box"><pre class="hl" aria-hidden="true"></pre><textarea class="codey" data-block="${esc(b.id)}" aria-label="블록 ${n} 코드" spellcheck="false" autocapitalize="off" wrap="off" placeholder="이 블록의 코드 (들여쓰기는 쓴 그대로 모여요)">${esc(saved.code)}</textarea></div>` : ""}
         ${result}
         <div class="block-actions">
           ${check ? `<button type="button" class="btn small" data-check="${esc(b.id)}" data-model${current ? "" : ` aria-label="블록 ${n} 코드 확인"`}>블록 코드 확인</button>` : ""}
@@ -1241,7 +1245,7 @@ function renderBlocks() {
         </div>
       </li>`;
     }).join("");
-    list.querySelectorAll("textarea").forEach((ta) => { ta._seen = ta.value; });
+    list.querySelectorAll("textarea").forEach((ta) => { ta._seen = ta.value; paintCode(ta); }); // 새로 그린 칸은 바로 칠한다(한 프레임 동안 글이 비어 보이지 않게)
   }
   const own = ownWayOn() ? `<div class="note" role="status">내 방식으로 끝까지 쓰는 중이에요. 블록마다 확인하지 않고, 다 쓴 뒤 ‘모아서 실행’으로 확인해요. <button type="button" class="btn quiet small" data-own-off>튜터 차례로 돌아가기</button></div>` : "";
   $("blocks-note").innerHTML = (S.busy && S.busy.where === "blocks" ? `<div class="note">${waitLine("blocks")}</div>` : "") + own + noteHtml(S.note.blocks);
@@ -1406,7 +1410,9 @@ function renderCodePane() {
   const why = noTool() ? `이 기기에 ${LANG[S.problem.language] || S.problem.language} 도구가 없어 실행과 제출을 할 수 없어요.` : "";
   $("tool-note").textContent = why || (away ? "다른 문제에서 실행·채점하는 중이에요. 끝나면 이 문제도 실행하고 제출할 수 있어요." : "");
   $("run").title = $("submit").title = $("run-own-go").title = why;
-  $("run-input").placeholder = (S.problem.examples[0] || { input: "" }).input; // 그 문제 첫 예시의 입력
+  const ex = S.problem.examples[0];
+  $("run-input").placeholder = ex ? `예: ${ex.input}` : ""; // 회색 글은 값이 아니라 본보기다(그대로 실행되지 않는다)
+  $("run-fill").hidden = !ex;
   $("code").placeholder = program() ? "여기에 전체 코드를 써요. 표준 입력을 읽고 답을 출력해요." : "여기에 전체 코드를 써요. 풀이는 solution 함수에 담아요.";
   $("tool-note").hidden = !why && !away;
   $("starter-note").hidden = S.problem.sample || program() || !!S.problem.starter || !direct; // 등록한 함수 문제인데 케이스에서 형을 정하지 못했다
@@ -1432,28 +1438,83 @@ function syncGutter() {
     gutterKey = `${count}:${hit}`;
     $("gutter").innerHTML = Array.from({ length: count }, (_, i) => `<span${i + 1 === hit ? ' class="hit"' : ""}>${i + 1}</span>`).join("");
   }
-  const height = parseFloat(getComputedStyle(ta).lineHeight) || 22;
-  if (hit !== shownHit && ta.clientHeight) { // 새로 짚은 줄이 편집기 밖이면 그 줄이 보이게 스크롤한다(한 번만. 그 뒤의 스크롤은 사용자 것)
+  const height = parseFloat(getComputedStyle(ta).lineHeight) || 22, box = $("code-scroll");
+  if (hit !== shownHit && box.clientHeight) { // 새로 짚은 줄이 편집기 밖이면 그 줄이 보이게 스크롤한다(한 번만. 그 뒤의 스크롤은 사용자 것)
     shownHit = hit;
     const top = 10 + (hit - 1) * height;
-    if (hit && (top < ta.scrollTop || top + height > ta.scrollTop + ta.clientHeight)) ta.scrollTop = Math.max(0, top - ta.clientHeight / 3);
+    if (hit && (top < box.scrollTop || top + height > box.scrollTop + box.clientHeight)) box.scrollTop = Math.max(0, top - box.clientHeight / 3);
   }
-  $("gutter").scrollTop = ta.scrollTop;
   mark.hidden = !hit || hit > count;
-  mark.style.top = `${10 + (hit - 1) * height - ta.scrollTop}px`;
+  mark.style.top = `${10 + (hit - 1) * height}px`; // 줄 번호·짚은 줄·글이 한 스크롤 칸 안에 있어 스크롤 값을 빼지 않는다
 }
+
+/* 문법 색: 글상자 바로 앞의 pre에 같은 글을 칠해 겹친다(highlight.js). 입력은 글상자가 그대로 받는다.
+   pre에는 줄마다 div 하나를 두고, 한 프레임에 한 번 바뀐 줄만 바꿔 넣는다(전체를 다시 넣으면 긴 코드에서 배치가 입력을 늦춘다).
+   너무 긴 코드는 색 없이 글만 둔다(pre는 크기만 맡는다). */
+const PAINT_MAX_LINES = 500, PAINT_MAX_CHARS = 30000, painting = new Set();
+function paintCode(ta) {
+  const pre = ta.previousElementSibling, lang = (S.problem && S.problem.language) || "", code = ta.value;
+  const plain = code.length > PAINT_MAX_CHARS || code.split("\n").length > PAINT_MAX_LINES, key = (plain ? "" : lang) + "\0" + code;
+  if (!pre || pre._key === key) return;
+  pre._key = key;
+  ta.parentElement.classList.toggle("plain", plain);
+  // ponytail: 글 전체를 매번 다시 나눈다(맥 웹뷰 500줄에서 2~5ms). 한도를 올리려면 바뀐 줄 근처만 다시 나누기로
+  const rows = window.AlgoBlockHighlight.lines(code, plain ? "" : lang), old = pre._rows || [];
+  const [head, tail] = window.AlgoBlockHighlight.same(old, rows); // 앞뒤에서 같은 줄을 건너뛰고 가운데만 바꾼다
+  for (let i = old.length - tail - 1; i >= head; i--) pre.children[i].remove();
+  const html = rows.slice(head, rows.length - tail).map((row) => `<div>${row}\n</div>`).join(""); // 줄 끝의 \n: 글이 글상자와 같아 커서 자리 계산이 맞는다
+  const next = pre.children[head];
+  if (html && next) next.insertAdjacentHTML("beforebegin", html);
+  else if (html) pre.insertAdjacentHTML("beforeend", html);
+  pre._rows = rows;
+  ta.scrollTop = ta.scrollLeft = 0; // 글상자가 제 안에서 밀렸으면(긴 글을 붙여 넣은 때) 되돌린다. 스크롤은 바깥 칸의 몫이다
+}
+function paintSoon(ta) {
+  if (!painting.size) requestAnimationFrame(() => { painting.forEach(paintCode); painting.clear(); followCaret(); });
+  painting.add(ta);
+}
+/** 커서가 보이게 바깥 스크롤 칸을 민다. 글상자는 제 안에서 스크롤하지 않으므로 웹뷰가 커서를 따라 바깥 칸을 밀어 주지 않을 때를 위해 스크립트가 맡는다.
+    세로는 줄 수로, 가로는 색 글(pre)에서 커서 앞 글자의 자리로 잰다(한글처럼 폭이 다른 글자도 맞다). */
+function followCaret() {
+  const ta = document.activeElement;
+  if (!ta || !ta.matches(".code-stack > textarea")) return;
+  const box = ta.closest(".code-scroll, .codey-box"), pre = ta.previousElementSibling, style = getComputedStyle(ta);
+  const at = ta.selectionDirection === "backward" ? ta.selectionStart : ta.selectionEnd, before = ta.value.slice(0, at);
+  const line = before.split("\n").length - 1, col = at - before.lastIndexOf("\n") - 1, height = parseFloat(style.lineHeight) || 22;
+  const edge = box.getBoundingClientRect(), stack = ta.getBoundingClientRect();
+  const top = stack.top - edge.top + box.scrollTop + parseFloat(style.paddingTop) + line * height;
+  let x = stack.left - edge.left + box.scrollLeft + parseFloat(style.paddingLeft);
+  if (col) { // 커서 앞 글자의 오른쪽 끝
+    const walk = document.createTreeWalker(pre, NodeFilter.SHOW_TEXT);
+    let node, left = at;
+    while ((node = walk.nextNode()) && left > node.length) left -= node.length;
+    if (node && left) { const range = document.createRange(); range.setStart(node, left - 1); range.setEnd(node, left); x = range.getBoundingClientRect().right - edge.left + box.scrollLeft; }
+  }
+  const gutter = box.querySelector(".gutter"), from = gutter ? gutter.offsetWidth : 0, pad = 8;
+  if (top < box.scrollTop) box.scrollTop = top - pad;
+  else if (top + height > box.scrollTop + box.clientHeight) box.scrollTop = top + height - box.clientHeight + pad;
+  if (x < box.scrollLeft + from + pad) box.scrollLeft = Math.max(0, x - from - 4 * pad);
+  else if (x > box.scrollLeft + box.clientWidth - pad) box.scrollLeft = x - box.clientWidth + 4 * pad;
+}
+let following = false;
+document.addEventListener("selectionchange", () => { // 화살표·Home·End·누르기로 커서만 옮겼을 때
+  if (following) return;
+  following = true;
+  requestAnimationFrame(() => { following = false; followCaret(); });
+});
 
 function gotoLine() {
   const ta = $("code"), lines = ta.value.split("\n"), n = Math.min(S.debug.line, lines.length);
   const start = lines.slice(0, n - 1).reduce((sum, row) => sum + row.length + 1, 0);
   ta.focus();
   ta.setSelectionRange(start, start + lines[n - 1].length);
-  ta.scrollTop = Math.max(0, (n - 4) * (parseFloat(getComputedStyle(ta).lineHeight) || 22));
+  $("code-scroll").scrollTop = Math.max(0, (n - 4) * (parseFloat(getComputedStyle(ta).lineHeight) || 22));
   syncGutter();
 }
 
 function codeChanged() {
   syncGutter();
+  paintSoon($("code"));
   S.codeNote = "";
   if (S.result && !S.result.alert && !S.result.stale) { S.result.stale = true; render(); }
   saveCodeSoon();
@@ -1767,7 +1828,7 @@ function renderWay() {
   const ai = connected();
   $("way-box").innerHTML = `<div class="ways" role="group" aria-label="푸는 방식">${["solo", "guide", "chair"].map((k) => `<button type="button" class="way-card" data-way="${k}"${k !== "solo" && !ai ? " disabled" : ""} aria-describedby="way-${k}">
       <strong>${WAYS[k][0]}${S.mode === k ? '<em class="tag">지금 방식</em>' : ""}</strong><span id="way-${k}">${WAYS[k][1]}</span></button>`).join("")}</div>
-    ${ai ? '<p class="hint">고른 방식은 이 문제에 기억해요. 위의 ‘방식 바꾸기’로 언제든 바꿔요.</p>' : '<div class="note"><span>튜터 둘은 AI를 연결하면 쓸 수 있어요.</span><button type="button" class="btn small" id="note-conn">연결하기</button></div>'}`;
+    ${ai ? '<p class="hint">고른 방식은 이 문제에 기억해요. 고른 뒤에도 ‘방식 바꾸기’로 언제든 바꿔요.</p>' : '<div class="note"><span>튜터 둘은 AI를 연결하면 쓸 수 있어요.</span><button type="button" class="btn small" id="note-conn">연결하기</button></div>'}`;
 }
 
 function renderTutor() {
@@ -1908,8 +1969,10 @@ async function loadHints(peek, block) {
   const r = await api("/api/hint", { id: pid, peek, ...(block ? { block } : {}) });
   if (S.pid !== pid || !S.solo) return;
   S.solo.loading = false;
-  if (r.ok) Object.assign(S.solo, { shown: r.data.shown, seen: r.data.seen, total: r.data.total, blocks: r.data.blocks, note: null });
-  else if (!peek || !S.solo.blocks) { S.solo.blocks = S.solo.blocks || []; S.solo.note = errorNote(r.error); } // 목차를 받지 못해도 다시 부르기를 되풀이하지 않는다
+  if (r.ok) {
+    Object.assign(S.solo, { shown: r.data.shown, seen: r.data.seen, total: r.data.total, blocks: r.data.blocks, note: null });
+    S.problem.study.hints_seen = r.data.seen; // 문제 상태의 '본 힌트 수'도 같이 올린다(태그 보임처럼 이것을 보는 화면이 새로고침 없이 따라오게)
+  } else if (!peek || !S.solo.blocks) { S.solo.blocks = S.solo.blocks || []; S.solo.note = errorNote(r.error); } // 목차를 받지 못해도 다시 부르기를 되풀이하지 않는다
   render();
   if (r.ok && !peek) {
     say("힌트를 하나 열었어요.");
@@ -2487,7 +2550,7 @@ const TOUR = [
 ];
 let tourAt = 0;
 let tourDemos = null; // 데모 묶음을 불러오는 약속(한 번만 부른다). 실패하면 null로 풀린다
-let tourShown = -1; // 지금 데모로 틀고 있는 장. 연결 상태만 새로 그릴 때 데모를 처음부터 다시 틀지 않으려고 둔다
+let tourShown = ""; // 지금 데모로 틀고 있는 장과 연결("장:연결"). 같으면 다시 올리지 않는다
 let tourRun = 0; // 안내를 열고 닫을 때마다 늘린다. 불러오기가 끝났을 때 그사이 닫혔거나 다시 열렸으면 데모를 올리지 않는다
 
 function loadTourDemos() {
@@ -2506,11 +2569,12 @@ function loadTourDemos() {
 async function playTourDemo() {
   const run = tourRun, at = tourAt;
   const demos = await loadTourDemos();
-  if (!demos || !$("tour").open || run !== tourRun || at !== tourAt || tourShown === tourAt) return; // 기다리는 사이 닫았거나 장을 넘겼다
-  if (!demos.has || !demos.has(tourAt)) { tourShown = -1; $("tour-art").classList.remove("live"); return void demos.clear($("tour-live")); } // 이 장은 정적 그림(새 화면)
-  tourShown = tourAt;
+  const conn = CONN.ready ? CONN.name : "", shown = `${at}:${conn}`; // 연결이 바뀌면 그림도 새 연결로 다시 올린다(글의 끝 문장과 그림의 상태가 같게)
+  if (!demos || !$("tour").open || run !== tourRun || at !== tourAt || tourShown === shown) return; // 기다리는 사이 닫았거나 장을 넘겼다
+  if (!demos.has || !demos.has(tourAt)) { tourShown = ""; $("tour-art").classList.remove("live"); return void demos.clear($("tour-live")); } // 이 장은 정적 그림(새 화면)
+  tourShown = shown;
   $("tour-art").classList.add("live");
-  demos.show($("tour-live"), tourAt);
+  demos.show($("tour-live"), tourAt, { conn });
 }
 
 function renderTour() {
@@ -2546,7 +2610,7 @@ function closeTour() {
 
 function stopTourDemo() { // 닫으면 올린 데모를 반드시 내린다(뒤에서 돌지 않게). Esc로 닫으면 close 이벤트가 부른다
   tourRun += 1;
-  tourShown = -1;
+  tourShown = "";
   $("tour-art").classList.remove("live");
   if (window.AlgoBlockTourDemos) window.AlgoBlockTourDemos.clear($("tour-live"));
 }
@@ -2859,7 +2923,9 @@ document.addEventListener("click", (e) => {
     return void inputs[0].focus();
   }
   const actions = {
+    "tags-open": () => { S.tagsOpen = true; render(); $("p-badges").focus(); }, // 연 것은 화면에서만(도움으로 세지 않는다)
     "start": startMode, "submit": submitCode, "run": () => judgeCode(true), "run-own-go": () => judgeCode(true, $("run-input").value),
+    "run-fill": () => { $("run-input").value = S.problem.examples[0].input; $("run-input").focus(); }, // 첫 예시의 입력을 한 번에 채운다
     "solo-open": () => loadSolution(false), "solo-force": () => { S.solo.ask = true; render(); $("solo-force-no").focus(); },
     "solo-force-no": () => { S.solo.ask = false; render(); }, "solo-force-yes": () => loadSolution(true),
     "result-tutor-hint": tutorHint,
@@ -2988,7 +3054,7 @@ document.addEventListener("input", (e) => {
   if (el.dataset.block) {
     harvest();
     syncCheck(el); // 칸 글이 저장된 글과 달라지면 곧바로 '블록 코드 확인'(같아지면 걷는다)
-    return grow(el);
+    return paintSoon(el); // 칸 높이는 색 글(pre)을 따라 자란다
   }
   if (el.matches(".composer textarea")) grow(el);
 });
@@ -3012,7 +3078,6 @@ document.addEventListener("keydown", (e) => {
   if (el.id === "code" || (el.dataset && el.dataset.block)) codeKeys(e);
 });
 
-$("code").addEventListener("scroll", syncGutter);
 $("more").addEventListener("toggle", () => { if (!$("more").open) { $("reset-confirm").hidden = true; $("reset").hidden = false; } }); // 메뉴를 닫으면 처음부터의 물음도 접는다
 document.addEventListener("click", (e) => {
   const summary = e.target.closest("details.case-fold > summary");

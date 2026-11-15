@@ -24,7 +24,7 @@ def keep(name: str) -> bool:
 
 hidden = ["server", "window", "casegen"] + collect_submodules("tutor", filter=keep) + collect_submodules("app.llm")
 hidden += collect_submodules("langgraph") + collect_submodules("qdrant_client.local") + ["onnxruntime", "tokenizers"]
-datas = [(str(UI / name), "ui") for name in ("index.html", "app.css", "app.js", "builtin.json", "PretendardVariable.woff2", "PretendardVariable-LICENSE.txt", "icon.svg", "favicon.svg", "tour-demos.js", "tour-demos.css")]
+datas = [(str(UI / name), "ui") for name in ("index.html", "app.css", "app.js", "highlight.js", "builtin.json", "PretendardVariable.woff2", "PretendardVariable-LICENSE.txt", "icon.svg", "favicon.svg", "tour-demos.js", "tour-demos.css")]
 datas += [(str(APP / "tutor" / "plan" / "guide.md"), "tutor/plan")]
 # 배포물에 라이선스 글을 같이 넣는다(이 앱의 MIT, 함께 묶는 것들의 고지)
 datas += [(str(APP.parent / "LICENSE"), "licenses"), (str(APP.parent / "Docs" / "THIRD_PARTY_NOTICES.md"), "licenses"), (str(UI / "stageshow" / "LICENSE-stageshow.txt"), "licenses")]
