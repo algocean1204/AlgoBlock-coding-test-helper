@@ -1039,6 +1039,7 @@ function applyState(data) {
     document.title = `${p.title} · AlgoBlock`;
     S.solo = { shown: [], seen: p.study.hints_seen, total: p.study.hints_total, sol: null, ask: false, note: null };
     if (p.study.hints_seen) loadHints(true); // 전에 본 힌트를 다시 보여 준다(새 힌트를 열지 않는다)
+    if (p.passed > 0) loadNextUp(); // 통과한 문제를 다시 열어도 '다음 문제'로 갈 수 있게
     if (p.study.has_guide && p.study.passed_now) loadSolution(false); // 이번 풀이에서 통과한 문제는 실전 신호를 준비해 둔다('처음부터' 뒤에는 열 때만 보인다)
     // 방식: 기억한 것, 없으면 대화가 있는 쪽(마지막 말이 늦은 쪽), 없으면 고르기 전(어떻게 풀까요?)
     const lastAt = (chat) => (chat[chat.length - 1] || {}).at || "", sess = data.session;
@@ -1119,7 +1120,7 @@ function renderCheckLine(p) {
 
 /** 상태마다 주 동작 하나(파란 채움): 그 단추에만 primary를 붙이고 나머지에서는 뗀다. 붙인 단추를 돌려준다. */
 const PRIMARY = { choose: '[data-way="solo"]', run: "#run", submit: "#submit", compose: "#compose-run", start: "#start", talk: "#send", follow: "#fq-send",
-  debug: "#debug-send", find: "#debug-start", hint: "#result-hint", next: "#result-next", feedback: "#to-feedback" };
+  debug: "#debug-send", find: "#debug-start", hint: "#result-hint", next: "#result-next", review: "#result-next", feedback: "#to-feedback" };
 function applyPrimary(stage) {
   document.querySelectorAll("#view-code .primary").forEach((el) => el.classList.remove("primary"));
   const shown = (sel) => { const el = document.querySelector(`#view-code ${sel}`); return el && !el.closest("[hidden]") && !el.disabled ? el : null; };
@@ -1637,10 +1638,19 @@ function failGuide(r, slowOnly) {
   return "";
 }
 
+/** 통과한 문제에서 갈 곳: 다음 문제(그 주제의 다음 단계). 곁에 덜 눈에 띄게 피드백, 실전 신호. 방금 통과했을 때와 다시 열었을 때가 같이 쓴다. */
+function passActions(ai, learn) {
+  const nx = S.nextUp, way = tutorWay(S.mode);
+  return `<a id="result-next" class="btn" href="${nx ? `#/p/${esc(nx.id)}` : "#/list"}"${nx ? ` title="${esc(nx.title)}"` : ""}>${nx ? "다음 문제" : "문제 목록으로"}</a>${nx ? `<span class="hint next-title">${esc(nx.title)}</span>` : ""}
+      ${ai ? '<button type="button" id="to-feedback" class="btn quiet" data-model>피드백 받기</button>' : ""}${learn ? `<button type="button" id="result-learn" class="btn quiet"${way ? ' title="푸는 방식이 혼자 풀기로 바뀌어요"' : ""}>실전 신호 보기${way ? " · 혼자 풀기로 바뀌어요" : ""}</button>` : ""}`;
+}
+
 function renderResult() {
   const box = $("result"), r = S.result, judging = S.busy && S.busy.where === "result", mine = judging && S.busy.pid === S.pid;
-  box.hidden = !r && !mine;
+  const review = !r && !mine && !!S.problem && S.problem.passed > 0; // 통과한 문제를 다시 열었다: 마지막 결과는 없어도 갈 길은 남긴다
+  box.hidden = !r && !mine && !review;
   if (mine) return void (box.innerHTML = `<div class="note">${waitLine("result").replace(" · 보통 5~25초 걸려요", "")}</div>`);
+  if (review) return void (box.innerHTML = `<div class="result-actions">${passActions(connected(), S.problem.study.has_guide && S.problem.study.passed_now)}</div>`); // '처음부터' 뒤에는 해설을 여는 것이 도움이라, 단추 하나로 열지 않는다
   if (!r) return void (box.innerHTML = "");
   if (r.alert) return void (box.innerHTML = noteHtml(r.alert));
   const notice = r.notice ? `<p class="hint">${esc(r.notice)}</p>` : ""; // 채점 실행 제한을 걸지 못했다(Windows 작업 객체)
@@ -1662,9 +1672,7 @@ function renderResult() {
   const tutorSide = ai && tutorWay(S.mode), talked = tutorSide && S.session[S.mode].length > 0; // 튜터 방식: 도움도 그 안에서(방식을 말없이 바꾸지 않는다)
   let acts = "";
   if (!r.run && r.ok) { // 통과: 다음 문제(그 주제의 다음 단계). 곁에 덜 눈에 띄게 피드백, 실전 신호
-    const nx = S.nextUp;
-    acts = `<a id="result-next" class="btn" href="${nx ? `#/p/${esc(nx.id)}` : "#/list"}"${nx ? ` title="${esc(nx.title)}"` : ""}>${nx ? "다음 문제" : "문제 목록으로"}</a>${nx ? `<span class="hint next-title">${esc(nx.title)}</span>` : ""}
-      ${ai ? '<button type="button" id="to-feedback" class="btn quiet" data-model>피드백 받기</button>' : ""}${learn ? `<button type="button" id="result-learn" class="btn quiet"${tutorWay(S.mode) ? ' title="푸는 방식이 혼자 풀기로 바뀌어요"' : ""}>실전 신호 보기${tutorWay(S.mode) ? " · 혼자 풀기로 바뀌어요" : ""}</button>` : ""}`;
+    acts = passActions(ai, learn);
   } else if (!r.ok && total) {
     const finds = ai && !slowOnly && (!r.run || tutorSide); // 튜터 방식이면 예시 실행에서 틀렸을 때도 틀린 곳 같이 찾기가 먼저다
     if (finds) acts += '<button type="button" id="debug-start" class="btn" data-model>틀린 곳 같이 찾기</button>';
@@ -1845,7 +1853,7 @@ function renderTutor() {
 /* ── 혼자 풀기: 미리 만들어 둔 힌트와 해설(모델 0회) ── */
 function solutionHtml(sol, passed) {
   const guide = sol.approach || sol.clues.length || sol.steps.length;
-  const r = S.result, shownNext = r && r.ok && !r.run && !r.stale; // 결과 상자에 '다음 문제'가 있으면 여기에는 두지 않는다(같은 곳으로 가는 길은 하나)
+  const r = S.result, shownNext = (r && r.ok && !r.run && !r.stale) || (!r && S.problem.passed > 0); // 결과 상자에 '다음 문제'가 있으면 여기에는 두지 않는다(같은 곳으로 가는 길은 하나)
   const next = shownNext ? "" : `<div class="solo-next">${S.nextUp ? `<a class="btn" href="#/p/${esc(S.nextUp.id)}">다음 문제: ${esc(S.nextUp.title)}</a>` : ""}</div>`;
   return `${passed ? `<p class="verdict pass"><span class="badge">${ico("i-check")}</span>통과했어요 <small>이 문제에서 가져갈 것</small></p>${next}` : ""}
     <h4>실전 신호</h4><p class="hint">실전에서 문제 글에 이런 표현이 보이면 이렇게 떠올려요.</p>
