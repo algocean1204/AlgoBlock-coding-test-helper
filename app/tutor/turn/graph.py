@@ -18,7 +18,7 @@ from ..state import MainState, MovePlan, Verdict
 from .code_check import check_code
 from .context import prepare
 from ..common.talk_rules import OWN_WAY, WITHDRAWN, rename_note
-from .moves import pick_move, rule_verdict
+from .moves import found_tip, pick_move, rule_verdict
 from .talk import checked_reply, clean_text, speak_messages
 
 STEPS = {"N1": "prepare", "N2": "judge", "N3": "check_code", "N4": "pick_move", "N5": "speak", "N6": "check_reply"}
@@ -76,7 +76,9 @@ def turn_graph(mode: str, judge_messages, judge_rule: str, system: str, steps: d
         if withdrawn:
             reply = f"{reply} {WITHDRAWN.format(n=len(withdrawn))}"
         boxed = {"boxed": True} if filled and verdict is not None and "```" in verdict.seen else {}  # 실행에서 본 여러 줄 출력을 엔진이 글상자로 넣었다(모델의 말은 위에서 펜스를 거른다)
-        return {"result": {"reply": said + reply, "advance": move.advance, "move": move.move, **extra, **boxed}}
+        tip = found_tip(mode, state["turn"], move)
+        found = {"found": tip} if tip else {}  # 저장이 찾은 블록의 말로 따로 남긴다
+        return {"result": {"reply": said + reply, "advance": move.advance, "move": move.move, **extra, **boxed, **found}}
 
     def after_prepare(state: MainState) -> str:
         if state.get("error"):

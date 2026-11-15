@@ -42,13 +42,16 @@ def rule_verdict(text: str) -> Verdict | None:
     return Verdict(False) if empty_answer(text) else None
 
 
+def found_tip(mode: str, turn: TurnContext, move: MovePlan) -> str:
+    """의자에서 말로 지금 블록을 찾았으면 찾은 블록에 남길 안내(FOUND_TIP). 다음 블록의 질문과 다른 말로 남긴다(한 말에 붙어 다음 블록 아래에 보였다)."""
+    return FOUND_TIP.strip() if mode == "chair" and turn.event == "message" and move.advance else ""
+
+
 def pick_move(mode: str, plan: BlockPlan, turn: TurnContext, verdict: Verdict | None, allow_follow: bool = True, found: bool = False, language: str = "python") -> MovePlan:
     """found: 의자에서 이미 찾은 블록의 코드 확인(맞는지만 알리고 진행은 그대로).
     같은 블록에서 내용 없는 답이 두 번 이어지면 그 말 앞에 '이 블록 채우기' 안내를 한 번 붙인다('모르겠어요' 세 번에도 길을 몰랐다).
-    의자에서 말로 블록을 찾아 넘어가면 찾은 블록의 칸에 코드를 적어 보라고 앞에 붙인다."""
+    의자에서 말로 블록을 찾아 넘어갈 때 찾은 블록의 칸에 코드를 적어 보라는 말(FOUND_TIP)은 그래프가 찾은 블록의 말로 따로 남긴다(found_tip)."""
     move = _pick_move(mode, plan, turn, verdict, allow_follow, found, language)
-    if mode == "chair" and turn.event == "message" and move.advance:
-        move.lead = FOUND_TIP + move.lead
     if (turn.event == "message" and not move.advance and not turn.tipped and "이 블록 채우기" not in move.lead + (move.saved or "")
             and empty_answer(turn.text) and empty_answer(turn.previous)):
         move.lead = FILL_TIP + move.lead

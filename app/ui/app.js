@@ -1122,6 +1122,9 @@ function blockState(b, i) {
   return S.talk === "chair" && b.name ? "found" : "current"; // 의자는 지금 블록 이름이 답이라 찾기 전에는 가린다
 }
 
+/** 의자에서 아직 찾지 못한 지금 블록인가(채우면 찾을 답인 이름과 코드가 드러난다). */
+const unfoundBlock = (id) => { const i = S.session.blocks.findIndex((b) => b.id === id); return i >= 0 && S.talk === "chair" && blockState(S.session.blocks[i], i) === "current"; };
+
 /** 블록 칸에 사람이(또는 도구가) 넣은 값을 상태로 옮긴다. 그리기 전에 부르면 적던 글이 남는다. */
 function harvest() {
   document.querySelectorAll("#blocks textarea[data-block]").forEach((ta) => {
@@ -1181,12 +1184,16 @@ function renderBlocks() {
           ${check ? `<button type="button" class="btn small" data-check="${esc(b.id)}" data-model${current ? "" : ` aria-label="블록 ${n} 코드 확인"`}>블록 코드 확인</button>` : ""}
           ${skip ? `<button type="button" class="btn quiet small" data-skip="${esc(b.id)}">이대로 넘어가기</button>` : ""}
           ${skip && !S.ownWay ? `<button type="button" class="btn quiet small" data-own="${esc(b.id)}" title="이 블록은 넘어가고 남은 블록을 모두 열어요. 블록마다 확인하지 않고, 다 쓴 뒤 ‘모아서 실행’으로 확인해요">끝까지 내 방식으로 쓰기</button>` : ""}
-          ${S.fillAsk === b.id ? `<span class="confirm"><span>적은 코드를 튜터의 코드로 바꿀까요?</span><button type="button" class="btn danger small" data-fill-yes="${esc(b.id)}" data-model>바꾸기</button><button type="button" class="btn quiet small" data-fill-no="${esc(b.id)}">그대로 두기</button></span>`
+          ${S.fillAsk === b.id ? (current && S.talk === "chair" ? `<span class="confirm"><span>아직 찾지 못한 블록이에요. 채우면 이 블록의 이름과 튜터의 코드가 보여요.</span><button type="button" class="btn danger small" data-fill-yes="${esc(b.id)}" data-model>그래도 채우기</button><button type="button" class="btn quiet small" data-fill-no="${esc(b.id)}">더 생각해 보기</button></span>`
+      : `<span class="confirm"><span>적은 코드를 튜터의 코드로 바꿀까요?</span><button type="button" class="btn danger small" data-fill-yes="${esc(b.id)}" data-model>바꾸기</button><button type="button" class="btn quiet small" data-fill-no="${esc(b.id)}">그대로 두기</button></span>`)
     : `<button type="button" class="btn quiet small" data-fill="${esc(b.id)}" data-model${current ? "" : ` aria-label="블록 ${n} 채우기"`}>이 블록 채우기</button>`}
         </div>
       </li>`;
     }).join("");
     list.querySelectorAll("textarea").forEach((ta) => { ta._seen = ta.value; });
+    const at = `${S.pid}:${S.talk}`, opened = list._opened || {}; // 새 블록이 열리면 그 블록이 보이게 목록을 옮긴다(처음 그릴 때는 옮기지 않는다)
+    if (opened.at === at && s.open_count > opened.n) { const now = list.querySelector('[aria-current="step"]') || list.querySelectorAll(".block:not(.is-locked)")[s.open_count - 1]; if (now) now.scrollIntoView({ block: "nearest" }); }
+    list._opened = { at, n: s.open_count };
   }
   const own = ownWayOn() ? `<div class="note" role="status">내 방식으로 끝까지 쓰는 중이에요. 블록마다 확인하지 않고, 다 쓴 뒤 ‘모아서 실행’으로 확인해요. <button type="button" class="btn quiet small" data-own-off>튜터 차례로 돌아가기</button></div>` : "";
   $("blocks-note").innerHTML = (S.busy && S.busy.where === "blocks" ? `<div class="note">${waitLine("blocks")}</div>` : "") + own + noteHtml(S.note.blocks);
@@ -1907,10 +1914,14 @@ async function sendFollowup() {
   S.sending = { text };
   const r = await work("튜터가 꼬리질문에 답하는 중…", "thread", () => api("/api/followup", { id: pid, mode, quote_id: quote, text }));
   if (!r || S.pid !== pid) return;
-  if (r.ok) $("fq-text").value = "";
+  if (r.ok) { $("fq-text").value = ""; if (S.quote === quote) S.quote = null; } // 답이 오면 '내 답' 칸으로 돌아온다(꼬리질문 칸에 본 답을 적으면 블록 찾기 판정을 하지 않았다)
   else S.note.chat = errorNote(r.error);
-  say(r.ok ? "튜터가 꼬리질문에 답했어요." : "");
+  say(r.ok ? "튜터가 꼬리질문에 답했어요. 본 대화의 답은 ‘내 답’ 칸에 적어요." : "");
   await loadState();
+  if (!r.ok || S.pid !== pid || S.quote) return;
+  const asked = document.querySelector(`#chat-log [data-msg="${CSS.escape(quote)}"]`), thread = asked && asked.nextElementSibling;
+  if (thread && thread.classList.contains("thread")) thread.scrollIntoView({ block: "nearest" }); // 방금 받은 꼬리질문의 답이 보이게
+  $("say").focus();
 }
 
 async function fillBlock(blockId) {
@@ -2739,7 +2750,7 @@ document.addEventListener("click", (e) => {
   if (el.dataset.quote) { S.quote = S.quote === el.dataset.quote ? null : el.dataset.quote; S.note.chat = null; render(); return void (S.quote && $("fq-text").focus()); }
   if (el.dataset.fill) { // 칸에 적은 것이 있으면 바꿀지 먼저 묻는다
     harvest();
-    if (!((S.blockCode[el.dataset.fill] || {}).code || "").trim()) return void fillBlock(el.dataset.fill);
+    if (!((S.blockCode[el.dataset.fill] || {}).code || "").trim() && !unfoundBlock(el.dataset.fill)) return void fillBlock(el.dataset.fill); // 의자에서 찾기 전 블록도 먼저 묻는다
     S.fillAsk = el.dataset.fill;
     render();
     return void document.querySelector(`[data-fill-no="${CSS.escape(S.fillAsk)}"]`).focus();
