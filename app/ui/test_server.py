@@ -1387,6 +1387,29 @@ def prep_failed() -> None:
     assert not call("/api/state", id=pid)[1]["problem"]["prepare_failed"]
 
 
+def prep_unverified() -> None:
+    """준비가 끝났는데 풀이 가이드를 얻지 못했으면(고친 예시를 통과하는 풀이가 없는 문제 등) 검증하지 못함과 까닭이 남는다. 이미 대조 결과가 있으면 덮지 않는다."""
+    import time
+    from tutor.main import Outcome
+
+    pid = server.register(GOOD)["id"]
+    def prepare_and_wait():
+        call("/api/state", id=pid, open=True)
+        for _ in range(200):
+            if pid not in server.PREPARING:
+                break
+            time.sleep(0.02)
+        return call("/api/state", id=pid)[1]["problem"]
+    with patch.object(server, "PREPARE", True), patch.object(server, "connected", lambda: True), patch.object(server.Tutor, "prepare", lambda self, problem_id: Outcome(200, {"blocks": 0, "patterns": []})):
+        before = call("/api/state", id=pid)[1]["problem"]
+        assert before["verified"] == "" and not before["preparing"], before  # 준비 전에는 줄이 비어 있다
+        body = prepare_and_wait()
+        assert body["verified"] == "none" and body["check"]["why"] == server.UNVERIFIED["why"] and not body["prepare_failed"], body
+        server.PREPARED.discard(pid)
+        server.cross_done(pid, {"verified": "all", "calls": 2, "tiers": ["middle"], "doubts": [], "why": "", "hidden": 3, "efficiency": 0})
+        assert prepare_and_wait()["verified"] == "all"  # 앞의 대조 결과를 '검증하지 못함'으로 덮지 않는다
+
+
 def stale_save() -> None:
     """언어를 바꾸는 사이에 온 옛 언어의 코드·블록은 저장하지 않는다(어느 언어의 코드인지 같이 온다)."""
     pid = server.register(GOOD)["id"]  # 언어는 python
@@ -2082,6 +2105,7 @@ def main() -> None:
         checkpoints()
         prep_failed()
         key_flow()
+        prep_unverified()
         stale_save()
         builtin_prepare()
         own_guide()
@@ -2109,6 +2133,7 @@ def main() -> None:
     assert call("/api/tour")[1]["tour_seen"] and call("/api/accounts")[1]["tour_seen"]
     for path, (name, _) in server.STATIC.items():  # 화면이 부르는 파일이 모두 있다(글꼴 포함)
         assert (server.STATIC_DIR / name).is_file(), path
+    assert "Continue with" not in (server.STATIC_DIR / "index.html").read_text(encoding="utf-8")  # 화면 글은 한국어다(ChatGPT 로그인 단추도)
 
     import test_update  # 업데이트(가짜 네트워크, 임시 폴더의 가짜 앱)
     test_update.run()

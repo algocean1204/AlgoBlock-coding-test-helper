@@ -413,6 +413,9 @@ def cross_done(pid: str, verdict: dict) -> None:
 
 
 CROSS = SimpleNamespace(mode=cross_mode, run=cross_run, done=cross_done)
+UNVERIFIED = {"verified": "none", "calls": 0, "tiers": [], "doubts": [], "hidden": 0, "efficiency": 0,
+              "why": "AI의 풀이를 얻지 못해 검증하지 못했어요. 응답 오류였거나 예시가 문제 글과 맞지 않을 수 있어요."}
+
 FILE_LOCK_ROWS = threading.RLock()  # problems.json을 읽고 고쳐 쓰는 동안(뒤에서 도는 대조와 등록·수정이 서로 덮어쓰지 않게)
 VERIFIED_WORDS = {"all": "예시와 자동 테스트 모두 통과", "examples": "예시만 통과", "none": "검증하지 못함"}
 
@@ -450,8 +453,10 @@ def prepare_later(pid: str) -> None:
         try:
             with LOCKS[pid], model(), tutor() as t:
                 out = t.prepare(pid)
-            if out.status >= 400:  # 모델의 답이 어긋났거나 공급자 오류(엔진은 예외 대신 실패 결과를 돌려준다)
-                raise RuntimeError(f"{out.status} {out.body}")
+                if out.status >= 400:  # 모델의 답이 어긋났거나 공급자 오류(엔진은 예외 대신 실패 결과를 돌려준다)
+                    raise RuntimeError(f"{out.status} {out.body}")
+                if CROSS.mode(pid) and t.store.load(pid).canonical is None and not getattr(PROBLEMS.get(pid), "check", None):
+                    cross_done(pid, UNVERIFIED)  # 준비는 끝났는데 풀이 가이드를 얻지 못했다: 대조 결과가 없는 채로 두면 화면에서 '검증' 줄이 사라진다
         except Exception as exc:  # noqa: BLE001 - 덤이다
             PREPARED.discard(pid)
             PREP_FAILED.add(pid)
