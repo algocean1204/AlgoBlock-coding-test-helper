@@ -27,7 +27,7 @@ AlgoBlock의 기록과 설정은 데이터 폴더 하나에 있다. 이 문서�
 | `attendance.json` | 출석한 날짜(기기의 현지 날짜) |
 | `touched.json` | 문제를 마지막으로 손댄 시각(코드 저장, 실행, 제출, 힌트) |
 | `keys.json` | 화면에서 넣은 API 키. 권한 0600 |
-| `prefs.json` | 안내를 봤는지(`tour_seen`), 과정별 급과 추론 정도(`stages`), 마지막 풀이 언어(`language`), 화면 색(`scheme`: `light` 또는 `dark`. 없으면 운영체제 설정을 따른다) |
+| `prefs.json` | 안내를 봤는지(`tour_seen`), 과정별 급과 추론 정도(`stages`), 마지막 풀이 언어(`language`), 화면 색(`scheme`: `light` 또는 `dark`. 없으면 운영체제 설정을 따른다), 세 칸의 너비 몫(`panes`) |
 | `models.json` | 공급자 시리즈마다 최신 모델 이름과 받은 시각 |
 | `kept.json` | 언어를 바꿀 때 보관한 그 언어의 가이드, 계획, 해설 |
 | `.env` | 키(선택). 루트 `.env` 다음에 읽는다 |

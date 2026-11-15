@@ -45,6 +45,8 @@ FIRST["languages"] = ["python", "javascript"]
 Path(os.environ["ALGOBLOCK_UI_BUILTIN"]).write_text(json.dumps(ROWS, ensure_ascii=False), encoding="utf-8")
 
 import server  # noqa: E402
+
+server.ROOT = TMP  # 저장소의 .env를 읽지 않는다(키 지우기 흐름이 load_keys를 다시 불러도 진짜 키가 환경에 올라오지 않게)
 from tutor.common.scope import ALGORITHMS  # noqa: E402
 from tutor.common.talk_rules import MANY_ANSWERS  # noqa: E402
 from dataclasses import replace  # noqa: E402
@@ -722,6 +724,20 @@ def screen_flows() -> None:
         with server.tutor() as t:
             assert t.store.study(PID)["help_first_at"] is None and t.store.study(PID)["help_after_reset_at"]
         judged(PID, CODE, 1)
+    stuck = datetime.now()
+
+    class Stopped(datetime):  # 시계가 멈춘 것처럼 늘 같은 순간을 준다(같은 초, 같은 밀리초)
+        @classmethod
+        def now(cls, tz=None):
+            return stuck
+    with fresh(), patch("tutor.store.sqlite.datetime", Stopped):  # 같은 순간의 실패 → '처음부터' → 통과 → (화면이 저절로 여는) 해설: 일어난 차례대로 판단한다
+        opened(PID)
+        assert not submit(PID, "def solution(loans, k):\n    return []\n")
+        again(PID)
+        judged(PID, CODE, 1)  # 첫 풀이에 도움이 없었다. 통과 뒤의 해설을 '처음부터' 뒤 통과 전의 도움으로 보지 않는다
+        with server.tutor() as t:
+            study, subs = t.store.study(PID), server.problem_subs(t, PID)
+        assert study["help_first_at"] is None and subs[0]["at"] < study["reset_at"] < subs[1]["at"], (study, subs)
     with fresh():  # 언어를 바꿨다 돌아오는 것은 '처음부터'가 아니다: 도움을 받고 푼 문제는 하루 뒤에 다시 내도 세지 않는다
         opened(PID)
         call("/api/hint", id=PID)
@@ -1478,6 +1494,7 @@ def checkpoints() -> None:
 def compose() -> None:
     """모으기는 서버 한 곳에서 블록 코드 확인과 같은 framed로 한다. 빈 블록은 빠지고, 블록 2에 머리 줄을 적어도 확인이 돌린 프로그램과 같은 글이다."""
     from tutor.common.solution import spliced
+    from tutor.common.talk_rules import ALONE_OK
 
     def text(parts):  # 블록 주석과 빈 줄을 뺀 글
         return "\n".join(row for _, part in parts for row in part.split("\n") if row.strip() and not row.strip().startswith("# 블록"))
@@ -1485,7 +1502,10 @@ def compose() -> None:
     b1 = "\n".join(row[4:] for row in LINES[1:5])
     parts = call("/api/compose", id=PID, mode="guide", blocks={"b1": {"code": b1, "by": "me"}, "b2": {"code": "\n".join(LINES[5:]), "by": "tutor"}})[1]["parts"]
     assert [i for i, _ in parts] == [0, 1] and parts[0][1].startswith("def solution(loans, k):\n    # 블록 1 · ") and text(parts) == CODE, parts
-    assert [i for i, _ in call("/api/compose", id=PID, mode="guide", blocks={"b1": {"code": "  ", "by": "me"}, "b2": {"code": "return []", "by": "me"}})[1]["parts"]] == [1]
+    parts = call("/api/compose", id=PID, mode="guide", blocks={"b1": {"code": "  ", "by": "me"}, "b2": {"code": "return []", "by": "me"}})[1]["parts"]
+    assert [i for i, _ in parts] == [0, 1] and parts[0][1] == "def solution(loans, k):" and parts[1][1].endswith(" return []"), parts  # 빈 블록은 틀 줄만(머리가 빠지면 함수 밖의 return이었다)
+    # 튜터가 '남은 블록은 건너뛰어도 된다'고 한 뒤의 빈 블록은 화면이 모으기에서 막지 않는다(화면은 그 말로 안다)
+    assert ALONE_OK.split(".")[0] in (Path(__file__).parent / "app.js").read_text(encoding="utf-8")
     head2 = "def solution(loans, k):\n" + "\n".join(LINES[5:])  # 블록 2에 머리 줄을 적었다
     parts = call("/api/compose", id=PID, mode="guide", blocks={"b1": {"code": b1, "by": "me"}, "b2": {"code": head2, "by": "me"}})[1]["parts"]
     ran = spliced(["\n".join(LINES[:5]), "\n".join(LINES[5:])], 1, head2, "python", {0: b1})
@@ -1986,6 +2006,42 @@ def color_tokens() -> None:
     assert html.count('name="theme-color"') == 1 and 'data-scheme-pref="system"' in html
 
 
+def pane_widths() -> None:
+    """칸 너비: /api/prefs로 세 칸의 몫을 적고, 어긋난 값은 거절한다. 없으면(null) 기본 배치. 다른 설정은 지우지 않는다."""
+    import re
+    html = (HERE / "index.html").read_text(encoding="utf-8")
+    assert re.search(r'id="pane-problem".*?id="sep-problem" role="separator".*?id="pane-code".*?id="sep-tutor" role="separator".*?id="pane-tutor"', html, re.S)  # 칸 사이마다 손잡이(DOM 차례가 Tab 차례)
+    saved = server.read_json(server.PREFS_FILE, {})
+    server.write_json(server.PREFS_FILE, {**saved, "language": "javascript", "stages": {"keep": "me"}})  # 다른 설정이 같이 남는지 보려고 심는다
+    try:
+        assert call("/api/accounts")[1]["panes"] is None  # 고르지 않았으면 기본 배치
+        for bad in ({}, {"panes": []}, {"panes": [30, 30]}, {"panes": [26, 38, 36, 0]}, {"panes": [4, 50, 46]}, {"panes": [26, 91, -17]}, {"panes": [20, 30, 30]}, {"panes": [40, 40, 40]},
+                    {"panes": ["26", "38", "36"]}, {"panes": [True, 50, 49]}, {"panes": [None, 50, 50]}, {"panes": "26,38,36"}, {"panes": {"a": 1}}, {"panes": float("nan")}, {"panes": [float("nan"), 50, 50]}, {"panes": 100}):
+            assert "칸 너비" in refuses("/api/prefs", **bad), bad
+        assert "panes" not in server.read_json(server.PREFS_FILE, {})  # 거절한 값은 적히지 않는다
+        got = call("/api/prefs", panes=[26.1, 38.3, 35.6])[1]
+        assert got["panes"] == [26.1, 38.3, 35.6] and server.read_json(server.PREFS_FILE, {})["panes"] == [26.1, 38.3, 35.6] and call("/api/accounts")[1]["panes"] == [26.1, 38.3, 35.6]
+        assert call("/api/prefs", panes=[26, 38, 36])[1]["panes"] == [26.0, 38.0, 36.0]  # 정수도 받는다
+        assert call("/api/prefs", panes=[25.834, 37.751, 36.42])[1]["panes"] == [25.83, 37.75, 36.42]  # 소수 둘째 자리로 적는다
+        assert call("/api/prefs", panes=[5, 90, 5])[1]["panes"] == [5.0, 90.0, 5.0] and call("/api/prefs", panes=[33.33, 33.33, 33.34])[1]["panes"] == [33.33, 33.33, 33.34]  # 끝값과 합 100
+        server.write_json(server.PREFS_FILE, {**server.read_json(server.PREFS_FILE, {}), "panes": [1, 2]})  # 손으로 고친 이상한 값은 기본으로 본다
+        assert call("/api/accounts")[1]["panes"] is None
+        call("/api/prefs", panes=[26.1, 38.3, 35.6])
+        assert call("/api/prefs", panes=None)[1]["panes"] is None  # null은 기본으로 돌린다
+        both = call("/api/prefs", scheme="dark", panes=[26.1, 38.3, 35.6])[1]  # 둘을 한 번에 보내도 되고, 하나만 보내면 다른 하나는 그대로다
+        assert both["scheme"] == "dark" and both["panes"] == [26.1, 38.3, 35.6]
+        assert call("/api/prefs", panes=None)[1]["scheme"] == "dark" and call("/api/prefs", scheme="light")[1]["panes"] is None
+        call("/api/prefs", panes=[26.1, 38.3, 35.6])
+        assert call("/api/prefs", scheme="system")[1]["panes"] == [26.1, 38.3, 35.6] and "scheme" not in server.read_json(server.PREFS_FILE, {})
+        assert "칸 너비" in refuses("/api/prefs", scheme="dark", panes=[1, 2])  # 하나가 어긋나면 다른 하나도 적지 않는다
+        assert server.read_json(server.PREFS_FILE, {}).get("scheme") is None
+        call("/api/prefs", panes=None)
+        kept = server.read_json(server.PREFS_FILE, {})
+        assert "panes" not in kept and kept["language"] == "javascript" and kept["stages"] == {"keep": "me"}  # 다른 설정은 그대로
+    finally:
+        server.write_json(server.PREFS_FILE, saved)
+
+
 def scheme_setting() -> None:
     """화면 색: /api/prefs로 저장하고, 서버가 첫 HTML에 저장한 값을 실어 첫 그림 전에 맞춘다."""
     import threading
@@ -2061,6 +2117,37 @@ def window_background() -> None:
         server.write_json(server.PREFS_FILE, saved)
 
 
+def pane_fit() -> None:
+    """칸 너비 계산(app.js의 paneNext)이 어떤 창 너비·몫·글쇠에서도 서버가 받는 범위(각각 5~90, 합 99~101)의 값만 내는지 본다.
+    혼자 풀기에서 남은 몫을 코드와 튜터로 나누는 길과 아주 넓은 창에서 최소 너비에 걸린 길을 모두 지난다."""
+    import re
+    import shutil
+    node = shutil.which("node")
+    if not node:
+        return print("node가 없어 칸 너비 계산 시험은 건너뜀")
+    source = re.search(r"/\* pane-pure:start.*?\*/(.*?)/\* pane-pure:end \*/", (HERE / "app.js").read_text(encoding="utf-8"), re.S).group(1)
+    script = source + """
+let seed = 7;
+const rnd = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
+const out = [];
+const triple = () => { const a = rnd() * 100, b = rnd() * (100 - a); return [a, b, 100 - a - b].sort(() => rnd() - 0.5); }; // 범위 밖 몫도 섞는다(아주 넓은 창에서 보이는 너비로 다시 잡은 값)
+for (let n = 0; n < 4000; n++) {
+  const left = rnd() < 0.5 ? 0 : 1, railed = left === 0 && rnd() < 0.5, span = 500 + rnd() * 12000, shares = n % 3 ? triple() : [25.83, 37.75, 36.42];
+  const right = railed ? [1, 2] : [left + 1];
+  const b = { left, right, shares, span, min: left === 0 ? [260, 390] : [rnd() < 0.5 ? 390 : 320, rnd() < 0.5 ? 370 : 300], sum: shares[left] + right.reduce((x, i) => x + shares[i], 0) };
+  for (const want of [0, Infinity, -1e9, rnd() * span, b.min[0], span - b.min[1]]) out.push([left, railed, want === Infinity ? 1e12 : want, paneNext(b, want)]);
+}
+// 혼자 풀기에서 문제 칸을 끝까지: 남은 몫을 나누어도 튜터 몫이 5 아래로 가지 않고, 끈 칸(문제)은 그대로다
+const repro = paneNext({ left: 0, right: [1, 2], shares: [10.37, 74.88, 14.75], span: 2000, min: [260, 390], sum: 100 }, 1e12);
+console.log(JSON.stringify({ out, repro }));
+"""
+    got = json.loads(subprocess.run([node, "-e", script], capture_output=True, text=True, check=True).stdout)
+    assert len(got["out"]) == 4000 * 6
+    bad = [row for row in got["out"] if not server.panes_ok(row[3])]
+    assert not bad, bad[:3]
+    assert server.panes_ok(got["repro"]) and got["repro"][0] == 80.5 and got["repro"][2] >= 5, got["repro"]
+
+
 def stages() -> None:
     """과정별 모델: 급과 추론 정도를 고르면 저장되고 바로 쓰인다. 빈 값은 기본값. 모르는 과정·급·정도는 거절한다.
     예전 설정(테마별 모델 이름, Grok·OpenRouter 키)은 조용히 옮기거나 버린다."""
@@ -2102,10 +2189,9 @@ def stages() -> None:
     call("/api/theme", theme="read", tier="", effort=""), call("/api/theme", theme="guide", tier="", effort=""), call("/api/theme", theme="blocks", tier="", effort=""), call("/api/theme", theme="talk", tier="", effort="")
     assert all(row["tier"] == row["default_tier"] and row["effort"] == row["default_effort"] for row in call("/api/accounts")[1]["themes"])
 
-    # keys.json의 값이 글이 아니면 그 항목만 건너뛰고, 걷어 낸 공급자의 키(Grok·OpenRouter)는 읽지 않는다(프로젝트의 .env는 읽지 않게 바꿔 끼운다)
+    # keys.json의 값이 글이 아니면 그 항목만 건너뛰고, 걷어 낸 공급자의 키(Grok·OpenRouter)는 읽지 않는다
     server.write_json(server.KEY_FILE, {"OPENAI_API_KEY": 123, "XAI_API_KEY": "xai-test", "OPENROUTER_API_KEY": "or-test"})
-    with patch.object(server, "ROOT", TMP):
-        server.load_keys()
+    server.load_keys()
     assert not {"OPENAI_API_KEY", "XAI_API_KEY", "OPENROUTER_API_KEY"} & set(os.environ)
     assert set(call("/api/accounts")[1]["keys"]) == {"claude", "openai"} and not call("/api/accounts")[1]["connected"]
 
@@ -2429,6 +2515,8 @@ def main() -> None:
     color_tokens()
     scheme_setting()
     window_background()
+    pane_widths()
+    pane_fit()
     stages()
     newest_models()
     read_check()

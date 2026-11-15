@@ -38,7 +38,8 @@ _FRAME_PY = re.compile(r"def (?:solution|main)\b.*:|class Solution\b.*:|import \
                        r"|if __name__ == .+:|main\(\)")
 _FRAME = re.compile(
     r"import\b.*|#include\b.*|using\s.+;|use\s.+;|package\s.+|\"[\w./-]+\"|\)"  # 머리말(go의 여러 줄 import 포함)
-    r"|(public\s+)?class (?:Solution|Main)\b.*\{|[\w<>\[\],\s]*\b(?:solution|main)\s*\([^;]*\)[^;=]*\{|\}\s*;?"
+    r"|(public\s+)?class (?:Solution|Main)\b.*\{|[\w<>\[\],:&*\s]*\b(?:solution|main)\s*\([^;]*\)[^;=]*\{|\}\s*;?"  # 머리의 반환형은 'std::vector<int>&'처럼 적어도 된다
+    r"|(?:const|let|var)\s+(?:solution|main)\s*=\s*(?:function(?:\s+[A-Za-z_$][\w$]*)?\s*\([^;]*\)|\([^;]*\)\s*=>|[A-Za-z_$][\w$]*\s*=>)\s*\{"  # js의 함수 식·화살표 함수로 적은 진입 함수 머리(async는 뜻이 달라 뺀다)
     r"|(?:const|let|var) .+ = require\([\"']fs[\"']\)(?:\.readFileSync\(.*)?;?"  # js의 표준 입력 전체 읽기
 )
 
@@ -490,11 +491,12 @@ def _brace_count(rows: list[str]) -> int:
 def _drop_tail(lines: list[str], tail: list[str], need: int) -> list[str]:
     """화면 app.js dropTail과 같다: 적은 코드의 마지막 줄들이 tail의 앞부분과 같으면(공백 무시) 뺀다. 내 반복문을 닫는 '}'는 지우지 않는다.
     need: 뗀 뒤 남은 코드의 중괄호 차가 계획 알맹이의 차(frame_of braces)와 같을 때만 뗀다."""
+    flat = lambda row: "}" if re.sub(r"\s+", "", row) == "};" else re.sub(r"\s+", "", row)  # noqa: E731 - '};'(JavaScript 화살표 함수를 닫는 줄)도 '}'와 같다
     want = [row for row in tail if row.strip()]
-    rows = [(re.sub(r"\s+", "", row), i) for i, row in enumerate(lines) if row.strip()]
+    rows = [(flat(row), i) for i, row in enumerate(lines) if row.strip()]
     for k in range(min(len(want), len(rows)), 0, -1):
         last, kept = rows[-k:], lines[:rows[-k][1]]
-        if all(flat == re.sub(r"\s+", "", want[j]) for j, (flat, _) in enumerate(last)) and _brace_count(kept) == need:
+        if all(text == flat(want[j]) for j, (text, _) in enumerate(last)) and _brace_count(kept) == need:
             while kept and not kept[-1].strip():
                 kept.pop()
             return kept
@@ -607,24 +609,71 @@ def swap_names(code: str, names: dict[str, str], language: str) -> str:
     if not names:
         return code
     out, at, stack, recent = [], 0, [], []
-    for m in _LEX.get(language, _LEX["cpp"]).finditer(code):
-        out.append(code[at:m.start()])
-        at, text, kind = m.end(), m.group(0), m.lastgroup
+    tokens = _js_lex(code)[0] if language == "javascript" else [(m.start(), m.end(), m.lastgroup) for m in _LEX.get(language, _LEX["cpp"]).finditer(code)]
+    for start, end, kind in tokens:
+        out.append(code[at:start])
+        at, text = end, code[start:end]
         if kind == "s":
             text = _filled(text, names, language)
         elif kind == "c":
             text = _WORD.sub(lambda word: names.get(word.group(0), word.group(0)), text)
-        elif kind == "n" and text in names and code[m.start() - 1:m.start()] != "." and code[m.start() - 2:m.start()] not in _MEMBER.get(language, ()) and not (
-                language in ("python", "kotlin") and stack[-1:] == ["("] and _KEYWORD.match(code, m.end())):
+        elif kind == "n" and text in names and code[start - 1:start] != "." and code[start - 2:start] not in _MEMBER.get(language, ()) and not (
+                language in ("python", "kotlin") and stack[-1:] == ["("] and _KEYWORD.match(code, end)):
             text = names[text]
         elif kind == "o" and text in "([{":
             stack.append("def" if text == "(" and recent[-2:-1] == ["def"] else text)  # def 머리의 '이름=기본값'은 매개변수다
         elif kind == "o" and stack:
             stack.pop()
         if kind in "ndo":
-            recent = [*recent[-1:], m.group(0)]
+            recent = [*recent[-1:], code[start:end]]
         out.append(text)
     return "".join(out + [code[at:]])
+
+
+_JS_NAME, _JS_DIGIT = re.compile(r"[A-Za-z_]\w*"), re.compile(r"\d\w*")
+_JS_BEFORE_REGEX = {"return", "typeof", "instanceof", "in", "of", "new", "delete", "void", "throw", "case", "do", "else", "yield", "await"}  # 이 낱말 뒤의 '/'는 나눗셈이 아니다
+
+
+def _js_lex(code: str, at: int = 0, hole: bool = False) -> tuple[list[tuple[int, int, str]], int]:
+    """JavaScript를 _LEX와 같은 종류(s 글자, c 주석, n 이름, d 수, o 괄호)의 (시작, 끝, 종류)로 가른다. 정규식으로 셀 수 없는 두 가지를 손으로 읽는다:
+    템플릿 문자열은 ${…} 안의 중첩 템플릿·문자열·중괄호까지 짝을 맞춰 한 글자로, 정규식 글자('/…/g')는 '/' 앞이 값이 아닐 때(이름·수·닫는 괄호 뒤가 아닐 때, return 뒤 등) 글자로 본다.
+    hole이면 템플릿의 ${ 바로 뒤에서 시작해 짝 없는 '}'에서 멈추고 그 자리를 돌려준다(없으면 글의 끝)."""
+    out, depth, last, i = [], 0, "", at
+    while i < len(code):
+        ch, kind, j = code[i], "", i + 1
+        if code.startswith("//", i) or code.startswith("/*", i):
+            j = code.find("\n" if code[i + 1] == "/" else "*/", i + 2)
+            kind, j = "c", len(code) if j < 0 else j + (0 if code[i + 1] == "/" else 2)
+        elif ch in "'\"":
+            while j < len(code) and code[j] not in (ch, "\n"):
+                j += 2 if code[j] == "\\" else 1
+            kind, j = "s", min(j + 1, len(code))
+        elif ch == "`":
+            while j < len(code) and code[j] != "`":
+                j = _js_lex(code, j + 2, True)[1] + 1 if code.startswith("${", j) else j + (2 if code[j] == "\\" else 1)
+            kind, j = "s", min(j + 1, len(code))
+        elif ch == "/" and (not last or last in _JS_BEFORE_REGEX or not re.match(r"[\w$)\]}]", last[-1])) and last not in ("++", "--"):
+            klass = False
+            while j < len(code) and code[j] != "\n" and (klass or code[j] != "/"):
+                klass = (klass or code[j] == "[") and code[j] != "]"
+                j += 2 if code[j] == "\\" else 1
+            if j < len(code) and code[j] == "/":
+                kind, j = "s", _JS_NAME.match(code, j + 1).end() if _JS_NAME.match(code, j + 1) else j + 1  # 뒤의 g·i 같은 표시까지
+            else:
+                j = i + 1  # 닫는 '/'가 없으면 정규식이 아니다
+        elif found := _JS_NAME.match(code, i) or _JS_DIGIT.match(code, i):
+            kind, j = "n" if found.re is _JS_NAME else "d", found.end()
+        elif ch in "()[]{}":
+            if hole and ch == "}" and depth == 0:
+                return out, i
+            depth += (ch == "{") - (ch == "}")
+            kind = "o"
+        if kind:
+            out.append((i, j, kind))
+        if kind != "c" and not ch.isspace():
+            last = ch * 2 if ch in "+-" and last == ch and code[i - 1] == ch else code[i:j]  # 'i++ / 2'의 '/'는 나눗셈이다
+        i = j
+    return out, len(code)
 
 
 def _filled(text: str, names: dict[str, str], language: str) -> str:
@@ -652,8 +701,8 @@ def _holes(body: str, names: dict[str, str], language: str) -> str:
             continue
         lead = "{" if language == "python" else "${"
         if body.startswith(lead, i):
-            end = _close(body, i + len(lead) - 1)
-            if end < 0:
+            end = _close(body, i + len(lead) - 1) if language != "javascript" else _js_lex(body, i + 2, True)[1]  # JavaScript는 ${…} 안의 중첩 템플릿·문자열의 '}'를 세지 않는다
+            if end < 0 or end >= len(body):
                 out.append(body[i:])
                 break
             inner = body[i + len(lead):end]
@@ -754,7 +803,7 @@ def scoped_names(references: list[str], language: str, program: bool = False) ->
 
 
 def composed_parts(blocks, codes: dict, language: str, names: list | None = None, program: bool = False, starter: str = "", trusted: bool = True) -> list[list]:
-    """블록 칸의 글을 실행되는 한 파일의 조각으로 [[블록 순번, 글], …](글이 빈 블록은 없다). 블록 코드 확인이 잇는 것과 같은 framed를 쓴다.
+    """블록 칸의 글을 실행되는 한 파일의 조각으로 [[블록 순번, 글], …](글이 빈 블록은 틀 줄만, 틀도 없으면 빠진다). 블록 코드 확인이 잇는 것과 같은 framed를 쓴다.
     조각마다 알맹이 첫 줄 위에 블록 주석을 그 줄의 들여쓰기로 넣는다. names: 블록마다 보여 줄 이름(없으면 종류). program: 문항이 표준 입출력 방식이다.
     trusted가 거짓이면(튜터의 풀이를 확인하지 못했다) 계획 코드의 틀을 믿지 않고 시작 코드(starter)의 틀 안에 내 블록을 차례로 놓는다:
     블록마다 내 글 맨 앞의 틀 줄(진입 머리·가져오기)을 떼고(_my_head. 뗀 가져오기는 맨 위로), 끝 블록에서 시작 코드의 꼬리와 같은 줄을 떼어(_drop_tail)
@@ -764,8 +813,14 @@ def composed_parts(blocks, codes: dict, language: str, names: list | None = None
     unit = plan_unit(refs, language)
     mark = "#" if language == "python" else "//"
     items = [(i, ((codes.get(block.id) or {}).get("code") or "").rstrip()) for i, block in enumerate(blocks)]
-    items = [(i, code) for i, code in items if code.strip()]
     frame = frame_of(starter, language, program) if not trusted and starter.strip() else None
+    shells = {}  # 글이 빈 블록은 계획 코드의 틀(머리·꼬리)만 둔다(블록 코드 확인의 '내 블록만 이은 프로그램'과 같다). 빼면 그 블록이 닫던 괄호·main() 부르기가 빠졌다
+    for i, code in items:
+        if frame is None and not code.strip() and refs[i].strip() and any(other.strip() for _, other in items):  # 적은 블록이 하나도 없으면 모을 것이 없다
+            shell = frame_of(refs[i], language, program)
+            if any(row.strip() for row in [*shell["head"], *shell["tail"]]):
+                shells[i] = [*shell["head"], *shell["tail"]]
+    items = [(i, code) for i, code in items if code.strip() or i in shells]
     if frame is not None:
         extra, bodies = [], []
         for _, code in items:
@@ -779,6 +834,9 @@ def composed_parts(blocks, codes: dict, language: str, names: list | None = None
         if frame is not None:
             lines = placed(bodies[n], frame["indent"], frame["outer"], 0, frame["tab"])
             lines = [*(extra + frame["head"] if n == 0 else []), *lines, *(frame["tail"] if n == len(items) - 1 else [])]
+        elif i in shells:
+            out.append([i, "\n".join(shells[i])])
+            continue
         else:
             lines = framed(code, refs[i], language, program, unit).split("\n") if refs[i].strip() else code.split("\n")
         at = next((k for k, row in enumerate(lines) if row.strip() and _plain(row, language) and not frame_line(row, language)), 0)
