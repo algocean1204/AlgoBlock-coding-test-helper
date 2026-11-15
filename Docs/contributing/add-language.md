@@ -14,8 +14,9 @@
 8. `app/ui/problemkit.py`의 확장자 표 `EXT`와 `load`가 읽는 확장자 목록에 더한다.
 9. `app/ui/casegen.py`의 효율성 상한 `LIMIT`에 더한다. 없으면 `limit_of`가 KeyError를 낸다.
 10. `app/ui/app.js`의 표시 이름 `LANG`, 도구 안내 `TOOL`, 언어 짐작 `LOOKS`, 중괄호를 쓰는 언어 목록 `BRACE_LANGS`에 더한다.
-11. 선택: `app/ui/server.py`의 실행 오류 풀이 표 `HINTS`와 `FAMILY`에 더한다.
-12. 선택(macOS 앱): 새 도구가 Finder로 연 앱의 기본 PATH에 없는 곳에 깔린다면 `app/packaging/launcher.py`의 PATH 목록에 더한다.
+11. `app/ui/highlight.js`의 언어 표 `L`에 주석·문자열 규칙과 키워드를 더하고, `app/ui/test_highlight.js`의 `EXT`와 대표 토큰 `CASES`에 더한다.
+12. 선택: `app/ui/server.py`의 실행 오류 풀이 표 `HINTS`와 `FAMILY`에 더한다.
+13. 선택(macOS 앱): 새 도구가 Finder로 연 앱의 기본 PATH에 없는 곳에 깔린다면 `app/packaging/launcher.py`의 PATH 목록에 더한다.
 
 서버의 언어 목록과 도구 확인은 `judge.LANGUAGES`를 그대로 쓰므로 `server.py`의 목록은 고치지 않는다.
 
