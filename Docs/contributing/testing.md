@@ -89,6 +89,7 @@ cd app && python3 ui/problemkit.py check ui/problems/<주제>
 4. 임베딩 색인 시간을 잰다. 모델을 올리는 시간과 기본 문제 글 75개를 넣는 시간을 작업 요약에 적는다. 기준값은 두지 않는다.
 5. 서버를 소스(`python ui/server.py`)로 띄워 기본 문제 하나(`builtin.json`의 첫 문제)에 실린 Python 풀이를 `Invoke-RestMethod`로 제출한다. 통과(`ok`)와, 실행 제한을 걸지 못했다는 알림(`notice`)이 없는지 본다. 모델은 부르지 않는다.
 6. `build_win.ps1`로 exe를 빌드한다. 해시 파일 `SHA256SUMS-windows-x64`도 만든다.
+   빌드가 성공하면 릴리스 이름의 사본 `AlgoBlock-windows-x64.exe`와 `SHA256SUMS-windows-x64`를 산출물(`AlgoBlock-windows-x64`)로 7일 동안 남긴다. PR의 실행 화면(Actions)에서 내려받을 수 있다.
 7. 빌드한 exe를 `--server`로 띄워 5와 같이 제출한다.
 8. 업데이트의 바꿔 끼우기를 빌드한 exe의 사본 둘(수정 시각만 다르다)로 끝까지 본다(`python ui/test_update.py exe <exe>`). 성공: 옛 앱이 끝나면 새 exe로 바꿔 열고, 새 앱의 `/`가 200을 준다. 되돌리기: 새 앱의 포트를 막아 응답하지 않게 하면 새 앱을 끝내고 옛 exe를 되돌려 연다. 새 앱이 응답하기까지 걸린 시간을 작업 요약에 적는다. 이때 새 앱은 창 모드로 열린다.
 
