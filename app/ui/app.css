@@ -973,6 +973,9 @@ a.lv.done:hover { background: var(--lvc); color: var(--on-lv); filter: brightnes
 .btn-info { display: inline-flex; align-items: center; gap: 4px; }
 .info { padding: 12px 14px; border-radius: var(--r-md); background: var(--fill); color: var(--text); font-size: 13.5px; line-height: 1.55; } .info[hidden] { display: none; }
 .info dl { display: grid; grid-template-columns: 6.5em minmax(0, 1fr); gap: 6px 10px; } .info dt { color: var(--muted); font-weight: 600; } .info dd { margin: 0; }
+/* 칸이 150px로 접힌 혼자 풀기에서는 설명을 칸 안에 펴지 않고 화면 오른쪽 위에 겹침 상자로 접힌 칸 왼쪽에 띄운다(좁은 칸에서 글이 한 글자씩 갈라지고 ⓘ를 가리지 않게) */
+.panes.railed .head-info { position: fixed; right: 180px; top: 150px; z-index: 20; width: min(380px, calc(100vw - 196px)); padding: 0; }
+.panes.railed .head-info .info { margin: 0; background: var(--surface); box-shadow: var(--shadow-float); }
 .head-info { padding: 0 16px; } .head-info:empty { display: none; } .head-info .info { margin: 0 0 8px; }
 #way-info { display: inline-flex; align-items: center; margin: 0 auto 0 -4px; } #way-info:empty { display: none; }
 
