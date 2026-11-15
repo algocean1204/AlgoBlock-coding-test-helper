@@ -1752,6 +1752,23 @@ class StarterFrameTest(unittest.TestCase):
         parts = composed_parts(blocks, {"b1": {"code": "int total = 0;"}, "b2": {"code": "return total;"}}, "java", starter=starter)
         self.assertTrue(parts[0][1].startswith("import java.util.ArrayDeque;\nimport java.util.*;"), parts[0][1])
 
+    def test_empty_blocks_keep_only_their_frame_when_composed(self):
+        """빈 블록(튜터가 건너뛰어도 된다고 한 뒤 블록)은 계획 코드의 틀 줄만 남긴다: 그 블록이 닫던 괄호와 main() 부르기가 모은 코드에 남는다(블록 코드 확인의 '내 블록만 이은 프로그램'과 같다)."""
+        from ..common.solution import composed_parts, spliced
+
+        java = ["import java.util.*;\n\nclass Solution {\n    public int solution(int[] a) {\n        int total = 0;", "        for (int x : a) total += x;",
+                "        return total;\n    }\n}"]
+        blocks = [fakes.block(n + 1, f"b{n + 1}", ref) for n, ref in enumerate(java)]
+        codes = {"b1": {"code": "int total = 0;"}, "b2": {"code": "for (int x : a) total += x;\nreturn total;"}}
+        text = "\n".join(part for _, part in composed_parts(blocks, codes, "java"))
+        self.assertEqual((text.count("{"), text.count("}"), text.rstrip().endswith("    }\n}")), (2, 2, True), text)
+        self.assertEqual("\n".join(row for row in text.split("\n") if "// 블록" not in row),
+                         spliced(java, 1, codes["b2"]["code"], "java", {0: "int total = 0;"}, own_only=True))
+        py = ["import sys\n\ndef main():\n    n = int(sys.stdin.readline())", "    print(n * 2)", "    return\n\nmain()"]
+        blocks = [fakes.block(n + 1, f"b{n + 1}", ref) for n, ref in enumerate(py)]
+        parts = composed_parts(blocks, {"b1": {"code": "n = int(sys.stdin.readline())"}, "b2": {"code": "print(n * 2)"}}, "python", program=True)
+        self.assertEqual((parts[-1][0], parts[-1][1].strip()), (2, "main()"))  # 빈 끝 블록의 main() 부르기
+
     def test_unverified_guide_composes_into_the_starter_frame(self):
         from ..common.solution import composed_parts
 

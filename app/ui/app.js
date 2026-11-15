@@ -1078,7 +1078,7 @@ const slowOnlyOf = (r) => !r.ok && !r.run && r.cases.length > 0 && !!r.score && 
 /** '끝까지 내 방식으로 쓰기'가 지금 보이는 튜터 차례(가이드)에 켜져 있다. */
 const ownWayOn = () => !!S.ownWay && S.mode === "guide" && S.talk === "guide";
 /** 튜터 블록을 다 열고(의자는 다 찾고) 빈 칸이 없다: 모아서 실행할 때. */
-const blocksReady = () => S.session.blocks.length > 0 && (S.mode === "chair" ? allFound() : S.session.open_count >= S.session.blocks.length) && !emptyBlocks().length;
+const blocksReady = () => S.session.blocks.length > 0 && (S.mode === "chair" ? allFound() : S.session.open_count >= S.session.blocks.length || passedAloneAt() >= 0) && !emptyBlocks().length;
 
 /** 지금 가장 먼저 할 일 하나. 그 단추만 채워서 보여 준다. */
 function nextAction() {
@@ -1252,11 +1252,22 @@ function warnBraces(parts) {
   if (n || box.textContent.startsWith("모은 코드의 중괄호")) box.hidden = !n; // 다시 모아 맞으면 지난 알림을 걷는다
 }
 
-/** 열린 블록 가운데 코드 칸이 빈 것의 순번(0부터). 잠긴 블록과, 의자에서 아직 찾지 못한 지금 블록(칸이 없다)은 보지 않는다. */
+/** 튜터가 '지금까지 쓴 코드만으로 이미 통과해요'(엔진 ALONE_OK)라 말한 마지막 확인의 블록 순번(0부터). 그 뒤 블록은 건너뛰어도 된다고 했다. 없으면 -1. */
+function passedAloneAt() {
+  let at = -1;
+  for (const chat of [S.session.guide, S.session.chair]) chat.forEach((m, n) => {
+    if (m.role === "service" && m.text.startsWith("지금까지 쓴 코드만으로 이미 통과해요") && n > 0 && chat[n - 1].role === "user") at = Math.max(at, chat[n - 1].block_index);
+  });
+  return at;
+}
+
+/** 열린 블록 가운데 코드 칸이 빈 것의 순번(0부터). 잠긴 블록과, 의자에서 아직 찾지 못한 지금 블록(칸이 없다), 튜터가 건너뛰어도 된다고 한 블록(passedAloneAt 뒤)은 보지 않는다. */
 function emptyBlocks() {
   harvest();
-  return S.session ? S.session.blocks.map((b, i) => [b, i, blockState(b, i)])
-    .filter(([b, , state]) => state !== "locked" && !(state === "current" && S.talk === "chair") && !((S.blockCode[b.id] || {}).code || "").trim()).map(([, i]) => i) : [];
+  if (!S.session) return [];
+  const alone = passedAloneAt();
+  return S.session.blocks.map((b, i) => [b, i, blockState(b, i)])
+    .filter(([b, i, state]) => state !== "locked" && !(state === "current" && S.talk === "chair") && !(alone >= 0 && i > alone) && !((S.blockCode[b.id] || {}).code || "").trim()).map(([, i]) => i);
 }
 const gapText = (gaps) => `블록 ${gaps.map((i) => i + 1).join(", ")}의 코드 칸이 비어 있어요. 직접 적거나 ‘이 블록 채우기’를 눌러 주세요.`;
 
