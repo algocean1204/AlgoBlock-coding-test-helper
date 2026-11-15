@@ -2568,6 +2568,8 @@ def main() -> None:
         raise AssertionError("받을 새 버전이 없으면 거절한다")
     except server.Refuse as exc:
         assert exc.status == 409
+    import test_single  # 앱을 두 번 켰을 때
+    test_single.run()
     color_tokens()
     scheme_setting()
     window_background()
