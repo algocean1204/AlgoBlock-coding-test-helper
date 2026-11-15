@@ -2209,7 +2209,7 @@ const KEY_LABEL = { claude: "Claude", openai: "OpenAI" };
 const keyName = () => document.querySelector('input[name="keyname"]:checked').value;
 /** 고른 공급자의 키가 들어 있을 때만 '지우기'를 보인다(공급자를 바꾸면 확인은 접는다). */
 function renderKeyDelete() {
-  const name = keyName(), has = !!(ACCOUNTS && ACCOUNTS.keys[name]);
+  const name = keyName(), has = !!(ACCOUNTS && ACCOUNTS.keys_saved[name]); // 화면에서 넣은 키만 지울 수 있다(.env·환경 변수의 키는 아니다)
   $("key-delete-row").hidden = !has;
   $("key-delete").textContent = `넣은 ${KEY_LABEL[name]} 키 지우기`;
   $("key-delete-ask").textContent = `이 기기에 넣은 ${KEY_LABEL[name]} 키를 지울까요? 다른 키는 그대로예요.`;
@@ -2217,7 +2217,10 @@ function renderKeyDelete() {
   $("key-delete-confirm").hidden = true;
 }
 async function deleteKey() {
-  const name = keyName(), r = await accounts("/api/key/delete", { name }, `${KEY_LABEL[name]} 키를 지웠어요.`);
+  const name = keyName();
+  $("key-delete-yes").disabled = $("key-delete-no").disabled = true; // 요청 중에는 다시 누르지 못하게
+  const r = await accounts("/api/key/delete", { name }, `${KEY_LABEL[name]} 키를 지웠어요.`);
+  $("key-delete-yes").disabled = $("key-delete-no").disabled = false;
   if (r.ok && ACCOUNTS.keys[name]) $("conn-note").textContent = `${KEY_LABEL[name]} 키를 지웠어요. 그래도 .env나 환경 변수에 키가 있어 계속 연결돼 있어요.`;
   $("conn-toggle").focus();
 }

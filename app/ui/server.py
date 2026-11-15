@@ -519,6 +519,7 @@ def accounts() -> dict:
                      "model": model, "model_label": themes.label(model)})
     return {"client": STATE["client"], "dev": dev_client(), "model": os.environ.get("ALGOBLOCK_LLM_MODEL", ""), "chatgpt": bool(chatgpt.get("connected")), "chatgpt_note": chatgpt.get("error") or "", "connected": connected(),
             "keys": {name: bool(os.environ.get(env)) for name, env in KEYS.items()},
+            "keys_saved": {name: env in read_json(KEY_FILE, {}) for name, env in KEYS.items()},  # 화면에서 넣은 키(keys.json에 있는 것. 지울 수 있는 것)
             "tour_seen": bool(read_json(PREFS_FILE, {}).get("tour_seen")), "language": last_language(),
             "themes": rows, "tiers": [{"key": tier, "label": themes.label(themes.model_of(tier))} for tier in themes.TIERS],
             "topics": [{"key": key, "name": theme_name(key)} for key in ALGORITHMS]}  # 등록 화면의 주제 고르기
@@ -2240,6 +2241,7 @@ def handle(path: str, body: dict) -> tuple[int, dict]:
         if os.environ.get(env) == saved[env]:  # 환경 변수의 값이 다른 것이면(밖에서 준 키) 그대로 둔다
             os.environ.pop(env)
         drop_key(env)
+        load_keys()  # .env에 같은 공급자의 키가 있으면 다시 올린다(지운 뒤의 연결 상태가 실제와 같게)
         return 200, accounts()
     if path == "/api/update":  # 새 버전: 상태·확인·받기·바꾸기(action)
         try:

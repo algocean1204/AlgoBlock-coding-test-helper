@@ -1536,6 +1536,14 @@ def key_flow() -> None:
             raise AssertionError("넣지 않은 키를 지울 수는 없다")
         except server.Refuse as exc:
             assert exc.status == 409 and exc.code == "key_outside", exc  # 화면에서 넣은 것이 아니면 환경(.env)은 건드리지 않는다
+        env_file = server.DATA / ".env"  # .env에도 같은 공급자의 키가 있으면: 지운 뒤에는 그 키로 연결된 채이고, 지울 수 있는 키(keys_saved)는 아니다
+        env_file.write_text("OPENAI_API_KEY=sk-from-dotenv\n", encoding="utf-8")
+        try:
+            assert call("/api/key", name="openai", value=openai)[1]["keys_saved"] == {"claude": True, "openai": True}
+            got = call("/api/key/delete", name="openai")[1]
+            assert got["keys"]["openai"] and got["keys_saved"] == {"claude": True, "openai": False} and os.environ["OPENAI_API_KEY"] == "sk-from-dotenv", got
+        finally:
+            env_file.unlink()
         os.environ["OPENAI_API_KEY"] = "sk-outside"  # 밖(환경 변수)에서 준 키는 파일에 없으니 지우지 않는다
         assert call("/api/accounts")[1]["keys"]["openai"] and os.environ["OPENAI_API_KEY"] == "sk-outside"
         assert call("/api/key/delete", name="claude")[1]["keys"] == {"claude": False, "openai": True} and not server.read_json(server.KEY_FILE, {})
