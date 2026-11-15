@@ -122,6 +122,10 @@ function errorNote(error) {
   return { type: "error", text, conn: error.code === "llm_not_configured" || error.code === "llm_auth_failed" }; // 키가 틀렸으면 연결 창으로 가는 단추
 }
 
+/** 도움 없이 푼 문제의 기준 한 줄(#111). 기본 문제를 이번 풀이에서 아직 도움 없이 풀고 있을 때만 보인다. 서버가 준 값에, 이 화면에서 방금 쓴 도움을 더해 거른다. */
+const talkedWith = () => !!S.session && ((S.session.chair || []).length > 0 || (S.session.guide || []).length > 0 || !!S.session.explain);
+const aidOpen = () => !!S.problem && S.problem.builtin && S.problem.study.unaided_open && !(S.solo && S.solo.seen) && !talkedWith();
+const aidNote = () => (aidOpen() ? '<p class="aid-note hint">힌트·튜터·해설을 쓰고 통과하면 ‘도움 받아 통과’로 남아요. 준비도는 도움 없이 통과한 문제만 세요.</p>' : "");
 const noteHtml = (n) => !n ? "" : `<div class="note ${n.type || ""}" role="${n.type === "error" ? "alert" : "status"}"><span>${esc(n.text)}</span>${n.conn ? '<button type="button" class="btn small" id="note-conn">연결하기</button>' : ""}${n.again ? '<button type="button" class="btn small" id="prep-again" data-model>다시 준비</button>' : ""}</div>`;
 const PREP_FAILED = { type: "error", text: "튜터가 풀이 순서를 준비하지 못했어요.", again: true }; // 보낸 것이 없으니 '한 번 더 보내 주세요'라고 하지 않는다
 const say = (text) => { $("status").textContent = text || ""; };
@@ -1093,7 +1097,8 @@ function renderCode() {
       : S.codeAsk === "pull" ? (S.pullNudge ? "블록 칸의 코드를 아직 모으지 않았어요 — 모을까요? ‘코드 전체’ 칸의 코드는 모은 코드로 바뀌어요." : "‘코드 전체’ 칸의 코드를 블록을 모은 코드로 바꿀까요?") : back ? "코드 칸을 시작 코드로 되돌릴까요?" : "코드 칸을 비울까요?";
     $("code-yes").textContent = S.codeAsk === "restore" ? "되돌리기" : S.codeAsk === "pull" ? (S.pullNudge ? "모으기" : "바꾸기") : back ? "시작 코드로" : "비우기";
   }
-  $("p-count").textContent = p.submitted ? `통과 ${p.passed} · 제출 ${p.submitted}` : "";
+  const aided = p.builtin && !p.study.passed_now && !aidOpen() && (p.study.hints_seen > 0 || p.study.solution_seen || talkedWith()); // 이번 풀이에서 도움을 썼다
+  $("p-count").textContent = [p.submitted ? `통과 ${p.passed} · 제출 ${p.submitted}` : "", aided ? "도움 받아 푸는 중" : ""].filter(Boolean).join(" · ");
   $("old-feedback").hidden = !S.hasFeedback;
   renderBlocks();
   renderCodePane();
@@ -1748,7 +1753,7 @@ function renderResult() {
     else if (S.solo && S.solo.total) acts += `<button type="button" id="result-hint" class="btn${finds ? " quiet" : ""}" title="${tutorWay(S.mode) ? "푸는 방식이 혼자 풀기로 바뀌고, 풀이를 처음부터 하나씩 짚는 힌트를 열어요" : "풀이를 처음부터 하나씩 짚는 힌트예요"}">${ico("i-bulb")}풀이 힌트 보기${tutorWay(S.mode) ? " · 혼자 풀기로 바뀌어요" : ""}</button>`;
     if (!r.run && ai) acts += '<button type="button" id="to-feedback" class="btn quiet" data-model>피드백 받기</button>';
   }
-  if (acts) html += `<div class="result-actions">${acts}</div>`;
+  if (acts) html += `<div class="result-actions">${acts}</div>${!r.ok && total && ai ? aidNote() : ""}`; // 틀린 곳 같이 찾기·힌트를 누르기 전에
   const right = !r.ok && ((S.debug && S.debug.open) || (S.mode === "solo" && S.soloOpen === "hint"));
   if (right) html += '<p class="flow-note" role="status">오른쪽에서 이어져요 →</p>'; // 도움은 오른쪽 칸에 뜬다
   const guide = !r.ok && total ? failGuide(r, slowOnly) : "";
@@ -1848,7 +1853,7 @@ function renderTutor() {
   $("solo-tabs").hidden = $("solo-fold").hidden = !solo || !S.soloOpen || finding;
   for (const tab of document.querySelectorAll("#solo-tabs [role=tab]")) selectTab(tab, tab.dataset.solo === S.soloOpen);
   $("way-box").hidden = finding || !choosing;
-  if (choosing) renderWay();
+  if (choosing) { renderWay(); $("way-box").insertAdjacentHTML("beforeend", aidNote()); }
   $("rail").hidden = !railed;
   if (railed && S.solo) $("rail-hint").lastChild.textContent = S.solo.total ? `힌트 ${S.solo.seen}/${S.solo.total}` : "힌트";
   $("solo-box").hidden = finding || !solo || !S.soloOpen;
@@ -1868,7 +1873,7 @@ function renderTutor() {
     const preparing = !connected() ? "" : S.problem.preparing ? `<div class="note" role="status">${DOTS}<span>튜터가 이 문제의 풀이 순서를 준비하고 있어요. <span class="secs" data-since="${S.prepAt}">${since(S.prepAt)}초</span> · <span data-late="30초쯤 걸려요">${late(since(S.prepAt), "30초쯤 걸려요")}</span></span></div>`
       : S.problem.prepare_failed && !S.note.start ? noteHtml(PREP_FAILED) : ""; // 뒤에서 준비하다 실패했다: 다시 준비(미리 만들기를 다시 탄다)
     $("start-box").innerHTML = `<h3>${title}</h3><p>${text}</p>
-      <button type="button" id="start" class="btn" data-model>${button}</button>
+      <button type="button" id="start" class="btn" data-model>${button}</button>${aidNote()}
       ${S.busy && S.busy.where === "start" ? `<div class="note">${waitLine("start").replace("보통 5~25초 걸려요", `<span data-late="처음은 30초쯤 걸려요">${late(secs(), "처음은 30초쯤 걸려요")}</span>`)}</div>` : preparing}${noteHtml(S.note.start)}`;
     return;
   }
@@ -1946,7 +1951,7 @@ function renderSolo() {
       // 머리: 블록 번호와 종류, 그 블록의 힌트를 모두 본 뒤에는 블록 이름(서버가 그때만 보낸다). '단계'는 난이도에만 쓴다
       hints += `<p class="hint">풀이를 처음부터 차례로 짚어요. 답을 알려 주지 않고 생각할 거리를 하나씩 드려요. 풀이의 블록마다 힌트가 세 개씩 있어요.</p>
         ${o.shown.length ? `<ol class="hints">${o.shown.map((h) => `<li><span class="hint-no">${h.kind ? kindChip(h.kind) : ""}블록 ${h.block}${h.name ? ` · ${esc(h.name)}` : ""} · 힌트 ${h.step}</span><p>${esc(h.hint)}</p></li>`).join("")}</ol>` : ""}
-        ${o.seen >= o.total ? '<p class="hint">힌트를 모두 봤어요. 여기까지 보고도 막히면 ‘해설’을 열어 보세요.</p>' : `<button type="button" id="solo-hint" class="btn">${o.shown.length ? "다음 힌트 보기" : "첫 힌트 보기"}</button>`}`;
+        ${o.seen >= o.total ? '<p class="hint">힌트를 모두 봤어요. 여기까지 보고도 막히면 ‘해설’을 열어 보세요.</p>' : `${aidNote()}<button type="button" id="solo-hint" class="btn">${o.shown.length ? "다음 힌트 보기" : "첫 힌트 보기"}</button>`}`;
     }
     $("solo-box").innerHTML = hints + "</section>";
     return;
