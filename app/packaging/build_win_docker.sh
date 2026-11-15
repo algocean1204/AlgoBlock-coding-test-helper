@@ -12,4 +12,8 @@ docker run --rm --platform linux/amd64 -e WINEDEBUG=-all -v "$PWD":/src:ro -v "$
   cd /src/app/packaging &&
   wine python -m PyInstaller --noconfirm --clean --log-level ERROR --distpath "Z:\\out" --workpath "C:\\algoblockbuild" algoblock.spec'
 cp app/packaging/dist-win/AlgoBlock.exe app/packaging/dist-win/AlgoBlock-windows-x64.exe  # 릴리스에 올리는 고정 이름의 사본
-ls -lh app/packaging/dist-win/AlgoBlock.exe app/packaging/dist-win/AlgoBlock-windows-x64.exe
+# 그 사본의 SHA-256을 build_win.ps1과 같은 이름·꼴로 적는다. 리눅스는 sha256sum, macOS는 shasum
+cd app/packaging/dist-win
+if command -v sha256sum >/dev/null; then sha256sum AlgoBlock-windows-x64.exe; else shasum -a 256 AlgoBlock-windows-x64.exe; fi > SHA256SUMS-windows-x64
+ls -lh AlgoBlock.exe AlgoBlock-windows-x64.exe
+cat SHA256SUMS-windows-x64

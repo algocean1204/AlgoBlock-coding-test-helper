@@ -218,7 +218,15 @@ class TutorTest(unittest.TestCase):
             self.assertEqual(tutor.store.load("p2").plan.link, "")
             for task in ("plan.solve", "plan.draft_blocks"):  # 지난 문항의 흐름이 풀이와 블록 프롬프트에 없다
                 self.assertNotIn("NEXT_SECRET", fakes.prompt(fake, task))
-            self.assertNotIn("개수 세기(딕셔너리)", fakes.prompt(fake, "plan.solve"))  # 풀이 가이드에는 패턴 지식도 넣지 않는다
+            # 풀이 가이드에는 패턴 지식도 넣지 않는다: 뼈대(패턴·기술·태그)와 불러온 참고를 바꿔도 풀이 프롬프트는 같다
+            from dataclasses import replace
+
+            from ..plan.prompts import solve_messages
+            from ..state import Abstract
+            plain = tutor.store.load("p2")
+            known = {"ctx": replace(plain, patterns=["dup_names"], skills=["two_d_list"]), "strategy": "fresh", "recall": {"patterns": ["- 개수 세기(딕셔너리)"], "weak": ["시작 값 잘못"]},
+                     "abstract": Abstract(spec="x", patterns=["dup_names"], tags=["count_map", "bfs"], level=3)}
+            self.assertEqual(solve_messages(known), solve_messages({"ctx": replace(plain, patterns=[], skills=[]), "strategy": "fresh"}))
             tutor.store.add_submission("p1", "def solution(a, b): ...", False)  # 이제 풀어 본 문항이다
             tutor.store.put_problem("p3", "python", "놀이공원 이야기로 바꾼 같은 문제.", title="놀이공원")
             tutor.store.put_fact("p3", abstract["spec"], ["dup_names"])
@@ -253,7 +261,7 @@ class TutorTest(unittest.TestCase):
             fake.scripts["plan.solve"] = [SOLVED]
             tutor.turn("p2", "chair", "start")
             self.assertEqual(tutor.store.load("p2").plan.link, "추천 서가에 꽂히는 책: 입력받기 → NEXT_SECRET")
-            index.client.delete_collection("problem")  # 모델이 바뀌어 색인이 비었다고 치면
+            index.clear()  # 모델이 바뀌어 색인이 비었다고 치면
             self.assertEqual(tutor.reindex(), 2)
             self.assertEqual(index.count(), 2)
         finally:
@@ -685,7 +693,7 @@ class TutorTest(unittest.TestCase):
                     store.close()
 
             with ThreadPoolExecutor(max_workers=4) as pool:
-                self.assertEqual(list(pool.map(open_one, range(4))), [9] * 4)
+                self.assertEqual(list(pool.map(open_one, range(4))), [10] * 4)
 
     def test_old_database_migrates(self):
         conn = sqlite3.connect(self.path)
@@ -698,7 +706,7 @@ class TutorTest(unittest.TestCase):
         conn.close()
         tutor = Tutor(self.path, client=FakeLlm({}))
         try:
-            self.assertEqual(tutor.store.conn.execute("PRAGMA user_version").fetchone()[0], 9)
+            self.assertEqual(tutor.store.conn.execute("PRAGMA user_version").fetchone()[0], 10)
             # 버전 8: 판정 '?'(확인 전)를 담는다. 옛 블록 상태는 그대로 옮겨진다(짝은 기본값)
             self.assertEqual([tuple(row) for row in tutor.store.conn.execute("SELECT code, verdict, renames_json FROM block_state")], [("x = 1", "Y", "[]")])
             tutor.store.conn.execute("UPDATE block_state SET verdict='?'")
@@ -708,12 +716,58 @@ class TutorTest(unittest.TestCase):
             tutor.store.add_submission("p1", "코드2", True)
             self.assertEqual([(row["language"], row["status"], row["detail"]) for row in tutor.store.submissions()],
                              [("java", "timeout", {"accuracy": [3, 5]}), ("python", "passed", {})])
-            self.assertEqual(tutor.store.study("p1"), {"hints_seen": 0, "solution_at": None, "solution_before_pass": False})
+            # 버전 10: 대화가 있던 문항은 학습 기록 행이 생기고, 가장 이른 대화 시각이 도움을 처음 쓴 시각이 된다
+            none = {"solution_at": None, "solution_before_pass": False, "reset_at": None, "hints_at_reset": 0}
+            self.assertEqual(tutor.store.study("p1"), {"hints_seen": 0, **none, "help_first_at": "t", "help_after_reset_at": "t"})
             tutor.store.set_study("p1", hints_seen=2)
             tutor.store.set_study("p1", solution_at="t", solution_before_pass=True)
-            self.assertEqual(tutor.store.study("p1"), {"hints_seen": 2, "solution_at": "t", "solution_before_pass": True})
+            self.assertEqual(tutor.store.study("p1"), {"hints_seen": 2, **none, "solution_at": "t", "solution_before_pass": True, "help_first_at": "t", "help_after_reset_at": "t"})
             tutor.store.set_language("p1", "java")
             self.assertEqual(tutor.store.load("p1").language, "java")
+        finally:
+            tutor.close()
+
+    def test_help_times_backfill_and_marks(self):
+        """버전 10: 도움을 처음 쓴 시각. 옛 행은 남은 기록으로 채운다(힌트는 시각이 없어 가장 이른 시각, 해설·대화는 더 이른 것).
+        도움 표시는 비어 있을 때만 적고, '처음부터'는 그 뒤의 도움을 다시 센다."""
+        from ..store.schema import MIGRATIONS
+
+        conn = sqlite3.connect(self.path)
+        for script in MIGRATIONS[:9]:
+            for statement in script.split(";"):
+                if statement.strip():
+                    conn.execute(statement)
+        conn.execute("PRAGMA user_version=9")
+        conn.execute("INSERT INTO problem(id, language, body) VALUES('p1', 'python', '문제')")
+        conn.execute("INSERT INTO problem(id, language, body) VALUES('p2', 'python', '문제')")
+        conn.execute("INSERT INTO problem(id, language, body) VALUES('p3', 'python', '문제')")
+        conn.execute("INSERT INTO study(problem_id, hints_seen) VALUES('p1', 3)")
+        conn.execute("INSERT INTO study(problem_id, solution_at) VALUES('p2', '2001-01-01T00:00:09+09:00')")
+        conn.execute("INSERT INTO message(problem_id, mode, thread, role, text, at) VALUES('p2','chair','main','user','질문','2001-01-01T00:00:05+09:00')")
+        conn.execute("INSERT INTO study(problem_id) VALUES('p3')")
+        conn.commit()
+        conn.close()
+        tutor = Tutor(self.path, client=FakeLlm({}))
+        try:
+            first = {pid: tutor.store.study(pid)["help_first_at"] for pid in ("p1", "p2", "p3")}
+            self.assertEqual(first, {"p1": "0001-01-01T00:00:00+00:00", "p2": "2001-01-01T00:00:05+09:00", "p3": None})
+            from ..store import sqlite as stored
+
+            with mock.patch.object(stored, "now", return_value="A"):
+                tutor.store.mark_help("p3")
+            with mock.patch.object(stored, "now", return_value="B"):
+                tutor.store.mark_help("p3")
+                tutor.store.mark_reset("p3")
+            study = tutor.store.study("p3")
+            self.assertEqual((study["help_first_at"], study["help_after_reset_at"], study["reset_at"]), ("A", None, "B"))
+            tutor.store.set_study("p3", hints_seen=2)
+            tutor.store.mark_reset("p3")  # 본 힌트 수는 누적으로 남고, 이번 풀이는 그 수부터 센다
+            self.assertEqual((tutor.store.study("p3")["hints_seen"], tutor.store.study("p3")["hints_at_reset"]), (2, 2))
+            tutor.store.set_study("p3", hints_seen=3)
+            self.assertEqual(tutor.store.load("p3").hints_seen, 1)  # 피드백이 읽는 본 힌트 수는 이번 풀이 것
+            tutor.store.set_study("p3", help_first_at=None, help_after_reset_at=None)
+            tutor.store.mark_help("p3", this_try_only=True)  # 이번 풀이에만 도움(첫 풀이의 판정은 그대로)
+            self.assertEqual((tutor.store.study("p3")["help_first_at"], bool(tutor.store.study("p3")["help_after_reset_at"])), (None, True))
         finally:
             tutor.close()
 

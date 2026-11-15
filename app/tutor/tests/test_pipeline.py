@@ -756,6 +756,34 @@ class BlockCheckNewNameTest(unittest.TestCase):
         done, seen = self.turn(blocks, {}, "b1", "for q in ranges:\n    a, b = q\n    s = a * 10", [([[[1, 2]]], 12), ([[[3, 5]]], 35)])
         self.assertEqual((done["block_check"].verdict, sorted(done["block_check"].renames)), ("Y", [["b", "high"], ["s", "start"]]), done["verdict"].seen)
 
+    def test_unpacked_and_indexed_items_pair(self):
+        """풀어 받기('for r, c in xs')와 첨자 받기('for q in xs:' 뒤 'a = q[0]')는 같은 꼴이다. 양쪽에 같이 있는 이름은 자리 후보가 아니다."""
+        from ..common.solution import made_statements, name_candidates
+
+        indexed = "for query in queries:\n    row = query[0]\n    col = query[1]"
+        shape = lambda code, name: next(item[1:] for item in made_statements(code, "python") if item[0] == name)  # noqa: E731
+        for mine, a, b in (("for r, c in queries:\n    s = ''", "r", "c"), ("for q in queries:\n    a, b = q", "a", "b")):
+            self.assertEqual((shape(indexed, "row"), shape(indexed, "col")), (shape(mine, a), shape(mine, b)), mine)
+        self.assertNotEqual(shape(indexed, "query"), shape("for r, c in queries:", "r"))  # 통째로 받은 반복 변수는 그 자리의 값이 아니다
+        for other in ("for q in queries:\n    a, b = q, 0", "for q in queries:\n    q = q[1:]\n    a = q[0]"):  # 오른쪽이 q 하나가 아니다, q를 다시 대입했다
+            self.assertEqual((shape(other, "a")[0], shape(other, "a")[2][0]), ("var", "="), other)
+        words = {"queries", "query", "row", "col", "text", "answer"}
+        self.assertNotIn("queries", name_candidates("for r, c in queries:\n    s = ''", indexed, "python", "row", words))  # 도는 대상은 대입한 이름이 아니다
+        self.assertEqual(name_candidates("total = 0\nseen = {}", "count = {}\ntotal = 0", "python", "count", {"count", "total"})[0], "seen")  # 같은 자리의 total은 계획에도 있다
+        blocks = [fakes.block(1, "질문", "def solution(queries):\n    answer = []\n    for query in queries:\n        row = query[0]\n        col = query[1]\n        text = ''",
+                              "loop", hints=list(fakes.HINTS1)),
+                  fakes.block(2, "답", "        text = text + str(row * 10 + col)\n        answer.append(text)\n    return answer", hints=list(fakes.HINTS2))]
+        done, _ = self.turn(blocks, {}, "b1", "answer = []\nfor r, c in queries:\n    s = ''", [([[[1, 2], [3, 4]]], ["12", "34"])])
+        self.assertEqual((done["block_check"].verdict, sorted(done["block_check"].renames)), ("Y", [["c", "col"], ["r", "row"], ["s", "text"]]), done["verdict"].seen)
+
+    def test_wrong_block_with_leftover_name_is_not_joined(self):
+        """틀린 값(str) + 남는 이름(extra): 어림 짝으로 이은 튜터의 코드 줄에서 오류가 나도 '이어지지 않아요'다(확인 전으로 빼돌리지 않는다)."""
+        blocks = [fakes.block(1, "범위", "def solution(q):\n    start = q[0] * 10\n    high = q[1]", hints=list(fakes.HINTS1)),
+                  fakes.block(2, "답", "    return start + high", hints=list(fakes.HINTS2))]
+        done, _ = self.turn(blocks, {}, "b1", "s = str(q[0] * 10)\nhi = q[1]\nextra = 0", [([[1, 2]], 12), ([[3, 5]], 35)])
+        self.assertTrue(not done["verdict"].unsure and done["verdict"].seen.startswith("튜터의 코드(") and NOT_JOINED in done["verdict"].seen, done["verdict"].seen)
+        self.assertEqual((done["block_check"].verdict, done["block_check"].tries), ("N", 1))
+
     def test_try_seconds_and_same_failure(self):
         """6초가 지나면 새 시도를 하지 않는다(시계를 넣어서). 모든 시도가 같은 실패면 그 실패(짝과 상관없다), 확실한 짝 + 내 코드의 오류면 그 오류."""
         from unittest.mock import patch
@@ -1313,6 +1341,83 @@ class HonestCheckTest(unittest.TestCase):
             self.assertEqual(((got["solution"].code, got["solution"].verified), len(seen)), (want, runs))
             self.assertIn(starter, fakes.prompt(fake, "plan.solve"))
 
+    def test_guide_sets_tags_and_level(self):
+        """뼈대의 태그·단계는 정석 가이드가 코드로 정한 것으로 바꾼다(글의 분류 표시에 끌리지 않게). 둘은 모양을 따지지 않고 받아 쓸 수 있는 값만 쓰고
+        (null·"2"·2.0·"bfs"로 가이드를 잃지 않는다), 가이드가 주지 않은 것과 사용자 방법의 가이드는 뼈대 그대로다. 묻지 않는 전략에는 안내도 키도 붙이지 않는다."""
+        from ..llm import FakeLlm, use_llm
+        from ..plan.nodes import solve
+        from ..state import Abstract, LabeledSolved
+
+        fact = Abstract(spec="격자", tags=["grid_move", "bfs"], level=2)
+        solved = lambda tags, level: {"clues": [], "approach": "센다.", "steps": ["센다"], "code": KOTLIN_CODE, "tags": tags, "level": level}  # noqa: E731
+        ctx = fakes.context(problem_text=fakes.KOTLIN_PROBLEM, language="kotlin")
+        check = {"configurable": {"check": lambda pid, code, quick=False: {"status": "passed"}}}
+        for strategy, reply, want in (("fresh", solved(["grid_move", "rule_follow"], 1), (["grid_move", "rule_follow"], 1)),
+                                      ("fresh", solved(None, "2"), (["grid_move", "bfs"], 2)),
+                                      ("fresh", solved("rule_follow", 1.0), (["rule_follow"], 1)),
+                                      ("fresh", solved(["없는 낱말", 3], None), (["grid_move", "bfs"], 2)),
+                                      ("fresh", solved([], 9), (["grid_move", "bfs"], 2)),
+                                      ("fresh", {"clues": [], "approach": "센다.", "steps": ["센다"], "code": KOTLIN_CODE}, (["grid_move", "bfs"], 2)),
+                                      ("keep_flow", solved(["rule_follow"], 1), None)):
+            fake = FakeLlm({"plan.solve": [reply]})
+            with use_llm(fake):
+                got = solve({"ctx": replace(ctx, direct_code="x"), "strategy": strategy, "abstract": fact}, check)
+            self.assertEqual(got["solution"].code, KOTLIN_CODE, reply)  # 가이드는 살아남는다
+            self.assertEqual((got["abstract"].tags, got["abstract"].level) if "abstract" in got else None, want, reply)
+            asked = strategy == "fresh"
+            self.assertEqual(("기법 목록" in fakes.prompt(fake, "plan.solve"), fake.calls[0]["schema"] is LabeledSolved), (asked, asked), strategy)
+
+    def test_unverified_guide_keeps_the_abstract_labels(self):
+        """예시를 통과하지 못했거나 대조에서 다른 가이드는 태그·단계를 덮지 않는다(틀린 코드로 정한 것이다)."""
+        from types import SimpleNamespace
+
+        from ..llm import FakeLlm, use_llm
+        from ..plan.nodes import solve
+        from ..state import Abstract
+
+        fact = Abstract(spec="격자", tags=["grid_move", "bfs"], level=2)
+        reply = {"clues": [], "approach": "센다.", "steps": ["센다"], "code": KOTLIN_CODE, "tags": ["rule_follow"], "level": 1}
+        ctx = fakes.context(problem_text=fakes.KOTLIN_PROBLEM, language="kotlin")
+        failed = {"configurable": {"check": lambda pid, code, quick=False: {"status": "failed", "cases": []}}}
+        differ = SimpleNamespace(mode=lambda pid: "function", run=lambda *a: {"status": "differ", "input": "[1]"}, done=lambda pid, verdict: None)
+        passed = {"configurable": {"check": lambda pid, code, quick=False: {"status": "passed"}, "cross": differ}}
+        for config, scripts in ((failed, {"plan.solve": [reply] * 3}),
+                                (passed, {"plan.solve": [reply] * 3, "plan.brute": [{"code": "x"}], "plan.cases": [{"code": "x"}]})):
+            with use_llm(FakeLlm(scripts)):
+                got = solve({"ctx": ctx, "strategy": "fresh", "abstract": fact}, config)
+            self.assertNotIn("abstract", got)
+
+    def test_program_guide_follows_the_starter_reading(self):
+        """표준 입출력 가이드에도 시작 코드를 넘기고 그 읽기 꼴을 따르게 한다(커서를 블록 사이로 넘기지 않게). 정해 둔 코드를 쓸 때는 넘기지 않는다."""
+        from ..knowledge.ontology import technique_list
+        from ..plan.prompts import LEVEL_TEXT, STARTER_NOTE, solve_messages
+
+        starter = "import sys\ninput = sys.stdin.readline\n\n# 여기에 풀이를 써요\n"
+        state = {"ctx": fakes.context(problem_text=fakes.PROGRAM_PROBLEM, mode="program", starter=starter), "strategy": "fresh"}
+        self.assertIn(f"{STARTER_NOTE['program']}\n{starter}", solve_messages(state)[1]["content"])
+        self.assertNotIn(starter, solve_messages(state, given="print(1)")[1]["content"])
+        # 함수 방식의 프롬프트 끝은 고정이다: 시작 코드 줄은 표준 입출력을 고치기 전과 같고, 정석 가이드(fresh·canonical)에만 태그·단계를 묻는 줄이 더해진다
+        head = "def solution(a, b):\n    answer = 0\n    return answer\n"
+        starter_line = f"시작 코드(사용자가 받는 코드다. 진입 함수의 머리 — 함수 이름, 인자 이름과 차례 — 를 이것 그대로 쓴다):\n{head}"
+        asked = ("tags: 아래 기법 목록에서 위 code가 실제로 쓰는 방법의 id 2~4개. code에 없는 방법은 쓰지 않는다(목록에 없는 낱말도 쓰지 않는다).\n"
+                 f"{technique_list()}\n{LEVEL_TEXT} 위 code가 쓰는 방법으로 정한다.\n"
+                 'JSON {"clues": ["..."], "approach", "steps": ["..."], "code", "tags": [id], "level"}\n')
+        plain = 'JSON {"clues": ["..."], "approach", "steps": ["..."], "code"}\n'
+        for strategy, tail in (("fresh", asked), ("canonical", asked), ("keep_flow", plain)):
+            function = solve_messages({"ctx": fakes.context(problem_text=fakes.PROBLEM, starter=head, direct_code="x"), "strategy": strategy})[1]["content"]
+            self.assertTrue(function.endswith(f"\n{tail}{starter_line}"), (strategy, function[-600:]))
+
+    def test_unpassed_program_guide_asks_to_check_line_breaks(self):
+        """예시를 통과하지 못한 가이드의 까닭: 표준 입출력이면 입력의 줄 나눔도 보라고 한다(줄 단위로 읽는 가이드는 줄 경계가 어긋난 예시에서 떨어진다)."""
+        from types import SimpleNamespace
+
+        from ..plan.nodes import cross_check
+
+        for mode, said in (("program", True), ("function", False)):
+            done = []
+            cross = SimpleNamespace(done=lambda pid, verdict: done.append(verdict))
+            cross_check({"ctx": fakes.context(problem_text=fakes.PROGRAM_PROBLEM, mode=mode)}, None, False, {"cases": []}, None, cross)
+            self.assertEqual("줄 나눔" in done[0]["why"], said, mode)
 
     def test_given_guide_check_has_three_outcomes(self):
         """실린 정답 풀이를 이 기기에서 확인한 결과: 통과, 통과하지 못함, 채점하지 못함(도구·케이스가 없거나 채점기가 없음)."""
@@ -1400,7 +1505,7 @@ class OtherFeatureTest(unittest.TestCase):
             self.assertIn(must, text)
         empty = Submission("s2", "", True)
         done, fake = fakes.go(fakes.make_state("feedback", fakes.context(plan=plan, open_count=1, latest_submission=empty)), {"feedback.analyze": [analysis]})
-        self.assertEqual((done["result"]["strategy"], fakes.tasks(fake)), ("fresh", ["feedback.analyze"]))
+        self.assertEqual((done["result"]["strategy"], fakes.tasks(fake)), (None, ["feedback.analyze"]))  # 코드가 없으면 채점하지 않는다(통과라 전략도 내보내지 않는다)
         fenced, _ = fakes.go(fakes.make_state("feedback", fakes.context(plan=plan, open_count=1, latest_submission=sub)),
                              {"feedback.assess": ["[check]50 Y"], "feedback.analyze": [{**analysis, "similar_hint": "```x```"}]})
         self.assertEqual(fenced["error"].code, "invalid_output")
@@ -1440,6 +1545,40 @@ class OtherFeatureTest(unittest.TestCase):
         from ..feedback.rules import mark_claims
         self.assertEqual(mark_claims("7번째 줄을 고쳤다.", "- 디버그: 틀린 곳은 7번째 줄."), "[확실] 7번째 줄을 고쳤다.")
         self.assertEqual(mark_claims("3번 틀렸다.", "- 본 힌트: 1개"), "[추측] 3번 틀렸다.")  # 기록에 없는 수
+
+    def test_unchecked_block_answers_are_not_stuck(self):
+        """블록 코드 확인의 글에는 판정이 남고, '확인 전'으로 끝난 확인은 막힌 답으로 세지 않는다(표시 없는 옛 기록은 그대로 읽는다)."""
+        from ..common.talk_rules import CHECKED
+        from ..feedback.prompts import PASSED_ADVICE, PASSED_RULE, analyze_messages, record_lines
+        from ..save.nodes import collect
+        from ..state import Verdict
+
+        plan = fakes.planned(fakes.two())
+        for verdict, unsure, mark in ((Verdict(False, unsure=True), True, "?"), (Verdict(True), False, "Y"), (Verdict(False), False, "N")):
+            state = fakes.make_state("turn", fakes.context(plan=plan, open_count=2), mode="guide", event="block_filled", block_id="b1", code="x = 1")
+            rows = collect({**state, "verdict": verdict, "result": {"reply": "말", **({"unsure": True} if unsure else {})}})["changes"]["messages"]
+            self.assertEqual([row["move"] for row in rows if row["role"] == "user"], [CHECKED + mark])
+        held = fakes.service("튜터의 뒤 코드는 값을 `data` 이름으로 이어 써요.", 0, "m1", "blank")
+        marked = replace(fakes.user("x = 1", 0), move=CHECKED + "?")
+        states = {"b1": BlockState("b1", "x = 1", "h", "Y", None, 1)}
+        self.assertEqual(record_lines(fakes.context(guide=[marked, held], block_states=states), plan), [])
+        old = record_lines(fakes.context(guide=[fakes.user("x = 1", 0), held], block_states=states), plan)
+        self.assertTrue(any("넘어가지 못한 답이 1번" in line for line in old), old)  # 표시 없는 옛 기록은 전과 같게 읽는다
+        talk = [fakes.user("모르겠는데 반복을 먼저 할까요", 0), fakes.service("무엇을 세야 할까요?", 0, "m2", "blank")]
+        self.assertTrue(record_lines(fakes.context(guide=talk, block_states=states), plan))  # 말로 막힌 것은 그대로 센다
+        for ok in (True, False):
+            ctx = fakes.context(plan=plan, open_count=2, latest_submission=Submission("s1", "print(1)", ok), block_states=states)
+            prompt = analyze_messages({**fakes.make_state("feedback", ctx), "strategy": "keep_flow"})[1]["content"]
+            self.assertEqual((PASSED_RULE in prompt, PASSED_ADVICE in prompt, "고칠 곳" in prompt.split("advice:")[-1].split("\n")[0]), (ok, ok, not ok))
+        self.assertLess(PASSED_RULE.index("틀릴 입력"), PASSED_RULE.index("다른 방식"))  # 통과해도 틀릴 입력을 먼저 짚는다
+
+    def test_passed_feedback_has_no_strategy_title(self):
+        """통과한 제출의 피드백은 전략을 내보내지 않는다(화면이 '정석 순서로 다시 짜 보기' 같은 전략 제목 대신 기본 제목을 쓴다)."""
+        analysis = {"analysis": "빈 입력이면 어떻게 될까요? 제출은 통과했습니다.", "similar_hint": "h", "advice": "c"}
+        for ok, strategy in ((True, None), (False, "keep_flow")):
+            ctx = fakes.context(plan=fakes.planned(fakes.two()), open_count=2, latest_submission=Submission("s1", "print(1)", ok))
+            done, _ = fakes.go(fakes.make_state("feedback", ctx), {"feedback.assess": ["[check]90 Y"], "feedback.analyze": [analysis]})
+            self.assertEqual(done["result"]["strategy"], strategy, ok)
 
     def test_feedback_record_names_skipped_blocks(self):
         from ..feedback.prompts import record_lines

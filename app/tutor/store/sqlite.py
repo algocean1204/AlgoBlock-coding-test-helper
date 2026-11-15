@@ -90,21 +90,34 @@ class Store:
         return [{"problem_id": r["problem_id"], "ok": bool(r["ok"]), "at": r["at"], "language": r["language"],
                  "status": r["status"] or ("passed" if r["ok"] else "failed"), "detail": json.loads(r["detail_json"] or "{}")} for r in rows]
 
+    STUDY = ("hints_seen", "solution_at", "solution_before_pass", "help_first_at", "help_after_reset_at", "reset_at", "hints_at_reset")
+
     def study(self, problem_id: str) -> dict:
-        """AI 없이 공부한 기록: 본 힌트 수, 해설을 연 시각, 통과 전에 열었는지."""
-        row = self.conn.execute("SELECT hints_seen, solution_at, solution_before_pass FROM study WHERE problem_id=?", (problem_id,)).fetchone()
-        return {"hints_seen": row["hints_seen"] if row else 0, "solution_at": row["solution_at"] if row else None,
-                "solution_before_pass": bool(row["solution_before_pass"]) if row else False}
+        """학습 기록: 본 힌트 수(누적), 해설을 연 시각, 통과 전에 열었는지, 도움(튜터 기능·힌트·해설)을 처음 쓴 시각,
+        마지막 '처음부터'(reset_at) 뒤에 도움을 처음 쓴 시각, 그 '처음부터' 때까지 본 힌트 수(이번 풀이에서 본 힌트 = hints_seen − hints_at_reset)."""
+        row = self.conn.execute(f"SELECT {', '.join(self.STUDY)} FROM study WHERE problem_id=?", (problem_id,)).fetchone()
+        out = {key: row[key] if row else None for key in self.STUDY}
+        return {**out, "hints_seen": out["hints_seen"] or 0, "hints_at_reset": out["hints_at_reset"] or 0, "solution_before_pass": bool(out["solution_before_pass"])}
 
     def set_study(self, problem_id: str, **fields) -> None:
-        """hints_seen, solution_at, solution_before_pass 가운데 준 것만 바꾼다."""
+        """STUDY 가운데 준 것만 바꾼다."""
         now_ = {**self.study(problem_id), **fields}
         self.conn.execute(
-            "INSERT INTO study(problem_id, hints_seen, solution_at, solution_before_pass) VALUES(?, ?, ?, ?) "
-            "ON CONFLICT(problem_id) DO UPDATE SET hints_seen=excluded.hints_seen, solution_at=excluded.solution_at, solution_before_pass=excluded.solution_before_pass",
-            (problem_id, int(now_["hints_seen"]), now_["solution_at"], 1 if now_["solution_before_pass"] else 0),
+            f"INSERT INTO study(problem_id, {', '.join(self.STUDY)}) VALUES(?{', ?' * len(self.STUDY)}) "
+            f"ON CONFLICT(problem_id) DO UPDATE SET {', '.join(f'{key}=excluded.{key}' for key in self.STUDY)}",
+            (problem_id, int(now_["hints_seen"]), now_["solution_at"], 1 if now_["solution_before_pass"] else 0, *(now_[key] for key in self.STUDY[3:6]), int(now_["hints_at_reset"])),
         )
         self.conn.commit()
+
+    def mark_help(self, problem_id: str, this_try_only: bool = False) -> None:
+        """도움(튜터 기능·힌트·해설)을 썼다: 처음 쓴 시각과 마지막 '처음부터' 뒤에 처음 쓴 시각을 비어 있을 때만 적는다.
+        this_try_only: 이번 풀이에만 도움이다(처음 쓴 시각은 그대로. '처음부터' 앞에 내가 남긴 체크포인트를 되살렸을 때)."""
+        study, at = self.study(problem_id), now()
+        self.set_study(problem_id, help_first_at=study["help_first_at"] or (None if this_try_only else at), help_after_reset_at=study["help_after_reset_at"] or at)
+
+    def mark_reset(self, problem_id: str) -> None:
+        """'처음부터': 새 풀이가 시작된다(그 뒤의 도움을 다시 센다). 힌트는 이번 풀이에서 처음부터 다시 연다(본 힌트 수는 누적으로 남는다)."""
+        self.set_study(problem_id, reset_at=now(), help_after_reset_at=None, hints_at_reset=self.study(problem_id)["hints_seen"])
 
     def latest_submission(self, problem_id: str) -> Submission | None:
         row = self.conn.execute(
@@ -153,7 +166,7 @@ class Store:
             canonical=canonical,
             failed_submissions=[row["status"] or "failed" for row in self.conn.execute(
                 "SELECT status FROM submission WHERE problem_id=? AND ok=0 ORDER BY rowid", (problem_id,))],
-            hints_seen=self.study(problem_id)["hints_seen"],
+            hints_seen=self.study(problem_id)["hints_seen"] - self.study(problem_id)["hints_at_reset"],  # 이번 풀이(마지막 '처음부터' 뒤)에서 본 힌트
         )
 
     def _solution(self, problem_id: str) -> Solution | None:

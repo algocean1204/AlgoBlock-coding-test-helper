@@ -408,6 +408,17 @@ async function showReport() {
     <div class="tile"><span class="tile-label">출석</span><strong>${att.days}<small>일</small></strong>
       <span class="days" role="img" aria-label="최근 14일 가운데 ${came}일 출석">${att.recent.map((on) => `<i${on ? ' class="on"' : ""}></i>`).join("")}</span></div>
   </section>`;
+  // 준비도(도움 없이 푼 기본 문제로만)와 다음 단계까지 남은 주제(학습 지도 순서), 여러 주제에서 되풀이된 실패. 빈 카드는 보이지 않는다
+  const rd = d.readiness, focus = rd.focus, SHOWN = 5; // 남은 주제는 앞의 다섯 줄만 펼쳐 두고 나머지는 접는다
+  const lefts = (rows) => `<ul class="points plain">${rows.map((x) => `<li><strong>${esc(x.name)}</strong>
+      <span>${esc(x.todo)}${x.after.length ? ` · 먼저 ${esc(x.after.join(", "))}` : ""}</span></li>`).join("")}</ul>`;
+  html += `<div class="sides${d.patterns.length ? "" : " full"}"><section class="card side"><h2>준비도 <span class="muted">${esc(rd.label)}</span></h2><p>${esc(rd.line)}</p>
+    ${focus ? `<p class="hint">다음에 배울 주제: <strong>${esc(focus.name)}</strong>${focus.next ? ` · <a class="link" href="#/p/${esc(focus.next.id)}">${esc(focus.next.title)}</a>` : ""}</p>` : ""}
+    ${rd.remaining.length ? `<p class="hint">${esc(rd.goal)}까지 남은 주제</p>${lefts(rd.remaining.slice(0, SHOWN))}` : ""}
+    ${rd.remaining.length > SHOWN ? `<details class="signal-group"><summary>나머지 ${rd.remaining.length - SHOWN}개 주제 보기</summary>${lefts(rd.remaining.slice(SHOWN))}</details>` : ""}
+    <details class="signal-group"><summary>기준 보기</summary><ul class="plain-list">${rd.rules.map((x) => `<li>${esc(x)}</li>`).join("")}</ul></details>
+    <p class="hint">${esc(rd.basis)}</p></section>
+    ${d.patterns.length ? `<section class="card side"><h2>여러 주제에서 되풀이된 실패</h2><ul class="points">${d.patterns.map((x) => `<li>${esc(x.line)}</li>`).join("")}</ul></section>` : ""}</div>`;
   const side = (title, rows, cls) => `<section class="card side ${cls}"><h2>${title}</h2><ul class="points">${rows.map((x) => `<li><strong>${esc(x.name)}</strong><span>${esc(x.why)}</span>
     ${x.next && !(target && x.next.id === target.id) ? `<a class="link" href="#/p/${esc(x.next.id)}">다음에 풀 문제: ${esc(x.next.title)}</a>` : ""}</li>`).join("")}</ul></section>`;
   const sides = [d.weaknesses.length ? side("더 공부할 주제", d.weaknesses, "weak") : "", d.strengths.length ? side("강한 주제", d.strengths, "strong") : ""].filter(Boolean); // 빈 카드는 보이지 않는다
@@ -420,7 +431,8 @@ async function showReport() {
     <span class="ladder-name">${gdot(t.key)}${esc(t.name)}<small>${t.solved}/${t.total}</small></span>
     ${levelCells(t.name, built.filter((p) => p.theme === t.key))}
     <span class="state ${t.state}">${STATE_WORD[t.state]}</span>
-    <span class="ladder-why">${esc(t.why)}${t.submissions ? ` <span class="muted">제출 ${t.submissions}번${t.hints ? ` · 힌트 ${t.hints}개` : ""}${t.solution_before_pass ? ` · 해설 먼저 ${t.solution_before_pass}문제` : ""}</span>` : ""}</span>
+    <span class="ladder-why">${esc(t.why)}${t.submissions ? ` <span class="muted">제출 ${t.submissions}번${t.hints ? ` · 힌트 ${t.hints}개` : ""}${t.solution_before_pass ? ` · 해설 먼저 ${t.solution_before_pass}문제` : ""}</span>` : ""}${(t.plan_differs || []).map((x) => // 고른 주제와 풀이 계획의 유형을 나란히
+      ` <span class="muted">· ‘${esc(x.title)}’: 고른 주제 ${esc(t.name)}, 풀이 계획 ${esc(x.planned)}</span>`).join("")}</span>
   </li>`).join("")}</ul>`);
   const cards = [failAll ? `<section class="card side"><h2>통과하지 못한 제출</h2><ul class="bars">${fails.map(([kind, n]) => `<li><span>${FAIL_WORD[kind]}</span><span class="bar" aria-hidden="true"><i class="${kind}" style="width:${Math.round(100 * n / failMax)}%"></i></span><b>${n}</b></li>`).join("")}</ul>
       <p class="hint">${failTip(fails)}</p></section>` : "",
@@ -970,7 +982,7 @@ function applyState(data) {
     document.title = `${p.title} · AlgoBlock`;
     S.solo = { shown: [], seen: p.study.hints_seen, total: p.study.hints_total, sol: null, ask: false, note: null };
     if (p.study.hints_seen) loadHints(true); // 전에 본 힌트를 다시 보여 준다(새 힌트를 열지 않는다)
-    if (p.study.has_guide && p.passed) loadSolution(false); // 이미 통과한 문제는 실전 신호를 준비해 둔다
+    if (p.study.has_guide && p.study.passed_now) loadSolution(false); // 이번 풀이에서 통과한 문제는 실전 신호를 준비해 둔다('처음부터' 뒤에는 열 때만 보인다)
     // 방식: 기억한 것, 없으면 대화가 있는 쪽(마지막 말이 늦은 쪽), 없으면 고르기 전(어떻게 풀까요?)
     const lastAt = (chat) => (chat[chat.length - 1] || {}).at || "", sess = data.session;
     let way = savedWay(S.pid) || (sess.guide.length || sess.chair.length ? (lastAt(sess.guide) > lastAt(sess.chair) ? "guide" : "chair") : null);
@@ -1550,7 +1562,8 @@ function renderResult() {
   if (judging) return void (box.innerHTML = `<div class="note">${waitLine("result").replace(" · 보통 5~25초 걸려요", "")}</div>`);
   if (!r) return;
   if (r.alert) return void (box.innerHTML = noteHtml(r.alert));
-  if (r.own) return void (box.innerHTML = ownHtml(r) + (r.stale ? '<div class="note warn" role="status">코드를 고쳤어요. 다시 실행하면 새로 돌려요.</div>' : ""));
+  const notice = r.notice ? `<p class="hint">${esc(r.notice)}</p>` : ""; // 채점 실행 제한을 걸지 못했다(Windows 작업 객체)
+  if (r.own) return void (box.innerHTML = ownHtml(r) + notice + (r.stale ? '<div class="note warn" role="status">코드를 고쳤어요. 다시 실행하면 새로 돌려요.</div>' : ""));
   const total = r.cases.length, p = S.problem;
   const finding = S.debug && S.debug.open;
   const score = r.score || { accuracy: [0, 0], efficiency: [0, 0] };
@@ -1590,7 +1603,7 @@ function renderResult() {
   if (total) html += `<details class="case-fold"${(S.casesOpen ?? (!finding && !r.ok)) ? " open" : ""}><summary>테스트별 결과</summary>${testsHtml(r)}</details>`;
   if (r.repeat) html += '<p class="hint">직전 제출과 같은 코드라 제출 기록은 그대로예요.</p>';
   if (r.unsaved) html += '<p class="hint">틀린 곳을 찾으며 다시 채점한 결과라 제출 기록에는 남지 않았어요. 남기려면 제출해 주세요.</p>';
-  box.innerHTML = html;
+  box.innerHTML = html + notice;
 }
 
 async function submitCode() {
@@ -1785,7 +1798,7 @@ function renderSolo() {
   const tutorExplain = ai ? '<button type="button" id="to-explain" class="btn quiet small" data-model>튜터에게 해설 받기</button>' : ""; // 모델이 쓰는 해설(예전 '해설' 탭)
   if (!p.study.has_guide) sol += `<p class="hint">이 문제에는 미리 만든 해설이 없어요. ${ai ? "튜터가 써 줄 수 있어요." : "튜터를 연결하면 해설을 써 줘요."}</p>${tutorExplain}`;
   else if (o.sol) sol += solutionHtml(o.sol, p.passed > 0) + tutorExplain;
-  else if (p.study.solution_open) sol += '<button type="button" id="solo-open" class="btn">해설 보기</button>';
+  else if (p.study.solution_open) sol += `${p.passed && !p.study.passed_now ? '<p class="hint">다시 푸는 중이에요. 지금 해설을 열면 이번 풀이는 도움을 받은 것으로 남아요.</p>' : ""}<button type="button" id="solo-open" class="btn">해설 보기</button>`; // '처음부터' 뒤에 이미 통과한 문제
   else if (o.ask) sol += `<div class="note warn"><span>통과하기 전에 해설을 보면 학습 보고서에 ‘해설을 먼저 봄’으로 남아요. 힌트를 끝까지 본 뒤에 여는 것을 권해요.</span></div>
     <div class="solo-actions"><button type="button" id="solo-force-yes" class="btn danger small">그래도 해설 보기</button><button type="button" id="solo-force-no" class="btn small">더 풀어 볼게요</button></div>`;
   else sol += `<p class="hint lock-line">${ico("i-lock")}통과하면 이 문제의 실전 신호와 해설이 열려요.</p><button type="button" id="solo-force" class="btn quiet small">포기하고 해설 보기</button>`;
@@ -2607,5 +2620,5 @@ accounts().then((r) => { // 연결 상태를 먼저 알아야 화면을 고른�
   route();
   if (r.ok && !r.data.tour_seen) openTour(); // 처음 켰을 때만 안내를 띄운다
 });
-updAct("status"); // 서버가 켤 때와 6시간마다 새 버전을 본다. 화면은 그 결과만 10분마다 가져온다
+updAct("status"); // 서버가 켤 때와 24시간마다 새 버전을 본다. 화면은 그 결과만 10분마다 가져온다
 setInterval(() => { if (!UPD || !UPD_BUSY.includes(UPD.state)) updAct("status"); }, 10 * 60 * 1000);

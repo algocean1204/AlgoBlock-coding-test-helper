@@ -12,8 +12,8 @@
 | --- | --- |
 | `launcher.py` | 시작점. 묶였을 때(`sys.frozen`) 데이터 폴더, 화면 폴더, 채점기 폴더, 임베딩 모델 폴더를 환경 변수로 넘긴다. 기본은 창을 열고 `--server`를 주면 서버만 띄운다. `--check-embed`는 묶은 모델을 한 번 돌려 본다 |
 | `algoblock.spec` | PyInstaller 설정. macOS는 `.app`, Windows는 `onefile` `.exe`를 만든다. `models/`의 `model.onnx`와 `tokenizer.json`이 없으면 여기서 멈춘다 |
-| `build_mac.sh` | macOS 빌드. 모델을 받고, `.app`을 `.dmg`로 싸고, 릴리스용 사본의 `SHA256SUMS`를 만든다 |
-| `build_win.ps1` | Windows PC에서 하는 빌드(정식 길). 모델을 받는다 |
+| `build_mac.sh` | macOS 빌드. 모델을 받고, `.app`을 `.dmg`로 싸고, 릴리스용 사본의 해시 파일(`SHA256SUMS-macos-<아키텍처>`)을 만든다 |
+| `build_win.ps1` | Windows PC에서 하는 빌드(정식 길). 모델을 받고, 릴리스용 사본의 해시 파일(`SHA256SUMS-windows-x64`)을 만든다 |
 | `build_win_docker.sh` | macOS·Linux에서 Docker로 하는 Windows 빌드(Wine + Windows 파이썬 3.12). 모델은 밖에서 받아 둔다 |
 | `icon/` | 앱 아이콘(`icon.icns`, `icon.ico`)과 그것을 만드는 `make_icon.py` |
 | `models/` | 빌드 때 받는 임베딩 모델 폴더. 저장소에 넣지 않는다 |
@@ -37,7 +37,7 @@ sh app/packaging/build_mac.sh
 
 - 결과: `app/packaging/dist/AlgoBlock-<버전>-<아키텍처>.dmg`와 그 사본 `app/packaging/dist/AlgoBlock-macos-<아키텍처>.dmg`. 아키텍처는 `uname -m`의 값(`arm64` 또는 `x86_64`)이다.
 - 릴리스에 올리는 파일은 고정 이름의 사본(`AlgoBlock-macos-arm64.dmg`, `AlgoBlock-macos-x86_64.dmg`)이다.
-- `app/packaging/dist/SHA256SUMS`에 그 사본의 SHA-256이 한 줄(`<해시>  <파일 이름>`) 적힌다. 릴리스에 dmg와 함께 올린다. 앱의 업데이트(`app/ui/updater.py`)가 받은 파일을 이 값과, GitHub이 주는 파일의 `digest`가 있으면 그 값과도 견주고, 다르거나 견줄 값이 없으면 설치하지 않는다. 여러 아키텍처를 한 릴리스에 올리면 각 빌드의 줄을 한 파일로 합친다.
+- `app/packaging/dist/SHA256SUMS-macos-<아키텍처>`에 그 사본의 SHA-256이 한 줄(`<해시>  <파일 이름>`) 적힌다. 릴리스에 올리는 법은 아래 [릴리스의 SHA256SUMS](#릴리스의-sha256sums)에 있다.
 - 안의 앱: `app/packaging/dist/AlgoBlock.app`
 - 빌드하는 맥의 아키텍처로만 만든다. Intel 맥용은 Intel 맥에서 빌드한다.
 - 서명과 공증은 없다.
@@ -51,6 +51,8 @@ powershell -ExecutionPolicy Bypass -File app\packaging\build_win.ps1
 ```
 
 - 결과: `app\packaging\dist\AlgoBlock.exe`와 그 사본 `app\packaging\dist\AlgoBlock-windows-x64.exe`. 릴리스에 올리는 파일은 사본이다.
+- `app\packaging\dist\SHA256SUMS-windows-x64`에 사본의 SHA-256이 macOS와 같은 꼴로 한 줄(`<해시>  AlgoBlock-windows-x64.exe`) 적힌다.
+- `uv`, `python`, `pyinstaller`가 실패하면 그 종료 코드로 멈춘다. 이 명령들이 표준 오류에 쓰는 경고로는 멈추지 않는다.
 - 화면은 WebView2를 쓴다.
 
 ### Windows, 맥·리눅스에서 Docker로
@@ -61,10 +63,23 @@ Docker가 필요하다. 이미지 `tobix/pywine:3.12`를 linux/amd64로 실행�
 sh app/packaging/build_win_docker.sh
 ```
 
-- 결과: `app/packaging/dist-win/AlgoBlock.exe`(x86-64, 파일 하나)와 그 사본 `app/packaging/dist-win/AlgoBlock-windows-x64.exe`.
+- 결과: `app/packaging/dist-win/AlgoBlock.exe`(x86-64, 파일 하나)와 그 사본 `app/packaging/dist-win/AlgoBlock-windows-x64.exe`, 사본의 해시 파일 `app/packaging/dist-win/SHA256SUMS-windows-x64`(`build_win.ps1`과 같은 꼴).
 - 컨테이너는 소스를 읽기 전용으로 보므로 모델은 밖에서 받아 `app/packaging/models`에 둔다.
 - Wine 빌드에서만 `numpy<2`를 깐다. numpy 2는 Wine에 없는 함수를 불러 빌드 중 import가 죽는다.
 - Wine에서 만든 파일이다. 정식 빌드는 `build_win.ps1`이다.
+
+### 릴리스의 SHA256SUMS
+
+앱의 업데이트(`app/ui/updater.py`)는 릴리스에서 `SHA256SUMS`라는 이름의 파일 하나를 읽는다. 받은 파일을 그 안의 줄과, GitHub이 주는 파일의 `digest`가 있으면 그 값과도 견준다. 다르거나 견줄 값이 없으면 설치하지 않는다.
+
+빌드는 플랫폼마다 다른 이름(`SHA256SUMS-<플랫폼>`)으로 줄 하나를 쓴다. 그래서 여러 빌드의 결과를 한곳에 모아도 서로 덮어쓰지 않는다. 릴리스에 올리기 전에 이번 릴리스의 빌드가 낸 파일을 모두 모아 하나로 합치고, 합친 `SHA256SUMS`를 설치 파일과 함께 올린다.
+
+```bash
+cat SHA256SUMS-* > SHA256SUMS
+```
+
+- 올린 설치 파일마다 줄이 하나씩 있어야 한다. 줄이 없는 플랫폼의 업데이트는 '`SHA256SUMS`에 이 파일이 없어' 받지 않는다.
+- `SHA256SUMS-<플랫폼>` 파일은 릴리스에 올리지 않아도 된다.
 
 ## 묶는 것과 빼는 것
 
@@ -136,11 +151,11 @@ app\packaging\dist\AlgoBlock.exe --check-embed
 ## 알려진 한계
 
 - 코드 서명과 공증이 없다.
-- 창을 닫으면 `window.py`가 `server.stop_grading()`으로 돌던 채점 실행기를 끝낸다. 메뉴의 '끝내기'로 끝내면 `webview.start()`가 돌아오지 않아 이 정리가 돌지 않을 수 있다. 그때 남은 채점 실행기는 채점기의 CPU 시간 상한에서 멈춘다(POSIX).
+- 창을 닫으면 `window.py`가 `server.stop_grading()`으로 돌던 채점 실행기를 끝낸다. 메뉴의 '끝내기'로 끝내면 `webview.start()`가 돌아오지 않아 이 정리가 돌지 않을 수 있다. 그때 남은 채점 실행기는 채점기의 CPU 시간 상한에서 멈춘다(POSIX). Windows에서는 앱 프로세스가 끝나며 채점기의 작업 객체 핸들이 닫혀 바로 끝난다.
 - 창 모드는 포트(`ALGOBLOCK_UI_PORT`, 기본 8791)를 이미 다른 프로그램이 쓰고 있으면 서버를 새로 띄우지 않고 그 주소를 그대로 연다(`window.py`의 `serve`).
 
 ## 버전 바꾸기
 
-- 버전은 `app/ui/updater.py`의 `VERSION` 한 곳(지금 `0.1.0`)에서 고친다. `algoblock.spec`은 이 값을 `CFBundleShortVersionString`에, `build_mac.sh`는 버전이 붙은 `.dmg` 파일 이름에 쓴다. 고정 이름의 사본에는 버전이 없다.
+- 버전은 `app/ui/updater.py`의 `VERSION` 한 곳에서 고친다. `algoblock.spec`은 이 값을 `CFBundleShortVersionString`에, `build_mac.sh`는 버전이 붙은 `.dmg` 파일 이름에 쓴다. 고정 이름의 사본에는 버전이 없다.
 - 앱의 업데이트는 이 값과 릴리스 태그(`v<버전>`)를 숫자로 견준다. 태그와 이 값이 다르면 새 버전을 설치한 뒤에도 또 새 버전이 있다고 알린다. 그래서 바꿔 끼우기 전에 dmg 안 앱의 `CFBundleShortVersionString`이 태그와 같은지 본다.
 - Windows: 파일 이름에 버전이 없다(`AlgoBlock.exe`, `AlgoBlock-windows-x64.exe`). 실행 파일에 버전 정보를 넣지 않는다.

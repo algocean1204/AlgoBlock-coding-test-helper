@@ -132,6 +132,14 @@ SSE = "\n".join([
 
 
 class PlanLoginTest(unittest.TestCase):
+    def assert_private(self, path):
+        """로그인 파일은 자료 폴더 안에만 생기고, POSIX에서는 권한이 0600이다.
+        Windows에는 POSIX 권한 비트가 없어(늘 0o666으로 읽힌다) 권한은 보지 않는다. 사용자 폴더의 기본 권한에 기댄다."""
+        self.assertTrue(path.is_file())
+        self.assertTrue(path.resolve().is_relative_to(Path(self.dir.name).resolve()), path)
+        if os.name != "nt":
+            self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
+
     def setUp(self):
         self.dir = tempfile.TemporaryDirectory()
         self.env = mock.patch.dict(os.environ, {"ALGOBLOCK_LLM_AUTH_DIR": self.dir.name})
@@ -189,7 +197,7 @@ class PlanLoginTest(unittest.TestCase):
         _, again = self.start()
         self.assertEqual(again["ext_agent_host_id"], q["ext_agent_host_id"])  # 기기 아이디는 다시 쓴다
         self.assertNotEqual((again["state"], again["nonce"], again["code_challenge"]), (q["state"], q["nonce"], q["code_challenge"]))  # 시도마다 새로
-        self.assertEqual(stat.S_IMODE((token.auth_dir() / "chatgpt-host.json").stat().st_mode), 0o600)
+        self.assert_private(token.auth_dir() / "chatgpt-host.json")
 
     def test_callback_end_to_end_then_reauth_uses_issued_client(self):
         with mock.patch.object(token, "_token", self.fake_token()):
@@ -203,7 +211,7 @@ class PlanLoginTest(unittest.TestCase):
                          ("authorization_code", "oaiapp_one", "c1", q["redirect_uri"], "https://api.openai.com/v1"))
         self.assertEqual(base64.urlsafe_b64encode(hashlib.sha256(form["code_verifier"].encode()).digest()).decode().rstrip("="), q["code_challenge"])
         saved = json.loads(token.token_path().read_text())
-        self.assertEqual(stat.S_IMODE(token.token_path().stat().st_mode), 0o600)
+        self.assert_private(token.token_path())
         self.assertEqual((saved["client_id"], saved["subject"], saved["email"], saved["ext_agent_host_id"]), ("oaiapp_one", "user-1", "user@example.com", q["ext_agent_host_id"]))
         self.assertIn("chatgpt.tokens.use.direct", saved["scopes"])
         for _ in range(50):  # 리스너가 스스로 닫힌다

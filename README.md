@@ -16,6 +16,8 @@ $\bf{\large{\color{#6580DD} AlgoBlock }}$
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT 라이선스"></a>
 </p>
 
+<p align="center"><a href="https://github.com/algocean1204/AlgoBlock-coding-test-helper/releases/latest"><img src="https://img.shields.io/github/v/release/algocean1204/AlgoBlock-coding-test-helper?label=%EC%B5%9C%EC%8B%A0%20%EB%B2%84%EC%A0%84&color=6580DD" alt="최신 버전"></a></p>
+
 <p align="center"><a href="https://github.com/algocean1204/AlgoBlock-coding-test-helper/releases/latest/download/AlgoBlock-macos-arm64.dmg"><b>macOS(Apple Silicon)용 내려받기</b></a> · <a href="#소스로-실행하기">소스로 실행하기</a></p>
 
 <p align="center"><img src=".github/assets/hero.png" width="880" alt="문제 글, 블록으로 나눈 코드와 채점 결과, 튜터와의 대화가 한 창에 나란히 있는 화면"></p>
@@ -82,7 +84,7 @@ AI를 연결하면 튜터가 풀이 코드를 줄 범위로 나눈 블록을 하
 
 ### 학습 보고서
 
-제출 기록에서 주제별 진행, 첫 제출에 통과한 비율, 출석, 다음에 풀 문제를 계산한다. 모델을 부르지 않는다.
+제출 기록에서 주제별 진행, 첫 제출에 통과한 비율, 출석, 다음에 풀 문제를 계산한다. 도움 없이 푼 기본 문제로 준비도 단계와 다음 단계까지 남은 주제를 보여 주고, 여러 주제에서 되풀이된 실패를 모아 보여 준다. 모델을 부르지 않는다.
 
 <p align="center"><img src=".github/assets/report.png" width="880" alt="통과한 기본 문제, 제출 수, 첫 제출 통과 비율, 출석과 다음에 풀 문제가 보이는 학습 보고서"></p>
 
@@ -102,20 +104,38 @@ AI를 연결하면 튜터가 풀이 코드를 줄 범위로 나눈 블록을 하
 
 ### 내려받기
 
+아래 링크는 늘 [마지막 릴리스](https://github.com/algocean1204/AlgoBlock-coding-test-helper/releases/latest)의 파일을 받는다. 버전마다 바뀐 것은 [릴리스 목록](https://github.com/algocean1204/AlgoBlock-coding-test-helper/releases)에 있다. 버전은 `0.x.y`이고, 큰 업데이트는 둘째 숫자, 작은 고침은 셋째 숫자가 오른다.
+
 | 운영체제 | 파일 |
 | --- | --- |
 | macOS (Apple Silicon) | [AlgoBlock-macos-arm64.dmg](https://github.com/algocean1204/AlgoBlock-coding-test-helper/releases/latest/download/AlgoBlock-macos-arm64.dmg) |
 
-설치 파일에는 서명이 없다. `.dmg`를 열어 앱을 `Applications`로 옮긴다. 처음 열 때 "열 수 없다"는 경고가 뜬다. 경고를 닫고 시스템 설정 → 개인정보 보호 및 보안 → '그래도 열기'를 누른다(macOS 14까지는 앱을 우클릭 → '열기'로도 된다). 한 번 열면 다음부터는 그냥 열린다. 채점 언어의 도구는 설치 파일에 들어 있지 않다. 자세한 것은 [설치](Docs/guide/install.md)에 있다.
+`.dmg`를 열어 앱을 `Applications`로 옮긴다. 채점 언어의 도구는 설치 파일에 들어 있지 않다. 자세한 것은 [설치](Docs/guide/install.md)에 있다.
 
-새 버전이 나오면 앱 위쪽 막대에 알려 주고, 내려받기와 '다시 시작해 업데이트' 두 단추로 바꾼다(macOS).
+#### macOS에서 처음 열 때
+
+설치 파일에 Apple 서명과 공증이 없어서, 처음 열면 "'AlgoBlock.app'을(를) 열지 않음" 창이 뜬다. 앱이 망가졌다는 뜻이 아니다. 아래처럼 한 번만 허용한다.
+
+1. 경고 창에서 **'완료'**를 누른다. '휴지통으로 이동'은 누르지 않는다.
+2. 시스템 설정 → **개인정보 보호 및 보안**을 열고 아래로 내린다. AlgoBlock이 차단되었다는 안내 옆의 **'그래도 열기'**를 누르고 암호를 넣는다. 이 단추는 막힌 뒤 한 시간쯤만 보인다. 보이지 않으면 앱을 한 번 더 열어 막힌 뒤 다시 찾는다.
+3. 앱을 다시 열고 뜨는 창에서 **'열기'**를 누른다. 한 번 열면 다음부터는 그냥 열린다.
+
+터미널을 쓸 수 있으면 앱을 `Applications`로 옮긴 뒤 아래 한 줄로도 된다. 내려받은 파일에 붙는 격리 표시만 지워 이 앱의 검사를 건너뛴다. 이 저장소의 릴리스에서 받은 파일에만 쓴다.
+
+```bash
+xattr -dr com.apple.quarantine /Applications/AlgoBlock.app
+```
+
+앱 안의 업데이트로 받은 새 버전에는 이 경고가 다시 뜨지 않는다. 브라우저로 새 dmg를 받아 직접 바꾸면 다시 뜬다.
+
+새 버전이 나오면 앱 위쪽 막대에 알려 주고, 내려받기와 '다시 시작해 업데이트' 두 단추로 바꾼다(macOS, Windows).
 
 ### 소스로 실행하기
 
 Python 3.12와 [uv](https://docs.astral.sh/uv/)가 필요하다.
 
 ```bash
-git clone https://github.com/algocean1204/AlgoBlock-coding-test-helper.git
+git clone -b main https://github.com/algocean1204/AlgoBlock-coding-test-helper.git
 cd AlgoBlock-coding-test-helper/app
 uv run --no-project --python 3.12 --with langgraph --with pypdf python ui/server.py
 ```

@@ -4,7 +4,7 @@
 """
 
 from dataclasses import dataclass, field
-from typing import Required, TypedDict
+from typing import Any, Required, TypedDict
 
 BLOCK_KINDS = ("var_from_problem", "var_during", "loop", "condition", "branch")
 
@@ -94,7 +94,7 @@ class ChatMessage:
     at: str
     block_index: int | None = None
     quote_id: str | None = None
-    move: str | None = None  # 질문 유형(서비스 말만)
+    move: str | None = None  # 질문 유형(서비스 말). 사용자 말에는 블록 코드 확인의 판정 표시(talk_rules.CHECKED + Y·N·?)만
 
 
 @dataclass
@@ -288,6 +288,15 @@ class Solved:
     code: str
     clues: list[str] = field(default_factory=list)
     followed: bool = True  # 사용자 방법 따르기에서: 그 방법으로 풀려서 따랐는가
+
+
+@dataclass
+class LabeledSolved(Solved):
+    """정석 가이드 초안: 쓴 코드로 정한 태그·단계도 받는다(그것을 물을 때만 이 모양으로 받는다. 키 안내가 묻는 것과 같게).
+    둘은 덤이라 모양을 따지지 않고 받는다(null, "2", 2.0, "bfs"로 가이드 전체를 잃지 않게). 쓸 수 있는 값만 plan.nodes.guide_labels가 고른다."""
+
+    tags: Any = None  # 이 코드가 쓰는 방법(온톨로지 기법 id 목록)
+    level: Any = None  # 이 코드로 본 단계 1~5
 
 
 @dataclass

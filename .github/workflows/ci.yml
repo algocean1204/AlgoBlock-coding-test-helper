@@ -1,12 +1,13 @@
-# PR과 main 푸시마다 시험과 공개 전 검사를 돌린다. 모델을 부르지 않는다(키가 필요 없다).
+# PR마다 시험과 공개 전 검사를 돌린다. 모델을 부르지 않는다(키가 필요 없다).
+# Actions를 아낀다: 푸시에는 돌지 않는다(develop·main은 PR로만 바뀌고, 합치기 전에 PR에서 같은 내용을 이미 확인했다).
+# 문서만 바뀐 PR과 초안 PR에서는 무거운 시험(엔진·채점기·Windows)을 건너뛴다. 같은 PR의 앞 실행은 취소한다.
 # 기본 문제 전체 검사(ui/problemkit.py check)는 느린 풀이가 시간 초과할 때까지 기다려 수십 분이 걸리므로 여기서 돌리지 않는다.
 # 액션은 커밋 SHA로 고정한다(뒤의 주석이 그 버전이다). 갱신은 .github/dependabot.yml이 PR로 올린다.
 name: CI
 
 on:
   pull_request:
-  push:
-    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
 
 permissions:
   contents: read
@@ -16,8 +17,35 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # 바뀐 파일이 문서뿐인지 본다. 목록을 읽지 못하면 코드가 바뀐 것으로 본다(시험을 건너뛰지 않는 쪽으로)
+  changes:
+    name: changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      code: ${{ steps.files.outputs.code }}
+    steps:
+      - name: 바뀐 파일 보기
+        id: files
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          DRAFT: ${{ github.event.pull_request.draft }}
+        run: |
+          if [ "$DRAFT" = true ]; then echo "초안 PR: 무거운 시험을 건너뛴다"; echo "code=false" >> "$GITHUB_OUTPUT"; exit 0; fi
+          if ! files=$(gh pr diff "$PR" --repo "$GITHUB_REPOSITORY" --name-only); then echo "목록을 읽지 못했다: 모두 돌린다"; echo "code=true" >> "$GITHUB_OUTPUT"; exit 0; fi
+          printf '%s\n' "$files"
+          # 문서: 맨 위와 .github의 .md, Docs/, .github의 그림·이슈 양식, LICENSE. app/ 안의 .md는 코드 쪽으로 본다
+          if printf '%s\n' "$files" | grep -v '^$' | grep -Evq '^([^/]+\.md|\.github/[^/]+\.md|Docs/.*|\.github/(assets|ISSUE_TEMPLATE)/.*|LICENSE)$'; then
+            echo "code=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "문서만 바뀌었다: 무거운 시험을 건너뛴다"; echo "code=false" >> "$GITHUB_OUTPUT"
+          fi
+
   engine-tests:
     name: engine-tests
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -37,6 +65,8 @@ jobs:
 
   judge-tests:
     name: judge-tests
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -49,6 +79,135 @@ jobs:
       - name: 채점기 자체 시험 (러너에 있는 언어만 돈다)
         working-directory: app/judge
         run: python -B -m unittest test_check
+
+  # Windows(베타): 엔진·채점기 시험, 임베딩 색인 시간, exe 빌드, 소스와 exe로 띄운 서버에 기본 문제 하나 제출, exe 바꿔 끼우기.
+  # 채점기 시험은 러너에 있는 언어만 돈다(없는 언어는 건너뛴다). 모델을 부르지 않는다
+  windows:
+    name: windows
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: windows-latest
+    timeout-minutes: 60
+    env:
+      PYTHONUTF8: "1" # Windows 기본 인코딩으로 한글 출력이 깨지지 않게
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      # 준비(패키지, 모델)가 된 뒤의 시험 단계는 앞 단계가 실패해도 모두 돈다(한 번에 다 보이게). 하나라도 실패하면 작업은 실패다
+      - name: 파이썬 패키지, Java 17, 제출 확인 스크립트
+        id: deps
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          python -m pip install -q langgraph pypdf qdrant-client onnxruntime tokenizers uv
+          if ($env:JAVA_HOME_17_X64) { Add-Content $env:GITHUB_PATH "$env:JAVA_HOME_17_X64\bin" } # 러너의 기본 java가 8일 수 있다
+          python -B -c "import json, os; p = json.load(open('app/ui/builtin.json', encoding='utf-8'))[0]; open(os.environ['RUNNER_TEMP'] + '/submit.json', 'w', encoding='utf-8').write(json.dumps({'id': p['id'], 'code': p['solutions']['python']}))"
+          # 서버를 띄워 기본 문제 하나(첫 문제의 Python 풀이)를 제출하고 통과와 실행 제한(작업 객체)이 걸렸는지 본다. 소스와 exe 단계가 함께 쓴다
+          $script = @'
+          param($name, $program, $arguments, $port)
+          $ErrorActionPreference = "Stop"
+          $env:ALGOBLOCK_UI_DATA = Join-Path $env:RUNNER_TEMP "data-$name"
+          $env:ALGOBLOCK_UI_PORT = "$port"
+          $log = Join-Path $env:RUNNER_TEMP "server-$name"
+          $server = Start-Process $program -ArgumentList $arguments -WorkingDirectory (Resolve-Path app) -PassThru -RedirectStandardOutput "$log.out" -RedirectStandardError "$log.err"
+          try {
+            $up = $false
+            foreach ($i in 1..120) {
+              try { Invoke-WebRequest "http://127.0.0.1:$port/" -UseBasicParsing -TimeoutSec 5 | Out-Null; $up = $true; break } catch { Start-Sleep 1 }
+            }
+            if (-not $up) { throw "${name}: 서버가 뜨지 않았다" }
+            $began = Get-Date
+            $result = Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:$port/api/submit" -ContentType "application/json" -InFile (Join-Path $env:RUNNER_TEMP "submit.json") -TimeoutSec 300
+            "${name}: ok=$($result.ok) status=$($result.status) cases=$($result.cases.Count) $([int]((Get-Date) - $began).TotalSeconds)초"
+            if (-not $result.ok) { $result | ConvertTo-Json -Depth 6 | Write-Host; throw "${name}: 기본 문제 제출이 통과하지 않았다" }
+            if ($result.notice) { throw "${name}: 실행 제한(작업 객체) 없이 돌았다: $($result.notice)" }
+          } finally {
+            Stop-Process -Id $server.Id -Force -ErrorAction SilentlyContinue
+            Get-Process AlgoBlock -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue # onefile은 프로세스가 둘이다
+            Get-Content "$log.err" -Tail 20 -ErrorAction SilentlyContinue
+          }
+          '@
+          Set-Content -Path (Join-Path $env:RUNNER_TEMP "submit.ps1") -Value $script -Encoding utf8
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: app/packaging/models
+          key: embed-model-${{ hashFiles('app/tutor/knowledge/embed.py') }}
+      - name: 임베딩 모델 받기(캐시에 없을 때)와 해시 확인
+        id: model
+        if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
+        working-directory: app
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          python -B tutor/knowledge/embed.py fetch packaging/models
+          python -B -c "import hashlib; from tutor.knowledge import embed; bad = [n for n, (_, _, d) in embed.FILES.items() if hashlib.file_digest(open('packaging/models/' + n, 'rb'), 'sha256').hexdigest() != d]; assert not bad, bad"
+      - name: 채점기 자체 시험 (러너에 있는 언어만 돈다)
+        if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
+        working-directory: app/judge
+        run: |
+          foreach ($tool in 'python', 'node', 'javac', 'go', 'g++', 'clang++', 'rustc', 'kotlinc') {
+            $found = Get-Command $tool -ErrorAction SilentlyContinue
+            '{0}: {1}' -f $tool, $(if ($found) { $found.Source } else { '없음' })
+          }
+          python -B -m unittest test_check
+      - name: 튜터 엔진 시험
+        if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
+        working-directory: app
+        run: python -B -m unittest discover -s tutor/tests -t .
+      - name: 화면 서버 시험
+        if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
+        working-directory: app
+        run: python -B ui/test_server.py
+      - name: 임베딩 색인 시간
+        if: ${{ !cancelled() && steps.model.outcome == 'success' }}
+        working-directory: app
+        shell: python
+        run: |
+          import json, os, sys, tempfile, time
+          sys.path.insert(0, os.getcwd())
+          from tutor.knowledge.index import open_index
+          problems = json.load(open("ui/builtin.json", encoding="utf-8"))
+          with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as folder:
+              began = time.perf_counter()
+              index = open_index(folder, "packaging/models")
+              assert index is not None, "색인을 열지 못했다(패키지나 모델 파일 없음)"
+              index.embed(["확인"])  # 모델을 올린다
+              loaded = time.perf_counter()
+              for problem in problems:
+                  index.put(problem["id"], problem["text"])
+              done = time.perf_counter()
+              assert index.count() == len(problems), index.count()
+              index.close()
+          line = f"임베딩 색인(Windows): 모델 올리기 {loaded - began:.1f}초, 기본 문제 글 {len(problems)}개 넣기 {done - loaded:.1f}초"
+          print(line)
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+              summary.write(line + "\n")
+      - name: 소스 서버에 기본 문제 하나 제출
+        if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
+        run: |
+          & (Join-Path $env:RUNNER_TEMP "submit.ps1") "source" (Get-Command python).Source @("-B", "ui/server.py") 8801
+      - name: exe 빌드
+        id: build
+        if: ${{ !cancelled() && steps.model.outcome == 'success' }}
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File app\packaging\build_win.ps1
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          Get-Content app\packaging\dist\SHA256SUMS-windows-x64
+      - name: exe 서버(--server)에 기본 문제 하나 제출
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: |
+          & (Join-Path $env:RUNNER_TEMP "submit.ps1") "exe" (Resolve-Path app\packaging\dist\AlgoBlock.exe).Path @("--server") 8802
+      # 업데이트의 바꿔 끼우기를 빌드한 exe 사본 둘로 끝까지 본다(성공: 새 앱의 / 가 200, 되돌리기: 응답하지 않는 새 앱). 새 앱이 응답하기까지의 시간은 작업 요약에
+      - name: exe 바꿔 끼우기(업데이트)
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        working-directory: app
+        run: python -B ui/test_update.py exe packaging\dist\AlgoBlock.exe
+
 
   publish-check:
     name: publish-check
@@ -88,7 +247,7 @@ jobs:
           GITLEAKS_ENABLE_COMMENTS: false
           GITLEAKS_ENABLE_UPLOAD_ARTIFACT: false
 
-  # 이 저장소 안에서 올린 PR의 브랜치 이름을 본다(포크에서 온 PR과 main 푸시는 보지 않는다). 규칙은 .github/CONTRIBUTING.md
+  # 이 저장소 안에서 올린 PR의 브랜치 이름을 본다(포크에서 온 PR은 보지 않는다). 규칙은 .github/CONTRIBUTING.md
   branch-name:
     name: branch-name
     runs-on: ubuntu-latest
@@ -98,28 +257,36 @@ jobs:
         env:
           EVENT: ${{ github.event_name }}
           HEAD_REF: ${{ github.head_ref }}
+          BASE_REF: ${{ github.base_ref }}
           HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
           BASE_REPO: ${{ github.repository }}
         run: |
           if [ "$EVENT" != pull_request ] || [ "$HEAD_REPO" != "$BASE_REPO" ]; then echo "보지 않는다"; exit 0; fi
           case "$HEAD_REF" in dependabot/*) echo "dependabot"; exit 0 ;; esac
+          if [ "$BASE_REF" = main ] && [ "$HEAD_REF" = develop ]; then echo "develop → main"; exit 0; fi
           if printf '%s' "$HEAD_REF" | grep -Eq '^(feature|fix|refactor|chore|docs|problem)/([0-9]+-)?[a-z0-9]+(-[a-z0-9]+)*$'; then
             echo "맞는다: $HEAD_REF"
           else
             echo "브랜치 이름이 규칙과 다르다: $HEAD_REF (예: fix/12-empty-code-message)"; exit 1
           fi
 
-  # 룰셋(.github/rulesets/main.json)이 요구하는 검사는 이것 하나다. 작업을 더하면 needs에만 더한다.
+  # ci.yml 안에서 룰셋(.github/rulesets/develop.json·main.json)이 요구하는 검사는 이것 하나다(PR 제목은 pr-title.yml, main으로 가는 PR의 출처·버전은 main-source.yml). 작업을 더하면 needs에만 더한다.
+  # 건너뛴 작업은 문서만 바뀌었거나 초안일 때만 통과로 친다
   ci-passed:
     name: ci-passed
     if: ${{ !cancelled() }}
-    needs: [engine-tests, judge-tests, publish-check, secret-scan, branch-name]
+    needs: [changes, engine-tests, judge-tests, windows, publish-check, secret-scan, branch-name]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - name: 앞 작업이 모두 성공했는지 본다
         env:
           RESULTS: ${{ join(needs.*.result, ' ') }}
+          CODE: ${{ needs.changes.outputs.code }}
         run: |
-          echo "결과: $RESULTS"
-          for r in $RESULTS; do [ "$r" = success ] || exit 1; done
+          echo "결과: $RESULTS (코드 바뀜: $CODE)"
+          for r in $RESULTS; do
+            [ "$r" = success ] && continue
+            [ "$r" = skipped ] && [ "$CODE" = false ] && continue
+            exit 1
+          done

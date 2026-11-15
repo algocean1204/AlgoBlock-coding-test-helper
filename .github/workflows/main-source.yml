@@ -1,0 +1,55 @@
+# main으로 가는 PR은 이 저장소의 develop에서만 온다(작업 브랜치 → develop → main → 릴리스).
+# 그 PR에서 버전(app/ui/updater.py의 VERSION)은 0.x.y 꼴이고, 지금 main의 버전과 마지막 릴리스보다 커야 한다. 규칙은 .github/CONTRIBUTING.md
+# 대상 브랜치를 main으로 바꿔도(edited) 다시 돈다. main 보호 규칙의 필수 검사다
+name: main source
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: main-source-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  main-source:
+    name: main-source
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: 출처가 이 저장소의 develop인지 본다
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+        run: |
+          if [ "$HEAD_REPO" != "$GITHUB_REPOSITORY" ] || [ "$HEAD_REF" != develop ]; then
+            echo "::error::main으로는 이 저장소의 develop에서만 PR을 연다. 작업 브랜치는 develop으로 PR을 연다."; exit 1
+          fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: 버전이 0.x.y이고 main과 마지막 릴리스보다 큰지 본다
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          read_version() { sed -n 's/^VERSION = "\([^"]*\)".*/\1/p'; }
+          version=$(read_version < app/ui/updater.py)
+          git fetch -q --depth=1 origin main
+          on_main=$(git show FETCH_HEAD:app/ui/updater.py | read_version)
+          # 릴리스가 아직 없으면(404) 견주지 않고, 그 밖에 읽지 못하면 실패한다(조용히 통과시키지 않는다)
+          if out=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" -q .tag_name 2>&1); then last=${out#v}
+          elif printf '%s' "$out" | grep -q 'HTTP 404'; then last=""
+          else echo "::error::마지막 릴리스를 읽지 못했다: $out"; exit 1; fi
+          echo "이 PR: $version, main: ${on_main:-없음}, 마지막 릴리스: ${last:-없음}"
+          # 자릿수는 앱의 업데이트 확인이 읽는 범위(1~4자리)와 같다
+          printf '%s' "$version" | grep -Eq '^0\.(0|[1-9][0-9]{0,3})\.(0|[1-9][0-9]{0,3})$' \
+            || { echo "::error::버전은 1.0.0 전까지 0.x.y 꼴이다(지금 $version)."; exit 1; }
+          for old in $on_main $last; do
+            if [ "$version" = "$old" ] || [ "$(printf '%s\n%s\n' "$old" "$version" | sort -V | tail -1)" != "$version" ]; then
+              echo "::error::버전($version)이 ${old}보다 커야 한다. VERSION을 올리는 PR을 develop에 먼저 합친다. 큰 업데이트는 둘째, 작은 고침은 셋째 숫자."; exit 1
+            fi
+          done

@@ -37,7 +37,7 @@ AlgoBlock의 기록과 설정은 데이터 폴더 하나에 있다. 이 문서�
 | `large/<문제 id>/<번호>.json` | 효율성 케이스의 큰 입력과 기대 결과 |
 | `vectors/` | 비슷한 문제 찾기 색인(로컬 Qdrant)과 임베딩 이름표 `embedder.txt` |
 | `models/` | 임베딩 모델 폴더 |
-| `updates/` | 업데이트: 받은 설치 파일(`<버전>/`), 업데이트 설정 `settings.json`(자동 확인 `auto`, 건너뛴 버전 `skip`), 바꿔 끼우기 스크립트 `swap.sh`와 기록 `swap.log`. 지금 버전 이하의 받은 파일은 다음 실행 때 지운다 |
+| `updates/` | 업데이트: 받은 설치 파일(`<버전>/`), 업데이트 설정 `settings.json`(자동 확인 `auto`, 건너뛴 버전 `skip`, 마지막 확인 시각 `checked`, 그때 찾은 새 버전의 릴리스 요약 `release`), 바꿔 끼우기 스크립트(macOS `swap.sh`, Windows `swap.ps1`)와 기록 `swap.log`(다음에 켤 때 한 번 읽고 `swap.prev.log`로 옮긴다. Windows는 바꾸는 PowerShell 자체의 출력 `swap-out.log`(새 앱의 출력은 담지 않는다), 스크립트가 도는 동안의 표시 `swap.waiting`도). 지금 버전 이하의 받은 파일은 다음 실행 때 지운다 |
 | `<이름>.broken-<때>` | 읽지 못한 JSON을 옮겨 둔 파일 |
 
 - JSON 파일은 임시 파일에 쓴 뒤 바꿔 끼운다.
@@ -60,14 +60,14 @@ AlgoBlock의 기록과 설정은 데이터 폴더 하나에 있다. 이 문서�
 | `problem_fact` | 문제 뼈대: 기술(`skills_json`), 크기, 단계(`level`), 태그(`tags_json`) |
 | `pitfall_hit` | 제출이 밟은 함정. 같은 코드 해시는 한 번만 센다 |
 | `solution` | 풀이 가이드 |
-| `study` | 학습 기록: 본 힌트 수, 해설을 처음 연 시각, 통과 전에 열었는지 |
+| `study` | 학습 기록: 본 힌트 수, 해설을 처음 연 시각, 통과 전에 열었는지, 도움(튜터 기능·힌트·해설)을 처음 쓴 시각, 마지막 '처음부터' 시각과 그 뒤에 도움을 처음 쓴 시각, 그때까지 본 힌트 수 |
 
 - 외래 키를 켠다. 문제를 지우면 그 문제의 행이 `ON DELETE CASCADE`로 같이 지워진다.
 - `setting`을 뺀 모든 표는 `problem_id`로 나뉜다.
 
 ## 스키마 버전
 
-- 버전은 `PRAGMA user_version`에 저장한다. 마이그레이션 목록(`MIGRATIONS`)의 길이가 최신 버전이다. 현재 버전은 9다.
+- 버전은 `PRAGMA user_version`에 저장한다. 마이그레이션 목록(`MIGRATIONS`)의 길이가 최신 버전이다. 현재 버전은 10이다.
 - DB를 열면 저장된 버전 다음부터 차례로 마이그레이션을 돈다. 남은 마이그레이션은 모두 한 트랜잭션 안에서 돈다. 쓰기 잠금(`BEGIN IMMEDIATE`)을 먼저 잡고, 실패하면 모두 되돌린다.
 - 버전별 변경:
   - 2: `message`에 `move` 열
@@ -78,6 +78,7 @@ AlgoBlock의 기록과 설정은 데이터 폴더 하나에 있다. 이 문서�
   - 7: `block_state.renames_json`
   - 8: 블록 판정에 '?' 추가(표를 새로 만들어 옮김)
   - 9: `problem_fact`에 `level`과 `tags_json`
+  - 10: `study`에 `help_first_at`, `help_after_reset_at`, `reset_at`, `hints_at_reset`. 옛 행은 남은 기록으로 채운다(대화가 있던 문항은 행을 만든다. 본 힌트는 시각이 없어 가장 이른 시각으로 둔다)
 
 ## 기기 밖으로 나가는 것
 
