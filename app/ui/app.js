@@ -1065,7 +1065,7 @@ function renderCheckLine(p) {
 
 /** 상태마다 주 동작 하나(파란 채움): 그 단추에만 primary를 붙이고 나머지에서는 뗀다. 붙인 단추를 돌려준다. */
 const PRIMARY = { choose: '[data-way="solo"]', run: "#run", submit: "#submit", compose: "#compose-run", start: "#start", talk: "#send", follow: "#fq-send",
-  debug: "#debug-send", find: "#debug-start", hint: "#result-hint", next: "#result-next", feedback: "#to-feedback" };
+  check: ".block.is-current [data-check]", debug: "#debug-send", find: "#debug-start", hint: "#result-hint", next: "#result-next", feedback: "#to-feedback" };
 function applyPrimary(stage) {
   document.querySelectorAll("#view-code .primary").forEach((el) => el.classList.remove("primary"));
   const shown = (sel) => { const el = document.querySelector(`#view-code ${sel}`); return el && !el.closest("[hidden]") && !el.disabled ? el : null; };
@@ -1076,7 +1076,7 @@ function applyPrimary(stage) {
 
 /** 풀이 순서 네 걸음 중 지금 어디인지만 짚고, 그 걸음의 주 동작 이름을 곁에 쓴다(앞 걸음을 끝냈다고 표시하지 않는다: 건너뛰고 올 수도 있다). */
 const STEPS = ["생각하기", "코드 쓰기", "제출·고치기", "돌아보기"];
-const STEP_OF = { choose: 0, start: 0, talk: 0, follow: 0, compose: 1, run: 1, submit: 2, find: 2, hint: 2, debug: 2, feedback: 3, next: 3, review: 3 };
+const STEP_OF = { check: 1, choose: 0, start: 0, talk: 0, follow: 0, compose: 1, run: 1, submit: 2, find: 2, hint: 2, debug: 2, feedback: 3, next: 3, review: 3 };
 function renderSteps(stage, el) {
   const at = STEP_OF[stage] ?? 1, doing = stage === "choose" ? "어떻게 풀지 고르기" : stage === "review" ? "통과한 문제" : el ? el.textContent.trim() : "";
   $("steps").innerHTML = STEPS.map((name, i) => `<li${i === at ? ' class="now" aria-current="step"' : ""}><span class="step-no" aria-hidden="true">${i + 1}</span>${name}${i === at && doing ? `<span class="step-do"> · ${esc(doing)}</span>` : ""}</li>`).join("");
@@ -1106,6 +1106,7 @@ function nextAction() {
   if (tutorWay(S.mode) || S.mode === "explain") {
     if (S.mode === "explain" ? !s.explain : !s[S.mode].length) return "start";
     if (S.mode === "guide" && ownWayOn()) return "compose"; // 끝까지 내 방식으로 쓰기: 블록마다 확인하지 않고 모아서 실행으로 확인한다
+    if (S.mode === "guide" && (s.guide.at(-1) || {}).move === "write") return "check"; // 말로 맞혔다: 다음은 다시 보내기가 아니라 그 블록의 코드 확인
     if (tutorWay(S.mode) && !blocksReady()) return "talk";
     if (tutorWay(S.mode) && (S.codeTab === "blocks" || codeEmpty())) return "compose";
   }

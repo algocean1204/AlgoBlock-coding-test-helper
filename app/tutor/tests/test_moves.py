@@ -8,7 +8,7 @@ from ..common.talk_rules import RETRY_LEAD, open_lead
 
 OPEN_LEAD = open_lead("chair", "loop")  # 시험 계획의 둘째 블록은 반복이다
 from ..state import TurnContext, Verdict
-from ..turn.moves import FOUND_OK, FOUND_TIP, HINTS_DONE_UNFOUND, WRITE_TIP, pick_move
+from ..turn.moves import FOUND_OK, FOUND_TIP, HINTS_DONE_UNFOUND, WRITE_TIP, WRITE_TIP_LAST, pick_move
 
 PLAN = fakes.planned(fakes.hinted())
 
@@ -117,5 +117,6 @@ class GuideMoveTest(unittest.TestCase):
         self.assertEqual(missed.move, "tool")
         last = pick_move("guide", PLAN, turn(index=1), Verdict(True))
         self.assertEqual((last.move, last.advance), ("write", False))
+        self.assertEqual(last.saved, WRITE_TIP_LAST)  # 마지막 블록에는 '다음 블록이 열려요'라고 하지 않는다
         filled = pick_move("guide", PLAN, turn(event="block_filled", text=""), Verdict(True))  # 코드 확인이 통과해야 연다
         self.assertEqual((filled.move, filled.advance, filled.target), ("blank", True, 1))
