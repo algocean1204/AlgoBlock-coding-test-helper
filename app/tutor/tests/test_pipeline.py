@@ -1387,6 +1387,20 @@ class HonestCheckTest(unittest.TestCase):
                 got = solve({"ctx": ctx, "strategy": "fresh", "abstract": fact}, config)
             self.assertNotIn("abstract", got)
 
+    def test_abstract_takes_a_loose_level(self):
+        """뼈대의 단계는 모양을 따지지 않고 받는다("2"·2.0·null로 뼈대 전체를 잃지 않는다). 1~5의 정수로 바꿀 수 없으면 0(모름)이다."""
+        from ..llm import FakeLlm, use_llm
+        from ..plan.nodes import abstract
+
+        ctx = fakes.context(spec="")
+        for level, want in ((3, 3), ("2", 2), (2.0, 2), (" 4 ", 4), (None, 0), (2.5, 0), (9, 0), ("어려움", 0), (True, 0), ([2], 0)):
+            reply = {"spec": "문자열 배열 둘", "patterns": [], "skills": [], "size": 0, "level": level, "tags": []}
+            with use_llm(FakeLlm({"plan.abstract": [reply]})):
+                got = abstract({"ctx": ctx})
+            self.assertEqual((got["abstract"].spec, got["abstract"].level), ("문자열 배열 둘", want), level)
+        with use_llm(FakeLlm({"plan.abstract": [{"spec": "문자열 배열 둘"}]})):
+            self.assertEqual(abstract({"ctx": ctx})["abstract"].level, 0)  # 단계를 빠뜨려도 뼈대는 남는다
+
     def test_program_guide_follows_the_starter_reading(self):
         """표준 입출력 가이드에도 시작 코드를 넘기고 그 읽기 꼴을 따르게 한다(커서를 블록 사이로 넘기지 않게). 정해 둔 코드를 쓸 때는 넘기지 않는다."""
         from ..knowledge.ontology import technique_list
