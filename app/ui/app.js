@@ -2477,7 +2477,7 @@ const TOUR = [
 ];
 let tourAt = 0;
 let tourDemos = null; // 데모 묶음을 불러오는 약속(한 번만 부른다). 실패하면 null로 풀린다
-let tourShown = -1; // 지금 데모로 틀고 있는 장. 연결 상태만 새로 그릴 때 데모를 처음부터 다시 틀지 않으려고 둔다
+let tourShown = ""; // 지금 데모로 틀고 있는 장과 연결("장:연결"). 같으면 다시 올리지 않는다
 let tourRun = 0; // 안내를 열고 닫을 때마다 늘린다. 불러오기가 끝났을 때 그사이 닫혔거나 다시 열렸으면 데모를 올리지 않는다
 
 function loadTourDemos() {
@@ -2496,11 +2496,12 @@ function loadTourDemos() {
 async function playTourDemo() {
   const run = tourRun, at = tourAt;
   const demos = await loadTourDemos();
-  if (!demos || !$("tour").open || run !== tourRun || at !== tourAt || tourShown === tourAt) return; // 기다리는 사이 닫았거나 장을 넘겼다
-  if (!demos.has || !demos.has(tourAt)) { tourShown = -1; $("tour-art").classList.remove("live"); return void demos.clear($("tour-live")); } // 이 장은 정적 그림(새 화면)
-  tourShown = tourAt;
+  const conn = CONN.ready ? CONN.name : "", shown = `${at}:${conn}`; // 연결이 바뀌면 그림도 새 연결로 다시 올린다(글의 끝 문장과 그림의 상태가 같게)
+  if (!demos || !$("tour").open || run !== tourRun || at !== tourAt || tourShown === shown) return; // 기다리는 사이 닫았거나 장을 넘겼다
+  if (!demos.has || !demos.has(tourAt)) { tourShown = ""; $("tour-art").classList.remove("live"); return void demos.clear($("tour-live")); } // 이 장은 정적 그림(새 화면)
+  tourShown = shown;
   $("tour-art").classList.add("live");
-  demos.show($("tour-live"), tourAt);
+  demos.show($("tour-live"), tourAt, { conn });
 }
 
 function renderTour() {
@@ -2536,7 +2537,7 @@ function closeTour() {
 
 function stopTourDemo() { // 닫으면 올린 데모를 반드시 내린다(뒤에서 돌지 않게). Esc로 닫으면 close 이벤트가 부른다
   tourRun += 1;
-  tourShown = -1;
+  tourShown = "";
   $("tour-art").classList.remove("live");
   if (window.AlgoBlockTourDemos) window.AlgoBlockTourDemos.clear($("tour-live"));
 }

@@ -2011,6 +2011,16 @@ def color_tokens() -> None:
     assert html.count('name="theme-color"') == 1 and 'data-scheme-pref="system"' in html
 
 
+def tour_pictures() -> None:
+    """사용법 안내: 그림이 글과 같은 상태를 보인다. 보고서 장은 빈 상태 없이 강점·더 공부가 함께 보이고, 연결 장은 지금 연결을 따르며, 장을 넘기면 첫 내용이 바로 보인다."""
+    js, css = (HERE / "app.js").read_text(encoding="utf-8"), (HERE / "app.css").read_text(encoding="utf-8")
+    bundle = (HERE / "tour-demos.js").read_text(encoding="utf-8")
+    assert "아직 약한 주제로 보이는 곳이 없어요" not in bundle and "더 공부할 주제" in bundle  # 보고서 그림
+    assert "demos.show($(\"tour-live\"), tourAt, { conn })" in js and "Claude API 키" not in bundle  # 연결 그림은 지금 연결을 넘겨 받는다(고정 문구 없음)
+    assert ".tour-scene .a1 { animation: tour-in 0.35s var(--ease) both; }" in css  # 첫 내용은 기다리지 않고 나온다
+    assert ".mini-head::before" in css and "padding: 28px 56px 0" in css  # 정적 그림의 틀이 움직이는 데모의 창과 같다
+
+
 def new_draft() -> None:
     """내 문제 넣기: 걸음마다 기록을 쌓아 뒤로 가기가 앞 걸음으로 가고, 적던 글은 이 탭의 sessionStorage에만 둔다(서버나 localStorage로 나가지 않는다). 브라우저 동작은 화면 확인으로 본다."""
     js = (HERE / "app.js").read_text(encoding="utf-8")
@@ -2500,6 +2510,7 @@ def main() -> None:
         own_starter()
         case_shapes()
         table()
+        tour_pictures()
         new_draft()
         hidden_cases()
         assert not fake.calls, fake.calls  # 고치기·지우기도 모델을 부르지 않는다
