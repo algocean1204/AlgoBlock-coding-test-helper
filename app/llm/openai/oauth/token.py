@@ -30,9 +30,9 @@ PORT = 1455  # 쓰고 있으면 빈 포트를 쓴다(바뀌어도 되는 것은 
 CALLBACK = "/auth/callback"
 REFRESH_BEFORE = 120  # 만료 이만큼(초) 전부터 갱신한다
 DEAD_REFRESH = {"invalid_grant", "invalid_refresh_token", "token_expired", "refresh_token_expired", "refresh_token_invalidated", "refresh_token_reused"}
-RELOGIN = "ChatGPT 연결이 끝났어요. ‘Continue with ChatGPT’로 다시 로그인해 주세요."
-NO_PLAN = "ChatGPT 요금제 사용을 허락하지 않아 튜터에 쓸 수 없어요. ‘Continue with ChatGPT’로 다시 허락하거나 API 키를 넣어 주세요."
-OLD = "예전 방식의 ChatGPT 로그인은 더 쓰지 않아요. ‘Continue with ChatGPT’로 다시 로그인해 주세요."
+RELOGIN = "ChatGPT 연결이 끝났어요. ‘ChatGPT로 로그인’로 다시 로그인해 주세요."
+NO_PLAN = "ChatGPT 요금제 사용을 허락하지 않아 튜터에 쓸 수 없어요. ‘ChatGPT로 로그인’로 다시 허락하거나 API 키를 넣어 주세요."
+OLD = "예전 방식의 ChatGPT 로그인은 더 쓰지 않아요. ‘ChatGPT로 로그인’로 다시 로그인해 주세요."
 DONE = "연결됐어요. 이 창을 닫고 AlgoBlock으로 돌아가 주세요."
 
 _login = {"server": None, "error": None, "pending": None}

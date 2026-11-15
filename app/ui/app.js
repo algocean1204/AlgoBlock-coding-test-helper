@@ -790,6 +790,7 @@ function formMode(editing) {
   $("new-lead").textContent = editing ? "바꿀 곳을 고친 뒤 저장해요." : "가진 문제를 글이나 사진으로 넣어 같은 방식으로 풀어요.";
   $("new-submit").textContent = editing ? "바꿔서 저장" : "등록하고 풀러 가기";
   document.querySelector('#wsteps li[data-wstep="3"]').lastChild.textContent = editing ? "저장" : "등록";
+  $("new-title-note").hidden = editing; // '글의 첫 줄에서 채웠어요'는 새로 넣을 때만(수정의 제목은 저장해 둔 것이다)
   $("new-lang-field").hidden = editing; // 언어는 코드 화면에서 바꾼다
   $("new-mode").disabled = editing; // 푸는 방식은 등록할 때만 고른다(바꾸면 케이스와 코드가 모두 달라진다)
   $("new-mode-note").hidden = !editing;
