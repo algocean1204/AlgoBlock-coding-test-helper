@@ -1399,9 +1399,7 @@ function paintCode(ta) {
   ta.parentElement.classList.toggle("plain", plain);
   // ponytail: 글 전체를 매번 다시 나눈다(맥 웹뷰 500줄에서 2~5ms). 한도를 올리려면 바뀐 줄 근처만 다시 나누기로
   const rows = window.AlgoBlockHighlight.lines(code, plain ? "" : lang), old = pre._rows || [];
-  let head = 0, tail = 0; // 앞뒤에서 같은 줄을 건너뛰고 가운데만 바꾼다
-  while (head < old.length && head < rows.length && old[head] === rows[head]) head++;
-  while (tail < old.length - head && tail < rows.length - head && old[old.length - 1 - tail] === rows[rows.length - 1 - tail]) tail++;
+  const [head, tail] = window.AlgoBlockHighlight.same(old, rows); // 앞뒤에서 같은 줄을 건너뛰고 가운데만 바꾼다
   for (let i = old.length - tail - 1; i >= head; i--) pre.children[i].remove();
   const html = rows.slice(head, rows.length - tail).map((row) => `<div>${row}\n</div>`).join(""); // 줄 끝의 \n: 글이 글상자와 같아 커서 자리 계산이 맞는다
   const next = pre.children[head];

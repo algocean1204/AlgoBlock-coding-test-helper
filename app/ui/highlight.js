@@ -82,7 +82,7 @@
       `(?<c>${d.c})|(?<s>${d.s})|(?<n>${NUM})` +
       (d.pre ? String.raw`|(?<p>^[ \t]*#[ \t]*[a-z]+)(?<ph>[ \t]*<[^>\n]*>)?` : "") + // #include <vector>: 지시어는 키워드, 머리 파일 이름은 문자열
       (d.deco ? String.raw`|(?<d>@[A-Za-z_][\w.]*)` : "") +
-      (d.regex ? String.raw`|(?<rp>[(,=:[!&|?{};][ \t]*)(?<re>\/(?![\/*])(?:\\.|\[(?:\\.|[^\]\\\n])*\]|[^\/\\\n])+\/[a-z]*)` : "") +
+      (d.regex ? String.raw`|(?<rp>[(,=:[!&|?{};][ \t]*)(?<re>\/(?![\/*])(?:\\.|\[(?:\\.|[^\]\\\n])*\]|[^\/\\\n\[])+\/[a-z]*)` : "") + // 갈래가 겹치지 않게: [는 언제나 문자 묶음을 연다(겹치면 닫지 않은 줄에서 되돌아가기가 폭발한다)
       String.raw`|(?<w>[A-Za-z_$][\w$]*${d.macro ? "(?:!(?!=))?" : ""})`, "gm"));
   }
   function kindOf(d, g, call, named) {
@@ -140,7 +140,14 @@
     }
     return out;
   }
-  const api = { tokens, lines, LANGS: Object.keys(L) };
+  /** 옛 줄 목록에서 새 줄 목록으로: 앞뒤에서 같은 줄 수 [head, tail]. 화면은 그 가운데만 바꿔 넣는다. */
+  function same(old, rows) {
+    let head = 0, tail = 0;
+    while (head < old.length && head < rows.length && old[head] === rows[head]) head++;
+    while (tail < old.length - head && tail < rows.length - head && old[old.length - 1 - tail] === rows[rows.length - 1 - tail]) tail++;
+    return [head, tail];
+  }
+  const api = { tokens, lines, same, LANGS: Object.keys(L) };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.AlgoBlockHighlight = api;
 })(typeof window !== "undefined" ? window : globalThis);

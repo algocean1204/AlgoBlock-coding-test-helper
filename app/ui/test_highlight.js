@@ -5,7 +5,7 @@
 // 4. macOS 12의 웹뷰(Safari 15쯤)가 모르는 문법을 화면 스크립트에 쓰지 않는다
 "use strict";
 const fs = require("fs"), path = require("path"), assert = require("assert");
-const { tokens, lines, LANGS } = require("./highlight.js");
+const { tokens, lines, same, LANGS } = require("./highlight.js");
 
 const EXT = { python: "py", javascript: "js", java: "java", cpp: "cpp", go: "go", kotlin: "kt", rust: "rs" };
 assert.deepStrictEqual([...LANGS].sort(), Object.keys(EXT).sort());
@@ -79,6 +79,33 @@ const UNSUPPORTED = [[/\(\?<[=!]/, "정규식 뒤돌아보기"], [/\.at\(/, "Arr
 for (const name of ["highlight.js", "app.js"]) {
   const src = tokens(fs.readFileSync(path.join(__dirname, name), "utf8"), "javascript").filter((t) => t[0] !== "c").map((t) => t[1]).join("");
   for (const [re, what] of UNSUPPORTED) assert.ok(!re.test(src), `${name}: ${what}를 쓴다`);
+}
+
+// 5. 되돌아가기 폭발이 없다: 치는 중에 생기는 닫지 않은 줄이 화면을 멈추지 않는다(자동 저장되어 다시 열어도 멈춘다)
+const ms = (fn) => { const t = process.hrtime.bigint(); fn(); return Number(process.hrtime.bigint() - t) / 1e6; };
+// 작은 것부터: 폭발하는 판이면 큰 입력에서 멈추기 전에 여기서 실패한다
+const SLOW = [14, 30].flatMap((n) => [["javascript", "f(/" + "[[]".repeat(n), 10], ["javascript", "x = /" + "[a]".repeat(n + 10), 10]]);
+const BAD = ['"', "'", "\\", "`", "/*", '"""', "'''", "\\\"", "[", "(/", "r#", 'R"(', "#", "@", "0x", "1.", "${"];
+for (const lang of LANGS) for (const bad of BAD) SLOW.push([lang, "x = " + bad.repeat(2000), 50], [lang, ("a(" + bad).repeat(1000), 50]);
+for (const [lang, code, limit] of SLOW) {
+  tokens(code, lang); // 정규식을 만드는 시간은 빼고 잰다
+  const took = ms(() => tokens(code, lang));
+  assert.ok(took < limit, `${lang} ${JSON.stringify(code.slice(0, 12))}…(${code.length}자): ${took.toFixed(1)}ms`);
+}
+
+// 6. 줄 단위 다시 칠하기: 앞뒤의 같은 줄을 건너뛰고 가운데만 바꿔 넣어도 처음부터 다시 칠한 것과 같다(무작위 고침)
+let seed = 1;
+const rand = (n) => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed % n; };
+const PIECES = ["\n", '"""', "/*", "*/", "'", '"', "#", "//", "`", "x", "  ", "(", "/", "\\"];
+for (const [lang, ext] of Object.entries(EXT)) {
+  let code = fs.readFileSync(files.find((f) => path.basename(f) === `solution.${ext}`), "utf8"), shown = lines(code, lang);
+  for (let i = 0; i < 300; i++) {
+    const at = rand(code.length + 1), cut = rand(4);
+    code = code.slice(0, at) + (rand(3) ? PIECES[rand(PIECES.length)] : "") + code.slice(at + cut);
+    const rows = lines(code, lang), [head, tail] = same(shown, rows);
+    shown = [...shown.slice(0, head), ...rows.slice(head, rows.length - tail), ...shown.slice(shown.length - tail)];
+    assert.deepStrictEqual(shown, rows, `${lang} 고침 ${i + 1}`);
+  }
 }
 
 // 속도(참고): 긴 코드를 칠하는 데 드는 시간
