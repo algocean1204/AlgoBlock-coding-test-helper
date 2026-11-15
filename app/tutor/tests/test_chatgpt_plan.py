@@ -241,6 +241,19 @@ class PlanLoginTest(unittest.TestCase):
         self.assertEqual(self.forms, [])
         self.assertFalse(token.login_status()["connected"])
         self.assertIn("허락하지 않아", token.login_status()["error"])
+        self.assertIn("워크스페이스나 플랜", token.login_status()["error"])  # 동의 화면에서 막혀 취소한 경우도 알린다
+
+    def test_refused_code_mentions_plan(self):
+        """코드 교환이 invalid_grant로 끝나면 코드가 지났을 수도, 플랜 때문에 막혔을 수도 있다고 함께 알린다."""
+        def refuse(form):
+            raise token.Refused("invalid_grant", 400)
+        with mock.patch.object(token, "_token", refuse):
+            _, q = self.start()
+            self.callback(q, code="c", state=q["state"], client_id="issued-client")
+        error = token.login_status()["error"]
+        self.assertFalse(token.login_status()["connected"])
+        self.assertIn("로그인 코드가 지났다면", error)
+        self.assertIn("워크스페이스나 플랜", error)
 
     def test_new_registration_without_issued_client_is_incomplete(self):
         with mock.patch.object(token, "_token", self.fake_token()):
