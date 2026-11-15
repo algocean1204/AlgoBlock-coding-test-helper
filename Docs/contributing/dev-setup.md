@@ -105,7 +105,7 @@ npm run typecheck && npm run build
 | `powershell -ExecutionPolicy Bypass -File app\packaging\build_win.ps1` | Windows PC | `app\packaging\dist\AlgoBlock.exe`와 `AlgoBlock-windows-x64.exe` |
 | `sh app/packaging/build_win_docker.sh` | macOS·Linux(Docker 필요) | `app/packaging/dist-win/AlgoBlock.exe`와 `AlgoBlock-windows-x64.exe` |
 
-세 스크립트 모두 `uv`(Docker 경로는 Docker와 `python3`)가 있어야 하고, 임베딩 모델을 `app/packaging/models`에 받아 함께 묶는다. macOS 설치 파일은 서명하지 않는다. 버전은 `VERSION` 환경 변수로 정하며 기본값은 `0.1.0`이다(`build_mac.sh`만 쓴다). 자세한 내용은 [packaging README](../../app/packaging/README.md)를 본다.
+세 스크립트 모두 `uv`(Docker 경로는 Docker와 `python3`)가 있어야 하고, 임베딩 모델을 `app/packaging/models`에 받아 함께 묶는다. macOS 설치 파일은 서명하지 않는다. 버전은 `app/ui/updater.py`의 `VERSION` 한 곳에서 읽는다. 자세한 내용은 [packaging README](../../app/packaging/README.md)를 본다.
 
 ## 알려진 한계
 
