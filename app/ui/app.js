@@ -2211,12 +2211,14 @@ function renderAccounts(a) {
   $("chatgpt-usage").hidden = !a.chatgpt;
   document.querySelectorAll("[data-key]").forEach((el) => { el.textContent = a.keys[el.dataset.key] ? "넣음" : ""; });
   renderKeyDelete();
+  renderKeyStatus();
   if (a.chatgpt) { clearInterval(loginPoll); $("chatgpt-link").hidden = true; }
   if (S.view === "code" && S.problem) render();
   if (S.view === "list" && $("entries").innerHTML && !!$("note-conn") === ready) showList(); // 홈의 연결 한 줄을 새로 그린다
 }
 
 const KEY_LABEL = { claude: "Claude", openai: "OpenAI" };
+const KEY_PREFIX = { claude: "sk-ant-", openai: "sk-" }; // 서버(KEY_FORM)와 같은 꼴. 저장 전에 서버가 다시 본다
 const keyName = () => document.querySelector('input[name="keyname"]:checked').value;
 /** 고른 공급자의 키가 들어 있을 때만 '지우기'를 보인다(공급자를 바꾸면 확인은 접는다). */
 function renderKeyDelete() {
@@ -2227,11 +2229,66 @@ function renderKeyDelete() {
   $("key-delete").hidden = false;
   $("key-delete-confirm").hidden = true;
 }
+/* ── 키 칸의 상태: 비어 있음 → 입력 중(꼴 맞음·틀림) → 확인하는 중 → 쓸 수 있어요 / 거절됨 / 확인하지 못함. 공급자마다 마지막 결과를 따로 둔다 ── */
+const KEYUI = { claude: null, openai: null }; // {kind: ok·warn·error, text, retry, raw}. raw: 그 결과를 받은 때의 입력(입력이 달라지면 그 결과는 보이지 않는다)
+let keyChecking = false;
+/** 입력한 키의 꼴이 맞지 않으면 까닭을, 맞으면 "". */
+function keyFormBad(name, raw) {
+  const v = raw.trim(), label = KEY_LABEL[name], prefix = KEY_PREFIX[name];
+  if (/\s|[^\x21-\x7e]/.test(v)) return "빈칸이나 한글이 섞여 있어요. 키만 붙여 넣어 주세요.";
+  if (name === "openai" && v.startsWith("sk-ant-")) return "Claude 키 같아요. 위에서 Claude 키를 골라 주세요.";
+  if (!v.startsWith(prefix)) return `${label} 키는 ${prefix}로 시작해요.`;
+  if (v.length > 400 || !/^[A-Za-z0-9_-]+$/.test(v)) return "키에는 영문, 숫자, -, _만 있어요.";
+  return "";
+}
+function renderKeyStatus() {
+  const name = keyName(), label = KEY_LABEL[name], raw = $("key-value").value.trim(), box = $("key-status"), saved = KEYUI[name];
+  let kind = "", icon = "", text = "", retry = false;
+  if (keyChecking) text = `${label}에 키를 확인하는 중이에요…`;
+  else if (saved && saved.raw === raw) ({ kind, text, retry } = saved);
+  else if (!raw) text = `${label} 키를 붙여 넣어 주세요. ${KEY_PREFIX[name]}로 시작해요.`;
+  else { const bad = keyFormBad(name, raw); kind = bad ? "error" : "form"; text = bad || `키 꼴이 맞아요. ‘키 넣기’를 누르면 ${label}에 확인해요.`; }
+  icon = keyChecking ? DOTS : kind === "ok" || kind === "form" ? ico("i-check") : kind === "error" ? ico("i-x") : kind === "warn" ? ico("i-warn") : "";
+  const sig = `${name}|${keyChecking}|${kind}|${text}|${retry}`;
+  if (box.dataset.sig !== sig) { // 같은 글이면 다시 그리지 않는다(글자를 칠 때마다 화면 읽기 도구가 같은 글을 읽지 않게)
+    box.dataset.sig = sig;
+    box.className = `note${kind === "ok" ? " ok" : kind === "error" ? " error" : kind === "warn" ? " warn" : ""}`;
+    box.innerHTML = `${icon}<span>${esc(text)}</span>${retry ? '<button type="button" id="key-retry" class="btn small">다시 시도</button><button type="button" id="key-force" class="btn small">그래도 저장</button>' : ""}`;
+  }
+  $("key-save").disabled = keyChecking;
+  document.querySelectorAll('input[name="keyname"]').forEach((el) => { el.disabled = keyChecking; });
+}
+/** 키를 넣는다: 서버가 공급자에 확인한 뒤 쓸 수 있을 때만 저장한다. 확인하지 못했을 때는 force로 그래도 저장한다. */
+async function saveKey(force) {
+  const name = keyName(), value = $("key-value").value;
+  if (keyChecking) return;
+  const bad = value.trim() ? keyFormBad(name, value) : "키를 붙여 넣어 주세요.";
+  if (bad) { KEYUI[name] = { kind: "error", text: bad, raw: value.trim() }; renderKeyStatus(); return void $("key-value").focus(); }
+  KEYUI[name] = null;
+  keyChecking = true;
+  renderKeyStatus();
+  const r = await api("/api/key", { name, value, ...(force ? { force: true } : {}) });
+  keyChecking = false;
+  if (r.ok) {
+    $("key-value").value = "";
+    KEYUI[name] = r.data.key_check === "ok" ? { kind: "ok", text: "쓸 수 있는 키예요. 저장했어요.", raw: "" }
+      : r.data.key_check === "limited" ? { kind: "warn", text: "키는 맞아요. 지금은 요청 한도에 걸려 있어요. 저장했어요.", raw: "" } // 429: 키는 맞다
+      : { kind: "warn", text: "확인하지 못했지만 저장했어요. 튜터를 처음 부를 때 다시 확인해요.", raw: "" };
+    renderAccounts(r.data);
+  } else {
+    const unverified = ["key_unverified", "key_denied"].includes(r.error.code); // 확인하지 못함·권한 없음: 다시 시도하거나 그래도 저장할 수 있다
+    KEYUI[name] = { kind: unverified ? "warn" : "error", text: r.error.message || errorNote(r.error).text, retry: unverified, raw: value.trim() };
+  }
+  renderKeyStatus();
+  if (!r.ok) ($("key-retry") || $("key-value")).focus();
+}
+
 async function deleteKey() {
   const name = keyName();
   $("key-delete-yes").disabled = $("key-delete-no").disabled = true; // 요청 중에는 다시 누르지 못하게
   const r = await accounts("/api/key/delete", { name }, `${KEY_LABEL[name]} 키를 지웠어요.`);
   $("key-delete-yes").disabled = $("key-delete-no").disabled = false;
+  if (r.ok) { KEYUI[name] = null; renderKeyStatus(); }
   if (r.ok && ACCOUNTS.keys[name]) $("conn-note").textContent = `${KEY_LABEL[name]} 키를 지웠어요. 그래도 .env나 환경 변수에 키가 있어 계속 연결돼 있어요.`;
   $("conn-toggle").focus();
 }
@@ -2560,10 +2617,7 @@ document.addEventListener("click", (e) => {
       $("upd-note").textContent = r.data.latest ? "" : r.data.state === "latest" ? "최신 버전이에요." : r.data.message;
       if (r.data.latest) { toggleConn(false); openUpdate(); }
     },
-    "key-save": async () => {
-      const r = await accounts("/api/key", { name: keyName(), value: $("key-value").value }, "키를 저장했어요. 키가 맞는지는 튜터를 처음 부를 때 확인해요.");
-      if (r.ok) $("key-value").value = "";
-    },
+    "key-save": () => saveKey(false), "key-retry": () => saveKey(false), "key-force": () => saveKey(true),
     "key-delete": () => { $("key-delete").hidden = true; $("key-delete-confirm").hidden = false; $("key-delete-no").focus(); },
     "key-delete-no": () => { renderKeyDelete(); $("key-delete").focus(); }, "key-delete-yes": deleteKey,
     "models-open": () => { toggleConn(false); openModels(); }, "models-close": () => { $("models").close ? $("models").close() : $("models").removeAttribute("open"); $("conn-toggle").focus(); },
@@ -2597,13 +2651,14 @@ document.addEventListener("change", (e) => {
   if (e.target.id === "new-theme") return syncForm();
   if (e.target.id === "p-lang-select") return void (e.target.value !== S.problem.language && wantLanguage(e.target.value));
   if (e.target.id === "upd-auto") return void updAct("auto", { on: e.target.checked });
-  if (e.target.name === "keyname") return renderKeyDelete();
+  if (e.target.name === "keyname") { renderKeyDelete(); return renderKeyStatus(); }
   if (e.target.name === "client") accounts("/api/client", { client: e.target.value }, e.target.value === "cli" ? "이 PC의 Claude Code로 튜터를 불러요." : "연결한 AI로 튜터를 불러요.");
 });
 
 document.addEventListener("input", (e) => {
   const el = e.target;
   if (el.id === "code") return codeChanged();
+  if (el.id === "key-value") return renderKeyStatus(); // 글자를 고치면 앞의 결과 대신 꼴을 바로 본다
   if (el.closest("#new-form")) { syncForm(); if (el.getAttribute("aria-invalid")) clearError(); }
   if (el.classList.contains("case-val")) markTableDiff();
   if (el.id.startsWith("case-input-")) return showCall(el);
