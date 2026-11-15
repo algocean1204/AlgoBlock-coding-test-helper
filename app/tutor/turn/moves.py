@@ -19,6 +19,8 @@ FOUND_OK = "통과예요. 이 블록의 코드는 할 일을 해내요."  # 의�
 HINTS_DONE = "이 블록의 힌트는 다 봤어요. 블록 칸에 적어 확인받거나, '이 블록 채우기'로 이 블록만 볼 수 있어요."
 HINTS_DONE_UNFOUND = "이 블록의 힌트는 다 봤어요. '이 블록 채우기'로 이 블록만 볼 수 있어요."  # 의자에서 아직 찾지 못한 블록(코드 칸이 없다)
 FOUND_TIP = "블록 칸에 이 블록의 코드를 적어 보세요. "  # 의자에서 말로 블록을 찾았을 때 앞말(찾은 블록의 칸에 적으라는 말이 없어 생각과 코드가 끊겼다)
+# 가이드에서 빈칸을 말로 맞혔다. 가이드의 다음 블록은 블록 코드 확인(또는 넘어가기·채우기)으로만 열린다(말로 열면 코드 칸이 빈 채 지나갔다)
+WRITE_TIP = "그 생각을 이 블록의 코드 칸에 코드로 적고 '블록 코드 확인'을 눌러 보세요. 확인을 통과하면 다음 블록이 열려요."
 _ASK_ANSWER = re.compile(r"답.{0,3}(알려|줘|주세요|보여)")
 
 
@@ -114,6 +116,8 @@ def _pick_move(mode: str, plan: BlockPlan, turn: TurnContext, verdict: Verdict |
             return MovePlan(LADDER[mode][min(turn.hints_seen, 2)], index, False, saved=lead.strip())
         # 저장 힌트가 없으면 못 해낸 첫 신호를 겨눠 짓는다(빠진 것과 다른 것을 물었다)
         return advance() if ok else hinted(lead, signal_text(blocks[index], verdict.miss if verdict else None))
+    if ok and mode == "guide":
+        return MovePlan("write", index, False, saved=WRITE_TIP)
     if ok:
         # 근거 질문은 문항에 한 번, 생각할 거리가 있는 블록(반복·조건·분기)에서만 한다.
         # '답 담을 리스트' 같은 변수 블록마다 근거를 물으니 초보자가 멈칫했다(같은 질문이 두 블록 연달아 나왔다)

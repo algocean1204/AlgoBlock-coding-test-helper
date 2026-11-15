@@ -15,7 +15,7 @@ from ..llm import LlmFailed, LlmTimeout
 from ..main import AGENTS, build
 from ..state import BlockState, DebugState, FilledBlock, Solution, Submission
 from ..turn.code_check import BRACE_CLOSE, BRACE_OPEN, NOT_JOINED, brace_note, code_hash, unrun_note
-from ..turn.moves import FOUND_OK, FOUND_TIP, HINTS_DONE, HINTS_DONE_UNFOUND
+from ..turn.moves import FOUND_OK, FOUND_TIP, HINTS_DONE, HINTS_DONE_UNFOUND, WRITE_TIP
 
 DRAFT = {"plan.draft_blocks": [fakes.drafted([fakes.as_dict(b) for b in fakes.hinted()])]}
 
@@ -280,8 +280,9 @@ class GuideTest(unittest.TestCase):
         start = fakes.go(fakes.make_state("turn", fakes.context(plan=coded, open_count=1), mode="guide", event="start"), {})[0]
         self.assertEqual(start["result"]["reply"], coded.blocks[0].hints[0])  # 저장 힌트는 다시 검사하지 않는다(4차 확인: import 줄이 '참고 코드'에 걸렸다)
         done, fake = fakes.go(self.guide("count[p] += 1"), {"guide.judge": ["[check]Y g"]})
-        self.assertEqual((done["result"]["move"], done["result"]["advance"], fakes.tasks(fake)), ("blank", True, ["guide.judge"]))
-        self.assertEqual(done["result"]["reply"], open_lead("guide", "loop") + fakes.HINTS2[0])  # 가이드는 블록 이름이 보여 종류 안내가 없다
+        # 말로 맞혀도 다음 블록을 열지 않는다(코드 칸이 빈 채 지나갔다). 그 블록의 코드를 적어 확인받게 한다(모델 0회의 고정 말)
+        self.assertEqual((done["result"]["move"], done["result"]["advance"], done["open_count"], fakes.tasks(fake)), ("write", False, 1, ["guide.judge"]))
+        self.assertEqual(done["result"]["reply"], WRITE_TIP)
         self.assertNotIn("근거 수준", fakes.prompt(fake, "guide.judge"))
 
     def code_turn(self, code, open_count=1):
@@ -1602,6 +1603,8 @@ class OtherFeatureTest(unittest.TestCase):
         self.assertTrue(any("넘어가지 못한 답이 1번" in line for line in old), old)  # 표시 없는 옛 기록은 전과 같게 읽는다
         talk = [fakes.user("모르겠는데 반복을 먼저 할까요", 0), fakes.service("무엇을 세야 할까요?", 0, "m2", "blank")]
         self.assertTrue(record_lines(fakes.context(guide=talk, block_states=states), plan))  # 말로 막힌 것은 그대로 센다
+        right = [fakes.user("count[p] += 1", 0), fakes.service(WRITE_TIP, 0, "m3", "write")]
+        self.assertEqual(record_lines(fakes.context(guide=right, block_states=states), plan), [])  # 말로 맞히고 코드로 적으라는 말을 받은 것은 막힌 답이 아니다
         for ok in (True, False):
             ctx = fakes.context(plan=plan, open_count=2, latest_submission=Submission("s1", "print(1)", ok), block_states=states)
             prompt = analyze_messages({**fakes.make_state("feedback", ctx), "strategy": "keep_flow"})[1]["content"]
