@@ -75,9 +75,14 @@
       <label class="choice"><input type="radio" name="keyname" value="claude" checked> Claude 키 <span class="muted" data-key="claude"></span></label>
       <label class="choice"><input type="radio" name="keyname" value="openai"> OpenAI 키 <span class="muted" data-key="openai"></span></label>
     </div>
-    <div class="inline-form">
-      <input id="key-value" type="password" aria-label="API 키" autocomplete="off" placeholder="키를 붙여 넣어요" data-send="key-save">
-      <button type="button" id="key-save" class="btn small">키 넣기</button>
+    <div class="key-field">
+      <label for="key-value" id="key-label">Claude API 키</label>
+      <p class="hint" id="key-hint"><span id="key-prefix"></span> <a id="key-get" class="link" target="_blank" rel="noopener"></a></p>
+      <div class="inline-form key-row">
+        <input id="key-value" type="password" aria-describedby="key-hint key-status" autocomplete="off" spellcheck="false" placeholder="키를 붙여 넣어요" data-send="key-save">
+        <button type="button" id="key-reveal" class="btn small quiet" aria-pressed="false">보기</button>
+        <button type="button" id="key-save" class="btn small">키 넣기</button>
+      </div>
     </div>
     <div id="key-status" class="note" role="status" aria-live="polite"></div>
     <p class="hint">키는 이 기기에만 저장해요. 다음에 켜도 그대로 쓸 수 있어요.</p>
