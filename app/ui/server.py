@@ -54,7 +54,7 @@ from tutor.save.respond import blocks_body, shown_count  # noqa: E402
 from tutor.ingest import IngestError, ocr_doubts, read_pages, reread  # noqa: E402
 from tutor.ingest.files import split_files  # noqa: E402
 from tutor.eval.scenarios import all_scenarios  # noqa: E402
-from tutor.knowledge.ontology import PITFALLS, TECHNIQUES, techniques_of  # noqa: E402
+from tutor.knowledge.ontology import PITFALL_GROUPS, PITFALLS, TECHNIQUES, techniques_of  # noqa: E402
 from tutor.llm import LlmNotConfigured, themes, use_llm  # noqa: E402
 from tutor.store.sqlite import now  # noqa: E402
 
@@ -2097,6 +2097,18 @@ def readiness(unaided: dict, started: set, fresh: dict) -> dict:
                       f"실전 연습 단계: 필수 주제를 모두 실전 익힘, 자주 나오는 주제({', '.join(theme_name(key) for key in FREQUENT)})를 모두 기초 익힘."]}
 
 
+def repeated_pitfalls(store) -> list[dict]:
+    """두 번 이상 밟은 함정과, 그 함정이 나온 문제. 한 번만 나온 것은 되풀이가 아니라서 뺀다."""
+    where: dict[str, list[str]] = {}
+    for row in store.conn.execute("SELECT DISTINCT problem_id, pitfall FROM pitfall_hit ORDER BY rowid").fetchall():
+        ids = where.setdefault(PITFALL_GROUPS.get(row["pitfall"], row["pitfall"]), [])
+        if row["problem_id"] in PROBLEMS and row["problem_id"] not in ids:
+            ids.append(row["problem_id"])
+    return [{"name": PITFALLS[pid][1] if pid in PITFALLS else pid, "count": count,
+             "problems": [{"id": x, "title": PROBLEMS[x].title} for x in where.get(pid, [])]}
+            for pid, count in store._frequent_pitfalls(5) if count >= 2]
+
+
 def learning_report(t) -> dict:
     """학습 보고서. 저장된 제출·학습 기록에서 규칙으로만 계산한다(모델 0회).
 
@@ -2223,7 +2235,7 @@ def learning_report(t) -> dict:
         "strengths": [{"key": row["key"], "name": row["name"], "why": row["why"]} for row in strong],
         "weaknesses": [{"key": row["key"], "name": row["name"], "why": row["why"], "next": {"id": (row["review"] or row["next"])["id"], "title": (row["review"] or row["next"])["title"]}
                         if row["review"] or row["next"] else None} for row in weak],
-        "pitfalls": [{"name": PITFALLS[pid][1] if pid in PITFALLS else pid, "count": count} for pid, count in t.store._frequent_pitfalls(5)],
+        "pitfalls": repeated_pitfalls(t.store),
         "recent": [{"id": sub["problem_id"], "title": PROBLEMS[sub["problem_id"]].title, "ok": sub["ok"], "status": sub["status"], "language": sub["language"], "at": sub["at"]}
                    for sub in reversed(subs) if sub["problem_id"] in PROBLEMS][:10],
         "signals": signals, "feedbacks": feedbacks, "next": todo_rows, "attendance": attendance(),
