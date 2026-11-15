@@ -1598,10 +1598,17 @@ class OtherFeatureTest(unittest.TestCase):
 
     def test_feedback_record_names_skipped_blocks(self):
         from ..feedback.prompts import record_lines
-        from ..common.talk_rules import SKIPPED
+        from ..common.talk_rules import CHECKED, SKIPPED
         guide = [fakes.user("x = 1", 0, "u1"), fakes.service(SKIPPED + " 다음 블록이에요.", 0, "m1", "done")]
         lines = "\n".join(record_lines(fakes.context(guide=guide, block_states={"b1": BlockState("b1", "x = 1", "h", "?", None, 1)}), fakes.planned(fakes.two())))
-        self.assertIn("블록 1(입력받기): '이대로 넘어가기'로 확인 없이 넘어감", lines)
+        self.assertIn("블록 1(입력받기): 확인하지 않고 '이대로 넘어가기'로 넘어감(확인 전. 맞았다고도 틀렸다고도 하지 않는다)", lines)
+        # 확인을 눌러 통과하지 못한 뒤 넘긴 블록은 '확인하지 않고'가 아니다. 그 뒤의 제출이 통과했으면 실행해 보지 않았다고 말하지 않게 한다
+        tried = [fakes.user("x = 0", 0, "u0"), fakes.service("이어지지 않아요.", 0, "m0", "done"), *guide]
+        tried[0].move = CHECKED + "N"
+        skipped = {"b1": BlockState("b1", "x = 1", "h", "?", None, 2)}
+        for ok, want in ((True, "그 뒤 이 풀이의 제출이 모든 테스트를 통과했다"), (False, "확인 전. 맞았다고도 틀렸다고도 하지 않는다")):
+            got = "\n".join(record_lines(fakes.context(guide=tried, block_states=skipped, latest_submission=Submission("s1", "x = 1", ok)), fakes.planned(fakes.two())))
+            self.assertIn(f"블록 1(입력받기): 블록 코드 확인에서 통과하지 못한 뒤 '이대로 넘어가기'로 넘어감({want}", got)
         self.assertNotIn("넘어감", "\n".join(record_lines(fakes.context(guide=guide, block_states={"b1": BlockState("b1", "x = 1", "h", "Y", None, 1)}), fakes.planned(fakes.two()))))
 
     def test_llm_failure_clears_new_plan(self):
