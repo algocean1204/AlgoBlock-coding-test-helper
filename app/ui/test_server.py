@@ -1573,7 +1573,7 @@ def key_flow() -> None:
 
 
 def key_check_flow() -> None:
-    """키 확인(가짜 응답, 네트워크 없음): 공식 주소에 모델 목록 조회 한 번(10초), 결과 넷. 쓸 수 있을 때만 저장하고, 확인하지 못하면 사용자가 고르면 저장한다. 키 값은 결과·오류 글에 없다."""
+    """키 확인(가짜 응답과 루프백 서버, 외부 네트워크 없음): 공식 주소에 모델 목록 조회 한 번(10초), 결과 여섯. 리다이렉트는 따라가지 않는다. 키 값은 결과·오류 글에 없다."""
     import io
     import urllib.error
     from app.llm import keycheck
@@ -1600,7 +1600,7 @@ def key_check_flow() -> None:
 
     http = lambda code: urllib.error.HTTPError("https://example.invalid", code, "x", {}, io.BytesIO(b""))
     secret = "sk-ant-api03-" + "q" * 20
-    for result, want in ((200, "ok"), (http(401), "invalid"), (http(403), "denied"), (http(429), "denied"), (http(500), "offline"), (http(404), "offline"),
+    for result, want in ((200, "ok"), (http(401), "invalid"), (http(403), "denied"), (http(429), "limited"), (http(500), "server"), (http(529), "server"), (http(404), "offline"), (http(302), "offline"),
                          (urllib.error.URLError(f"연결하지 못함 {secret}"), "offline"), (TimeoutError(secret), "offline"), (Reply(302).status, "offline")):
         assert keycheck.check("claude", secret, opener=opener(result)) == want, (result, want)
     seen.clear()
@@ -1613,6 +1613,45 @@ def key_check_flow() -> None:
         raise AssertionError("모르는 공급자는 거절해야 한다")
     except ValueError:
         pass
+
+    # 리다이렉트는 따라가지 않는다: 첫 주소가 302로 다른 호스트를 가리켜도 그 호스트는 키 헤더를 받지 않는다(루프백 서버 둘)
+    import http.server
+    import threading
+
+    got = []
+
+    class Second(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            got.append(dict(self.headers))
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"{}")
+
+        def log_message(self, *args):
+            pass
+
+    second = http.server.HTTPServer(("127.0.0.1", 0), Second)
+
+    class First(Second):
+        def do_GET(self):
+            self.send_response(302)
+            self.send_header("Location", f"http://127.0.0.1:{second.server_port}/")
+            self.end_headers()
+
+    first = http.server.HTTPServer(("127.0.0.1", 0), First)
+    for one in (first, second):
+        threading.Thread(target=one.serve_forever, daemon=True).start()
+
+    def to_first(request, timeout):  # 공식 주소 대신 첫 루프백 서버로 보내되, 헤더와 기본 opener(리다이렉트를 따르지 않는 것)는 그대로 쓴다
+        return keycheck.OPENER.open(urllib.request.Request(f"http://127.0.0.1:{first.server_port}/", headers=dict(request.header_items())), timeout=timeout)
+
+    try:
+        assert keycheck.check("claude", secret, opener=to_first) == "offline" and keycheck.check("openai", "sk-proj-" + "r" * 20, opener=to_first) == "offline"
+        assert got == [], got  # 두 번째 호스트에는 요청도 헤더도 가지 않았다
+    finally:
+        for one in (first, second):
+            one.shutdown()
+            one.server_close()
 
     calls = []
 
@@ -1636,14 +1675,22 @@ def key_check_flow() -> None:
     with patch.dict(os.environ, {}):
         os.environ.pop("ANTHROPIC_API_KEY", None)
         server.KEY_FILE.unlink(missing_ok=True)
-        for result, status, code in (("invalid", 400, "key_invalid"), ("denied", 400, "key_denied"), ("offline", 409, "key_unverified")):
+        # 401은 저장하지 않고 '그래도 저장'도 없다. 403·5xx·연결 못 함은 저장하지 않되 '그래도 저장'을 연다. 429는 키가 맞으니 저장한다
+        for result, status, code in (("invalid", 400, "key_invalid"), ("denied", 409, "key_denied"), ("server", 409, "key_unverified"), ("offline", 409, "key_unverified")):
             exc = refused(result)
             assert (exc.status, exc.code, exc.field) == (status, code, "value") and secret not in str(exc), (result, exc.status, exc.code)  # 글에 키 값이 없다
             assert not os.environ.get("ANTHROPIC_API_KEY") and not server.KEY_FILE.exists(), result  # 쓸 수 없는 키, 확인하지 못한 키는 저장하지 않는다
-        assert calls == [("claude", secret)] * 3  # 앞뒤 공백은 뗀 값으로 확인한다
+        assert calls == [("claude", secret)] * 4  # 앞뒤 공백은 뗀 값으로 확인한다
+        assert "권한" in str(refused("denied")) and "서버가 답하지 않아" in str(refused("server")) and "인터넷" not in str(refused("server")) and "인터넷" in str(refused("offline"))  # 까닭을 단정하지 않고 맞게 말한다
+        assert refused("invalid", force=True).code == "key_invalid"  # 틀린 키는 그래도 저장할 수 없다
         assert refused("offline", force="true").code == "key_unverified"  # 정확히 true일 때만 확인 없이 저장한다
-        saved = put("offline", force=True)
-        assert saved["key_check"] == "offline" and saved["keys"]["claude"] and server.read_json(server.KEY_FILE, {}) == {"ANTHROPIC_API_KEY": secret}
+        for result in ("denied", "server", "offline"):
+            saved = put(result, force=True)
+            assert saved["key_check"] == result and saved["keys"]["claude"] and server.read_json(server.KEY_FILE, {}) == {"ANTHROPIC_API_KEY": secret}, result
+            server.KEY_FILE.unlink()
+            os.environ.pop("ANTHROPIC_API_KEY")
+        saved = put("limited")  # 429: 키는 맞다. 물음 없이 저장한다
+        assert saved["key_check"] == "limited" and server.read_json(server.KEY_FILE, {}) == {"ANTHROPIC_API_KEY": secret}
         server.KEY_FILE.unlink()
         os.environ.pop("ANTHROPIC_API_KEY")
         saved = put("ok")
