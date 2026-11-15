@@ -860,11 +860,20 @@ def defined_function(code: str, language: str, program: bool = False) -> str:
     return found[0] if len(found) == 1 else ""
 
 
-_START_IMPORT = ("python", "java", "kotlin", "cpp")  # 같은 가져오기를 두 번 적어도 오류가 아닌 언어(Go는 안 쓴 가져오기, Rust는 같은 이름의 두 번 가져오기, JavaScript는 같은 이름의 두 번 선언이 오류다)
+_START_IMPORT = ("python", "java", "kotlin", "cpp")  # 같은 가져오기를 두 번 적어도 오류가 아닌 언어. Go·Rust·JavaScript는 언어마다 고른다(아래)
 
 
 def starter_imports(rows: list[str], starter: str, language: str) -> list[str]:
-    """시작 코드의 가져오기 줄 가운데 rows에 아직 없는 것. 시작 코드의 'import java.util.*;'를 믿고 쓴 코드가 이어 붙인 프로그램에서도 돌게 한다."""
+    """시작 코드의 가져오기 줄 가운데 rows에 아직 없는 것. 시작 코드의 'import java.util.*;'를 믿고 쓴 코드가 이어 붙인 프로그램에서도 돌게 한다.
+    Go·Rust·JavaScript는 그대로 더하면 오류가 나는 꼴이 있어 고른다: Go는 쓰지 않은 가져오기가 컴파일 오류라 프로그램이 'fmt.'처럼 쓰는데 들여오지 않은 꾸러미만,
+    Rust는 같은 이름을 두 번 들여오면 오류라 프로그램의 use·항목에 없는 이름만(쓰지 않은 use는 경고뿐이고 트레이트는 이름 없이 메서드로 쓰인다),
+    JavaScript는 같은 이름의 두 번 선언이 오류라 require 선언 가운데 프로그램이 쓰는데 선언하지 않은 이름만 더한다."""
+    if language == "go":
+        return _go_lead("\n".join(rows), starter or "")
+    if language == "rust":
+        return _rust_lead("\n".join(rows), starter or "")
+    if language == "javascript":
+        return _js_lead("\n".join(rows), starter or "")
     if language not in _START_IMPORT:
         return []
     have, out = {re.sub(r"\s+", "", row) for row in rows}, []
@@ -876,17 +885,190 @@ def starter_imports(rows: list[str], starter: str, language: str) -> list[str]:
     return out
 
 
+def _code_only(text: str, language: str) -> str:
+    """문자열·주석을 빈칸으로 바꾼 글(이름을 셀 때 글자 안의 낱말을 세지 않게)."""
+    return _LEX[language].sub(lambda m: " " if m.lastgroup in ("s", "c") else m.group(0), text)
+
+
+def _names_used(text: str, language: str, dotted: bool = False) -> set[str]:
+    """문자열·주석 밖에서 쓴 이름(점 뒤의 속성 이름은 뺀다). JavaScript 백틱의 ${…} 안도 센다. dotted면 바로 뒤에 '.'이 오는 이름만(Go의 'fmt.')."""
+    found = set()
+    for m in _LEX[language].finditer(text):
+        if m.lastgroup == "s" and language == "javascript" and m.group(0).startswith("`"):
+            found |= _names_used(" ".join(re.findall(r"\$\{([^`]*?)\}", m.group(0))), language, dotted)
+        elif m.lastgroup == "n" and text[m.start() - 1:m.start()] != "." and (not dotted or text[m.end():m.end() + 1] == "."):
+            found.add(m.group(0))
+    return found
+
+
+_GO_SPEC = re.compile(r'(?:([A-Za-z_]\w*|[._])\s+)?"([^"\n]+)"')
+
+
+def _go_specs(text: str) -> list[tuple[str, str]]:
+    """Go import 선언(한 줄 꼴과 'import ( … )' 꼴)의 (꾸러미 이름, 적은 글). 이름은 별칭, 없으면 경로의 끝 마디."""
+    return [(spec.group(1) or spec.group(2).rsplit("/", 1)[-1], spec.group(0))
+            for m in re.finditer(r"(?m)^\s*import\s*(\([^)]*\)|.*)$", text) for spec in _GO_SPEC.finditer(m.group(1))]
+
+
+def _go_lead(text: str, starter: str) -> list[str]:
+    have, used, out = {name for name, _ in _go_specs(text)}, _names_used(text, "go", dotted=True), []
+    for name, spec in _go_specs(starter):
+        if name in used and name not in have and name not in ("_", "."):  # '_'·'.' 가져오기는 쓰임을 이름으로 알 수 없다
+            have.add(name)
+            out.append(f"import {spec}")
+    return out
+
+
+_RUST_USE = re.compile(r"\buse\s+([^;]+);")
+_RUST_ITEM = re.compile(r"\b(?:fn|struct|enum|trait|type|mod|const|static|union)\s+([A-Za-z_]\w*)")
+
+
+def _rust_items(body: str) -> list[tuple[str, str]] | None:
+    """use 하나가 들여오는 (이름, 경로). 'a::{self, B as C}'·'a::b'·'a::b as c'·'a::*'(이름은 경로 그대로) 꼴만 읽는다. 겹친 중괄호 같은 다른 꼴은 None."""
+    body = re.sub(r"\s*(::|[{},])\s*", r"\1", " ".join(body.split()))
+    group = re.fullmatch(r"([\w:]*\w)::\{([^{}]*)\}", body)
+    prefix, parts = (group.group(1), group.group(2).split(",")) if group else ("", [body])
+    out = []
+    for part in filter(None, parts):
+        path = prefix if part == "self" else f"{prefix}::{part}" if prefix else part
+        found = re.fullmatch(r"([\w:]*\w|[\w:]*::\*)(?: as (\w+))?", path)
+        if found is None:
+            return None
+        out.append((found.group(2) or (path if path.endswith("*") else found.group(1).rsplit("::", 1)[-1]), path))
+    return out
+
+
+def _rust_lead(text: str, starter: str) -> list[str]:
+    code = _code_only(text, "rust")
+    uses = [m.group(1) for m in _RUST_USE.finditer(code)]
+    # 프로그램이 이미 쓰는 이름: use가 들여온 이름과 '…::*', 프로그램이 정의한 항목. 읽지 못하는 꼴의 use는 그 안의 낱말을 모두 센다(덜 더할 뿐이다).
+    # 경로 가운데의 낱말은 들여온 이름이 아니다('use std::io::stdin;'은 io를 들여오지 않는다)
+    have = set(_RUST_ITEM.findall(code))
+    for body in uses:
+        items = _rust_items(body)
+        have |= set(re.findall(r"\w+", body)) if items is None else {name for name, _ in items} | {path for _, path in items}
+    out = []
+    for m in _RUST_USE.finditer(_code_only(starter, "rust")):
+        items = _rust_items(m.group(1))
+        need = [path for name, path in items or [] if name not in have]
+        if need:
+            have |= {name for name, _ in items}
+            out += [f"use {' '.join(m.group(1).split())};"] if len(need) == len(items) else [f"use {path};" for path in need]
+    return out
+
+
+_JS_REQUIRE = re.compile(r"(?:const|let|var)\s+(.+?)\s*=\s*require\(.*")
+
+
+def _js_targets(lhs: str) -> set[str]:
+    """선언의 왼쪽(이름, '{ a, b: c, d = 1 }', '[a, b]')이 만드는 이름."""
+    lhs = lhs.strip()
+    if not lhs.startswith(("{", "[")):
+        return set(re.findall(r"^[A-Za-z_$][\w$]*", lhs))
+    out = set()
+    for part in lhs.strip("{}[] ").split(","):
+        part = part.split(":")[-1].split("=")[0].strip(" .")
+        out |= set(re.findall(r"^[A-Za-z_$][\w$]*", part))
+    return out
+
+
+def _js_declared(code: str) -> set[str]:
+    """프로그램이 선언한 이름(const·let·var의 왼쪽마다, function·class 이름). 한 문장에 여럿('let a = 1, b = 2')도 센다."""
+    out = set(re.findall(r"\b(?:function|class)\s+([A-Za-z_$][\w$]*)", code))
+    for m in re.finditer(r"\b(?:const|let|var)\s+([^;\n]*)", code):
+        depth, part, parts = 0, "", []
+        for ch in m.group(1):
+            depth += (ch in "([{") - (ch in ")]}")
+            if ch == "," and depth == 0:
+                parts, part = [*parts, part], ""
+            else:
+                part += ch
+        for item in [*parts, part]:
+            cut, depth = len(item), 0
+            for j, ch in enumerate(item):
+                depth += (ch in "([{") - (ch in ")]}")
+                if ch == "=" and depth == 0 and item[j + 1:j + 2] != "=":
+                    cut = j
+                    break
+            out |= _js_targets(re.split(r"\s(?:of|in)\s", item[:cut])[0])
+    return out
+
+
+_JS_STDIN = re.compile(r"process\.stdin|readFileSync\(\s*(?:0|[\"']/dev/stdin[\"'])|require\(\s*[\"']readline[\"']\s*\)")  # 표준 입력을 읽는 글
+
+
+def _js_lead(text: str, starter: str) -> list[str]:
+    declared, used, out = _js_declared(_code_only(text, "javascript")), _names_used(text, "javascript"), []
+    for row in starter.splitlines():
+        found = _JS_REQUIRE.fullmatch(_plain(row, "javascript") or "")
+        names = _js_targets(found.group(1)) if found else set()
+        if _JS_STDIN.search(row) and _JS_STDIN.search(text):  # 표준 입력은 한 번만 읽힌다: 프로그램이 이미 읽으면 더한 줄이 먼저 다 읽어 프로그램의 읽기가 빈다
+            continue
+        if names & used and not names & declared:
+            declared |= names
+            out.append(row.strip())
+    return out
+
+
+def _rust_inner_end(rows: list[str]) -> int:
+    """Rust 파일 맨 앞의 내부 속성·내부 문서 주석이 끝나는 줄의 다음 줄 번호(없으면 0). 줄 꼴이 아니라 글을 처음부터 읽는다:
+    빈칸과 주석(줄 주석, 겹칠 수 있는 블록 주석)은 건너뛰고, '#!['은 짝 맞는 ']'까지(그 안의 문자열 포함), '//!'·'/*!'은 그 주석의 끝까지가 머리말이다.
+    여러 줄에 걸친 '#![allow(…)]'의 안이나 '/*! … */' 앞에 use가 들어가 컴파일 오류였다."""
+    text, i, end = "\n".join(rows), 0, 0
+    while i < len(text):
+        if text[i].isspace():
+            i += 1
+            continue
+        start = i
+        if text.startswith("//", i):
+            i = text.find("\n", i) if "\n" in text[i:] else len(text)
+        elif text.startswith("/*", i):
+            depth, i = 1, i + 2
+            while i < len(text) and depth:
+                depth += text.startswith("/*", i) - text.startswith("*/", i)
+                i += 2 if text.startswith(("/*", "*/"), i) else 1
+        elif text.startswith("#![", i):
+            depth, i = 0, i + 2
+            while i < len(text):
+                if text[i] == '"':
+                    i = _close_quote(text, i)
+                    continue
+                depth += (text[i] == "[") - (text[i] == "]")
+                i += 1
+                if depth == 0:
+                    break
+        else:
+            break
+        if text.startswith(("//!", "/*!", "#!["), start):
+            end = i
+    return text.count("\n", 0, end) + 1 if end else 0
+
+
+def _close_quote(text: str, at: int) -> int:
+    """text[at]의 '"'로 연 문자열의 바로 뒤 자리('\\'로 막은 글자는 건너뛴다)."""
+    i = at + 1
+    while i < len(text) and text[i] != '"':
+        i += 2 if text[i] == "\\" else 1
+    return i + 1
+
+
 def import_end(rows: list[str], language: str) -> int:
     """맨 앞 가져오기 줄(그 사이 빈 줄·주석 포함) 가운데 마지막 줄의 바로 뒤 자리(없으면 0). 시작 코드에서 더하는 가져오기 줄은 여기에 넣는다.
-    맨 위에 놓은 'using namespace std;'가 '#include' 앞에 와 GCC에서 오류였고, Python 'from __future__' 앞에 놓인 줄은 SyntaxError다."""
-    at = 0
-    for i, row in enumerate(rows):
+    맨 위에 놓은 'using namespace std;'가 '#include' 앞에 와 GCC에서 오류였고, Python 'from __future__' 앞에 놓인 줄은 SyntaxError다.
+    Go는 맨 앞의 'package' 줄과 여러 줄 'import ( … )'도 머리말이다(import는 package 뒤에만 올 수 있다).
+    Rust는 맨 앞의 내부 속성('#![…]')과 내부 문서 주석('//!', '/*! … */')도 머리말이다(그 앞이나 안에 use가 오면 컴파일 오류다. _rust_inner_end)."""
+    at = _rust_inner_end(rows) if language == "rust" else 0
+    group = False
+    for i, row in enumerate(rows[at:], at):
         plain = _plain(row, language)
         if not plain:
             continue
+        if group or (language == "go" and plain.startswith("package ")):
+            group, at = group and plain != ")", i + 1
+            continue
         if not _IMPORT.fullmatch(plain):
             break
-        at = i + 1
+        group, at = language == "go" and plain.startswith("import") and plain.endswith("("), i + 1
     return at
 
 
