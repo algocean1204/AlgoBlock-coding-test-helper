@@ -398,7 +398,28 @@ async function showHome() {
       <li><strong>3 막히면 힌트나 튜터</strong><span>힌트는 미리 만들어 둔 것이고, 튜터는 AI를 연결하면 써요.</span></li></ol>
     <p class="home-links"><a class="link" href="#/list">다른 문제 고르기</a> · <a class="link" href="#/new">가진 문제 넣기</a> · <button type="button" class="link-btn" id="note-conn">AI 연결하기</button> · <button type="button" class="link-btn" id="tour-open2">1분 사용법 보기</button></p>`
     : `<p class="home-links muted">통과 ${sum.solved} / ${sum.total} · 출석 ${d.attendance.days}일 · <a class="link" href="#/list">문제 목록</a> · <a class="link" href="#/new">가진 문제 넣기</a></p>`;
-  box.innerHTML = today + more;
+  box.innerHTML = today + (fresh ? "" : homeStatus(d)) + more;
+}
+
+/** 홈의 준비도 칸: 도움 없이·도움 받아 통과를 막대와 글로 가르고(기준은 ⓘ로 편다), 남은 주제 셋과 더 공부할 주제, 그다음에 풀 문제를 둔다. */
+function homeStatus(d) {
+  const rd = d.readiness, sum = d.summary, aided = sum.solved - rd.solved, byKey = Object.fromEntries(d.themes.map((t) => [t.key, t]));
+  const pct = (n) => (sum.total ? Math.round((100 * n) / sum.total) : 0);
+  const open = S.ruleOpen === true;
+  const left = rd.remaining.slice(0, 3).map((x) => { const nx = byKey[x.key] && byKey[x.key].next;
+    return `<li><strong>${esc(x.name)}</strong><span>${esc(x.todo)}</span>${nx ? `<a class="link" href="#/p/${esc(nx.id)}">${esc(nx.title)}</a>` : ""}</li>`; }).join("");
+  const weak = d.weaknesses.filter((x) => x.next).slice(0, 3), more = d.next.slice(1, 4);
+  return `<section class="card ready" aria-labelledby="ready-h"><div class="ready-head"><h2 id="ready-h">준비도 <span class="muted">${esc(rd.label)}</span></h2><a class="link" href="#/report">학습 보고서에서 자세히</a></div>
+    <p>${esc(rd.line)}</p>
+    <div class="ready-bar" role="img" aria-label="통과한 기본 문제 ${sum.total}개 가운데 도움 없이 ${rd.solved}개, 도움 받아 ${aided}개"><i class="a" style="width:${pct(rd.solved)}%"></i><i class="b" style="width:${pct(aided)}%"></i></div>
+    <p class="ready-nums"><span><i class="swatch a" aria-hidden="true"></i>도움 없이 통과 ${rd.solved}</span><span><i class="swatch b" aria-hidden="true"></i>도움 받아 통과 ${aided}</span><span>기본 문제 ${sum.total}</span>
+      <button type="button" class="info-btn" id="rule-info" aria-expanded="${open}" aria-controls="rule-short" aria-label="도움 없이 통과의 기준">${ico("i-info")}</button></p>
+    <p class="info" id="rule-short"${open ? "" : " hidden"}>${esc(rd.rule_short)}</p>
+    ${left ? `<ul class="points plain ready-left">${left}</ul>` : ""}</section>
+    ${weak.length || more.length ? `<div class="sides${weak.length && more.length ? "" : " full"}">
+      ${weak.length ? `<section class="card side weak"><h2>더 공부할 주제</h2><ul class="points">${weak.map((x) => `<li><strong>${esc(x.name)}</strong><span>${esc(x.why)}</span><a class="link" href="#/p/${esc(x.next.id)}">${esc(x.next.title)}</a></li>`).join("")}</ul></section>` : ""}
+      ${more.length ? `<section class="side"><h2 class="list-label">그다음에 풀 문제</h2><ul class="rows">${more.map((n) => `<li><a class="row" href="#/p/${esc(n.id)}"><span><span class="row-title">${esc(n.title)}</span>
+        <span class="badges">${lvBadge(n.level)}${n.theme_name ? `<span class="theme-chip">${esc(n.theme_name)}</span>` : ""}</span><span class="row-meta">${esc(n.why)}</span></span><span></span>${ico("i-caret")}<span class="sr-only">열기</span></a></li>`).join("")}</ul></section>` : ""}</div>` : ""}`;
 }
 
 async function showList() {
@@ -466,7 +487,7 @@ async function showReport() {
   const failMax = Math.max(1, ...fails.map(([, n]) => n)), failAll = fails.reduce((n, [, c]) => n + c, 0);
   const langs = Object.entries(sum.languages).sort((x, y) => y[1] - x[1]).map(([k, n]) => `${LANG[k] || k} ${n}`).join(" · ");
   html += `<section class="tiles" aria-label="요약">
-    <div class="tile"><span class="tile-label">통과한 기본 문제</span><strong>${sum.solved}<small> / ${sum.total}</small></strong><span class="bar" aria-hidden="true"><i style="width:${sum.total ? Math.round(100 * sum.solved / sum.total) : 0}%"></i></span>${sum.own.total ? `<span class="tile-sub">등록한 문제 ${sum.own.solved} / ${sum.own.total}</span>` : ""}</div>
+    <div class="tile"><span class="tile-label">통과한 기본 문제</span><strong>${sum.solved}<small> / ${sum.total}</small></strong><span class="bar" aria-hidden="true"><i style="width:${sum.total ? Math.round(100 * sum.solved / sum.total) : 0}%"></i></span><span class="tile-sub">도움 없이 ${d.readiness.solved} · 도움 받아 ${sum.solved - d.readiness.solved}</span>${sum.own.total ? `<span class="tile-sub">등록한 문제 ${sum.own.solved} / ${sum.own.total}</span>` : ""}</div>
     <div class="tile"><span class="tile-label">제출</span><strong>${sum.submissions}<small>번</small></strong><span class="tile-sub">${esc(langs || "아직 없어요")}</span></div>
     <div class="tile"><span class="tile-label">첫 제출에 통과</span><strong>${Math.round(100 * sum.first_try_rate)}<small>%</small></strong><span class="tile-sub">제출한 문제 가운데 첫 제출에 통과한 비율</span></div>
     <div class="tile"><span class="tile-label">출석</span><strong>${att.days}<small>일</small></strong>
@@ -495,7 +516,7 @@ async function showReport() {
     <span class="ladder-name">${gdot(t.key)}${esc(t.name)}<small>${t.solved}/${t.total}</small></span>
     ${levelCells(t.name, built.filter((p) => p.theme === t.key))}
     <span class="state ${t.state}">${STATE_WORD[t.state]}</span>
-    <span class="ladder-why">${esc(t.why)}${t.submissions ? ` <span class="muted">제출 ${t.submissions}번${t.hints ? ` · 힌트 ${t.hints}개` : ""}${t.solution_before_pass ? ` · 해설 먼저 ${t.solution_before_pass}문제` : ""}</span>` : ""}${(t.plan_differs || []).map((x) => // 고른 주제와 풀이 계획의 유형을 나란히
+    <span class="ladder-why">${esc(t.why)}${t.solved ? ` <span class="muted">· 도움 없이 ${t.unaided} · 도움 받아 ${t.solved - t.unaided}</span>` : ""}${t.submissions ? ` <span class="muted">제출 ${t.submissions}번${t.hints ? ` · 힌트 ${t.hints}개` : ""}${t.solution_before_pass ? ` · 해설 먼저 ${t.solution_before_pass}문제` : ""}</span>` : ""}${(t.plan_differs || []).map((x) => // 고른 주제와 풀이 계획의 유형을 나란히
       ` <span class="muted">· ‘${esc(x.title)}’: 고른 주제 ${esc(t.name)}, 풀이 계획 ${esc(x.planned)}</span>`).join("")}</span>
   </li>`).join("")}</ul>`);
   const cards = [failAll ? `<section class="card side"><h2>통과하지 못한 제출</h2><ul class="bars">${fails.map(([kind, n]) => `<li><span>${FAIL_WORD[kind]}</span><span class="bar" aria-hidden="true"><i class="${kind}" style="width:${Math.round(100 * n / failMax)}%"></i></span><b>${n}</b></li>`).join("")}</ul>
@@ -3062,7 +3083,7 @@ document.addEventListener("click", (e) => {
     "edit-yes": () => registerProblem(true), "edit-no": () => { $("edit-confirm").hidden = true; $("new-submit").focus(); },
     "new-next": nextStep, "new-back": () => (history.state && history.state.wstep > 1 ? history.back() : setStep(WSTEP - 1)),
     "tools-refresh": async () => { const r = await loadTools(true); $("tools-note").textContent = r.ok ? "언어 도구를 다시 확인했어요." : errorNote(r.error).text; }, // 창 아래로 밀리지 않게 단추 옆에
-    "note-conn": openConn,
+    "note-conn": openConn, "rule-info": () => { S.ruleOpen = !S.ruleOpen; $("rule-short").hidden = !S.ruleOpen; $("rule-info").setAttribute("aria-expanded", String(S.ruleOpen)); },
     "chatgpt-login": chatgptLogin,
     "upd-open": openUpdate, "upd-close": closeUpdate, "upd-get": () => updAct("download"), "upd-reveal": () => updAct("reveal"),
     "upd-skip": async () => { const r = await updAct("skip"); if (r.ok) { closeUpdate(); say(`이 버전(${UPD.latest.version})은 건너뛰어요. ‘설정’ → ‘업데이트’ → ‘지금 확인’에서 다시 볼 수 있어요.`); } },

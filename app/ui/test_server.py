@@ -309,6 +309,8 @@ def report() -> None:
     hash_ = next(theme for theme in body["themes"] if theme["key"] == "hash")
     assert (hash_["solved"], hash_["level_reached"], hash_["first_try"], hash_["solution_before_pass"], hash_["hints"]) == (1, 1, 0, 1, 6), hash_  # 본 힌트 수는 '처음부터' 뒤에도 누적이다
     assert hash_["fails"] == {"failed": 1, "runtime_error": 0, "timeout": 1, "compile_error": 0} and hash_["submissions"] >= 3 and hash_["state"] in ("progress", "weak")
+    assert sum(row["unaided"] for row in body["themes"]) == body["readiness"]["solved"] and all(row["unaided"] <= row["solved"] for row in body["themes"])  # 주제별 '도움 없이'의 합 = 준비도의 수
+    assert str(server.UNAIDED_MAX_SUBMITS) in body["readiness"]["rule_short"] and "도움 받아 통과" not in body["readiness"]["rule_short"][:0]
     assert body["summary"]["solved"] == 1 and body["summary"]["total"] == len(ROWS) and body["summary"]["languages"]["python"] >= 5
     assert body["recent"][0]["id"] == PID and len(body["recent"]) <= 10
     assert [group["key"] for group in body["signals"]] == ["hash"] and body["signals"][0]["items"][0]["title"] == FIRST["title"]  # 푼 문제의 신호만
@@ -2089,6 +2091,8 @@ def home_screen() -> None:
     assert route.index('a === "list"') < route.index("return showHome()") and 'return showList();' not in route.replace('a === "list") return showList();', "")
     home = js[js.index("async function showHome()"):js.index("async function showList()")]
     assert 'api("/api/problems")' in home and "nextOf(d.next)" in home and "nextOf(d.next)" in js[js.index("async function showReport()"):js.index("async function showReport()") + 1500]
+    status = js[js.index("function homeStatus(d)"):js.index("async function showList()")]
+    assert "rd.solved" in status and "sum.solved - rd.solved" in status and "rd.rule_short" in status and 'role="img"' in status  # 도움 없이·도움 받아를 갈라 보이고 기준을 ⓘ로 편다
     assert "weaknesses.find" not in js[js.index("async function showReport()"):js.index("async function showReport()") + 1500]  # 보고서 단추가 약한 주제를 따로 앞세우지 않는다
 
 

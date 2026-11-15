@@ -1106,3 +1106,14 @@ details.fold .ladders { box-shadow: none; } details.fold .legend { margin: 0 0 8
 .list-top { display: flex; justify-content: flex-end; margin-bottom: 12px; }
 @media (max-width: 860px) { .steps3 { grid-template-columns: minmax(0, 1fr); } }
 .set-part #models-note { padding: 0; } a.conn-now:hover { color: var(--text); }
+
+/* ── 홈의 준비도 칸 ── */
+.ready { display: grid; gap: 10px; margin-top: 18px; }
+.ready-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 16px; } .ready-head h2 { font-size: 17px; } .ready-head .link { font-size: 13.5px; }
+.ready-bar { display: flex; gap: 2px; height: 10px; border-radius: 5px; background: var(--fill); overflow: hidden; }
+.ready-bar i { display: block; height: 100%; min-width: 0; } .ready-bar .a { background: var(--accent); } .ready-bar .b { background: var(--surface); box-shadow: inset 0 0 0 2px var(--accent); }
+.ready-nums { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; font-size: 13.5px; color: var(--muted); }
+.swatch { display: inline-block; width: 10px; height: 10px; margin-right: 6px; border-radius: 3px; vertical-align: baseline; } .swatch.a { background: var(--accent); } .swatch.b { box-shadow: inset 0 0 0 2px var(--accent); }
+.ready-left { margin-top: 4px; padding-top: 12px; border-top: 1px solid var(--line); } .points.plain.ready-left li { display: grid; grid-template-columns: 7em minmax(0, 1fr) auto; align-items: baseline; gap: 4px 12px; } .ready-left .link { font-size: 13px; }
+#view-home .sides { margin-top: 18px; } #view-home .side > .list-label { margin-top: 0; }
+@media (max-width: 860px) { .ready-left li { grid-template-columns: minmax(0, 1fr); } }
