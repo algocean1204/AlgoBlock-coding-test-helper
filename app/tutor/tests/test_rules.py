@@ -795,6 +795,7 @@ class GrammarRuleTest(unittest.TestCase):
             ("javascript", "y = '8' / x / 2 + `8` / x / 1 + o.return / x / 1 + o?.typeof / x / 1;", {"x": "Y"},
              "y = '8' / Y / 2 + `8` / Y / 1 + o.return / Y / 1 + o?.typeof / Y / 1;"),  # 글자 뒤, 점 뒤의 예약어 속성 뒤의 '/'도 나눗셈이다
             ("javascript", "if (x) return /x/.test(s); y = typeof /x/; z = [/x/, x / 2];", {"x": "Y"}, "if (Y) return /x/.test(s); y = typeof /x/; z = [/x/, Y / 2];"),
+            ("javascript", "y = a$ / x / 2 + $ / x / 2 + 값 / x / 2 + x$ + $x + x;", {"x": "Y"}, "y = a$ / Y / 2 + $ / Y / 2 + 값 / Y / 2 + x$ + $x + Y;"),  # $·유니코드 이름도 이름이다(뒤의 '/'는 나눗셈, x$·$x는 x가 아니다)
             ("javascript", "const a = `x ${x} ${`in ${count} x`} x`;", {"x": "Y", "count": "cnt"}, "const a = `x ${Y} ${`in ${cnt} x`} x`;"),  # 겹친 템플릿의 글자 부분
             ("javascript", "const a = `${x > 0 ? `${'}'}x` : x / 2} x`;", {"x": "Y"}, "const a = `${Y > 0 ? `${'}'}x` : Y / 2} x`;"),  # ${…} 안 문자열의 '}'는 끝이 아니다
             ("rust", "fn longest<'a>(x: &'a str, y: &'a str) -> &'a str { if x.len() > y.len() { x } else { y } }", {"x": "first", "y": "second"},

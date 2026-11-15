@@ -630,7 +630,7 @@ def swap_names(code: str, names: dict[str, str], language: str) -> str:
     return "".join(out + [code[at:]])
 
 
-_JS_NAME, _JS_DIGIT = re.compile(r"[A-Za-z_]\w*"), re.compile(r"\d\w*")
+_JS_NAME, _JS_DIGIT = re.compile(r"(?:[^\W\d]|\$)[\w$]*"), re.compile(r"\d\w*")  # JavaScript 이름은 $와 유니코드 글자로도 시작한다(a$, $, 값)
 _JS_BEFORE_REGEX = {"return", "typeof", "instanceof", "in", "of", "new", "delete", "void", "throw", "case", "do", "else", "yield", "await"}  # 이 낱말 뒤의 '/'는 나눗셈이 아니다
 
 
