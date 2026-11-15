@@ -2,9 +2,10 @@
 
 import json
 import sqlite3
+import threading
 import uuid
 from dataclasses import asdict
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from ..knowledge.ontology import PITFALL_GROUPS
 from ..state import BlockPlan, BlockState, ChatMessage, DebugState, Explain, FollowupThread, Solution, Submission, TutorContext
@@ -14,8 +15,18 @@ from .schema import migrate
 VERIFIED_STATES = (False, True, None)  # solution.verified 칸의 값: 0 통과하지 못함, 1 통과, 2 채점하지 못함(옛 자료의 0·1은 그대로 읽는다)
 
 
+_LAST = [datetime(2000, 1, 1).astimezone()]  # 이 실행에서 마지막으로 준 시각
+_CLOCK = threading.Lock()
+
+
 def now() -> str:
-    return datetime.now().astimezone().isoformat(timespec="seconds")
+    """지금 시각(밀리초까지). 이 실행에서 앞서 준 시각보다 늘 1밀리초 이상 뒤라서, 같은 초에 일어난 일(시계가 거칠어 같은 값을 줘도)도 시각으로 차례를 가린다.
+    예전 기록의 초 단위 시각도 같은 ISO 꼴이라 그대로 읽고 견준다."""
+    with _CLOCK:
+        moment = datetime.now().astimezone()
+        moment = max(moment.replace(microsecond=moment.microsecond // 1000 * 1000), _LAST[0] + timedelta(milliseconds=1))
+        _LAST[0] = moment
+    return moment.isoformat(timespec="milliseconds")
 
 
 class Store:
