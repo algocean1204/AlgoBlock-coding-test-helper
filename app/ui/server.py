@@ -2313,9 +2313,11 @@ def handle(path: str, body: dict) -> tuple[int, dict]:
     if path == "/api/tour":  # 처음 안내를 봤다고 적는다(창을 다시 켜도 또 뜨지 않게. 웹뷰는 localStorage를 남기지 않는다)
         write_json(PREFS_FILE, {**read_json(PREFS_FILE, {}), "tour_seen": True})
         return 200, accounts()
-    if path == "/api/prefs":  # 화면 설정: 화면 색(scheme. system이면 키를 지워 운영체제 설정을 따른다)과 세 칸의 너비 몫(panes. null이면 기본 배치). 보낸 것만 바꾼다
-        if "scheme" not in body and "panes" not in body:
-            raise Refuse("화면 색이나 칸 너비 가운데 하나는 보내 주세요.")
+    if path == "/api/prefs":  # 화면 설정: 화면 색(scheme. system이면 키를 지워 운영체제 설정을 따른다), 세 칸의 너비 몫(panes. null이면 기본 배치), 기본 언어(language). 보낸 것만 바꾼다
+        if not {"scheme", "panes", "language"} & body.keys():
+            raise Refuse("화면 색, 칸 너비, 기본 언어 가운데 하나는 보내 주세요.")
+        if "language" in body and body["language"] not in check_judge().LANGUAGES:
+            raise Refuse("고를 수 없는 언어예요.", field="language")
         if "scheme" in body and body["scheme"] not in ("system", "light", "dark"):
             raise Refuse("화면 색은 시스템 설정대로, 라이트, 다크 가운데 하나예요.", field="scheme")
         if body.get("panes") is not None and "panes" in body and not panes_ok(body["panes"]):
@@ -2328,6 +2330,8 @@ def handle(path: str, body: dict) -> tuple[int, dict]:
             prefs["scheme"] = body["scheme"]
         if body.get("panes") is not None:
             prefs["panes"] = [round(float(x), 2) for x in body["panes"]]
+        if "language" in body:
+            prefs["language"] = body["language"]  # 다음에 처음 여는 문제의 언어(코드 화면에서 언어를 바꿔도 이 값이 바뀐다)
         write_json(PREFS_FILE, prefs)
         return 200, accounts()
     if path == "/api/theme":  # 과정 하나의 급과 추론 정도. 빈 값은 기본값으로 돌린다는 뜻이다
