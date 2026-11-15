@@ -2271,10 +2271,12 @@ async function saveKey(force) {
   keyChecking = false;
   if (r.ok) {
     $("key-value").value = "";
-    KEYUI[name] = r.data.key_check === "ok" ? { kind: "ok", text: "쓸 수 있는 키예요. 저장했어요.", raw: "" } : { kind: "warn", text: "확인하지 못했지만 저장했어요. 튜터를 처음 부를 때 다시 확인해요.", raw: "" };
+    KEYUI[name] = r.data.key_check === "ok" ? { kind: "ok", text: "쓸 수 있는 키예요. 저장했어요.", raw: "" }
+      : r.data.key_check === "limited" ? { kind: "warn", text: "키는 맞아요. 지금은 요청 한도에 걸려 있어요. 저장했어요.", raw: "" } // 429: 키는 맞다
+      : { kind: "warn", text: "확인하지 못했지만 저장했어요. 튜터를 처음 부를 때 다시 확인해요.", raw: "" };
     renderAccounts(r.data);
   } else {
-    const unverified = r.error.code === "key_unverified";
+    const unverified = ["key_unverified", "key_denied"].includes(r.error.code); // 확인하지 못함·권한 없음: 다시 시도하거나 그래도 저장할 수 있다
     KEYUI[name] = { kind: unverified ? "warn" : "error", text: r.error.message || errorNote(r.error).text, retry: unverified, raw: value.trim() };
   }
   renderKeyStatus();
