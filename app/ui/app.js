@@ -3144,7 +3144,7 @@ document.addEventListener("change", (e) => {
   if (e.target.name === "scheme") return void chooseScheme(e.target.value);
   if (e.target.id === "set-lang") return void (async () => { // 기본 언어: 고르면 바로 저장한다
     const r = await accounts("/api/prefs", { language: e.target.value }, "");
-    $("set-lang-note").textContent = r.ok ? `저장했어요. 문제를 처음 열 때 ${LANG[e.target.value]}로 시작해요.` : errorNote(r.error).text;
+    $("set-lang-note").textContent = r.ok ? `저장했어요. 기본 문제를 처음 열 때 ${LANG[e.target.value]}로 시작해요.` : errorNote(r.error).text;
   })();
   if (e.target.name === "client") accounts("/api/client", { client: e.target.value }, e.target.value === "cli" ? "이 PC의 Claude Code로 튜터를 불러요." : "연결한 AI로 튜터를 불러요.");
 });
