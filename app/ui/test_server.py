@@ -1543,7 +1543,7 @@ def checks() -> None:
 def key_flow() -> None:
     """API 키: 그 공급자의 키 꼴이 아니면(빈칸·한글·다른 접두사) 저장하지 않고 까닭을 말한다. 지우기는 그 공급자의 키만, 화면에서 넣은 것만 지운다."""
     claude, openai = "sk-ant-api03-" + "a" * 20, "sk-proj-" + "b" * 20
-    with patch.dict(os.environ, {}):
+    with patch.dict(os.environ, {}), patch.object(server.keycheck, "check", lambda provider, key, **kw: server.keycheck.OK):  # 확인은 아래 key_check_flow에서 따로 본다(네트워크를 쓰지 않는다)
         for name in ("ANTHROPIC_API_KEY", "OPENAI_API_KEY"):
             os.environ.pop(name, None)
         for name, bad in (("claude", "hello world 한글"), ("claude", "sk-ant-abc def"), ("claude", openai), ("openai", "sk-a b"), ("openai", "한글키"), ("openai", claude), ("openai", "abcdef")):
@@ -1570,6 +1570,132 @@ def key_flow() -> None:
         os.environ["OPENAI_API_KEY"] = "sk-outside"  # 밖(환경 변수)에서 준 키는 파일에 없으니 지우지 않는다
         assert call("/api/accounts")[1]["keys"]["openai"] and os.environ["OPENAI_API_KEY"] == "sk-outside"
         assert call("/api/key/delete", name="claude")[1]["keys"] == {"claude": False, "openai": True} and not server.read_json(server.KEY_FILE, {})
+
+
+def key_check_flow() -> None:
+    """키 확인(가짜 응답과 루프백 서버, 외부 네트워크 없음): 공식 주소에 모델 목록 조회 한 번(10초), 결과 여섯. 리다이렉트는 따라가지 않는다. 키 값은 결과·오류 글에 없다."""
+    import io
+    import urllib.error
+    from app.llm import keycheck
+
+    class Reply:  # urlopen이 주는 응답
+        def __init__(self, status):
+            self.status = status
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+    seen = []
+
+    def opener(result):
+        def open_(request, timeout):
+            seen.append((request.full_url, request.get_method(), {k.lower(): v for k, v in request.header_items()}, timeout))
+            if isinstance(result, BaseException):
+                raise result
+            return Reply(result)
+        return open_
+
+    http = lambda code: urllib.error.HTTPError("https://example.invalid", code, "x", {}, io.BytesIO(b""))
+    secret = "sk-ant-api03-" + "q" * 20
+    for result, want in ((200, "ok"), (http(401), "invalid"), (http(403), "denied"), (http(429), "limited"), (http(500), "server"), (http(529), "server"), (http(404), "offline"), (http(302), "offline"),
+                         (urllib.error.URLError(f"연결하지 못함 {secret}"), "offline"), (TimeoutError(secret), "offline"), (Reply(302).status, "offline")):
+        assert keycheck.check("claude", secret, opener=opener(result)) == want, (result, want)
+    seen.clear()
+    keycheck.check("claude", secret, opener=opener(200))
+    keycheck.check("openai", "sk-proj-" + "r" * 20, opener=opener(200))
+    assert [(url, method, timeout) for url, method, _, timeout in seen] == [("https://api.anthropic.com/v1/models?limit=1000", "GET", 10.0), ("https://api.openai.com/v1/models", "GET", 10.0)], seen  # 공식 주소로만, 한 번씩
+    assert seen[0][2]["x-api-key"] == secret and seen[0][2]["anthropic-version"] and seen[1][2]["authorization"] == "Bearer sk-proj-" + "r" * 20
+    try:
+        keycheck.request_for("other", "x")
+        raise AssertionError("모르는 공급자는 거절해야 한다")
+    except ValueError:
+        pass
+
+    # 리다이렉트는 따라가지 않는다: 첫 주소가 302로 다른 호스트를 가리켜도 그 호스트는 키 헤더를 받지 않는다(루프백 서버 둘)
+    import http.server
+    import threading
+
+    got = []
+
+    class Second(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            got.append(dict(self.headers))
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"{}")
+
+        def log_message(self, *args):
+            pass
+
+    second = http.server.HTTPServer(("127.0.0.1", 0), Second)
+
+    class First(Second):
+        def do_GET(self):
+            self.send_response(302)
+            self.send_header("Location", f"http://127.0.0.1:{second.server_port}/")
+            self.end_headers()
+
+    first = http.server.HTTPServer(("127.0.0.1", 0), First)
+    for one in (first, second):
+        threading.Thread(target=one.serve_forever, daemon=True).start()
+
+    def to_first(request, timeout):  # 공식 주소 대신 첫 루프백 서버로 보내되, 헤더와 기본 opener(리다이렉트를 따르지 않는 것)는 그대로 쓴다
+        return keycheck.OPENER.open(urllib.request.Request(f"http://127.0.0.1:{first.server_port}/", headers=dict(request.header_items())), timeout=timeout)
+
+    try:
+        assert keycheck.check("claude", secret, opener=to_first) == "offline" and keycheck.check("openai", "sk-proj-" + "r" * 20, opener=to_first) == "offline"
+        assert got == [], got  # 두 번째 호스트에는 요청도 헤더도 가지 않았다
+    finally:
+        for one in (first, second):
+            one.shutdown()
+            one.server_close()
+
+    calls = []
+
+    def fake(result):
+        def check(provider, key, **kw):
+            calls.append((provider, key))
+            return result
+        return check
+
+    def put(result, **more):
+        with patch.object(server.keycheck, "check", fake(result)):
+            return call("/api/key", name="claude", value=f"  {secret}  ", **more)[1]
+
+    def refused(result, **more):
+        try:
+            put(result, **more)
+        except server.Refuse as exc:
+            return exc
+        raise AssertionError(f"{result}는 거절해야 한다")
+
+    with patch.dict(os.environ, {}):
+        os.environ.pop("ANTHROPIC_API_KEY", None)
+        server.KEY_FILE.unlink(missing_ok=True)
+        # 401은 저장하지 않고 '그래도 저장'도 없다. 403·5xx·연결 못 함은 저장하지 않되 '그래도 저장'을 연다. 429는 키가 맞으니 저장한다
+        for result, status, code in (("invalid", 400, "key_invalid"), ("denied", 409, "key_denied"), ("server", 409, "key_unverified"), ("offline", 409, "key_unverified")):
+            exc = refused(result)
+            assert (exc.status, exc.code, exc.field) == (status, code, "value") and secret not in str(exc), (result, exc.status, exc.code)  # 글에 키 값이 없다
+            assert not os.environ.get("ANTHROPIC_API_KEY") and not server.KEY_FILE.exists(), result  # 쓸 수 없는 키, 확인하지 못한 키는 저장하지 않는다
+        assert calls == [("claude", secret)] * 4  # 앞뒤 공백은 뗀 값으로 확인한다
+        assert "권한" in str(refused("denied")) and "서버가 답하지 않아" in str(refused("server")) and "인터넷" not in str(refused("server")) and "인터넷" in str(refused("offline"))  # 까닭을 단정하지 않고 맞게 말한다
+        assert refused("invalid", force=True).code == "key_invalid"  # 틀린 키는 그래도 저장할 수 없다
+        assert refused("offline", force="true").code == "key_unverified"  # 정확히 true일 때만 확인 없이 저장한다
+        for result in ("denied", "server", "offline"):
+            saved = put(result, force=True)
+            assert saved["key_check"] == result and saved["keys"]["claude"] and server.read_json(server.KEY_FILE, {}) == {"ANTHROPIC_API_KEY": secret}, result
+            server.KEY_FILE.unlink()
+            os.environ.pop("ANTHROPIC_API_KEY")
+        saved = put("limited")  # 429: 키는 맞다. 물음 없이 저장한다
+        assert saved["key_check"] == "limited" and server.read_json(server.KEY_FILE, {}) == {"ANTHROPIC_API_KEY": secret}
+        server.KEY_FILE.unlink()
+        os.environ.pop("ANTHROPIC_API_KEY")
+        saved = put("ok")
+        assert saved["key_check"] == "ok" and secret not in json.dumps(saved) and server.read_json(server.KEY_FILE, {}) == {"ANTHROPIC_API_KEY": secret}
+        server.drop_key("ANTHROPIC_API_KEY")
 
 
 def error_lines() -> None:
@@ -1840,6 +1966,39 @@ def scheme_setting() -> None:
         server.write_json(server.PREFS_FILE, saved)
         httpd.shutdown()
         httpd.server_close()
+
+
+def window_background() -> None:
+    """창 바탕색: 고른 색을 따르고, 시스템 설정대로일 때 운영체제를 읽지 못하면 밝은 바탕으로 연다."""
+    import types
+    from unittest.mock import MagicMock
+
+    sys.modules.setdefault("webview", types.ModuleType("webview"))  # pywebview 없이 함수만 부른다
+    import window
+
+    saved = server.read_json(server.PREFS_FILE, {})
+    out = lambda text: SimpleNamespace(stdout=text)  # noqa: E731
+    try:
+        with patch.object(window.sys, "platform", "darwin"):
+            with patch.object(window.subprocess, "run", return_value=out("Dark\n")):
+                assert window.os_dark() is True
+            with patch.object(window.subprocess, "run", return_value=out("")):  # 라이트 운영체제는 값이 없어 빈 글이 온다
+                assert window.os_dark() is False
+            with patch.object(window.subprocess, "run", side_effect=OSError("defaults 없음")):  # 읽지 못함: 밝게
+                assert window.os_dark() is False
+            with patch.object(window.subprocess, "run", side_effect=subprocess.TimeoutExpired("defaults", 3)):
+                assert window.os_dark() is False
+        with patch.object(window.sys, "platform", "linux"):  # 읽는 길이 없는 운영체제
+            assert window.os_dark() is False
+        for scheme, dark_os, want in (("dark", False, "#111113"), ("light", True, "#F5F5F7"), ("system", True, "#111113"), ("system", False, "#F5F5F7")):
+            server.write_json(server.PREFS_FILE, {**saved, **({} if scheme == "system" else {"scheme": scheme})})
+            with patch.object(window, "os_dark", MagicMock(return_value=dark_os)):
+                assert window.background() == want, (scheme, dark_os)
+        server.write_json(server.PREFS_FILE, {**saved, "scheme": "<x>"})  # 이상한 저장 값은 system으로 본다
+        with patch.object(window, "os_dark", MagicMock(return_value=False)):
+            assert window.background() == "#F5F5F7"
+    finally:
+        server.write_json(server.PREFS_FILE, saved)
 
 
 def stages() -> None:
@@ -2166,6 +2325,7 @@ def main() -> None:
         checkpoints()
         prep_failed()
         key_flow()
+        key_check_flow()
         prep_unverified()
         stale_save()
         builtin_prepare()
@@ -2207,6 +2367,7 @@ def main() -> None:
         assert exc.status == 409
     color_tokens()
     scheme_setting()
+    window_background()
     stages()
     newest_models()
     read_check()
