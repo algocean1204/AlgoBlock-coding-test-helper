@@ -18,17 +18,41 @@ const KIND_BY_LABEL = Object.fromEntries(Object.entries(KIND).map(([key, [label]
 const NEXT_BLOCK = /^다음은 '([^']+)' 블[록럭]이에요\./; // 새 블록의 첫 말은 종류를 알리며 시작한다
 const LANG = { python: "Python", java: "Java", javascript: "JavaScript", cpp: "C++", go: "Go", kotlin: "Kotlin", rust: "Rust" };
 const TOOL = { python: "Python 3", java: "JDK(javac와 java)", javascript: "Node.js", cpp: "g++ 또는 clang++", go: "Go", kotlin: "Kotlin 컴파일러(kotlinc)와 Java", rust: "Rust(rustc)" };
-// 푸는 방식 셋(오른쪽 칸 '어떻게 풀까요?'). 엔진의 이름은 solo·guide(가이드)·chair(생각하는 의자)
-const WAYS = {
-  solo: ["혼자 풀기", "튜터 없이 풀어요. 막히면 힌트를 하나씩 볼 수 있어요."],
-  guide: ["튜터와 차례로", "튜터가 풀이를 블록으로 나눠 하나씩 열어 줘요."],
-  chair: ["튜터의 질문으로", "튜터는 답을 주지 않고 질문만 해요. 풀이의 블록을 스스로 찾아요."],
+// 푸는 방식 넷의 설명 한 곳. 방식 카드, ⓘ로 펴는 설명, 튜터 시작 칸이 모두 여기서 읽는다.
+// 엔진의 이름은 solo·guide(가이드)·chair(생각하는 의자). explain은 튜터의 해설(혼자 풀기의 해설 칸에서 간다)
+const WAY_INFO = {
+  solo: { name: "혼자 풀기", line: "튜터 없이 풀어요. 막히면 힌트를 하나씩 봐요.", needsAi: false,
+    does: "문제를 읽고 코드를 쓰고 제출해요. 막히면 미리 만들어 둔 힌트를 하나씩 열 수 있어요. 통과하면 해설과 실전 신호가 열려요.",
+    when: "실전처럼 풀어 보고 싶을 때. 처음이라면 여기서 시작해요.",
+    ai: "없음 — 힌트와 해설은 미리 만든 글이에요.",
+    ready: "힌트와 해설을 열지 않고 제출 3번 안에 통과하면 ‘도움 없이 통과’로 세요." },
+  chair: { name: "튜터의 질문으로", line: "튜터가 질문만 해요. 풀이 순서를 내가 찾아요.", needsAi: true,
+    does: "튜터가 한 번에 질문 하나를 던져요. 답을 알려 주지 않고, 풀이를 이루는 블록을 내가 하나씩 찾아내게 이끌어요. 찾은 블록마다 코드를 적어요.",
+    when: "어디서부터 시작할지 모르겠지만, 풀이는 스스로 떠올리고 싶을 때.",
+    ai: "보통 — 내가 답할 때마다 튜터가 읽고 다음 질문을 해요.",
+    ready: "‘도움 받아 통과’로 남아요." },
+  guide: { name: "튜터와 차례로", line: "튜터가 풀이 순서를 블록으로 보여 줘요. 블록마다 코드는 내가 써요.", needsAi: true,
+    does: "튜터가 풀이를 블록으로 나눠 이름을 먼저 보여 주고, 앞에서부터 하나씩 열어요. 블록마다 내가 코드를 적고 ‘블록 코드 확인’으로 맞는지 봐요.",
+    when: "풀이의 흐름은 받고, 코드로 옮기는 연습을 하고 싶을 때. 처음 보는 유형일 때.",
+    ai: "적음~보통 — 블록 코드는 대부분 직접 돌려서 확인하고, 튜터의 말이 필요할 때만 AI를 써요.",
+    ready: "‘도움 받아 통과’로 남아요." },
+  explain: { name: "튜터의 해설", line: "튜터가 풀이 전체를 순서대로 설명해요.", needsAi: true,
+    does: "튜터가 이 문제의 풀이를 처음부터 끝까지 글로 설명해요. 내가 답하는 것은 없어요.",
+    when: "충분히 해 보고도 막혔을 때, 또는 풀고 난 뒤 다른 설명을 읽고 싶을 때. 스스로 찾아보고 싶다면 ‘튜터의 질문으로’를 먼저 해 보세요.",
+    ai: "적음 — 문제와 언어마다 한 번만 써요.",
+    ready: "통과하기 전에 받으면 ‘도움 받아 통과’로 남아요." },
 };
+const WAYS = Object.fromEntries(["solo", "guide", "chair"].map((k) => [k, [WAY_INFO[k].name, WAY_INFO[k].line]]));
 const START = {
-  chair: ["튜터의 질문으로", "튜터가 질문을 하나씩 던져요. 답을 알려 주지 않고, 풀이의 블록을 스스로 찾도록 이끌어요.", "첫 질문 받기", "튜터가 문제를 읽고 첫 질문을 준비하는 중…"],
-  guide: ["튜터와 차례로", "블록 이름을 먼저 보여 주고, 그 블록의 빈칸을 채우도록 이끌어요.", "첫 블록 열기", "튜터가 문제를 읽고 첫 블록을 준비하는 중…"],
-  explain: ["튜터의 해설", "튜터가 풀이 전체를 순서대로 설명해요. 스스로 찾아보고 싶다면 ‘튜터의 질문으로’를 먼저 해 보세요.", "해설 받기", "해설을 쓰는 중…"],
+  chair: [WAY_INFO.chair.name, WAY_INFO.chair.does, "첫 질문 받기", "튜터가 문제를 읽고 첫 질문을 준비하는 중…"],
+  guide: [WAY_INFO.guide.name, WAY_INFO.guide.does, "첫 블록 열기", "튜터가 문제를 읽고 첫 블록을 준비하는 중…"],
+  explain: [WAY_INFO.explain.name, WAY_INFO.explain.does, "해설 받기", "해설을 쓰는 중…"],
 };
+/** 방식 하나의 설명(무엇을 해요 · 이럴 때 · AI 사용량 · 준비도). ⓘ로 펴는 칸이 쓴다. */
+const wayInfoHtml = (k) => { const w = WAY_INFO[k]; return `<dl><dt>무엇을 해요</dt><dd>${w.does}</dd><dt>이럴 때</dt><dd>${w.when}</dd><dt>AI 사용량</dt><dd>${w.ai}</dd><dt>준비도</dt><dd>${w.ready}</dd></dl>`; };
+/** ⓘ 단추와 그 설명 칸. where는 같은 방식이 한 화면에 둘 나올 때 구분한다(카드·머리·해설 단추). */
+const infoBtn = (k, where) => `<button type="button" class="info-btn" data-way-info="${k}:${where}" aria-expanded="${S.wayInfo === `${k}:${where}`}" aria-controls="wayinfo-${k}-${where}" aria-label="${WAY_INFO[k].name} 설명">${ico("i-info")}</button>`;
+const infoBox = (k, where) => `<div class="info" id="wayinfo-${k}-${where}" role="region" aria-label="${WAY_INFO[k].name} 설명"${S.wayInfo === `${k}:${where}` ? "" : " hidden"}>${wayInfoHtml(k)}</div>`;
 /* 색 이름표(7번): 단계 1~5, 주제 다섯 갈래, 쓰는 방법(태그. 색 없음), 검증. 색만으로 뜻을 전하지 않게 글자와 같이 쓴다 */
 const GROUP = { hash: "ds", stack_queue: "ds", heap: "ds", brute_force: "search", dfs: "search", bfs: "search", binary_search: "search",
   graph: "graph", dijkstra: "graph", greedy: "design", dp: "design", two_pointer: "design", sort: "impl", simulation: "impl", implementation: "impl" };
@@ -598,7 +622,7 @@ async function fillCases(sure, quiet) {
   }
   // 글자 읽기로 읽은 글은 줄이 깨져 빠질 수 있다. 채운 수를 원본과 견주게 한다
   $("case-note").textContent = (cases.length ? `글의 입출력 예에서 케이스 ${cases.length}개를 채웠어요. ${readOcr ? "원본의 예시 수와 견줘 주세요. " : ""}` : "") + missed
-    || (r.data.other > 0 && !EDIT ? `${stdin ? "함수(solution)" : "표준 입출력"} 꼴의 예시 ${r.data.other}개를 찾았어요. 푸는 방식을 바꾸면 채워요.` // 다른 방식으로는 찾았다: 위 알림과 어긋나지 않게 한 가지로 말한다
+    || (r.data.other > 0 && !EDIT ? `${stdin ? "함수(solution)" : "표준 입출력"} 꼴의 예시 ${r.data.other}개를 찾았어요. 입출력 방식을 바꾸면 채워요.` // 다른 방식으로는 찾았다: 위 알림과 어긋나지 않게 한 가지로 말한다
       : "글에서 입출력 예를 찾지 못했어요. 아래에 직접 넣어 주세요."); // 문장으로만 적힌 예시는 읽지 못한다: 조용히 넘어가지 않고 알린다
   $("case-note").hidden = false;
   if (!cases.length) return void ($("case-fill").hidden = !skipped);
@@ -850,7 +874,7 @@ function formMode(editing) {
   document.querySelector('#wsteps li[data-wstep="3"]').lastChild.textContent = editing ? "저장" : "등록";
   $("new-title-note").hidden = editing; // '글의 첫 줄에서 채웠어요'는 새로 넣을 때만(수정의 제목은 저장해 둔 것이다)
   $("new-lang-field").hidden = editing; // 언어는 코드 화면에서 바꾼다
-  $("new-mode").disabled = editing; // 푸는 방식은 등록할 때만 고른다(바꾸면 케이스와 코드가 모두 달라진다)
+  $("new-mode").disabled = editing; // 입출력 방식은 등록할 때만 고른다(바꾸면 케이스와 코드가 모두 달라진다)
   $("new-mode-note").hidden = !editing;
   $("edit-confirm").hidden = $("case-fill-confirm").hidden = true;
   clearError();
@@ -1830,12 +1854,14 @@ function setMode(mode, remember) {
   return loadState();
 }
 
-/** 고르는 칸: 카드 셋. 연결이 없으면 튜터 둘은 흐리게 두고 까닭과 연결하는 길을 말한다. */
+/** 고르는 칸: 카드 셋(도움이 적은 것부터). 연결이 없으면 튜터 둘은 잠그되 글은 그대로 읽히고, ⓘ는 열린다. */
 function renderWay() {
   const ai = connected();
-  $("way-box").innerHTML = `<div class="ways" role="group" aria-label="푸는 방식">${["solo", "guide", "chair"].map((k) => `<button type="button" class="way-card" data-way="${k}"${k !== "solo" && !ai ? " disabled" : ""} aria-describedby="way-${k}">
-      <strong>${WAYS[k][0]}${S.mode === k ? '<em class="tag">지금 방식</em>' : ""}</strong><span id="way-${k}">${WAYS[k][1]}</span></button>`).join("")}</div>
-    ${ai ? '<p class="hint">고른 방식은 이 문제에 기억해요. 고른 뒤에도 ‘방식 바꾸기’로 언제든 바꿔요.</p>' : '<div class="note"><span>튜터 둘은 AI를 연결하면 쓸 수 있어요.</span><button type="button" class="btn small" id="note-conn">연결하기</button></div>'}`;
+  const card = (k) => { const w = WAY_INFO[k], locked = w.needsAi && !ai;
+    return `<div class="wayrow"><button type="button" class="way-card${k === "solo" ? " main" : ""}" data-way="${k}"${locked ? ' aria-disabled="true"' : ""} aria-describedby="way-${k}">
+      <strong>${w.name}${S.mode === k ? '<em class="tag">지금 방식</em>' : ""}${w.needsAi ? (locked ? `<em class="tag lock">${ico("i-lock")}AI 연결 필요</em>` : "") : '<em class="tag">AI 없이</em>'}</strong><span id="way-${k}">${w.line}</span></button>${infoBtn(k, "card")}${infoBox(k, "card")}</div>`; };
+  $("way-box").innerHTML = `<div class="ways" role="group" aria-label="푸는 방식">${card("solo")}<p class="ways-gap">아래로 갈수록 튜터가 더 많이 도와줘요</p>${card("chair")}${card("guide")}</div>
+    ${ai ? '<p class="hint">고른 방식은 이 문제에 기억해요. 고른 뒤에도 ‘방식 바꾸기’로 언제든 바꿔요.</p>' : '<div class="note"><span>튜터 방식 둘은 AI를 연결하면 쓸 수 있어요.</span><button type="button" class="btn small" id="note-conn">연결하기</button></div>'}`;
 }
 
 function renderTutor() {
@@ -1843,6 +1869,9 @@ function renderTutor() {
   const solo = mode === "solo" && !choosing, railed = solo && !S.soloOpen && !finding;
   $("panes").classList.toggle("railed", railed); // 혼자 풀기는 오른쪽 칸을 접어 '힌트'·'해설' 두 단추만 둔다
   $("way-title").textContent = finding ? "튜터" : choosing ? "어떻게 풀까요?" : mode === "explain" ? START.explain[0] : WAYS[mode][0];
+  const headInfo = !choosing && !finding && mode && WAY_INFO[mode];
+  $("way-info").innerHTML = headInfo ? infoBtn(mode, "head") : "";
+  $("way-info-box").innerHTML = headInfo ? infoBox(mode, "head") : "";
   $("way-change").hidden = finding || (choosing && !mode);
   $("way-change").textContent = choosing ? "그대로 두기" : "방식 바꾸기";
   $("solo-tabs").hidden = $("solo-fold").hidden = !solo || !S.soloOpen || finding;
@@ -1952,7 +1981,7 @@ function renderSolo() {
     return;
   }
   let sol = `<section class="solo-sec" aria-labelledby="solo-sol"><h3 id="solo-sol">${ico("i-check")}실전 신호와 해설</h3>`;
-  const tutorExplain = ai ? '<button type="button" id="to-explain" class="btn quiet small" data-model>튜터에게 해설 받기</button>' : ""; // 모델이 쓰는 해설(예전 '해설' 탭)
+  const tutorExplain = ai ? `<span class="btn-info"><button type="button" id="to-explain" class="btn quiet small" data-model>튜터의 해설 받기</button>${infoBtn("explain", "solo")}</span>${infoBox("explain", "solo")}` : ""; // 모델이 쓰는 해설(예전 '해설' 탭)
   if (!p.study.has_guide) sol += `<p class="hint">이 문제에는 미리 만든 해설이 없어요. ${ai ? "튜터가 써 줄 수 있어요." : "튜터를 연결하면 해설을 써 줘요."}</p>${tutorExplain}`;
   else if (o.sol) sol += solutionHtml(o.sol, p.passed > 0) + tutorExplain;
   else if (p.study.solution_open) sol += `${p.passed && !p.study.passed_now ? '<p class="hint">다시 푸는 중이에요. 지금 해설을 열면 이번 풀이는 도움을 받은 것으로 남아요.</p>' : ""}<button type="button" id="solo-open" class="btn">해설 보기</button>`; // '처음부터' 뒤에 이미 통과한 문제
@@ -2535,7 +2564,7 @@ async function accounts(path, body, done) {
    못 불러오면 index.html의 정적 그림이 그대로 보인다 ── */
 const TOUR = [
   ["홈에서 시작해요", "홈 맨 위에 입구가 셋 있어요. ‘문제 풀기’는 이어서 풀 문제를 열고, ‘내 문제 넣기’는 가진 문제를 넣고, ‘내 기록’은 학습 보고서로 가요. AI를 연결하지 않아도 풀고 바로 채점받을 수 있어요."],
-  ["어떻게 풀지 골라요", "문제를 열면 오른쪽에서 푸는 방식을 골라요. ‘혼자 풀기’는 튜터 없이 풀고 막히면 힌트를 봐요. ‘튜터와 차례로’는 풀이를 블록으로 나눠 하나씩 열어 주고, ‘튜터의 질문으로’는 답 대신 질문으로 이끌어요."],
+  ["어떻게 풀지 골라요", "문제를 열면 오른쪽에서 푸는 방식을 골라요. ‘혼자 풀기’는 튜터 없이 풀고 막히면 힌트를 봐요. ‘튜터의 질문으로’는 답 대신 질문만 하고, ‘튜터와 차례로’는 풀이를 블록으로 나눠 하나씩 열어 줘요. 카드의 ⓘ를 누르면 자세한 설명이 나와요."],
   ["결과 바로 아래에 다음 할 일", "제출하면 결과 아래에 할 일이 하나 나와요. 틀리면 ‘틀린 곳 같이 찾기’나 ‘풀이 힌트 보기’, 통과하면 ‘다음 문제’예요. 통과한 문제는 실전 신호가 열려 비슷한 문제를 알아보는 눈을 길러요."],
   ["내 문제 넣기는 세 걸음", "글을 붙여 넣거나 사진·PDF를 넣고(1 글 넣기), 읽은 글과 자동으로 채운 예시를 확인한 뒤(2 확인하기), 등록해요(3 등록). 등록한 문제도 같은 방식으로 채점해요."],
   ["학습 보고서로 약한 곳을 찾아요", "제출 기록에서 강한 주제와 더 공부할 주제, 자주 하는 실수를 모아 보여 주고, 더 공부할 문제를 바로 열어 줘요."],
@@ -2891,6 +2920,12 @@ document.addEventListener("click", (e) => {
   if (el.hasAttribute("data-own-off")) return void ownWayOff();
   if (el.dataset.theme) return void setTheme(el.dataset.theme, el.dataset.pick, el.dataset.effort);
   if (el.closest("#more .more-menu") && el.id !== "reset") $("more").open = false; // 더 보기에서 고르면 닫는다. 처음부터의 물음만 그 단추 자리에서 묻는다
+  if (el.dataset.wayInfo) { // ⓘ: 눌러 펴고 접는다. 한 번에 하나만 펴지고, 초점은 그 ⓘ에 남는다
+    S.wayInfo = S.wayInfo === el.dataset.wayInfo ? null : el.dataset.wayInfo;
+    render();
+    return void document.querySelector(`[data-way-info="${el.dataset.wayInfo}"]`).focus();
+  }
+  if (el.dataset.way && el.getAttribute("aria-disabled")) return void ($("note-conn") || el).focus(); // 잠긴 방식: 방식은 그대로, 초점은 연결하는 길로
   if (el.dataset.way) { // 어떻게 풀까요: 고르면 그 방식으로(튜터는 시작 단추에 초점)
     const way = el.dataset.way;
     return void Promise.resolve(setMode(way, true)).then(() => (tutorWay(way) ? ($("start") && !$("start-box").hidden ? $("start") : $("say")) : $("code")).focus()); // 혼자 풀기는 편집기에, 튜터는 시작 단추에
@@ -3003,7 +3038,7 @@ document.addEventListener("click", (e) => {
     "drop": () => $("new-files").click(), "read-files": readFiles, "asset-close": closeAsset,
     "case-add": () => { addCaseRow(); $("case-rows").lastElementChild.querySelector("input").focus(); },
     "mode-switch": async () => {
-      $("new-mode").value = $("new-mode").value === "program" ? "function" : "program"; setCaseMode(); say(`푸는 방식을 바꿨어요: ${$("new-mode").value === "program" ? "표준 입출력" : "함수(solution)"}`); $("new-mode").focus();
+      $("new-mode").value = $("new-mode").value === "program" ? "function" : "program"; setCaseMode(); say(`입출력 방식을 바꿨어요: ${$("new-mode").value === "program" ? "표준 입출력" : "함수(solution)"}`); $("new-mode").focus();
       if (!formCases().some((x) => x.input.trim() || x.expected.trim())) await fillCases(true, true); // 찾아 둔 예시를 바로 채운다(비어 있을 때만. 적은 케이스는 덮지 않는다)
     },
     "new-clear": () => { $("new-clear").hidden = true; $("new-clear-confirm").hidden = false; $("new-clear-no").focus(); },
@@ -3060,6 +3095,10 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "Escape" && paneDrag) return paneEnd(e, true); // 끌던 것은 처음 너비로
   if (el.classList && el.classList.contains("sep") && paneKey(e)) return;
   if (e.key === "Escape" && $("more").open) { $("more").open = false; return $("more").querySelector("summary").focus(); }
+  if (e.key === "Escape" && S.wayInfo && el.closest && el.closest("#view-code")) { // 펴진 방식 설명을 접고 그 ⓘ로 돌아온다
+    const key = S.wayInfo; S.wayInfo = null; render();
+    return void (document.querySelector(`[data-way-info="${key}"]`) || document.body).focus();
+  }
   if (e.key === "Escape" && !$("conn-panel").hidden && !el.matches("textarea")) return toggleConn(false);
   if (el.getAttribute && el.getAttribute("role") === "tab" && (e.key === "ArrowRight" || e.key === "ArrowLeft")) {
     const tabs = [...el.parentElement.querySelectorAll("[role=tab]")];
