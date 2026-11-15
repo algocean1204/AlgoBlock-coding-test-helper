@@ -208,7 +208,7 @@ def builtin(fake) -> None:
     assert (problem["builtin"], problem["theme"], problem["theme_name"], problem["level"], problem["languages"]) == (True, "hash", "해시", 1, ["python", "javascript"])
     assert problem["starter"].startswith("def solution(loans, k)") and problem["code"] == "" and len(problem["examples"]) == 3 and problem["examples"][0]["note"]
     assert problem["cases"]["example"] == 3 and problem["cases"]["accuracy"] >= 12 and problem["cases"]["efficiency"] == 2
-    assert problem["study"] == {"hints_seen": 0, "hints_total": 6, "solution_seen": False, "solution_open": False, "has_guide": True, "passed_now": False}
+    assert problem["study"] == {"hints_seen": 0, "hints_total": 6, "solution_seen": False, "solution_open": False, "has_guide": True, "passed_now": False, "unaided_open": True}
     assert len(opened["session"]["blocks"]) == 2  # 미리 만든 계획으로 바로 시작한다
     first = call("/api/turn", id=PID, mode="chair", event="start")[1]
     assert first["messages"][0]["text"] == FIRST["ready"]["plan"]["blocks"][0]["hints"][0]
@@ -275,7 +275,7 @@ def builtin(fake) -> None:
     passed = call("/api/submit", id=PID, code=CODE)[1]
     assert passed["ok"] and passed["score"]["efficiency"] == [2, 2] and all("input" not in case for case in passed["cases"] if case["kind"] != "example")
     study = call("/api/state", id=PID)[1]["problem"]["study"]
-    assert study == {"hints_seen": 6, "hints_total": 6, "solution_seen": True, "solution_open": True, "has_guide": True, "passed_now": True}
+    assert study == {"hints_seen": 6, "hints_total": 6, "solution_seen": True, "solution_open": True, "has_guide": True, "passed_now": True, "unaided_open": False}
     with server.tutor() as t:
         assert t.store.study(PID)["solution_before_pass"] and t.store.study(PID)["help_first_at"] and [sub["status"] for sub in t.store.submissions() if sub["problem_id"] == PID] == ["failed", "timeout", "passed"]
 
@@ -413,6 +413,23 @@ def fail(pid: str, status: str, detail: dict | None, language: str = "python"):
         t.store.put_problem(pid, language, "글", title=pid)
         t.store.add_submission(pid, "틀린 코드", False, language=language, status=status, detail=detail)
     return step
+
+
+def pitfalls_repeated() -> None:
+    """되풀이한 실수는 두 번 이상 나온 것만, 나온 문제와 함께 온다. 뜻이 겹치는 함정은 한 줄로 합친다."""
+    one, two = ROWS[0]["id"], ROWS[1]["id"]
+    assert call("/api/report")[1]["pitfalls"] == []
+    with server.tutor() as t:
+        for pid in (one, two):
+            t.store.put_problem(pid, "python", "글", title=pid)
+        for pid, pitfall, h in ((one, "off_by_one", "a"), (two, "wrong_compare", "b"), (one, "wrong_init", "c")):  # wrong_compare는 off_by_one과 한 줄
+            t.store.conn.execute("INSERT INTO pitfall_hit(problem_id, pitfall, code_hash, at) VALUES(?, ?, ?, 't')", (pid, pitfall, h))
+        t.store.conn.commit()
+    rows = call("/api/report")[1]["pitfalls"]
+    assert [(x["count"], sorted(p["id"] for p in x["problems"])) for x in rows] == [(2, sorted([one, two]))], rows  # wrong_init은 한 번이라 빠진다
+    with server.tutor() as t:
+        t.store.conn.execute("DELETE FROM pitfall_hit")
+        t.store.conn.commit()
 
 
 def readiness() -> None:
@@ -933,6 +950,20 @@ def chair_found() -> None:
         assert t.store.load(pid).block_states["b1"].code == indented, t.store.load(pid).block_states["b1"].code
     status, body = call("/api/turn", id=pid, mode="guide", event="block_filled", block_id="b1", code="\n".join(LINES[:5]))  # 가이드도 앞 블록을 고쳐 다시 확인한다
     assert status == 200 and body["open_count"] == 2, body
+
+
+def guide_spoken() -> None:
+    """튜터와 차례로: 말로 빈칸을 맞혀도 다음 블록이 열리지 않는다(코드 칸이 빈 채 지나가 완료처럼 보였다). 블록 코드 확인이 통과해야 연다."""
+    from tutor.turn.moves import WRITE_TIP
+    pid = server.register({"title": FIRST["title"], "text": FIRST["text"], "cases": [{"input": e["input"], "expected": e["expected"]} for e in FIRST["examples"]]})["id"]
+    with server.tutor() as t:
+        t.adopt(pid, FIRST["ready"])
+    call("/api/turn", id=pid, mode="guide", event="start")
+    with use_llm(FakeLlm({"guide.judge": ["[check]Y g"]})):
+        body = call("/api/turn", id=pid, mode="guide", event="message", text="이름마다 몇 번 나왔는지 세요")[1]
+    assert body["open_count"] == 1 and body["messages"][-1]["text"] == WRITE_TIP and body["messages"][-1]["block_index"] == 0, body
+    body = call("/api/turn", id=pid, mode="guide", event="block_filled", block_id="b1", code="\n".join(LINES[:5]))[1]
+    assert body["open_count"] == 2, body
 
 
 def language_memory() -> None:
@@ -2061,6 +2092,68 @@ def home_screen() -> None:
     assert "weaknesses.find" not in js[js.index("async function showReport()"):js.index("async function showReport()") + 1500]  # 보고서 단추가 약한 주제를 따로 앞세우지 않는다
 
 
+def settings_screen() -> None:
+    """설정은 따로 된 화면(#/settings/<분류>)이다: 예전 연결 창의 칸이 id 그대로 분류 안으로 옮겨졌고, 창과 과정별 모델 대화상자는 없다. 분류는 링크라서 뒤로 가기·키보드가 된다."""
+    import re
+    html, js = (HERE / "index.html").read_text(encoding="utf-8"), (HERE / "app.js").read_text(encoding="utf-8")
+    assert 'id="conn-panel"' not in html and 'id="models"' not in html and "toggleConn" not in js and "openModels" not in js
+    view = html[html.index('id="view-settings"'):html.index('id="view-feedback"')]
+    parts = re.findall(r'<section id="set-(\w+)" class="set-part"', view)
+    assert parts == ["ai", "models", "solve", "look", "update"] and re.findall(r'<a href="#/settings/(\w+)"', view) == parts
+    moved = {"ai": ["conn-state", "key-rows", "key-value", "key-save", "key-status", "key-delete-confirm", "chatgpt-login", "chatgpt-state", "conn-note"],
+             "models": ["models-body", "models-note"], "solve": ["tools-list", "tools-refresh"], "look": ["scheme-kinds"], "update": ["upd-now", "upd-auto", "upd-check", "upd-note"]}
+    for part, ids in moved.items():
+        block = view[view.index(f'id="set-{part}"'):]
+        block = block[:block.index("</section>")] if part != "ai" else block[:block.index('id="set-models"')]
+        assert all(f'id="{one}"' in block for one in ids), (part, [one for one in ids if f'id="{one}"' not in block])
+    assert 'id="settings-link"' in html and 'href="#/settings/ai"' in html and "‘설정’의 ‘AI 연결’" in js
+    assert 'a === "settings"' in js and "setKeyShown(false)" in js[js.index("function route()"):js.index("function render()")]  # 화면을 떠나면 키를 가린다
+
+
+def aid_note() -> None:
+    """문제 상태의 study.unaided_open: 도움 없이 푼 문제로 셀 수 있는 풀이인 동안만 참이다. 힌트, 통과, 제출 3번, 등록 문제에서는 거짓, '처음부터' 뒤에는 다시 참."""
+    from types import SimpleNamespace
+    state = lambda: call("/api/state", id=PID, mode="chair", open=True)[1]["problem"]["study"]["unaided_open"]  # noqa: E731
+    touched = server.read_json(server.TOUCHED_FILE, {})  # 제출하면 '손댄 문제'가 남는다: 뒤 시험의 '다음 문제'가 달라지지 않게 되돌린다
+    with tempfile.TemporaryDirectory() as folder, patch.object(server, "DB", Path(folder) / "aid.db"):
+        assert state() is True
+        call("/api/hint", id=PID)
+        assert state() is False  # 힌트를 쓰면 도움 없이 푼 문제에서 빠진다
+        call("/api/reset", id=PID)
+        assert state() is True  # 처음부터 뒤에는 새 풀이다
+    with tempfile.TemporaryDirectory() as folder, patch.object(server, "DB", Path(folder) / "aid.db"):
+        for n in range(2):
+            call("/api/submit", id=PID, code=f"def solution(*a):\n    return None  # {n}")
+        assert state() is True
+        call("/api/submit", id=PID, code="def solution(*a):\n    return None  # 2")
+        assert state() is False  # 제출 3번을 넘겼다
+    with tempfile.TemporaryDirectory() as folder, patch.object(server, "DB", Path(folder) / "aid.db"):
+        assert call("/api/submit", id=PID, code=f"{CODE}\n# 0")[1]["ok"] and state() is False  # 통과했다
+    server.write_json(server.TOUCHED_FILE, touched)
+    js = (HERE / "app.js").read_text(encoding="utf-8")
+    assert js.count("aidNote()") >= 4 and "‘도움 받아 통과’로 남아요" in js and "study.unaided_open" in js  # 고르는 칸, 힌트, 튜터 시작 칸, 결과 칸에서 같은 글, 서버가 준 값으로 거른다
+    study = {"reset_at": None, "help_after_reset_at": None, "help_first_at": None, "solution_before_pass": False, "hints_seen": 0}
+    assert server.unaided_open(SimpleNamespace(builtin=True), [], study, None, False) and not server.unaided_open(SimpleNamespace(builtin=False), [], study, None, False)  # 등록한 문제는 준비도에 들지 않는다
+    assert not server.unaided_open(SimpleNamespace(builtin=True), [], study, "2026-01-01T00:00:00+00:00", False)  # 튜터와 말했다
+
+
+def way_info() -> None:
+    """푸는 방식 설명: 네 방식이 한 자료에서 나오고, ⓘ는 눌러 펴며(키보드·Esc), 잠긴 방식도 글이 읽히고 ⓘ가 열린다. 브라우저 동작은 화면 확인으로 본다."""
+    import re
+    js, css = (HERE / "app.js").read_text(encoding="utf-8"), (HERE / "app.css").read_text(encoding="utf-8")
+    table = js[js.index("const WAY_INFO = {"):js.index("const WAYS = ")]
+    for key in ("solo", "chair", "guide", "explain"):
+        row = re.search(rf"\b{key}: \{{(.*?)\}},\n", table, re.S).group(1)
+        assert all(f"{field}:" in row for field in ("name", "line", "needsAi", "does", "when", "ai", "ready")), key
+    assert "START = {\n  chair: [WAY_INFO.chair.name, WAY_INFO.chair.does" in js  # 시작 칸의 글도 같은 자료다
+    way = js[js.index("function renderWay()"):js.index("function renderTutor()")]
+    assert 'aria-disabled="true"' in way and "disabled" not in way.replace("aria-disabled", "")  # 잠가도 Tab이 닿는다
+    assert way.index('card("solo")') < way.index('card("chair")') < way.index('card("guide")')  # 도움이 적은 것부터
+    assert 'aria-expanded=' in js and 'S.wayInfo = null' in js and '.way-card[aria-disabled="true"]' in css
+    assert ".panes.railed .head-info { position: fixed" in css  # 접힌(150px) 칸에서는 머리의 설명을 칸 밖 겹침 상자로 띄운다
+    assert "way-card:disabled" not in css and not re.search(r"\.way-card\[aria-disabled[^}]*opacity", css)  # 잠긴 카드의 글은 흐리지 않는다
+
+
 def new_draft() -> None:
     """내 문제 넣기: 걸음마다 기록을 쌓아 뒤로 가기가 앞 걸음으로 가고, 적던 글은 이 탭의 sessionStorage에만 둔다(서버나 localStorage로 나가지 않는다). 브라우저 동작은 화면 확인으로 본다."""
     js = (HERE / "app.js").read_text(encoding="utf-8")
@@ -2519,7 +2612,9 @@ def main() -> None:
         builtin(fake)
         compose()
         report()
+        pitfalls_repeated()
         home()
+        aid_note()
         own_theme()
         readiness()
         screen_flows()
@@ -2527,6 +2622,7 @@ def main() -> None:
         own_way_flow()
         state_names_by_mode()
         chair_found()
+        guide_spoken()
         language_memory()
         no_tool()
         results()
@@ -2552,6 +2648,8 @@ def main() -> None:
         table()
         tour_pictures()
         home_screen()
+        settings_screen()
+        way_info()
         new_draft()
         hidden_cases()
         hint_by_block()

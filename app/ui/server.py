@@ -2,7 +2,7 @@
 
 실행: cd app && uv run --no-project --python 3.12 --with langgraph --with pypdf python ui/server.py
 주소: http://127.0.0.1:8791 (ALGOBLOCK_UI_PORT로 바꾼다). 이 기기 안에서만 열린다.
-모델: 기본은 연결한 공급자(API 키·ChatGPT 로그인). 키는 화면의 '연결'에서 넣거나 .env에 둔다.
+모델: 기본은 연결한 공급자(API 키·ChatGPT 로그인). 키는 화면의 '설정'의 'AI 연결'에서 넣거나 .env에 둔다.
      개발할 때만 ALGOBLOCK_UI_CLIENT=cli 로 이 PC의 Claude Code(claude -p)를 쓴다.
 설치 파일로 묶였을 때는 app/packaging/launcher.py가 데이터 폴더·화면 파일·채점기 위치를 환경 변수로 넘긴다.
 """
@@ -54,7 +54,7 @@ from tutor.save.respond import blocks_body, shown_count  # noqa: E402
 from tutor.ingest import IngestError, ocr_doubts, read_pages, reread  # noqa: E402
 from tutor.ingest.files import split_files  # noqa: E402
 from tutor.eval.scenarios import all_scenarios  # noqa: E402
-from tutor.knowledge.ontology import PITFALLS, TECHNIQUES, techniques_of  # noqa: E402
+from tutor.knowledge.ontology import PITFALL_GROUPS, PITFALLS, TECHNIQUES, techniques_of  # noqa: E402
 from tutor.llm import LlmNotConfigured, themes, use_llm  # noqa: E402
 from tutor.store.sqlite import now  # noqa: E402
 
@@ -141,7 +141,7 @@ def note_key_check(name: str, result: str | None, key: str = "") -> None:
 
 
 def key_rows() -> dict:
-    """연결 창의 공급자별 키 줄. 키는 끝 4자리만 싣는다(너무 짧은 글은 아예 싣지 않는다). 확인 기록은 지금 키의 지문과 같을 때만 보인다(키가 바뀌었으면 옛 기록은 보이지 않는다)."""
+    """설정의 공급자별 키 줄. 키는 끝 4자리만 싣는다(너무 짧은 글은 아예 싣지 않는다). 확인 기록은 지금 키의 지문과 같을 때만 보인다(키가 바뀌었으면 옛 기록은 보이지 않는다)."""
     saved = read_json(KEY_CHECK_FILE, {})
     out = {}
     for name, env in KEYS.items():
@@ -1929,6 +1929,8 @@ def state_body(t, p, body: dict) -> dict:
         recheck_later(pid)  # 대조 없이 준비해 둔 등록 문제(대조 기능 전에 등록): 한 번 대조한다
     passed, total = counts(t).get(pid, (0, 0))
     study = t.store.study(pid)
+    passed_now = passed_since(problem_subs(t, pid), study)  # 이번 풀이에서 통과했다(아니면 화면이 해설을 저절로 열지 않는다)
+    talked = (t.store.conn.execute("SELECT MIN(at) FROM message WHERE problem_id=?", (pid,)).fetchone() or [None])[0]
     # 주제를 붙이지 않은 등록 문제는 튜터가 준비한 계획의 알고리즘(15개 주제 가운데 하나일 때만)을 보인다(목록과 같다)
     planned = ctx.plan.algorithm if not p.sample and ctx is not None and ctx.plan is not None and ctx.plan.algorithm in ALGORITHMS else ""
     kinds = Counter(case.get("kind", "example") for case in p.cases)
@@ -1942,7 +1944,8 @@ def state_body(t, p, body: dict) -> dict:
                         "examples": examples, "cases": {kind: kinds.get(kind, 0) for kind in KINDS},
                         "study": {"hints_seen": hints_now(study, hint_rows(t, pid)), "hints_total": len(hint_rows(t, pid)), "solution_seen": bool(study["solution_at"]),
                                   "solution_open": passed > 0 or bool(study["solution_at"]), "has_guide": row is not None or ctx.solution is not None,
-                                  "passed_now": passed_since(problem_subs(t, pid), study)},  # 이번 풀이에서 통과했다(아니면 화면이 해설을 저절로 열지 않는다)
+                                  "passed_now": passed_now,
+                                  "unaided_open": unaided_open(p, problem_subs(t, pid), study, talked, passed_now)},
                         "code": ctx.direct_code or "", "passed": passed, "submitted": total,
                         "tools": tools(), "preparing": pid in PREPARING, "prepare_failed": pid in PREP_FAILED and ctx.plan is None, "assets": assets(pid), "checkpoint_at": (checkpoint(pid, ctx.language) or {}).get("at"), **mine},
             "session": t.session(pid, body.get("mode")).body, "blocks": read_json(BLOCKS_FILE, {}).get(pid, {}), "own_way": pid in read_json(OWN_FILE, {}),
@@ -2021,6 +2024,17 @@ def unaided_pass(subs: list[dict], study: dict, talked: str | None) -> bool:
     first = study["help_first_at"] or (EARLIEST.isoformat() if study["solution_before_pass"] or study["hints_seen"] else None)
     return clean(None, (first, talked)) or (study["reset_at"] is not None
                                             and clean(stamp(study["reset_at"]), (study["help_after_reset_at"], talked), timedelta(hours=REPEAT_GAP_HOURS)))
+
+
+def unaided_open(p, subs: list[dict], study: dict, talked: str | None, passed_now: bool) -> bool:
+    """이번 풀이가 아직 '도움 없이 푼 문제'로 셀 수 있는 중인가: 기본 문제이고, 이번 풀이에서 통과하지 않았고, 도움(튜터 기능·힌트·해설·튜터 대화)을
+    쓰지 않았고, 제출이 UNAIDED_MAX_SUBMITS번 안이다. 화면이 도움을 쓰기 전에 기준을 알릴지 가르는 데 쓴다(규칙은 unaided_pass와 같다)."""
+    if not p.builtin or passed_now:
+        return False
+    reset = study["reset_at"]
+    helped = study["help_after_reset_at"] if reset else study["help_first_at"] or (EARLIEST.isoformat() if study["solution_before_pass"] or study["hints_seen"] else None)
+    tries = [sub for sub in subs if reset is None or stamp(sub["at"]) > stamp(reset)]
+    return not (helped or talked) and len(tries) < UNAIDED_MAX_SUBMITS
 
 
 def fail_kind(sub: dict) -> str | None:
@@ -2122,6 +2136,18 @@ def readiness(unaided: dict, started: set, fresh: dict) -> dict:
                       f"판정 보류: 도움 없이 푼 문제가 {READY_MIN}문제보다 적어요.",
                       f"쉬운 코딩테스트 도전: 필수 주제({', '.join(theme_name(key) for key in ESSENTIAL)})를 모두 기초 익힘.",
                       f"실전 연습 단계: 필수 주제를 모두 실전 익힘, 자주 나오는 주제({', '.join(theme_name(key) for key in FREQUENT)})를 모두 기초 익힘."]}
+
+
+def repeated_pitfalls(store) -> list[dict]:
+    """두 번 이상 밟은 함정과, 그 함정이 나온 문제. 한 번만 나온 것은 되풀이가 아니라서 뺀다."""
+    where: dict[str, list[str]] = {}
+    for row in store.conn.execute("SELECT DISTINCT problem_id, pitfall FROM pitfall_hit ORDER BY rowid").fetchall():
+        ids = where.setdefault(PITFALL_GROUPS.get(row["pitfall"], row["pitfall"]), [])
+        if row["problem_id"] in PROBLEMS and row["problem_id"] not in ids:
+            ids.append(row["problem_id"])
+    return [{"name": PITFALLS[pid][1] if pid in PITFALLS else pid, "count": count,
+             "problems": [{"id": x, "title": PROBLEMS[x].title} for x in where.get(pid, [])]}
+            for pid, count in store._frequent_pitfalls(5) if count >= 2]
 
 
 def learning_report(t) -> dict:
@@ -2250,7 +2276,7 @@ def learning_report(t) -> dict:
         "strengths": [{"key": row["key"], "name": row["name"], "why": row["why"]} for row in strong],
         "weaknesses": [{"key": row["key"], "name": row["name"], "why": row["why"], "next": {"id": (row["review"] or row["next"])["id"], "title": (row["review"] or row["next"])["title"]}
                         if row["review"] or row["next"] else None} for row in weak],
-        "pitfalls": [{"name": PITFALLS[pid][1] if pid in PITFALLS else pid, "count": count} for pid, count in t.store._frequent_pitfalls(5)],
+        "pitfalls": repeated_pitfalls(t.store),
         "recent": [{"id": sub["problem_id"], "title": PROBLEMS[sub["problem_id"]].title, "ok": sub["ok"], "status": sub["status"], "language": sub["language"], "at": sub["at"]}
                    for sub in reversed(subs) if sub["problem_id"] in PROBLEMS][:10],
         "signals": signals, "feedbacks": feedbacks, "next": todo_rows, "attendance": attendance(),

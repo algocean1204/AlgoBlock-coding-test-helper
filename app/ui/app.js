@@ -18,17 +18,41 @@ const KIND_BY_LABEL = Object.fromEntries(Object.entries(KIND).map(([key, [label]
 const NEXT_BLOCK = /^다음은 '([^']+)' 블[록럭]이에요\./; // 새 블록의 첫 말은 종류를 알리며 시작한다
 const LANG = { python: "Python", java: "Java", javascript: "JavaScript", cpp: "C++", go: "Go", kotlin: "Kotlin", rust: "Rust" };
 const TOOL = { python: "Python 3", java: "JDK(javac와 java)", javascript: "Node.js", cpp: "g++ 또는 clang++", go: "Go", kotlin: "Kotlin 컴파일러(kotlinc)와 Java", rust: "Rust(rustc)" };
-// 푸는 방식 셋(오른쪽 칸 '어떻게 풀까요?'). 엔진의 이름은 solo·guide(가이드)·chair(생각하는 의자)
-const WAYS = {
-  solo: ["혼자 풀기", "튜터 없이 풀어요. 막히면 힌트를 하나씩 볼 수 있어요."],
-  guide: ["튜터와 차례로", "튜터가 풀이를 블록으로 나눠 하나씩 열어 줘요."],
-  chair: ["튜터의 질문으로", "튜터는 답을 주지 않고 질문만 해요. 풀이의 블록을 스스로 찾아요."],
+// 푸는 방식 넷의 설명 한 곳. 방식 카드, ⓘ로 펴는 설명, 튜터 시작 칸이 모두 여기서 읽는다.
+// 엔진의 이름은 solo·guide(가이드)·chair(생각하는 의자). explain은 튜터의 해설(혼자 풀기의 해설 칸에서 간다)
+const WAY_INFO = {
+  solo: { name: "혼자 풀기", line: "튜터 없이 풀어요. 막히면 힌트를 하나씩 봐요.", needsAi: false,
+    does: "문제를 읽고 코드를 쓰고 제출해요. 막히면 미리 만들어 둔 힌트를 하나씩 열 수 있어요. 통과하면 해설과 실전 신호가 열려요.",
+    when: "실전처럼 풀어 보고 싶을 때. 처음이라면 여기서 시작해요.",
+    ai: "없음 — 힌트와 해설은 미리 만든 글이에요.",
+    ready: "힌트와 해설을 열지 않고 제출 3번 안에 통과하면 ‘도움 없이 통과’로 세요." },
+  chair: { name: "튜터의 질문으로", line: "튜터가 질문만 해요. 풀이 순서를 내가 찾아요.", needsAi: true,
+    does: "튜터가 한 번에 질문 하나를 던져요. 답을 알려 주지 않고, 풀이를 이루는 블록을 내가 하나씩 찾아내게 이끌어요. 찾은 블록마다 코드를 적어요.",
+    when: "어디서부터 시작할지 모르겠지만, 풀이는 스스로 떠올리고 싶을 때.",
+    ai: "보통 — 내가 답할 때마다 튜터가 읽고 다음 질문을 해요.",
+    ready: "‘도움 받아 통과’로 남아요." },
+  guide: { name: "튜터와 차례로", line: "튜터가 풀이 순서를 블록으로 보여 줘요. 블록마다 코드는 내가 써요.", needsAi: true,
+    does: "튜터가 풀이를 블록으로 나눠 이름을 먼저 보여 주고, 앞에서부터 하나씩 열어요. 블록마다 내가 코드를 적고 ‘블록 코드 확인’으로 맞는지 봐요.",
+    when: "풀이의 흐름은 받고, 코드로 옮기는 연습을 하고 싶을 때. 처음 보는 유형일 때.",
+    ai: "적음~보통 — 블록 코드는 대부분 직접 돌려서 확인하고, 튜터의 말이 필요할 때만 AI를 써요.",
+    ready: "‘도움 받아 통과’로 남아요." },
+  explain: { name: "튜터의 해설", line: "튜터가 풀이 전체를 순서대로 설명해요.", needsAi: true,
+    does: "튜터가 이 문제의 풀이를 처음부터 끝까지 글로 설명해요. 내가 답하는 것은 없어요.",
+    when: "충분히 해 보고도 막혔을 때, 또는 풀고 난 뒤 다른 설명을 읽고 싶을 때. 스스로 찾아보고 싶다면 ‘튜터의 질문으로’를 먼저 해 보세요.",
+    ai: "적음 — 문제와 언어마다 한 번만 써요.",
+    ready: "통과하기 전에 받으면 ‘도움 받아 통과’로 남아요." },
 };
+const WAYS = Object.fromEntries(["solo", "guide", "chair"].map((k) => [k, [WAY_INFO[k].name, WAY_INFO[k].line]]));
 const START = {
-  chair: ["튜터의 질문으로", "튜터가 질문을 하나씩 던져요. 답을 알려 주지 않고, 풀이의 블록을 스스로 찾도록 이끌어요.", "첫 질문 받기", "튜터가 문제를 읽고 첫 질문을 준비하는 중…"],
-  guide: ["튜터와 차례로", "블록 이름을 먼저 보여 주고, 그 블록의 빈칸을 채우도록 이끌어요.", "첫 블록 열기", "튜터가 문제를 읽고 첫 블록을 준비하는 중…"],
-  explain: ["튜터의 해설", "튜터가 풀이 전체를 순서대로 설명해요. 스스로 찾아보고 싶다면 ‘튜터의 질문으로’를 먼저 해 보세요.", "해설 받기", "해설을 쓰는 중…"],
+  chair: [WAY_INFO.chair.name, WAY_INFO.chair.does, "첫 질문 받기", "튜터가 문제를 읽고 첫 질문을 준비하는 중…"],
+  guide: [WAY_INFO.guide.name, WAY_INFO.guide.does, "첫 블록 열기", "튜터가 문제를 읽고 첫 블록을 준비하는 중…"],
+  explain: [WAY_INFO.explain.name, WAY_INFO.explain.does, "해설 받기", "해설을 쓰는 중…"],
 };
+/** 방식 하나의 설명(무엇을 해요 · 이럴 때 · AI 사용량 · 준비도). ⓘ로 펴는 칸이 쓴다. */
+const wayInfoHtml = (k) => { const w = WAY_INFO[k]; return `<dl><dt>무엇을 해요</dt><dd>${w.does}</dd><dt>이럴 때</dt><dd>${w.when}</dd><dt>AI 사용량</dt><dd>${w.ai}</dd><dt>준비도</dt><dd>${w.ready}</dd></dl>`; };
+/** ⓘ 단추와 그 설명 칸. where는 같은 방식이 한 화면에 둘 나올 때 구분한다(카드·머리·해설 단추). */
+const infoBtn = (k, where) => `<button type="button" class="info-btn" data-way-info="${k}:${where}" aria-expanded="${S.wayInfo === `${k}:${where}`}" aria-controls="wayinfo-${k}-${where}" aria-label="${WAY_INFO[k].name} 설명">${ico("i-info")}</button>`;
+const infoBox = (k, where) => `<div class="info" id="wayinfo-${k}-${where}" role="region" aria-label="${WAY_INFO[k].name} 설명"${S.wayInfo === `${k}:${where}` ? "" : " hidden"}>${wayInfoHtml(k)}</div>`;
 /* 색 이름표(7번): 단계 1~5, 주제 다섯 갈래, 쓰는 방법(태그. 색 없음), 검증. 색만으로 뜻을 전하지 않게 글자와 같이 쓴다 */
 const GROUP = { hash: "ds", stack_queue: "ds", heap: "ds", brute_force: "search", dfs: "search", bfs: "search", binary_search: "search",
   graph: "graph", dijkstra: "graph", greedy: "design", dp: "design", two_pointer: "design", sort: "impl", simulation: "impl", implementation: "impl" };
@@ -61,8 +85,8 @@ const LOOKS = [["cpp", /#include/], ["kotlin", /\bfun solution\b/], ["go", /\bfu
 const looksLike = (code) => (LOOKS.find(([, re]) => re.test(code)) || [null])[0];
 const ERR = {
   llm_timeout: "튜터 응답이 너무 오래 걸려 멈췄어요. 한 번 더 보내 주세요.",
-  llm_not_configured: "AI가 연결되어 있지 않아요. 오른쪽 위 ‘연결’에서 연결해 주세요.",
-  llm_failed: "튜터가 답을 만들지 못했어요. 잠시 뒤 다시 보내 주세요. 계속되면 ‘연결’에서 연결 상태를 확인해 주세요.",
+  llm_not_configured: "AI가 연결되어 있지 않아요. 오른쪽 위 ‘설정’의 ‘AI 연결’에서 연결해 주세요.",
+  llm_failed: "튜터가 답을 만들지 못했어요. 잠시 뒤 다시 보내 주세요. 계속되면 ‘설정’의 ‘AI 연결’에서 연결 상태를 확인해 주세요.",
   file_missing: "필요한 파일을 찾지 못했어요. 앱을 닫았다가 다시 열어 주세요.",
   invalid_output: "튜터의 답이 규칙에 맞지 않아 보여 주지 않았어요. 한 번 더 보내 주세요.",
   already_started: "이미 시작한 대화예요.",
@@ -119,9 +143,13 @@ function setKeyBad(bad) {
 function errorNote(error) {
   const known = ERR[error.code];
   const text = known || error.message || "알 수 없는 오류가 났어요. 다시 해 보세요.";
-  return { type: "error", text, conn: error.code === "llm_not_configured" || error.code === "llm_auth_failed" }; // 키가 틀렸으면 연결 창으로 가는 단추
+  return { type: "error", text, conn: error.code === "llm_not_configured" || error.code === "llm_auth_failed" }; // 키가 틀렸으면 설정의 AI 연결로 가는 단추
 }
 
+/** 도움 없이 푼 문제의 기준 한 줄(#111). 기본 문제를 이번 풀이에서 아직 도움 없이 풀고 있을 때만 보인다. 서버가 준 값에, 이 화면에서 방금 쓴 도움을 더해 거른다. */
+const talkedWith = () => !!S.session && ((S.session.chair || []).length > 0 || (S.session.guide || []).length > 0 || !!S.session.explain);
+const aidOpen = () => !!S.problem && S.problem.builtin && S.problem.study.unaided_open && !(S.solo && S.solo.seen) && !talkedWith();
+const aidNote = () => (aidOpen() ? '<p class="aid-note hint">힌트·튜터·해설을 쓰고 통과하면 ‘도움 받아 통과’로 남아요. 준비도는 도움 없이 통과한 문제만 세요.</p>' : "");
 const noteHtml = (n) => !n ? "" : `<div class="note ${n.type || ""}" role="${n.type === "error" ? "alert" : "status"}"><span>${esc(n.text)}</span>${n.conn ? '<button type="button" class="btn small" id="note-conn">연결하기</button>' : ""}${n.again ? '<button type="button" class="btn small" id="prep-again" data-model>다시 준비</button>' : ""}</div>`;
 const PREP_FAILED = { type: "error", text: "튜터가 풀이 순서를 준비하지 못했어요.", again: true }; // 보낸 것이 없으니 '한 번 더 보내 주세요'라고 하지 않는다
 const say = (text) => { $("status").textContent = text || ""; };
@@ -280,14 +308,36 @@ const tutorBubble = (text) => `<div class="msg tutor"><span class="who">튜터</
 function show(view) {
   const moved = S.view && S.view !== view;
   S.view = view;
-  for (const name of ["home", "list", "new", "code", "feedback", "report"]) $("view-" + name).hidden = name !== view;
+  for (const name of ["home", "list", "new", "code", "feedback", "report", "settings"]) $("view-" + name).hidden = name !== view;
   const editing = location.hash.startsWith("#/edit/"); // 문제 수정은 등록 화면을 쓰지만 문제 목록에 속한다
   for (const [id, on] of [["nav-home", view === "home"], ["nav-list", editing || view === "list" || view === "code" || view === "feedback"], ["nav-report", view === "report"], ["nav-new", view === "new" && !editing]]) on ? $(id).setAttribute("aria-current", "page") : $(id).removeAttribute("aria-current");
   $("main").scrollTop = 0;
+  if (view !== "settings") $("settings-link").removeAttribute("aria-current");
   if (moved) { say(carried); carried = ""; } // 앞 화면의 상태 문구를 남기지 않는다
   if (view !== "code") document.title = "AlgoBlock";
   if (!S.first) { S.first = true; if (view === "home") $("home-title").focus(); } // 첫 로드에서도 제목에 초점: Tab 한 번에 주 단추
-  if (moved) $({ home: "home-title", list: "list-title", new: "new-title-h", code: "p-title", feedback: "fb-title", report: "report-title" }[view]).focus();
+  if (moved) $({ home: "home-title", list: "list-title", new: "new-title-h", code: "p-title", feedback: "fb-title", report: "report-title", settings: "set-title" }[view]).focus();
+}
+
+let lastHash = "";
+const SET_PARTS = ["ai", "models", "solve", "look", "update"];
+/** 설정: 분류마다 한 칸(#/settings/<분류>). 예전 연결 창의 칸을 그대로 옮겼다. 분류를 바꾸면 초점이 그 분류의 제목으로 간다. */
+function showSettings(part, from) {
+  const was = S.view === "settings";
+  if (!SET_PARTS.includes(part)) part = "ai";
+  if (!was) S.setFrom = from && from.startsWith("#/p/") ? from : ""; // 문제를 풀다 왔으면 돌아갈 길
+  show("settings");
+  document.title = "설정 · AlgoBlock";
+  for (const k of SET_PARTS) {
+    $("set-" + k).hidden = k !== part;
+    k === part ? $("set-nav-" + k).setAttribute("aria-current", "page") : $("set-nav-" + k).removeAttribute("aria-current");
+  }
+  $("settings-link").setAttribute("aria-current", "page");
+  $("set-back").hidden = !S.setFrom;
+  if (S.setFrom) $("set-back").href = S.setFrom;
+  if (!was) { $("conn-note").textContent = $("tools-note").textContent = ""; accounts(); loadTools(false); }
+  else $("set-h-" + part).focus();
+  if (part === "models" && ACCOUNTS) renderModels();
 }
 
 function route() {
@@ -298,6 +348,9 @@ function route() {
   $("reset").hidden = $("p-edit").hidden = $("p-delete").hidden = false;
   if ($("asset").open) closeAsset();
   const [a, b, c] = location.hash.replace(/^#\/?/, "").split("/");
+  const from = lastHash; lastHash = location.hash;
+  if (S.view === "settings" && a !== "settings") setKeyShown(false); // 화면을 떠나면 입력한 키는 다시 가린다
+  if (a === "settings") return showSettings(b, from);
   if (a === "p" && b) return c === "feedback" ? showFeedback(b) : showCode(b);
   if (a === "new") return showNew();
   if (a === "edit" && b) return showEdit(b);
@@ -437,7 +490,7 @@ async function showReport() {
   const nexts = d.next; // 첫 줄이 홈의 ‘이어서 풀기’와 결과·피드백의 ‘다음 문제’다
   if (nexts.length) html += `<h2 class="list-label">다음에 풀 문제</h2><ul class="rows">${nexts.map((n) => `<li><a class="row" href="#/p/${esc(n.id)}"><span><span class="row-title">${esc(n.title)}</span>
     <span class="badges">${lvBadge(n.level)}${n.theme_name ? `<span class="theme-chip">${esc(n.theme_name)}</span>` : ""}</span><span class="row-meta">${esc(n.why)}</span></span><span></span>${ico("i-caret")}<span class="sr-only">열기</span></a></li>`).join("")}</ul>`;
-  const fold = (title, count, body) => `<details class="fold card"><summary><span>${title}</span> <span class="muted">${count}</span></summary>${body}</details>`;
+  const fold = (title, count, body) => `<details class="fold card"><summary>${ico("i-caret")}<span>${title}</span> <span class="muted">${count}</span></summary>${body}</details>`;
   html += fold("주제별 진행", `${d.themes.length}개 주제 · 통과 ${sum.solved}`, `${LEGEND}<ul class="ladders report">${d.themes.map((t) => `<li class="ladder-row">
     <span class="ladder-name">${gdot(t.key)}${esc(t.name)}<small>${t.solved}/${t.total}</small></span>
     ${levelCells(t.name, built.filter((p) => p.theme === t.key))}
@@ -447,10 +500,10 @@ async function showReport() {
   </li>`).join("")}</ul>`);
   const cards = [failAll ? `<section class="card side"><h2>통과하지 못한 제출</h2><ul class="bars">${fails.map(([kind, n]) => `<li><span>${FAIL_WORD[kind]}</span><span class="bar" aria-hidden="true"><i class="${kind}" style="width:${Math.round(100 * n / failMax)}%"></i></span><b>${n}</b></li>`).join("")}</ul>
       <p class="hint">${failTip(fails)}</p></section>` : "",
-    d.pitfalls.length ? `<section class="card side"><h2>되풀이한 실수</h2><ul class="points plain">${d.pitfalls.map((x) => `<li><strong>${esc(x.name)}</strong><span>${x.count}번</span></li>`).join("")}</ul></section>` : ""].filter(Boolean);
+    d.pitfalls.length ? `<section class="card side"><h2>되풀이한 실수</h2><ul class="points plain">${d.pitfalls.map((x) => `<li><strong>${esc(x.name)}</strong><span>${x.count}번</span>${x.problems.length ? `<span class="pit-from muted">${x.problems.map((p) => `<a href="#/p/${esc(p.id)}">${esc(p.title)}</a>`).join(" · ")}</span>` : ""}</li>`).join("")}</ul></section>` : ""].filter(Boolean);
   if (cards.length) html += `<div class="sides">${cards.join("")}</div>`;
   if (d.signals.length) html += fold("실전 신호 모음", `${d.signals.reduce((n, g) => n + g.items.length, 0)}개`, `<p class="hint">통과한 문제에서 모았어요. 실전에서 이런 표현을 보면 이 방법을 떠올려요.</p>
-    ${d.signals.map((g) => `<details class="signal-group"><summary>${esc(g.name)} <span class="muted">${g.items.length}개</span></summary><ul class="signals">${g.items.map((x) => `<li class="signal"><q>${esc(x.phrase)}</q><span>${esc(x.means)}</span><small>${esc(x.title)}</small></li>`).join("")}</ul></details>`).join("")}`);
+    ${d.signals.map((g) => `<details class="signal-group"><summary>${ico("i-caret")}${esc(g.name)} <span class="muted">${g.items.length}개</span></summary><ul class="signals">${g.items.map((x) => `<li class="signal"><q>${esc(x.phrase)}</q><span>${esc(x.means)}</span><small>${esc(x.title)}</small></li>`).join("")}</ul></details>`).join("")}`);
   if (d.feedbacks.length) html += `<h2 class="list-label">받은 AI 피드백</h2><ul class="rows">${d.feedbacks.map((f) => `<li><a class="row" href="#/p/${esc(f.id)}/feedback"><span><span class="row-title">${esc(f.title)}</span>
     <span class="row-meta">${esc(when(f.at))}${f.summary ? ` · ${esc(f.summary.length > 90 ? `${f.summary.slice(0, 90).replace(/\s*\S*$/, "")}…` : f.summary)}` : ""}</span></span><span></span>${ico("i-caret")}<span class="sr-only">피드백 열기</span></a></li>`).join("")}</ul>`;
   if (d.recent.length) html += fold("최근 제출", `${d.recent.length}개`, `<ul class="rows recent">${d.recent.map((x) => `<li><a class="row" href="#/p/${esc(x.id)}"><span><span class="row-title">${esc(x.title)}</span>
@@ -605,7 +658,7 @@ async function fillCases(sure, quiet) {
   }
   // 글자 읽기로 읽은 글은 줄이 깨져 빠질 수 있다. 채운 수를 원본과 견주게 한다
   $("case-note").textContent = (cases.length ? `글의 입출력 예에서 케이스 ${cases.length}개를 채웠어요. ${readOcr ? "원본의 예시 수와 견줘 주세요. " : ""}` : "") + missed
-    || (r.data.other > 0 && !EDIT ? `${stdin ? "함수(solution)" : "표준 입출력"} 꼴의 예시 ${r.data.other}개를 찾았어요. 푸는 방식을 바꾸면 채워요.` // 다른 방식으로는 찾았다: 위 알림과 어긋나지 않게 한 가지로 말한다
+    || (r.data.other > 0 && !EDIT ? `${stdin ? "함수(solution)" : "표준 입출력"} 꼴의 예시 ${r.data.other}개를 찾았어요. 입출력 방식을 바꾸면 채워요.` // 다른 방식으로는 찾았다: 위 알림과 어긋나지 않게 한 가지로 말한다
       : "글에서 입출력 예를 찾지 못했어요. 아래에 직접 넣어 주세요."); // 문장으로만 적힌 예시는 읽지 못한다: 조용히 넘어가지 않고 알린다
   $("case-note").hidden = false;
   if (!cases.length) return void ($("case-fill").hidden = !skipped);
@@ -857,7 +910,7 @@ function formMode(editing) {
   document.querySelector('#wsteps li[data-wstep="3"]').lastChild.textContent = editing ? "저장" : "등록";
   $("new-title-note").hidden = editing; // '글의 첫 줄에서 채웠어요'는 새로 넣을 때만(수정의 제목은 저장해 둔 것이다)
   $("new-lang-field").hidden = editing; // 언어는 코드 화면에서 바꾼다
-  $("new-mode").disabled = editing; // 푸는 방식은 등록할 때만 고른다(바꾸면 케이스와 코드가 모두 달라진다)
+  $("new-mode").disabled = editing; // 입출력 방식은 등록할 때만 고른다(바꾸면 케이스와 코드가 모두 달라진다)
   $("new-mode-note").hidden = !editing;
   $("edit-confirm").hidden = $("case-fill-confirm").hidden = true;
   clearError();
@@ -1100,7 +1153,8 @@ function renderCode() {
       : S.codeAsk === "pull" ? (S.pullNudge ? "블록 칸의 코드를 아직 모으지 않았어요 — 모을까요? ‘코드 전체’ 칸의 코드는 모은 코드로 바뀌어요." : "‘코드 전체’ 칸의 코드를 블록을 모은 코드로 바꿀까요?") : back ? "코드 칸을 시작 코드로 되돌릴까요?" : "코드 칸을 비울까요?";
     $("code-yes").textContent = S.codeAsk === "restore" ? "되돌리기" : S.codeAsk === "pull" ? (S.pullNudge ? "모으기" : "바꾸기") : back ? "시작 코드로" : "비우기";
   }
-  $("p-count").textContent = p.submitted ? `통과 ${p.passed} · 제출 ${p.submitted}` : "";
+  const aided = p.builtin && !p.study.passed_now && !aidOpen() && (p.study.hints_seen > 0 || p.study.solution_seen || talkedWith()); // 이번 풀이에서 도움을 썼다
+  $("p-count").textContent = [p.submitted ? `통과 ${p.passed} · 제출 ${p.submitted}` : "", aided ? "도움 받아 푸는 중" : ""].filter(Boolean).join(" · ");
   $("old-feedback").hidden = !S.hasFeedback;
   renderBlocks();
   renderCodePane();
@@ -1132,7 +1186,7 @@ function renderCheckLine(p) {
 
 /** 상태마다 주 동작 하나(파란 채움): 그 단추에만 primary를 붙이고 나머지에서는 뗀다. 붙인 단추를 돌려준다. */
 const PRIMARY = { run: "#run", submit: "#submit", compose: "#compose-run", start: "#start", talk: "#send", follow: "#fq-send",
-  debug: "#debug-send", find: "#debug-start", hint: "#result-hint", next: "#result-next", review: "#result-next", feedback: "#to-feedback" };
+  check: ".block.is-current [data-check]", debug: "#debug-send", find: "#debug-start", hint: "#result-hint", next: "#result-next", review: "#result-next", feedback: "#to-feedback" };
 function applyPrimary(stage) {
   document.querySelectorAll("#view-code .primary").forEach((el) => el.classList.remove("primary"));
   const shown = (sel) => { const el = document.querySelector(`#view-code ${sel}`); return el && !el.closest("[hidden]") && !el.disabled ? el : null; };
@@ -1143,7 +1197,7 @@ function applyPrimary(stage) {
 
 /** 풀이 순서 네 걸음 중 지금 어디인지만 짚고, 그 걸음의 주 동작 이름을 곁에 쓴다(앞 걸음을 끝냈다고 표시하지 않는다: 건너뛰고 올 수도 있다). */
 const STEPS = ["생각하기", "코드 쓰기", "제출·고치기", "돌아보기"];
-const STEP_OF = { choose: 0, start: 0, talk: 0, follow: 0, compose: 1, run: 1, submit: 2, find: 2, hint: 2, debug: 2, feedback: 3, next: 3, review: 3 };
+const STEP_OF = { check: 1, choose: 0, start: 0, talk: 0, follow: 0, compose: 1, run: 1, submit: 2, find: 2, hint: 2, debug: 2, feedback: 3, next: 3, review: 3 };
 function renderSteps(stage, el) {
   const at = STEP_OF[stage] ?? 1, doing = stage === "choose" ? "어떻게 풀지 고르기" : stage === "review" ? "통과한 문제" : el ? el.textContent.trim() : "";
   $("steps").innerHTML = STEPS.map((name, i) => `<li${i === at ? ' class="now" aria-current="step"' : ""}><span class="step-no" aria-hidden="true">${i + 1}</span>${name}${i === at && doing ? `<span class="step-do"> · ${esc(doing)}</span>` : ""}</li>`).join("");
@@ -1173,6 +1227,7 @@ function nextAction() {
   if (tutorWay(S.mode) || S.mode === "explain") {
     if (S.mode === "explain" ? !s.explain : !s[S.mode].length) return "start";
     if (S.mode === "guide" && ownWayOn()) return "compose"; // 끝까지 내 방식으로 쓰기: 블록마다 확인하지 않고 모아서 실행으로 확인한다
+    if (S.mode === "guide" && (s.guide.filter((m) => m.role === "service").pop() || {}).move === "write") return "check"; // 튜터의 마지막 말이 코드를 적으라는 것: 다음은 다시 보내기가 아니라 그 블록의 코드 확인
     if (tutorWay(S.mode) && !blocksReady()) return "talk";
     if (tutorWay(S.mode) && (S.codeTab === "blocks" || codeEmpty())) return "compose";
   }
@@ -1755,7 +1810,7 @@ function renderResult() {
     else if (S.solo && S.solo.total) acts += `<button type="button" id="result-hint" class="btn${finds ? " quiet" : ""}" title="${tutorWay(S.mode) ? "푸는 방식이 혼자 풀기로 바뀌고, 풀이를 처음부터 하나씩 짚는 힌트를 열어요" : "풀이를 처음부터 하나씩 짚는 힌트예요"}">${ico("i-bulb")}풀이 힌트 보기${tutorWay(S.mode) ? " · 혼자 풀기로 바뀌어요" : ""}</button>`;
     if (!r.run && ai) acts += '<button type="button" id="to-feedback" class="btn quiet" data-model>피드백 받기</button>';
   }
-  if (acts) html += `<div class="result-actions">${acts}</div>`;
+  if (acts) html += `<div class="result-actions">${acts}</div>${!r.ok && total && ai ? aidNote() : ""}`; // 틀린 곳 같이 찾기·힌트를 누르기 전에
   const right = !r.ok && ((S.debug && S.debug.open) || (S.mode === "solo" && S.soloOpen === "hint"));
   if (right) html += '<p class="flow-note" role="status">오른쪽에서 이어져요 →</p>'; // 도움은 오른쪽 칸에 뜬다
   const guide = !r.ok && total ? failGuide(r, slowOnly) : "";
@@ -1837,12 +1892,14 @@ function setMode(mode, remember) {
   return loadState();
 }
 
-/** 고르는 칸: 카드 셋. 연결이 없으면 튜터 둘은 흐리게 두고 까닭과 연결하는 길을 말한다. */
+/** 고르는 칸: 카드 셋(도움이 적은 것부터). 연결이 없으면 튜터 둘은 잠그되 글은 그대로 읽히고, ⓘ는 열린다. */
 function renderWay() {
   const ai = connected();
-  $("way-box").innerHTML = `<div class="ways" role="group" aria-label="푸는 방식">${["solo", "guide", "chair"].map((k) => `<button type="button" class="way-card" data-way="${k}"${k !== "solo" && !ai ? " disabled" : ""} aria-describedby="way-${k}">
-      <strong>${WAYS[k][0]}${S.mode === k ? '<em class="tag">지금 방식</em>' : ""}</strong><span id="way-${k}">${WAYS[k][1]}</span></button>`).join("")}</div>
-    ${ai ? '<p class="hint">고른 방식은 이 문제에 기억해요. 고른 뒤에도 ‘방식 바꾸기’로 언제든 바꿔요.</p>' : '<div class="note"><span>튜터 둘은 AI를 연결하면 쓸 수 있어요.</span><button type="button" class="btn small" id="note-conn">연결하기</button></div>'}`;
+  const card = (k) => { const w = WAY_INFO[k], locked = w.needsAi && !ai;
+    return `<div class="wayrow"><button type="button" class="way-card${k === "solo" ? " main" : ""}" data-way="${k}"${locked ? ' aria-disabled="true"' : ""} aria-describedby="way-${k}">
+      <strong>${w.name}${S.mode === k ? '<em class="tag">지금 방식</em>' : ""}${w.needsAi ? (locked ? `<em class="tag lock">${ico("i-lock")}AI 연결 필요</em>` : "") : '<em class="tag">AI 없이</em>'}</strong><span id="way-${k}">${w.line}</span></button>${infoBtn(k, "card")}${infoBox(k, "card")}</div>`; };
+  $("way-box").innerHTML = `<div class="ways" role="group" aria-label="푸는 방식">${card("solo")}<p class="ways-gap">아래로 갈수록 튜터가 더 많이 도와줘요</p>${card("chair")}${card("guide")}</div>
+    ${ai ? '<p class="hint">고른 방식은 이 문제에 기억해요. 고른 뒤에도 ‘방식 바꾸기’로 언제든 바꿔요.</p>' : '<div class="note"><span>튜터 방식 둘은 AI를 연결하면 쓸 수 있어요.</span><button type="button" class="btn small" id="note-conn">연결하기</button></div>'}`;
 }
 
 function renderTutor() {
@@ -1850,12 +1907,15 @@ function renderTutor() {
   const solo = mode === "solo" && !choosing, railed = solo && !S.soloOpen && !finding;
   $("panes").classList.toggle("railed", railed); // 혼자 풀기는 오른쪽 칸을 접어 '힌트'·'해설' 두 단추만 둔다
   $("way-title").textContent = finding ? "튜터" : choosing ? "어떻게 풀까요?" : mode === "explain" ? START.explain[0] : WAYS[mode][0];
+  const headInfo = !choosing && !finding && mode && WAY_INFO[mode];
+  $("way-info").innerHTML = headInfo ? infoBtn(mode, "head") : "";
+  $("way-info-box").innerHTML = headInfo ? infoBox(mode, "head") : "";
   $("way-change").hidden = finding || (choosing && !mode);
   $("way-change").textContent = choosing ? "그대로 두기" : "방식 바꾸기";
   $("solo-tabs").hidden = $("solo-fold").hidden = !solo || !S.soloOpen || finding;
   for (const tab of document.querySelectorAll("#solo-tabs [role=tab]")) selectTab(tab, tab.dataset.solo === S.soloOpen);
   $("way-box").hidden = finding || !choosing;
-  if (choosing) renderWay();
+  if (choosing) { renderWay(); $("way-box").insertAdjacentHTML("beforeend", aidNote()); }
   $("rail").hidden = !railed;
   if (railed && S.solo) $("rail-hint").lastChild.textContent = S.solo.total ? `힌트 ${S.solo.seen}/${S.solo.total}` : "힌트";
   $("solo-box").hidden = finding || !solo || !S.soloOpen;
@@ -1875,7 +1935,7 @@ function renderTutor() {
     const preparing = !connected() ? "" : S.problem.preparing ? `<div class="note" role="status">${DOTS}<span>튜터가 이 문제의 풀이 순서를 준비하고 있어요. <span class="secs" data-since="${S.prepAt}">${since(S.prepAt)}초</span> · <span data-late="30초쯤 걸려요">${late(since(S.prepAt), "30초쯤 걸려요")}</span></span></div>`
       : S.problem.prepare_failed && !S.note.start ? noteHtml(PREP_FAILED) : ""; // 뒤에서 준비하다 실패했다: 다시 준비(미리 만들기를 다시 탄다)
     $("start-box").innerHTML = `<h3>${title}</h3><p>${text}</p>
-      <button type="button" id="start" class="btn" data-model>${button}</button>
+      <button type="button" id="start" class="btn" data-model>${button}</button>${aidNote()}
       ${S.busy && S.busy.where === "start" ? `<div class="note">${waitLine("start").replace("보통 5~25초 걸려요", `<span data-late="처음은 30초쯤 걸려요">${late(secs(), "처음은 30초쯤 걸려요")}</span>`)}</div>` : preparing}${noteHtml(S.note.start)}`;
     return;
   }
@@ -1952,7 +2012,7 @@ function renderSolo() {
     else if (!o.blocks) { hints += '<p class="hint">힌트 목차를 불러오는 중…</p>'; if (!o.loading) loadHints(true); }
     else {
       // 블록 목차: 막힌 블록의 힌트부터 연다. 머리는 블록 번호와 종류, 그 블록의 힌트를 모두 본 뒤에는 블록 이름(서버가 그때만 보낸다)
-      hints += `<p class="hint">막힌 블록을 골라 그 블록의 힌트부터 보세요. 답을 알려 주지 않고 생각할 거리를 하나씩 드려요. 블록마다 힌트가 세 개까지 있어요.</p>
+      hints += `<p class="hint">막힌 블록을 골라 그 블록의 힌트부터 보세요. 답을 알려 주지 않고 생각할 거리를 하나씩 드려요. 블록마다 힌트가 세 개까지 있어요.</p>${aidNote()}
         <ol class="hint-blocks">${o.blocks.map((b) => {
     const mine = o.shown.filter((h) => h.block === b.block), done = b.seen >= b.total;
     return `<li data-hint-of="${b.block}"><span class="hint-no">${b.kind ? kindChip(b.kind) : ""}블록 ${b.block}${b.name ? ` · ${esc(b.name)}` : ""} · 힌트 ${b.seen}/${b.total}</span>
@@ -1966,7 +2026,7 @@ function renderSolo() {
     return;
   }
   let sol = `<section class="solo-sec" aria-labelledby="solo-sol"><h3 id="solo-sol">${ico("i-check")}실전 신호와 해설</h3>`;
-  const tutorExplain = ai ? '<button type="button" id="to-explain" class="btn quiet small" data-model>튜터에게 해설 받기</button>' : ""; // 모델이 쓰는 해설(예전 '해설' 탭)
+  const tutorExplain = ai ? `<span class="btn-info"><button type="button" id="to-explain" class="btn quiet small" data-model>튜터의 해설 받기</button>${infoBtn("explain", "solo")}</span>${infoBox("explain", "solo")}` : ""; // 모델이 쓰는 해설(예전 '해설' 탭)
   if (!p.study.has_guide) sol += `<p class="hint">이 문제에는 미리 만든 해설이 없어요. ${ai ? "튜터가 써 줄 수 있어요." : "튜터를 연결하면 해설을 써 줘요."}</p>${tutorExplain}`;
   else if (o.sol) sol += solutionHtml(o.sol, p.passed > 0) + tutorExplain;
   else if (p.study.solution_open) sol += `${p.passed && !p.study.passed_now ? '<p class="hint">다시 푸는 중이에요. 지금 해설을 열면 이번 풀이는 도움을 받은 것으로 남아요.</p>' : ""}<button type="button" id="solo-open" class="btn">해설 보기</button>`; // '처음부터' 뒤에 이미 통과한 문제
@@ -2359,21 +2419,14 @@ async function setTheme(theme, tier, effort) {
   $("models-note").textContent = r.ok ? `저장했어요. ${row.label}: ${now.model_label}, 추론 ${EFFORT[now.effort]}` : errorNote(r.error).text;
 }
 
-function openModels() {
-  const box = $("models");
-  renderModels();
-  if (!box.open) box.showModal ? box.showModal() : box.setAttribute("open", "");
-  $("models-title").focus();
-}
 function renderAccounts(a) {
   const provider = a.keys.claude ? "Claude API 키" : a.chatgpt ? "ChatGPT 로그인" : a.keys.openai ? "OpenAI API 키" : "";
   const ready = a.client === "cli" || !!provider;
   CONN = { ready, name: a.client === "cli" ? "이 PC의 Claude Code" : provider };
   ACCOUNTS = a;
   if (!paneTimer && !paneDrag) paneSet(a.panes || null, false); // 저장한 칸 너비를 첫 그림 전에(accounts를 기다린 뒤에 route()를 부른다)
-  $("themes-now").textContent = a.themes.map((t) => `${t.label} ${t.model_label}`).join(" · ");
-  if ($("models").open) renderModels();
-  $("conn-now").textContent = keyBad ? "키 확인 필요" : a.client === "cli" ? "이 PC의 Claude Code" : provider || "연결 안 됨";
+  if (S.view === "settings") renderModels();
+  $("conn-now").textContent = keyBad ? "키 확인 필요" : a.client === "cli" ? "이 PC의 Claude Code" : provider || "AI 연결 안 됨";
   $("conn-dot").classList.toggle("off", !ready);
   $("conn-state").textContent = keyBad ? "넣은 키가 맞지 않아요. 키를 다시 넣어 주세요." : ready ? `지금 연결: ${CONN.name}` : "아직 연결하지 않았어요. 키를 넣으면 튜터를 쓸 수 있어요.";
   $("key-save").classList.toggle("primary", !ready || keyBad);
@@ -2544,7 +2597,7 @@ async function deleteKey() {
   if (r.ok) { KEYUI[name] = null; renderKeyStatus(); }
   renderKeyDelete();
   if (r.ok && ACCOUNTS.keys[name]) $("conn-note").textContent = `${KEY_LABEL[name]} 키를 지웠어요. 그래도 .env나 환경 변수에 키가 있어 계속 연결돼 있어요.`;
-  $("conn-toggle").focus();
+  $("key-value").focus();
 }
 
 async function accounts(path, body, done) {
@@ -2560,11 +2613,11 @@ async function accounts(path, body, done) {
    못 불러오면 index.html의 정적 그림이 그대로 보인다 ── */
 const TOUR = [
   ["홈에서 시작해요", "홈 맨 위에 입구가 셋 있어요. ‘문제 풀기’는 이어서 풀 문제를 열고, ‘내 문제 넣기’는 가진 문제를 넣고, ‘내 기록’은 학습 보고서로 가요. AI를 연결하지 않아도 풀고 바로 채점받을 수 있어요."],
-  ["어떻게 풀지 골라요", "문제를 열면 오른쪽에서 푸는 방식을 골라요. ‘혼자 풀기’는 튜터 없이 풀고 막히면 힌트를 봐요. ‘튜터와 차례로’는 풀이를 블록으로 나눠 하나씩 열어 주고, ‘튜터의 질문으로’는 답 대신 질문으로 이끌어요."],
+  ["어떻게 풀지 골라요", "문제를 열면 오른쪽에서 푸는 방식을 골라요. ‘혼자 풀기’는 튜터 없이 풀고 막히면 힌트를 봐요. ‘튜터의 질문으로’는 답 대신 질문만 하고, ‘튜터와 차례로’는 풀이를 블록으로 나눠 하나씩 열어 줘요. 카드의 ⓘ를 누르면 자세한 설명이 나와요."],
   ["결과 바로 아래에 다음 할 일", "제출하면 결과 아래에 할 일이 하나 나와요. 틀리면 ‘틀린 곳 같이 찾기’나 ‘풀이 힌트 보기’, 통과하면 ‘다음 문제’예요. 통과한 문제는 실전 신호가 열려 비슷한 문제를 알아보는 눈을 길러요."],
   ["내 문제 넣기는 세 걸음", "글을 붙여 넣거나 사진·PDF를 넣고(1 글 넣기), 읽은 글과 자동으로 채운 예시를 확인한 뒤(2 확인하기), 등록해요(3 등록). 등록한 문제도 같은 방식으로 채점해요."],
   ["학습 보고서로 약한 곳을 찾아요", "제출 기록에서 강한 주제와 더 공부할 주제, 자주 하는 실수를 모아 보여 주고, 더 공부할 문제를 바로 열어 줘요."],
-  ["AI 연결은 선택이에요", "튜터는 언어 모델로 움직여요. 쓰려면 오른쪽 위 ‘연결’에서 Claude나 OpenAI 키를 넣거나 ChatGPT로 로그인해요. 키는 이 기기에만 저장해요."],
+  ["AI 연결은 선택이에요", "튜터는 언어 모델로 움직여요. 쓰려면 오른쪽 위 ‘설정’의 ‘AI 연결’에서 Claude나 OpenAI 키를 넣거나 ChatGPT로 로그인해요. 키는 이 기기에만 저장해요."],
 ];
 let tourAt = 0;
 let tourDemos = null; // 데모 묶음을 불러오는 약속(한 번만 부른다). 실패하면 null로 풀린다
@@ -2660,6 +2713,7 @@ function renderUpdate(u) {
   const top = $("upd-open");
   top.hidden = !(v && (busy || u.state === "ready" || v !== u.skip)); // 건너뛴 버전은 막대에 띄우지 않는다('지금 확인'으로는 연다)
   top.textContent = u.state === "downloading" ? `업데이트 받는 중 ${u.progress}%` : u.state === "ready" && u.can_install ? "다시 시작해 업데이트" : busy ? "업데이트하는 중" : `새 버전 ${v} · 업데이트`;
+  $("set-ver").textContent = `지금 버전 ${u.current}`;
   $("upd-now").textContent = `지금 버전 ${u.current}` + (v ? ` · 새 버전이 나왔어요(${v})` : u.state === "latest" ? " · 최신 버전이에요" : "");
   $("upd-auto").checked = u.auto;
   $("upd-title").textContent = v ? `새 버전 ${v}` : "업데이트";
@@ -2689,13 +2743,8 @@ function openUpdate() {
 }
 const closeUpdate = () => { $("upd").close ? $("upd").close() : $("upd").removeAttribute("open"); };
 
-function toggleConn(open) {
-  $("conn-panel").hidden = !open;
-  document.body.classList.toggle("conn-open", open); // 연결 창이 떠 있는 동안 주 동작은 창 안의 것 하나
-  $("conn-toggle").setAttribute("aria-expanded", open ? "true" : "false");
-  if (!open) setKeyShown(false); // 창을 닫으면 입력한 키는 다시 가린다
-  if (open) { $("conn-note").textContent = $("tools-note").textContent = ""; accounts(); loadTools(false); $("conn-close").focus(); } else $("conn-toggle").focus();
-}
+/** 설정의 AI 연결로 간다(연결하기 단추, 마지막 안내 장). */
+const openConn = () => { location.hash = "#/settings/ai"; };
 
 async function chatgptLogin() {
   const r = await api("/api/chatgpt/login");
@@ -2705,7 +2754,7 @@ async function chatgptLogin() {
   $("conn-note").textContent = "‘브라우저에서 로그인 열기’를 눌러 로그인하고 허락하면 여기에 연결됨으로 바뀌어요.";
   clearInterval(loginPoll);
   let left = 100; // 로그인 창구는 5분 열려 있다
-  loginPoll = setInterval(() => { if (--left < 0 || $("conn-panel").hidden) clearInterval(loginPoll); else accounts(); }, 3000);
+  loginPoll = setInterval(() => { if (--left < 0 || S.view !== "settings") clearInterval(loginPoll); else accounts(); }, 3000);
 }
 
 /* ── 글상자: Tab 들여쓰기, Enter 때 들여쓰기 잇기 ── */
@@ -2917,6 +2966,12 @@ document.addEventListener("click", (e) => {
   if (el.hasAttribute("data-own-off")) return void ownWayOff();
   if (el.dataset.theme) return void setTheme(el.dataset.theme, el.dataset.pick, el.dataset.effort);
   if (el.closest("#more .more-menu") && el.id !== "reset") $("more").open = false; // 더 보기에서 고르면 닫는다. 처음부터의 물음만 그 단추 자리에서 묻는다
+  if (el.dataset.wayInfo) { // ⓘ: 눌러 펴고 접는다. 한 번에 하나만 펴지고, 초점은 그 ⓘ에 남는다
+    S.wayInfo = S.wayInfo === el.dataset.wayInfo ? null : el.dataset.wayInfo;
+    render();
+    return void document.querySelector(`[data-way-info="${el.dataset.wayInfo}"]`).focus();
+  }
+  if (el.dataset.way && el.getAttribute("aria-disabled")) return void ($("note-conn") || el).focus(); // 잠긴 방식: 방식은 그대로, 초점은 연결하는 길로
   if (el.dataset.way) { // 어떻게 풀까요: 고르면 그 방식으로(튜터는 시작 단추에 초점)
     const way = el.dataset.way;
     return void Promise.resolve(setMode(way, true)).then(() => (tutorWay(way) ? ($("start") && !$("start-box").hidden ? $("start") : $("say")) : $("code")).focus()); // 혼자 풀기는 편집기에, 튜터는 시작 단추에
@@ -3007,29 +3062,28 @@ document.addEventListener("click", (e) => {
     "edit-yes": () => registerProblem(true), "edit-no": () => { $("edit-confirm").hidden = true; $("new-submit").focus(); },
     "new-next": nextStep, "new-back": () => (history.state && history.state.wstep > 1 ? history.back() : setStep(WSTEP - 1)),
     "tools-refresh": async () => { const r = await loadTools(true); $("tools-note").textContent = r.ok ? "언어 도구를 다시 확인했어요." : errorNote(r.error).text; }, // 창 아래로 밀리지 않게 단추 옆에
-    "conn-toggle": () => toggleConn($("conn-panel").hidden), "conn-close": () => toggleConn(false), "note-conn": () => toggleConn(true),
+    "note-conn": openConn,
     "chatgpt-login": chatgptLogin,
     "upd-open": openUpdate, "upd-close": closeUpdate, "upd-get": () => updAct("download"), "upd-reveal": () => updAct("reveal"),
-    "upd-skip": async () => { const r = await updAct("skip"); if (r.ok) { closeUpdate(); say(`이 버전(${UPD.latest.version})은 건너뛰어요. ‘연결’ → ‘더 정하기’ → ‘지금 확인’에서 다시 볼 수 있어요.`); } },
+    "upd-skip": async () => { const r = await updAct("skip"); if (r.ok) { closeUpdate(); say(`이 버전(${UPD.latest.version})은 건너뛰어요. ‘설정’ → ‘업데이트’ → ‘지금 확인’에서 다시 볼 수 있어요.`); } },
     "upd-install": () => { flushSaves(); return updAct("install"); }, // 쓰던 코드를 먼저 저장한다(앱은 잠시 뒤에 끝난다)
     "upd-check": async () => {
       $("upd-note").textContent = "확인하는 중…";
       const r = await updAct("check");
       if (!r.ok) return void ($("upd-note").textContent = errorNote(r.error).text);
       $("upd-note").textContent = r.data.latest ? "" : r.data.state === "latest" ? "최신 버전이에요." : r.data.message;
-      if (r.data.latest) { toggleConn(false); openUpdate(); }
+      if (r.data.latest) openUpdate();
     },
     "key-reveal": () => { setKeyShown($("key-value").type === "password"); $("key-value").focus(); },
     "key-save": () => saveKey(false), "key-retry": () => saveKey(false), "key-force": () => saveKey(true),
     "key-recheck-claude": () => recheckKey("claude"), "key-recheck-openai": () => recheckKey("openai"),
     "key-del-claude": () => askKeyDelete("claude"), "key-del-openai": () => askKeyDelete("openai"),
     "key-delete-no": () => { const name = keyDeleting; keyDeleting = null; renderKeyDelete(); const back = name && $(`key-del-${name}`); if (back) back.focus(); }, "key-delete-yes": deleteKey,
-    "models-open": () => { toggleConn(false); openModels(); }, "models-close": () => { $("models").close ? $("models").close() : $("models").removeAttribute("open"); $("conn-toggle").focus(); },
-    "tour-open": openTour, "tour-open2": openTour, "tour-skip": () => { const last = tourAt === TOUR.length - 1; closeTour(); if (last && !CONN.ready) toggleConn(true); }, "tour-prev": () => tourStep(-1), "tour-next": () => tourStep(1),
+    "tour-open": openTour, "tour-open2": openTour, "tour-skip": () => { const last = tourAt === TOUR.length - 1; closeTour(); if (last && !CONN.ready) openConn(); }, "tour-prev": () => tourStep(-1), "tour-next": () => tourStep(1),
     "drop": () => $("new-files").click(), "read-files": readFiles, "asset-close": closeAsset,
     "case-add": () => { addCaseRow(); $("case-rows").lastElementChild.querySelector("input").focus(); },
     "mode-switch": async () => {
-      $("new-mode").value = $("new-mode").value === "program" ? "function" : "program"; setCaseMode(); say(`푸는 방식을 바꿨어요: ${$("new-mode").value === "program" ? "표준 입출력" : "함수(solution)"}`); $("new-mode").focus();
+      $("new-mode").value = $("new-mode").value === "program" ? "function" : "program"; setCaseMode(); say(`입출력 방식을 바꿨어요: ${$("new-mode").value === "program" ? "표준 입출력" : "함수(solution)"}`); $("new-mode").focus();
       if (!formCases().some((x) => x.input.trim() || x.expected.trim())) await fillCases(true, true); // 찾아 둔 예시를 바로 채운다(비어 있을 때만. 적은 케이스는 덮지 않는다)
     },
     "new-clear": () => { $("new-clear").hidden = true; $("new-clear-confirm").hidden = false; $("new-clear-no").focus(); },
@@ -3086,7 +3140,10 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "Escape" && paneDrag) return paneEnd(e, true); // 끌던 것은 처음 너비로
   if (el.classList && el.classList.contains("sep") && paneKey(e)) return;
   if (e.key === "Escape" && $("more").open) { $("more").open = false; return $("more").querySelector("summary").focus(); }
-  if (e.key === "Escape" && !$("conn-panel").hidden && !el.matches("textarea")) return toggleConn(false);
+  if (e.key === "Escape" && S.wayInfo && el.closest && el.closest("#view-code")) { // 펴진 방식 설명을 접고 그 ⓘ로 돌아온다
+    const key = S.wayInfo; S.wayInfo = null; render();
+    return void (document.querySelector(`[data-way-info="${key}"]`) || document.body).focus();
+  }
   if (el.getAttribute && el.getAttribute("role") === "tab" && (e.key === "ArrowRight" || e.key === "ArrowLeft")) {
     const tabs = [...el.parentElement.querySelectorAll("[role=tab]")];
     const next = tabs[(tabs.indexOf(el) + (e.key === "ArrowRight" ? 1 : tabs.length - 1)) % tabs.length];

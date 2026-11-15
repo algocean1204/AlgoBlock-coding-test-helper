@@ -59,84 +59,9 @@
   <span id="timer" class="timer" aria-hidden="true"></span>
   <button type="button" id="upd-open" class="btn primary small" hidden></button>
   <button type="button" id="tour-open" class="btn quiet small"><svg class="ico" aria-hidden="true"><use href="#i-help"/></svg>사용법</button>
-  <div class="conn-now"><span class="dot" id="conn-dot"></span><span id="conn-now">연결 확인 중</span></div>
-  <button type="button" id="conn-toggle" class="btn small" aria-expanded="false" aria-controls="conn-panel">연결</button>
+  <a class="conn-now" id="conn-link" href="#/settings/ai" aria-label="AI 연결 설정"><span class="dot" id="conn-dot"></span><span id="conn-now">연결 확인 중</span></a>
+  <a id="settings-link" class="btn small" href="#/settings">설정</a>
 </header>
-
-<section id="conn-panel" class="conn" hidden aria-labelledby="conn-title">
-  <div class="conn-head">
-    <h2 id="conn-title">AI 연결</h2>
-    <button type="button" id="conn-close" class="btn quiet small">연결 닫기</button>
-  </div>
-  <p class="hint">연결하지 않아도 문제를 풀고 채점받을 수 있어요. 튜터(질문으로 돕기, 틀린 곳 같이 찾기, 피드백)를 쓰려면 아래 셋(Claude 키, OpenAI 키, ChatGPT 로그인) 가운데 하나만 연결하면 돼요.</p>
-  <p id="conn-state" class="conn-state"></p>
-  <fieldset>
-    <legend>API 키</legend>
-    <ul id="key-rows" class="key-rows" aria-label="넣은 키"></ul>
-    <div class="choice-row" id="key-kinds">
-      <label class="choice"><input type="radio" name="keyname" value="claude" checked> Claude 키</label>
-      <label class="choice"><input type="radio" name="keyname" value="openai"> OpenAI 키</label>
-    </div>
-    <div class="key-field">
-      <label for="key-value" id="key-label">Claude API 키</label>
-      <p class="hint" id="key-hint"><span id="key-prefix"></span> <a id="key-get" class="link" target="_blank" rel="noopener"></a></p>
-      <div class="inline-form key-row">
-        <input id="key-value" type="password" aria-describedby="key-hint key-status" autocomplete="off" spellcheck="false" placeholder="키를 붙여 넣어요" data-send="key-save">
-        <button type="button" id="key-reveal" class="btn small quiet" aria-pressed="false">보기</button>
-        <button type="button" id="key-save" class="btn small">키 넣기</button>
-      </div>
-    </div>
-    <div id="key-status" class="note" role="status" aria-live="polite"></div>
-    <p class="hint">키는 이 기기에만 저장해요. 다음에 켜도 그대로 쓸 수 있어요.</p>
-    <div id="key-delete-confirm" class="confirm" hidden>
-      <span id="key-delete-ask"></span>
-      <button type="button" id="key-delete-yes" class="btn danger small">지우기</button>
-      <button type="button" id="key-delete-no" class="btn quiet small">그대로 두기</button>
-    </div>
-  </fieldset>
-  <fieldset>
-    <legend>ChatGPT 요금제 쓰기</legend>
-    <p class="hint">ChatGPT 계정으로 로그인하면 튜터의 AI 요청이 내 ChatGPT 요금제(포함된 사용량이나 크레딧)로 처리돼요. AlgoBlock은 따로 요금을 받지 않아요.</p>
-    <p class="hint">OpenAI가 미리 보기(preview)로 연 기능이라 바뀔 수 있고, 지원하는 요청 방식에 제한이 있어요.</p>
-    <p id="chatgpt-state" class="muted">연결 안 됨</p>
-    <button type="button" id="chatgpt-login" class="btn small">ChatGPT로 로그인</button>
-    <a id="chatgpt-link" class="link" target="_blank" rel="noopener" hidden>브라우저에서 로그인 열기</a>
-    <a id="chatgpt-usage" class="link" href="https://chatgpt.com/settings/usage" target="_blank" rel="noopener" hidden>사용량 관리</a>
-  </fieldset>
-  <details class="more-set">
-    <summary>더 정하기 <span class="muted">화면 색 · 과정별 모델 · 업데이트 · 언어 도구</span></summary>
-    <fieldset>
-      <legend>화면 색</legend>
-      <div class="picks" id="scheme-kinds">
-        <label class="choice"><input type="radio" name="scheme" value="system" checked> 시스템 설정대로</label>
-        <label class="choice"><input type="radio" name="scheme" value="light"> 라이트</label>
-        <label class="choice"><input type="radio" name="scheme" value="dark"> 다크</label>
-      </div>
-    </fieldset>
-    <fieldset>
-      <legend>과정별 모델</legend>
-      <p class="hint" id="themes-now"></p>
-      <button type="button" id="models-open" class="btn small">과정별 모델 설정</button>
-    </fieldset>
-    <fieldset>
-      <legend>업데이트</legend>
-      <p class="hint" id="upd-now"></p>
-      <label class="choice small"><input type="checkbox" id="upd-auto"> 새 버전을 자동으로 확인하기</label>
-      <div class="inline-form"><button type="button" id="upd-check" class="btn small">지금 확인</button><span id="upd-note" class="hint" role="status"></span></div>
-    </fieldset>
-    <fieldset>
-      <legend>언어 도구</legend>
-      <ul id="tools-list" class="tools-list" aria-label="이 기기의 언어 도구"></ul>
-      <div class="inline-form"><button type="button" id="tools-refresh" class="btn small">다시 확인</button><span id="tools-note" class="hint" role="status"></span></div>
-    </fieldset>
-  </details>
-  <p id="conn-note" class="hint" role="status"></p>
-  <fieldset class="dev-conn" hidden>
-    <legend class="hint">지금 쓸 연결</legend>
-    <label class="choice small"><input type="radio" name="client" value="provider"> 연결한 AI <span class="muted" id="provider-now"></span></label>
-    <label class="choice small"><input type="radio" name="client" value="cli"> 이 PC의 Claude Code <span class="muted">개발용</span></label>
-  </fieldset>
-</section>
 
 <main id="main">
   <!-- 01 홈(대시보드): 오늘 할 일 하나 -->
@@ -219,16 +144,16 @@
         </div>
       </fieldset>
       <details id="new-more" class="more-set" data-in="2">
-        <summary>더 정하기 <span class="muted">언어 · 푸는 방식 · 주제 · 단계</span></summary>
+        <summary>더 정하기 <span class="muted">언어 · 입출력 방식 · 주제 · 단계</span></summary>
         <div class="more-grid">
           <div class="field" id="new-lang-field">
             <label for="new-lang">언어</label>
             <select id="new-lang" class="select"><option value="python">Python</option></select>
           </div>
           <div class="field">
-            <label for="new-mode">푸는 방식</label>
+            <label for="new-mode">입출력 방식</label>
             <select id="new-mode" class="select" aria-describedby="new-mode-note"><option value="function">함수(solution)</option><option value="program">표준 입출력</option></select>
-            <small id="new-mode-note" class="hint" hidden>푸는 방식은 등록한 뒤에 바꿀 수 없어요.</small>
+            <small id="new-mode-note" class="hint" hidden>입출력 방식은 등록한 뒤에 바꿀 수 없어요.</small>
           </div>
           <div class="field">
             <label for="new-theme">주제 <span class="muted">(정하지 않으면 자동)</span></label>
@@ -369,7 +294,7 @@
 
       <section class="pane" id="pane-tutor" aria-labelledby="way-title">
         <header class="pane-head">
-          <h2 id="way-title">어떻게 풀까요?</h2>
+          <h2 id="way-title">어떻게 풀까요?</h2><span id="way-info"></span>
           <div role="tablist" aria-label="혼자 풀기" class="tabs" id="solo-tabs" hidden>
             <button type="button" role="tab" id="solo-tab-hint" data-solo="hint" aria-controls="tutor-body" aria-selected="false">힌트</button>
             <button type="button" role="tab" id="solo-tab-sol" data-solo="sol" aria-controls="tutor-body" aria-selected="false" tabindex="-1">해설</button>
@@ -379,6 +304,7 @@
             <button type="button" id="way-change" class="btn quiet small" hidden>방식 바꾸기</button>
           </span>
         </header>
+        <div id="way-info-box" class="head-info"></div>
         <div class="tutor-body" id="tutor-body">
           <div id="way-box" class="pane-body way" hidden></div>
           <div id="rail" class="rail" hidden>
@@ -443,6 +369,103 @@
     <div id="report-body"></div>
   </section>
 
+<!-- 설정: 분류(주소가 있다)마다 한 칸. 지금 연결 상태와 키 넣기 흐름은 예전 연결 창의 칸을 그대로 옮겼다 -->
+  <section id="view-settings" class="page" hidden aria-labelledby="set-title">
+    <header class="page-head">
+      <h1 id="set-title" tabindex="-1">설정</h1>
+      <a id="set-back" class="btn quiet small" href="#/list" hidden>← 풀던 문제로</a>
+    </header>
+    <div class="set-layout">
+      <nav class="set-nav" aria-label="설정 분류">
+        <a href="#/settings/ai" id="set-nav-ai"><strong>AI 연결</strong><small>키 · ChatGPT 로그인</small></a>
+        <a href="#/settings/models" id="set-nav-models"><strong>모델과 비용</strong><small>과정마다 쓰는 모델</small></a>
+        <a href="#/settings/solve" id="set-nav-solve"><strong>풀이 환경</strong><small>언어 도구</small></a>
+        <a href="#/settings/look" id="set-nav-look"><strong>화면</strong><small>라이트 · 다크</small></a>
+        <a href="#/settings/update" id="set-nav-update"><strong>업데이트</strong><small id="set-ver">지금 버전</small></a>
+      </nav>
+      <div class="set-body">
+        <section id="set-ai" class="set-part" hidden aria-labelledby="set-h-ai">
+          <h2 id="set-h-ai" tabindex="-1">AI 연결</h2>
+          <p class="hint">연결하지 않아도 문제를 풀고 채점받을 수 있어요. 튜터(질문으로 돕기, 틀린 곳 같이 찾기, 피드백)를 쓰려면 아래 셋(Claude 키, OpenAI 키, ChatGPT 로그인) 가운데 하나만 연결하면 돼요.</p>
+          <p id="conn-state" class="conn-state"></p>
+          <fieldset>
+            <legend>API 키</legend>
+            <ul id="key-rows" class="key-rows" aria-label="넣은 키"></ul>
+            <div class="choice-row" id="key-kinds">
+              <label class="choice"><input type="radio" name="keyname" value="claude" checked> Claude 키</label>
+              <label class="choice"><input type="radio" name="keyname" value="openai"> OpenAI 키</label>
+            </div>
+            <div class="key-field">
+              <label for="key-value" id="key-label">Claude API 키</label>
+              <p class="hint" id="key-hint"><span id="key-prefix"></span> <a id="key-get" class="link" target="_blank" rel="noopener"></a></p>
+              <div class="inline-form key-row">
+                <input id="key-value" type="password" aria-describedby="key-hint key-status" autocomplete="off" spellcheck="false" placeholder="키를 붙여 넣어요" data-send="key-save">
+                <button type="button" id="key-reveal" class="btn small quiet" aria-pressed="false">보기</button>
+                <button type="button" id="key-save" class="btn small">키 넣기</button>
+              </div>
+            </div>
+            <div id="key-status" class="note" role="status" aria-live="polite"></div>
+            <p class="hint">키는 이 기기에만 저장해요. 다음에 켜도 그대로 쓸 수 있어요.</p>
+            <div id="key-delete-confirm" class="confirm" hidden>
+              <span id="key-delete-ask"></span>
+              <button type="button" id="key-delete-yes" class="btn danger small">지우기</button>
+              <button type="button" id="key-delete-no" class="btn quiet small">그대로 두기</button>
+            </div>
+          </fieldset>
+          <fieldset>
+            <legend>ChatGPT 요금제 쓰기</legend>
+            <p class="hint">ChatGPT 계정으로 로그인하면 튜터의 AI 요청이 내 ChatGPT 요금제(포함된 사용량이나 크레딧)로 처리돼요. AlgoBlock은 따로 요금을 받지 않아요.</p>
+            <p class="hint">OpenAI가 미리 보기(preview)로 연 기능이라 바뀔 수 있고, 지원하는 요청 방식에 제한이 있어요.</p>
+            <p id="chatgpt-state" class="muted">연결 안 됨</p>
+            <button type="button" id="chatgpt-login" class="btn small">ChatGPT로 로그인</button>
+            <a id="chatgpt-link" class="link" target="_blank" rel="noopener" hidden>브라우저에서 로그인 열기</a>
+            <a id="chatgpt-usage" class="link" href="https://chatgpt.com/settings/usage" target="_blank" rel="noopener" hidden>사용량 관리</a>
+          </fieldset>
+          <p id="conn-note" class="hint" role="status"></p>
+          <fieldset class="dev-conn" hidden>
+            <legend class="hint">지금 쓸 연결</legend>
+            <label class="choice small"><input type="radio" name="client" value="provider"> 연결한 AI <span class="muted" id="provider-now"></span></label>
+            <label class="choice small"><input type="radio" name="client" value="cli"> 이 PC의 Claude Code <span class="muted">개발용</span></label>
+          </fieldset>
+        </section>
+        <section id="set-models" class="set-part" hidden aria-labelledby="set-h-models">
+          <h2 id="set-h-models" tabindex="-1">모델과 비용</h2>
+          <p class="hint">정확도가 중요한 과정과 빠른 응답이 중요한 과정에 모델을 다르게 쓸 수 있어요. 모델은 지금 연결의 가장 최신 버전을 써요. 고르면 바로 저장돼요.</p>
+          <div id="models-body" class="models-body"></div>
+          <p id="models-note" class="hint" role="status"></p>
+        </section>
+        <section id="set-solve" class="set-part" hidden aria-labelledby="set-h-solve">
+          <h2 id="set-h-solve" tabindex="-1">풀이 환경</h2>
+          <fieldset>
+            <legend>언어 도구</legend>
+            <ul id="tools-list" class="tools-list" aria-label="이 기기의 언어 도구"></ul>
+            <div class="inline-form"><button type="button" id="tools-refresh" class="btn small">다시 확인</button><span id="tools-note" class="hint" role="status"></span></div>
+          </fieldset>
+        </section>
+        <section id="set-look" class="set-part" hidden aria-labelledby="set-h-look">
+          <h2 id="set-h-look" tabindex="-1">화면</h2>
+          <fieldset>
+            <legend>화면 색</legend>
+            <div class="picks" id="scheme-kinds">
+              <label class="choice"><input type="radio" name="scheme" value="system" checked> 시스템 설정대로</label>
+              <label class="choice"><input type="radio" name="scheme" value="light"> 라이트</label>
+              <label class="choice"><input type="radio" name="scheme" value="dark"> 다크</label>
+            </div>
+          </fieldset>
+        </section>
+        <section id="set-update" class="set-part" hidden aria-labelledby="set-h-update">
+          <h2 id="set-h-update" tabindex="-1">업데이트</h2>
+          <fieldset>
+            <legend>업데이트</legend>
+            <p class="hint" id="upd-now"></p>
+            <label class="choice small"><input type="checkbox" id="upd-auto"> 새 버전을 자동으로 확인하기</label>
+            <div class="inline-form"><button type="button" id="upd-check" class="btn small">지금 확인</button><span id="upd-note" class="hint" role="status"></span></div>
+          </fieldset>
+        </section>
+      </div>
+    </div>
+  </section>
+
   <!-- 09 피드백: 돌아가기와 다음 문제는 맨 위 -->
   <section id="view-feedback" class="page narrow" hidden aria-labelledby="fb-title">
     <header class="page-head">
@@ -481,9 +504,9 @@
       <div class="mini">
         <div class="mini-head"><span class="mini-title">어떻게 풀까요?</span></div>
         <div class="mini-form">
-          <div class="way-card primary a1"><strong>혼자 풀기</strong><span>튜터 없이 풀어요. 막히면 힌트를 하나씩 볼 수 있어요.</span></div>
-          <div class="way-card a2"><strong>튜터와 차례로</strong><span>튜터가 풀이를 블록으로 나눠 하나씩 열어 줘요.</span></div>
-          <div class="way-card a3"><strong>튜터의 질문으로</strong><span>튜터는 답을 주지 않고 질문만 해요.</span></div>
+          <div class="way-card primary a1"><strong>혼자 풀기</strong><span>튜터 없이 풀어요. 막히면 힌트를 하나씩 봐요.</span></div>
+          <div class="way-card a2"><strong>튜터의 질문으로</strong><span>튜터가 질문만 해요. 풀이 순서를 내가 찾아요.</span></div>
+          <div class="way-card a3"><strong>튜터와 차례로</strong><span>튜터가 풀이 순서를 블록으로 보여 줘요.</span></div>
         </div>
       </div>
     </div>
@@ -547,19 +570,6 @@
       <button type="button" id="tour-next" class="btn primary">다음</button>
     </div>
   </div>
-</dialog>
-
-<!-- 과정별 모델: 과정마다 급(작음·가운데·큼)과 추론 정도를 고른다. 모델은 지금 연결의 그 시리즈 최신 버전이다. 고르는 즉시 저장한다 -->
-<dialog id="models" class="models" aria-labelledby="models-title">
-  <header class="models-head">
-    <div>
-      <h2 id="models-title" tabindex="-1">과정별 모델</h2>
-      <p class="hint">정확도가 중요한 과정과 빠른 응답이 중요한 과정에 모델을 다르게 쓸 수 있어요. 모델은 지금 연결의 가장 최신 버전을 써요. 고르면 바로 저장돼요.</p>
-    </div>
-    <button type="button" id="models-close" class="btn quiet small">설정 닫기</button>
-  </header>
-  <div id="models-body" class="models-body"></div>
-  <p id="models-note" class="hint" role="status"></p>
 </dialog>
 
 <!-- 업데이트: 새 버전 알림 → 받기(진행 %) → 다시 시작해 바꾸기 -->

@@ -36,11 +36,11 @@ $\bf{\large{\color{#6580DD} AlgoBlock }}$
 
 ### 연결
 
-오른쪽 위 '연결'에서 Claude 키나 OpenAI 키를 넣거나 ChatGPT로 로그인합니다. 입력한 키는 이 기기에만 저장됩니다.
+오른쪽 위 '설정'의 'AI 연결'에서 Claude 키나 OpenAI 키를 넣거나 ChatGPT로 로그인합니다. 입력한 키는 이 기기에만 저장됩니다.
 
-<p align="center"><img src=".github/assets/connect.png" width="880" alt="AI 연결 창: Claude 키와 OpenAI 키 입력 칸, ChatGPT 요금제로 로그인하는 단추, 더 정하기"></p>
+<p align="center"><img src=".github/assets/connect.png" width="880" alt="설정의 AI 연결 화면: Claude 키와 OpenAI 키 입력 칸, ChatGPT 요금제로 로그인하는 단추"></p>
 
-연결 창입니다. 키 입력 칸과 ChatGPT 로그인 단추, 과정별 모델과 업데이트 설정으로 가는 '더 정하기'가 있습니다.
+설정의 'AI 연결' 화면입니다. 키 입력 칸과 ChatGPT 로그인 단추가 있고, 왼쪽 분류에서 모델과 비용, 풀이 환경, 화면, 업데이트로 옮겨 갑니다.
 
 ### 풀고 채점받기
 
@@ -140,7 +140,7 @@ cd AlgoBlock-coding-test-helper/app
 uv run --no-project --python 3.12 --with langgraph --with pypdf python ui/server.py
 ```
 
-브라우저에서 http://127.0.0.1:8791 을 엽니다. 포트는 `ALGOBLOCK_UI_PORT`로, 자료 폴더는 `ALGOBLOCK_UI_DATA`로 바꿀 수 있습니다. 자료 폴더의 기본값은 `app/ui/data`이고(Git에 올라가지 않습니다) 이곳에 풀이 기록·등록한 문제·넣은 키가 저장됩니다. 키는 화면의 '연결'에서 넣거나 저장소 루트에서 `.env.example`을 `.env`로 복사해 채우는데 키가 없어도 문제 풀기, 채점, 힌트, 해설, 학습 보고서 기능은 모두 쓸 수 있습니다.
+브라우저에서 http://127.0.0.1:8791 을 엽니다. 포트는 `ALGOBLOCK_UI_PORT`로, 자료 폴더는 `ALGOBLOCK_UI_DATA`로 바꿀 수 있습니다. 자료 폴더의 기본값은 `app/ui/data`이고(Git에 올라가지 않습니다) 이곳에 풀이 기록·등록한 문제·넣은 키가 저장됩니다. 키는 화면의 '설정'의 'AI 연결'에서 넣거나 저장소 루트에서 `.env.example`을 `.env`로 복사해 채우는데 키가 없어도 문제 풀기, 채점, 힌트, 해설, 학습 보고서 기능은 모두 쓸 수 있습니다.
 
 ## 문서
 
