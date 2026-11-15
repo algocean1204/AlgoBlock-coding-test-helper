@@ -1387,6 +1387,20 @@ class HonestCheckTest(unittest.TestCase):
                 got = solve({"ctx": ctx, "strategy": "fresh", "abstract": fact}, config)
             self.assertNotIn("abstract", got)
 
+    def test_abstract_takes_a_loose_level(self):
+        """뼈대의 단계는 모양을 따지지 않고 받는다("2"·2.0·null로 뼈대 전체를 잃지 않는다). 1~5의 정수로 바꿀 수 없으면 0(모름)이다."""
+        from ..llm import FakeLlm, use_llm
+        from ..plan.nodes import abstract
+
+        ctx = fakes.context(spec="")
+        for level, want in ((3, 3), ("2", 2), (2.0, 2), (" 4 ", 4), (None, 0), (2.5, 0), (9, 0), ("어려움", 0), (True, 0), ([2], 0)):
+            reply = {"spec": "문자열 배열 둘", "patterns": [], "skills": [], "size": 0, "level": level, "tags": []}
+            with use_llm(FakeLlm({"plan.abstract": [reply]})):
+                got = abstract({"ctx": ctx})
+            self.assertEqual((got["abstract"].spec, got["abstract"].level), ("문자열 배열 둘", want), level)
+        with use_llm(FakeLlm({"plan.abstract": [{"spec": "문자열 배열 둘"}]})):
+            self.assertEqual(abstract({"ctx": ctx})["abstract"].level, 0)  # 단계를 빠뜨려도 뼈대는 남는다
+
     def test_program_guide_follows_the_starter_reading(self):
         """표준 입출력 가이드에도 시작 코드를 넘기고 그 읽기 꼴을 따르게 한다(커서를 블록 사이로 넘기지 않게). 정해 둔 코드를 쓸 때는 넘기지 않는다."""
         from ..knowledge.ontology import technique_list
@@ -1403,8 +1417,10 @@ class HonestCheckTest(unittest.TestCase):
                  f"{technique_list()}\n{LEVEL_TEXT} 위 code가 쓰는 방법으로 정한다.\n"
                  'JSON {"clues": ["..."], "approach", "steps": ["..."], "code", "tags": [id], "level"}\n')
         plain = 'JSON {"clues": ["..."], "approach", "steps": ["..."], "code"}\n'
-        for strategy, tail in (("fresh", asked), ("canonical", asked), ("keep_flow", plain)):
-            function = solve_messages({"ctx": fakes.context(problem_text=fakes.PROBLEM, starter=head, direct_code="x"), "strategy": strategy})[1]["content"]
+        follow = 'JSON {"clues": ["..."], "approach", "steps": ["..."], "code", "followed": true 또는 false}\n'  # 사용자 방법 따르기: 따랐는가를 묻고 태그·단계는 묻지 않는다
+        for strategy, tail in (("fresh", asked), ("canonical", asked), ("keep_flow", plain), ("follow", follow)):
+            function = solve_messages({"ctx": fakes.context(problem_text=fakes.PROBLEM, starter=head, direct_code="x"), "strategy": strategy,
+                                       "follow": "정렬해서 앞뒤로 센다"})[1]["content"]
             self.assertTrue(function.endswith(f"\n{tail}{starter_line}"), (strategy, function[-600:]))
 
     def test_unpassed_program_guide_asks_to_check_line_breaks(self):
@@ -1582,10 +1598,17 @@ class OtherFeatureTest(unittest.TestCase):
 
     def test_feedback_record_names_skipped_blocks(self):
         from ..feedback.prompts import record_lines
-        from ..common.talk_rules import SKIPPED
+        from ..common.talk_rules import CHECKED, SKIPPED
         guide = [fakes.user("x = 1", 0, "u1"), fakes.service(SKIPPED + " 다음 블록이에요.", 0, "m1", "done")]
         lines = "\n".join(record_lines(fakes.context(guide=guide, block_states={"b1": BlockState("b1", "x = 1", "h", "?", None, 1)}), fakes.planned(fakes.two())))
-        self.assertIn("블록 1(입력받기): '이대로 넘어가기'로 확인 없이 넘어감", lines)
+        self.assertIn("블록 1(입력받기): 확인하지 않고 '이대로 넘어가기'로 넘어감(확인 전. 맞았다고도 틀렸다고도 하지 않는다)", lines)
+        # 확인을 눌러 통과하지 못한 뒤 넘긴 블록은 '확인하지 않고'가 아니다. 그 뒤의 제출이 통과했으면 실행해 보지 않았다고 말하지 않게 한다
+        tried = [fakes.user("x = 0", 0, "u0"), fakes.service("이어지지 않아요.", 0, "m0", "done"), *guide]
+        tried[0].move = CHECKED + "N"
+        skipped = {"b1": BlockState("b1", "x = 1", "h", "?", None, 2)}
+        for ok, want in ((True, "그 뒤 이 풀이의 제출이 모든 테스트를 통과했다"), (False, "확인 전. 맞았다고도 틀렸다고도 하지 않는다")):
+            got = "\n".join(record_lines(fakes.context(guide=tried, block_states=skipped, latest_submission=Submission("s1", "x = 1", ok)), fakes.planned(fakes.two())))
+            self.assertIn(f"블록 1(입력받기): 블록 코드 확인에서 통과하지 못한 뒤 '이대로 넘어가기'로 넘어감({want}", got)
         self.assertNotIn("넘어감", "\n".join(record_lines(fakes.context(guide=guide, block_states={"b1": BlockState("b1", "x = 1", "h", "Y", None, 1)}), fakes.planned(fakes.two()))))
 
     def test_llm_failure_clears_new_plan(self):

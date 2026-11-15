@@ -2254,6 +2254,7 @@ function renderAccounts(a) {
   $("conn-now").classList.toggle("warn", keyBad);
   document.querySelector(".dev-conn").hidden = !a.dev; // 개발용 연결로 띄웠을 때만 이 칸이 있다
   document.querySelectorAll('input[name="client"]').forEach((el) => { el.checked = el.value === a.client; });
+  renderScheme();
   $("provider-now").textContent = provider ? `지금은 ${provider}` : "아직 없음";
   $("chatgpt-state").textContent = a.chatgpt ? "연결됨 · ChatGPT 요금제를 쓰는 중" : a.chatgpt_note || "연결 안 됨"; // 연결되지 않은 까닭(허락하지 않음, 자격 없음, 다시 로그인 필요)
   $("chatgpt-usage").hidden = !a.chatgpt;
@@ -2263,6 +2264,21 @@ function renderAccounts(a) {
   if (a.chatgpt) { clearInterval(loginPoll); $("chatgpt-link").hidden = true; }
   if (S.view === "code" && S.problem) render();
   if (S.view === "list" && $("entries").innerHTML && !!$("note-conn") === ready) showList(); // 홈의 연결 한 줄을 새로 그린다
+}
+
+/** 화면 색: 라디오를 고른 값(저장 중이면 그 값, 아니면 저장된 값)에 맞추고 화면에도 적용한다(적용 함수는 index.html 머리에 있다). */
+let schemePicked = null; // 방금 고른 값. 늦게 온 /api/accounts 응답이 예전 값으로 되돌리지 못하게 응답보다 앞선다
+function renderScheme() {
+  const pref = schemePicked || (ACCOUNTS && ACCOUNTS.scheme) || "system";
+  document.querySelectorAll('input[name="scheme"]').forEach((el) => { el.checked = el.value === pref; });
+  applyScheme(pref);
+}
+async function chooseScheme(scheme) {
+  schemePicked = scheme;
+  renderScheme(); // 응답을 기다리지 않고 바로 칠한다
+  const r = await accounts("/api/prefs", { scheme }, "");
+  if (r.ok) say("화면 색을 바꿨어요.");
+  else if (schemePicked === scheme) { schemePicked = null; renderScheme(); } // 저장하지 못했으면 저장돼 있는 값으로 되돌린다(그사이 다른 값을 골랐으면 그대로)
 }
 
 const KEY_LABEL = { claude: "Claude", openai: "OpenAI" };
@@ -2766,6 +2782,7 @@ document.addEventListener("change", (e) => {
   if (e.target.id === "p-lang-select") return void (e.target.value !== S.problem.language && wantLanguage(e.target.value));
   if (e.target.id === "upd-auto") return void updAct("auto", { on: e.target.checked });
   if (e.target.name === "keyname") { setKeyShown(false); return renderKeyStatus(); }
+  if (e.target.name === "scheme") return void chooseScheme(e.target.value);
   if (e.target.name === "client") accounts("/api/client", { client: e.target.value }, e.target.value === "cli" ? "이 PC의 Claude Code로 튜터를 불러요." : "연결한 AI로 튜터를 불러요.");
 });
 

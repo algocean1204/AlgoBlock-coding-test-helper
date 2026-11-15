@@ -1986,6 +1986,81 @@ def color_tokens() -> None:
     assert html.count('name="theme-color"') == 1 and 'data-scheme-pref="system"' in html
 
 
+def scheme_setting() -> None:
+    """화면 색: /api/prefs로 저장하고, 서버가 첫 HTML에 저장한 값을 실어 첫 그림 전에 맞춘다."""
+    import threading
+    from http.client import HTTPConnection
+
+    httpd = server.ThreadingHTTPServer(("127.0.0.1", 0), server.Handler)
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+
+    def first_page() -> str:
+        conn = HTTPConnection("127.0.0.1", httpd.server_port, timeout=60)
+        conn.request("GET", "/")
+        page = conn.getresponse().read().decode("utf-8")
+        conn.close()
+        return page
+
+    assert [f'name="scheme" value="{value}"' in first_page() for value in ("system", "light", "dark")] == [True] * 3  # 설정 창의 라디오 셋
+    saved = server.read_json(server.PREFS_FILE, {})
+    server.write_json(server.PREFS_FILE, {**saved, "language": "javascript", "stages": {"keep": "me"}})  # 다른 설정이 같이 남는지 보려고 심는다
+    try:
+        assert call("/api/accounts")[1]["scheme"] == "system" and 'data-scheme-pref="system"' in first_page()  # 고르지 않았으면 운영체제를 따른다
+        for bad in ({}, {"scheme": "sepia"}, {"scheme": ""}, {"scheme": None}, {"scheme": ["dark"]}, {"scheme": 1}):
+            assert "화면 색" in refuses("/api/prefs", **bad), bad
+        assert "scheme" not in server.read_json(server.PREFS_FILE, {})  # 거절한 값은 적히지 않는다
+        for scheme in ("dark", "light"):
+            assert call("/api/prefs", scheme=scheme)[1]["scheme"] == scheme
+            assert server.read_json(server.PREFS_FILE, {})["scheme"] == scheme and call("/api/accounts")[1]["scheme"] == scheme
+            page = first_page()
+            assert f'<html lang="ko" data-scheme-pref="{scheme}">' in page
+            assert 'data-scheme-pref="system"' in (HERE / "index.html").read_text(encoding="utf-8")  # 파일은 그대로, 내보낼 때만 바꾼다
+            assert page.index("applyScheme(") < page.index('href="app.css"')  # 적용하는 스크립트가 스타일시트보다 앞이다
+        server.write_json(server.PREFS_FILE, {**server.read_json(server.PREFS_FILE, {}), "scheme": "<x>"})  # 손으로 고친 이상한 값은 system으로 본다
+        assert call("/api/accounts")[1]["scheme"] == "system" and 'data-scheme-pref="system"' in first_page()
+        call("/api/prefs", scheme="dark")
+        assert call("/api/prefs", scheme="system")[1]["scheme"] == "system"
+        kept = server.read_json(server.PREFS_FILE, {})
+        assert "scheme" not in kept and kept["language"] == "javascript" and kept["stages"] == {"keep": "me"}  # system은 키를 지우고 다른 설정은 그대로
+    finally:
+        server.write_json(server.PREFS_FILE, saved)
+        httpd.shutdown()
+        httpd.server_close()
+
+
+def window_background() -> None:
+    """창 바탕색: 고른 색을 따르고, 시스템 설정대로일 때 운영체제를 읽지 못하면 밝은 바탕으로 연다."""
+    import types
+    from unittest.mock import MagicMock
+
+    sys.modules.setdefault("webview", types.ModuleType("webview"))  # pywebview 없이 함수만 부른다
+    import window
+
+    saved = server.read_json(server.PREFS_FILE, {})
+    out = lambda text: SimpleNamespace(stdout=text)  # noqa: E731
+    try:
+        with patch.object(window.sys, "platform", "darwin"):
+            with patch.object(window.subprocess, "run", return_value=out("Dark\n")):
+                assert window.os_dark() is True
+            with patch.object(window.subprocess, "run", return_value=out("")):  # 라이트 운영체제는 값이 없어 빈 글이 온다
+                assert window.os_dark() is False
+            with patch.object(window.subprocess, "run", side_effect=OSError("defaults 없음")):  # 읽지 못함: 밝게
+                assert window.os_dark() is False
+            with patch.object(window.subprocess, "run", side_effect=subprocess.TimeoutExpired("defaults", 3)):
+                assert window.os_dark() is False
+        with patch.object(window.sys, "platform", "linux"):  # 읽는 길이 없는 운영체제
+            assert window.os_dark() is False
+        for scheme, dark_os, want in (("dark", False, "#111113"), ("light", True, "#F5F5F7"), ("system", True, "#111113"), ("system", False, "#F5F5F7")):
+            server.write_json(server.PREFS_FILE, {**saved, **({} if scheme == "system" else {"scheme": scheme})})
+            with patch.object(window, "os_dark", MagicMock(return_value=dark_os)):
+                assert window.background() == want, (scheme, dark_os)
+        server.write_json(server.PREFS_FILE, {**saved, "scheme": "<x>"})  # 이상한 저장 값은 system으로 본다
+        with patch.object(window, "os_dark", MagicMock(return_value=False)):
+            assert window.background() == "#F5F5F7"
+    finally:
+        server.write_json(server.PREFS_FILE, saved)
+
+
 def stages() -> None:
     """과정별 모델: 급과 추론 정도를 고르면 저장되고 바로 쓰인다. 빈 값은 기본값. 모르는 과정·급·정도는 거절한다.
     예전 설정(테마별 모델 이름, Grok·OpenRouter 키)은 조용히 옮기거나 버린다."""
@@ -2352,6 +2427,8 @@ def main() -> None:
     except server.Refuse as exc:
         assert exc.status == 409
     color_tokens()
+    scheme_setting()
+    window_background()
     stages()
     newest_models()
     read_check()

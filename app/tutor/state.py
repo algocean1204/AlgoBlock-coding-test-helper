@@ -239,7 +239,7 @@ class Abstract:
     patterns: list[str] = field(default_factory=list)
     skills: list[str] = field(default_factory=list)  # 구현 기술 id
     size: int = 0  # 제한사항에서 가장 큰 입력 크기(모르면 0)
-    level: int = 0  # 단계 1~5(모르면 0). 등록한 문제의 목록에 보인다
+    level: Any = 0  # 단계 1~5(모르면 0). 등록한 문제의 목록에 보인다. 모델 출력은 모양을 따지지 않고 받아("2", 2.0, null로 뼈대를 잃지 않게) plan.nodes.abstract가 정수로 바꾼다
     tags: list[str] = field(default_factory=list)  # 쓰는 방법(온톨로지 기법 id) 2~4개
 
 

@@ -76,8 +76,13 @@ def record_lines(ctx, plan) -> list[str]:
             wrong = max(0, wrong - same)
         if wrong > 0:
             lines.append(f"- {name(i)} 블록 코드 확인에서 튜터의 코드와 이어지지 않은 횟수 {wrong}번(틀렸다는 뜻이 아니다)" + (f". 아직 통과하지 못한 코드:\n{state.code}" if state.verdict == "N" else ""))
-    if any(m.role == "service" and m.text.startswith(SKIPPED) for m in ctx.guide):  # '이대로 넘어가기'로 확인 없이 넘어간 블록은 맞았다고도 틀렸다고도 말하지 않는다
-        lines += [f"- {name(i)}: '이대로 넘어가기'로 확인 없이 넘어감(확인 전. 맞았다고도 틀렸다고도 하지 않는다)"
+    if any(m.role == "service" and m.text.startswith(SKIPPED) for m in ctx.guide):  # '이대로 넘어가기'로 넘어간 블록은 맞았다고도 틀렸다고도 말하지 않는다
+        # 확인을 눌러 이어지지 않은 뒤에 넘긴 블록은 '확인 없이'가 아니다. 그 뒤의 제출이 통과했으면 그 코드는 제출로 확인되었다(실행해 보지 않았다고 말했다)
+        passed = bool(ctx.latest_submission and ctx.latest_submission.ok)
+        tried = {m.block_index for m in ctx.guide if m.role == "user" and m.move in (CHECKED + "N", CHECKED + "?")}  # 확인을 눌러 통과하지 못한 블록
+        lines += [f"- {name(i)}: {'블록 코드 확인에서 통과하지 못한 뒤' if i in tried else '확인하지 않고'} '이대로 넘어가기'로 넘어감"
+                  + ("(그 뒤 이 풀이의 제출이 모든 테스트를 통과했다. 이 블록을 실행해 보지 않았다거나 다시 확인해 보라고 하지 않는다)" if passed
+                     else "(확인 전. 맞았다고도 틀렸다고도 하지 않는다)")
                   for i, block in enumerate(blocks) if getattr(ctx.block_states.get(block.id), "verdict", None) == "?"]
     debug = ctx.debug_state
     if debug is not None:
