@@ -30,12 +30,12 @@ def llm_error(exc: LlmError) -> ErrorInfo:
     # 공급자 상태 코드는 app/llm(wire.post_json)가 글 끝 괄호에 싣는다: 401·403 → LlmNotConfigured, 429(다시 보내도 안 됨) → LlmFailed
     status = re.search(r"\((\d{3})\)", str(exc))
     if status and status.group(1) in ("401", "403"):
-        return ErrorInfo("llm_auth_failed", "모델 키가 맞지 않아요. '연결'에서 키를 다시 넣어 주세요.")
+        return ErrorInfo("llm_auth_failed", "모델 키가 맞지 않아요. '설정'의 'AI 연결'에서 키를 다시 넣어 주세요.")
     if status and status.group(1) == "429":
         said = str(exc).replace(status.group(0), "").strip()  # 공급자 경로가 사람 말을 실었으면(ChatGPT 사용 한도 안내) 그 말을 쓴다
         return ErrorInfo("llm_rate_limited", said if said and not said.startswith("공급자 오류") else "모델 사용 한도에 걸렸어요. 잠시 뒤에 다시 해 주세요.")
     if isinstance(exc, LlmNotConfigured):
-        return ErrorInfo("llm_not_configured", "AI가 연결되어 있지 않아요. ‘연결’에서 연결해 주세요.")
+        return ErrorInfo("llm_not_configured", "AI가 연결되어 있지 않아요. ‘설정’의 ‘AI 연결’에서 연결해 주세요.")
     return ErrorInfo("llm_failed", str(exc).strip() or "AI 서비스 오류")
 
 

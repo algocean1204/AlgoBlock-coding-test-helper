@@ -2,7 +2,7 @@
 
 실행: cd app && uv run --no-project --python 3.12 --with langgraph --with pypdf python ui/server.py
 주소: http://127.0.0.1:8791 (ALGOBLOCK_UI_PORT로 바꾼다). 이 기기 안에서만 열린다.
-모델: 기본은 연결한 공급자(API 키·ChatGPT 로그인). 키는 화면의 '연결'에서 넣거나 .env에 둔다.
+모델: 기본은 연결한 공급자(API 키·ChatGPT 로그인). 키는 화면의 '설정'의 'AI 연결'에서 넣거나 .env에 둔다.
      개발할 때만 ALGOBLOCK_UI_CLIENT=cli 로 이 PC의 Claude Code(claude -p)를 쓴다.
 설치 파일로 묶였을 때는 app/packaging/launcher.py가 데이터 폴더·화면 파일·채점기 위치를 환경 변수로 넘긴다.
 """
@@ -141,7 +141,7 @@ def note_key_check(name: str, result: str | None, key: str = "") -> None:
 
 
 def key_rows() -> dict:
-    """연결 창의 공급자별 키 줄. 키는 끝 4자리만 싣는다(너무 짧은 글은 아예 싣지 않는다). 확인 기록은 지금 키의 지문과 같을 때만 보인다(키가 바뀌었으면 옛 기록은 보이지 않는다)."""
+    """설정의 공급자별 키 줄. 키는 끝 4자리만 싣는다(너무 짧은 글은 아예 싣지 않는다). 확인 기록은 지금 키의 지문과 같을 때만 보인다(키가 바뀌었으면 옛 기록은 보이지 않는다)."""
     saved = read_json(KEY_CHECK_FILE, {})
     out = {}
     for name, env in KEYS.items():
