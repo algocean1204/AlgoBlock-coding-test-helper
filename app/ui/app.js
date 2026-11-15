@@ -30,17 +30,17 @@ const WAY_INFO = {
     does: "튜터가 한 번에 질문 하나를 던져요. 답을 알려 주지 않고, 풀이를 이루는 블록을 내가 하나씩 찾아내게 이끌어요. 찾은 블록마다 코드를 적어요.",
     when: "어디서부터 시작할지 모르겠지만, 풀이는 스스로 떠올리고 싶을 때.",
     ai: "보통 — 내가 답할 때마다 튜터가 읽고 다음 질문을 해요.",
-    ready: "‘도움 받아 통과’로 남아요." },
+    ready: "‘그 밖의 통과’로 남아요." },
   guide: { name: "튜터와 차례로", line: "튜터가 풀이 순서를 블록으로 보여 줘요. 블록마다 코드는 내가 써요.", needsAi: true,
     does: "튜터가 풀이를 블록으로 나눠 이름을 먼저 보여 주고, 앞에서부터 하나씩 열어요. 블록마다 내가 코드를 적고 ‘블록 코드 확인’으로 맞는지 봐요.",
     when: "풀이의 흐름은 받고, 코드로 옮기는 연습을 하고 싶을 때. 처음 보는 유형일 때.",
     ai: "적음~보통 — 블록 코드는 대부분 직접 돌려서 확인하고, 튜터의 말이 필요할 때만 AI를 써요.",
-    ready: "‘도움 받아 통과’로 남아요." },
+    ready: "‘그 밖의 통과’로 남아요." },
   explain: { name: "튜터의 해설", line: "튜터가 풀이 전체를 순서대로 설명해요.", needsAi: true,
     does: "튜터가 이 문제의 풀이를 처음부터 끝까지 글로 설명해요. 내가 답하는 것은 없어요.",
     when: "충분히 해 보고도 막혔을 때, 또는 풀고 난 뒤 다른 설명을 읽고 싶을 때. 스스로 찾아보고 싶다면 ‘튜터의 질문으로’를 먼저 해 보세요.",
     ai: "적음 — 문제와 언어마다 한 번만 써요.",
-    ready: "통과하기 전에 받으면 ‘도움 받아 통과’로 남아요." },
+    ready: "통과하기 전에 받으면 ‘그 밖의 통과’로 남아요." },
 };
 const WAYS = Object.fromEntries(["solo", "guide", "chair"].map((k) => [k, [WAY_INFO[k].name, WAY_INFO[k].line]]));
 const START = {
@@ -149,7 +149,7 @@ function errorNote(error) {
 /** 도움 없이 푼 문제의 기준 한 줄(#111). 기본 문제를 이번 풀이에서 아직 도움 없이 풀고 있을 때만 보인다. 서버가 준 값에, 이 화면에서 방금 쓴 도움을 더해 거른다. */
 const talkedWith = () => !!S.session && ((S.session.chair || []).length > 0 || (S.session.guide || []).length > 0 || !!S.session.explain);
 const aidOpen = () => !!S.problem && S.problem.builtin && S.problem.study.unaided_open && !(S.solo && S.solo.seen) && !talkedWith();
-const aidNote = () => (aidOpen() ? '<p class="aid-note hint">힌트·튜터·해설을 쓰고 통과하면 ‘도움 받아 통과’로 남아요. 준비도는 도움 없이 통과한 문제만 세요.</p>' : "");
+const aidNote = () => (aidOpen() ? '<p class="aid-note hint">힌트·튜터·해설을 쓰고 통과하면 ‘그 밖의 통과’로 남아요. 준비도는 도움 없이 통과한 문제만 세요.</p>' : "");
 const noteHtml = (n) => !n ? "" : `<div class="note ${n.type || ""}" role="${n.type === "error" ? "alert" : "status"}"><span>${esc(n.text)}</span>${n.conn ? '<button type="button" class="btn small" id="note-conn">연결하기</button>' : ""}${n.again ? '<button type="button" class="btn small" id="prep-again" data-model>다시 준비</button>' : ""}</div>`;
 const PREP_FAILED = { type: "error", text: "튜터가 풀이 순서를 준비하지 못했어요.", again: true }; // 보낸 것이 없으니 '한 번 더 보내 주세요'라고 하지 않는다
 const say = (text) => { $("status").textContent = text || ""; };
@@ -398,7 +398,28 @@ async function showHome() {
       <li><strong>3 막히면 힌트나 튜터</strong><span>힌트는 미리 만들어 둔 것이고, 튜터는 AI를 연결하면 써요.</span></li></ol>
     <p class="home-links"><a class="link" href="#/list">다른 문제 고르기</a> · <a class="link" href="#/new">가진 문제 넣기</a> · <button type="button" class="link-btn" id="note-conn">AI 연결하기</button> · <button type="button" class="link-btn" id="tour-open2">1분 사용법 보기</button></p>`
     : `<p class="home-links muted">통과 ${sum.solved} / ${sum.total} · 출석 ${d.attendance.days}일 · <a class="link" href="#/list">문제 목록</a> · <a class="link" href="#/new">가진 문제 넣기</a></p>`;
-  box.innerHTML = today + more;
+  box.innerHTML = today + (fresh ? "" : homeStatus(d)) + more;
+}
+
+/** 홈의 준비도 칸: 도움 없이·그 밖의 통과를 막대와 글로 가르고(기준은 ⓘ로 편다), 남은 주제 셋과 더 공부할 주제, 그다음에 풀 문제를 둔다. */
+function homeStatus(d) {
+  const rd = d.readiness, sum = d.summary, aided = sum.solved - rd.solved, byKey = Object.fromEntries(d.themes.map((t) => [t.key, t]));
+  const pct = (n) => (sum.total ? Math.round((100 * n) / sum.total) : 0);
+  const open = S.ruleOpen === true;
+  const left = rd.remaining.slice(0, 3).map((x) => { const nx = byKey[x.key] && byKey[x.key].next;
+    return `<li><strong>${esc(x.name)}</strong><span>${esc(x.todo)}</span>${nx ? `<a class="link" href="#/p/${esc(nx.id)}">${esc(nx.title)}</a>` : ""}</li>`; }).join("");
+  const weak = d.weaknesses.filter((x) => x.next).slice(0, 3), more = d.next.slice(1, 4);
+  return `<section class="card ready" aria-labelledby="ready-h"><div class="ready-head"><h2 id="ready-h">준비도 <span class="muted">${esc(rd.label)}</span></h2><a class="link" href="#/report">학습 보고서에서 자세히</a></div>
+    <p>${esc(rd.line)}</p>
+    <div class="ready-bar" role="img" aria-label="통과한 기본 문제 ${sum.total}개 가운데 도움 없이 ${rd.solved}개, 그 밖의 통과 ${aided}개"><i class="a" style="width:${pct(rd.solved)}%"></i><i class="b" style="width:${pct(aided)}%"></i></div>
+    <p class="ready-nums"><span><i class="swatch a" aria-hidden="true"></i>도움 없이 통과 ${rd.solved}</span><span><i class="swatch b" aria-hidden="true"></i>그 밖의 통과 ${aided}</span><span>기본 문제 ${sum.total}</span>
+      <button type="button" class="info-btn" id="rule-info" aria-expanded="${open}" aria-controls="rule-short" aria-label="도움 없이 통과의 기준">${ico("i-info")}</button></p>
+    <p class="info" id="rule-short"${open ? "" : " hidden"}>${esc(rd.rule_short)}</p>
+    ${left ? `<ul class="points plain ready-left">${left}</ul>` : ""}</section>
+    ${weak.length || more.length ? `<div class="sides${weak.length && more.length ? "" : " full"}">
+      ${weak.length ? `<section class="card side weak"><h2>더 공부할 주제</h2><ul class="points">${weak.map((x) => `<li><strong>${esc(x.name)}</strong><span>${esc(x.why)}</span><a class="link" href="#/p/${esc(x.next.id)}">${esc(x.next.title)}</a></li>`).join("")}</ul></section>` : ""}
+      ${more.length ? `<section class="side"><h2 class="list-label">그다음에 풀 문제</h2><ul class="rows">${more.map((n) => `<li><a class="row" href="#/p/${esc(n.id)}"><span><span class="row-title">${esc(n.title)}</span>
+        <span class="badges">${lvBadge(n.level)}${n.theme_name ? `<span class="theme-chip">${esc(n.theme_name)}</span>` : ""}</span><span class="row-meta">${esc(n.why)}</span></span><span></span>${ico("i-caret")}<span class="sr-only">열기</span></a></li>`).join("")}</ul></section>` : ""}</div>` : ""}`;
 }
 
 async function showList() {
@@ -466,7 +487,7 @@ async function showReport() {
   const failMax = Math.max(1, ...fails.map(([, n]) => n)), failAll = fails.reduce((n, [, c]) => n + c, 0);
   const langs = Object.entries(sum.languages).sort((x, y) => y[1] - x[1]).map(([k, n]) => `${LANG[k] || k} ${n}`).join(" · ");
   html += `<section class="tiles" aria-label="요약">
-    <div class="tile"><span class="tile-label">통과한 기본 문제</span><strong>${sum.solved}<small> / ${sum.total}</small></strong><span class="bar" aria-hidden="true"><i style="width:${sum.total ? Math.round(100 * sum.solved / sum.total) : 0}%"></i></span>${sum.own.total ? `<span class="tile-sub">등록한 문제 ${sum.own.solved} / ${sum.own.total}</span>` : ""}</div>
+    <div class="tile"><span class="tile-label">통과한 기본 문제</span><strong>${sum.solved}<small> / ${sum.total}</small></strong><span class="bar" aria-hidden="true"><i style="width:${sum.total ? Math.round(100 * sum.solved / sum.total) : 0}%"></i></span><span class="tile-sub">도움 없이 ${d.readiness.solved} · 그 밖의 통과 ${sum.solved - d.readiness.solved}</span>${sum.own.total ? `<span class="tile-sub">등록한 문제 ${sum.own.solved} / ${sum.own.total}</span>` : ""}</div>
     <div class="tile"><span class="tile-label">제출</span><strong>${sum.submissions}<small>번</small></strong><span class="tile-sub">${esc(langs || "아직 없어요")}</span></div>
     <div class="tile"><span class="tile-label">첫 제출에 통과</span><strong>${Math.round(100 * sum.first_try_rate)}<small>%</small></strong><span class="tile-sub">제출한 문제 가운데 첫 제출에 통과한 비율</span></div>
     <div class="tile"><span class="tile-label">출석</span><strong>${att.days}<small>일</small></strong>
@@ -495,7 +516,7 @@ async function showReport() {
     <span class="ladder-name">${gdot(t.key)}${esc(t.name)}<small>${t.solved}/${t.total}</small></span>
     ${levelCells(t.name, built.filter((p) => p.theme === t.key))}
     <span class="state ${t.state}">${STATE_WORD[t.state]}</span>
-    <span class="ladder-why">${esc(t.why)}${t.submissions ? ` <span class="muted">제출 ${t.submissions}번${t.hints ? ` · 힌트 ${t.hints}개` : ""}${t.solution_before_pass ? ` · 해설 먼저 ${t.solution_before_pass}문제` : ""}</span>` : ""}${(t.plan_differs || []).map((x) => // 고른 주제와 풀이 계획의 유형을 나란히
+    <span class="ladder-why">${esc(t.why)}${t.solved ? ` <span class="muted">· 도움 없이 ${t.unaided} · 그 밖의 통과 ${t.solved - t.unaided}</span>` : ""}${t.submissions ? ` <span class="muted">제출 ${t.submissions}번${t.hints ? ` · 힌트 ${t.hints}개` : ""}${t.solution_before_pass ? ` · 해설 먼저 ${t.solution_before_pass}문제` : ""}</span>` : ""}${(t.plan_differs || []).map((x) => // 고른 주제와 풀이 계획의 유형을 나란히
       ` <span class="muted">· ‘${esc(x.title)}’: 고른 주제 ${esc(t.name)}, 풀이 계획 ${esc(x.planned)}</span>`).join("")}</span>
   </li>`).join("")}</ul>`);
   const cards = [failAll ? `<section class="card side"><h2>통과하지 못한 제출</h2><ul class="bars">${fails.map(([kind, n]) => `<li><span>${FAIL_WORD[kind]}</span><span class="bar" aria-hidden="true"><i class="${kind}" style="width:${Math.round(100 * n / failMax)}%"></i></span><b>${n}</b></li>`).join("")}</ul>
@@ -3072,7 +3093,7 @@ document.addEventListener("click", (e) => {
     "edit-yes": () => registerProblem(true), "edit-no": () => { $("edit-confirm").hidden = true; $("new-submit").focus(); },
     "new-next": nextStep, "new-back": () => (history.state && history.state.wstep > 1 ? history.back() : setStep(WSTEP - 1)),
     "tools-refresh": async () => { const r = await loadTools(true); $("tools-note").textContent = r.ok ? "언어 도구를 다시 확인했어요." : errorNote(r.error).text; }, // 창 아래로 밀리지 않게 단추 옆에
-    "note-conn": openConn,
+    "note-conn": openConn, "rule-info": () => { S.ruleOpen = !S.ruleOpen; $("rule-short").hidden = !S.ruleOpen; $("rule-info").setAttribute("aria-expanded", String(S.ruleOpen)); },
     "chatgpt-login": chatgptLogin,
     "upd-open": openUpdate, "upd-close": closeUpdate, "upd-get": () => updAct("download"), "upd-reveal": () => updAct("reveal"),
     "upd-skip": async () => { const r = await updAct("skip"); if (r.ok) { closeUpdate(); say(`이 버전(${UPD.latest.version})은 건너뛰어요. ‘설정’ → ‘업데이트’ → ‘지금 확인’에서 다시 볼 수 있어요.`); } },
@@ -3123,7 +3144,7 @@ document.addEventListener("change", (e) => {
   if (e.target.name === "scheme") return void chooseScheme(e.target.value);
   if (e.target.id === "set-lang") return void (async () => { // 기본 언어: 고르면 바로 저장한다
     const r = await accounts("/api/prefs", { language: e.target.value }, "");
-    $("set-lang-note").textContent = r.ok ? `저장했어요. 문제를 처음 열 때 ${LANG[e.target.value]}로 시작해요.` : errorNote(r.error).text;
+    $("set-lang-note").textContent = r.ok ? `저장했어요. 기본 문제를 처음 열 때 ${LANG[e.target.value]}로 시작해요.` : errorNote(r.error).text;
   })();
   if (e.target.name === "client") accounts("/api/client", { client: e.target.value }, e.target.value === "cli" ? "이 PC의 Claude Code로 튜터를 불러요." : "연결한 AI로 튜터를 불러요.");
 });

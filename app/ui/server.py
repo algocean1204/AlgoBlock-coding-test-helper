@@ -2129,6 +2129,7 @@ def readiness(unaided: dict, started: set, fresh: dict) -> dict:
             "remaining": [left(key, need[key], unaided.get(key, []), fresh.get(key, []), [theme_name(p) for p in PREREQS[key] if not basic[p]])
                           for key in PREREQS if key in need],
             "basis": "이 앱의 기본 문제 기준이에요.",
+            "rule_short": f"도움 없이, 제출 {UNAIDED_MAX_SUBMITS}번 안에 통과한 기본 문제만 준비도에 세요. 힌트·튜터·해설을 썼거나, 제출이 {UNAIDED_MAX_SUBMITS}번을 넘었거나, '처음부터' 뒤 {REPEAT_GAP_HOURS}시간 안에 다시 푼 통과는 '그 밖의 통과'로 남아요.",
             "rules": [f"도움 없이 푼 문제: 튜터 기능(대화, 블록 채우기, 해설 모드, 틀린 곳 같이 찾기, AI 피드백), 힌트, 해설을 쓰기 전에 제출 {UNAIDED_MAX_SUBMITS}번 안에 "
                       f"통과한 기본 문제예요. '이 문제 처음부터'로 다시 시작했다면 {REPEAT_GAP_HOURS}시간이 지난 뒤에 그렇게 통과해도 세요. "
                       "통과한 뒤에 쓴 도움은 판정을 바꾸지 않아요. 등록한 문제는 세지 않아요.",
@@ -2224,7 +2225,7 @@ def learning_report(t) -> dict:
             own_line = f" 등록한 문제 {sum(pid in solved for pid in own_by_theme[key])}개를 풀었어요." if own_by_theme[key] else ""  # 등록 문제의 통과는 따로 말한다(제출 수와 기준을 맞춘다)
             state, why = "progress", f"기본 문제 {len(mine)}문제 중 {len(done)}문제를 풀었어요.{own_line}" + (f" 다음은 {todo['level']}단계예요." if todo else " 모두 풀었어요.")
         theme_rows_.append({"key": key, "name": theme_name(key), "solved": len(done), "total": len(mine), "level_reached": max((row["level"] for row in done), default=0),
-                            "submissions": len(mine_subs), "first_try": first_try, "fails": fails, "hints": sum(study["hints_seen"] for study in studies.values()),
+                            "unaided": len(alone), "submissions": len(mine_subs), "first_try": first_try, "fails": fails, "hints": sum(study["hints_seen"] for study in studies.values()),
                             "solution_before_pass": early, "state": state, "why": why, "next": {"id": todo["id"], "title": todo["title"], "level": todo["level"]} if todo else None,
                             "review": {"id": review["id"], "title": review["title"], "level": review["level"]} if review else None,
                             # 이 주제를 고른 등록 문제 가운데 풀이 계획의 유형이 다른 것(둘을 나란히 보인다)
