@@ -1045,7 +1045,13 @@ function renderCode() {
   renderSteps(stage, applyPrimary(stage));
 }
 
-async function prepAgain() { S.note.start = null; S.problem.prepare_failed = false; S.prepAt = 0; await loadState(true); say(S.problem.preparing ? "튜터가 풀이 순서를 다시 준비해요." : ""); }
+let prepAsking = false; // 다시 준비 요청 중(두 번 눌러 겹치지 않게)
+async function prepAgain() {
+  if (prepAsking) return;
+  prepAsking = true;
+  document.querySelectorAll("#prep-again, #prep-again-top").forEach((el) => { el.disabled = true; });
+  try { S.note.start = null; S.problem.prepare_failed = false; S.prepAt = 0; await loadState(true); say(S.problem.preparing ? "튜터가 풀이 순서를 다시 준비해요." : ""); } finally { prepAsking = false; }
+}
 
 /** 등록한 문제의 준비·검증 한 줄: "풀이 준비 중 · 숨은 테스트 n개 만듦 · 검증: 예시와 대조 모두 통과" */
 function renderCheckLine(p) {

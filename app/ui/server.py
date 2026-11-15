@@ -406,7 +406,7 @@ def cross_done(pid: str, verdict: dict) -> None:
 
 CROSS = SimpleNamespace(mode=cross_mode, run=cross_run, done=cross_done)
 UNVERIFIED = {"verified": "none", "calls": 0, "tiers": [], "doubts": [], "hidden": 0, "efficiency": 0,
-              "why": "튜터가 이 문제의 풀이를 얻지 못해 검증하지 못했어요. 예시의 기대 결과가 문제 글과 맞는지 확인해 주세요."}
+              "why": "AI의 풀이를 얻지 못해 검증하지 못했어요. 응답 오류였거나 예시가 문제 글과 맞지 않을 수 있어요."}
 
 FILE_LOCK_ROWS = threading.RLock()  # problems.json을 읽고 고쳐 쓰는 동안(뒤에서 도는 대조와 등록·수정이 서로 덮어쓰지 않게)
 VERIFIED_WORDS = {"all": "예시와 자동 테스트 모두 통과", "examples": "예시만 통과", "none": "검증하지 못함"}
