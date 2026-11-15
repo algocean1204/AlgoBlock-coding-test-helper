@@ -1160,7 +1160,7 @@ function renderBlocks() {
     list.innerHTML = s.blocks.map((b, i) => {
       const state = blockState(b, i), n = i + 1;
       if (state === "locked") {
-        return `<li class="block is-locked"><span class="no" aria-hidden="true">${n}</span><div class="block-head"><span class="sr-only">블록 ${n}, 아직 열리지 않음.</span>${kindChip(b.kind)}<span class="lock">${ico("i-lock")}</span></div></li>`;
+        return `<li class="block is-locked"><span class="no" aria-hidden="true">${n}</span><div class="block-head"><span class="sr-only">블록 ${n}, 아직 열리지 않음.</span>${kindChip(b.kind) || '<span class="kind" aria-hidden="true">아직 열리지 않았어요</span>'}<span class="lock">${ico("i-lock")}</span></div></li>`;
       }
       const saved = S.blockCode[b.id] || { code: "", by: "" };
       const current = state === "current";
