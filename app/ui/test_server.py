@@ -2076,6 +2076,7 @@ def main() -> None:
     assert call("/api/tour")[1]["tour_seen"] and call("/api/accounts")[1]["tour_seen"]
     for path, (name, _) in server.STATIC.items():  # 화면이 부르는 파일이 모두 있다(글꼴 포함)
         assert (server.STATIC_DIR / name).is_file(), path
+    assert "Continue with" not in (server.STATIC_DIR / "index.html").read_text(encoding="utf-8")  # 화면 글은 한국어다(ChatGPT 로그인 단추도)
 
     import test_update  # 업데이트(가짜 네트워크, 임시 폴더의 가짜 앱)
     test_update.run()
