@@ -885,6 +885,18 @@ def own_way_flow() -> None:
     assert not call("/api/state", id=PID)[1]["own_way"]
 
 
+def state_names_by_mode() -> None:
+    """상태는 요청의 방식으로 블록 이름을 가린다: 가이드는 지금 블록 이름이 보이고, 의자는 아직 찾지 못한 지금 블록 이름이 가려진다.
+    화면은 문제를 열 때 그 문제에 기억한 방식을 보내야 한다(직전 방식이 아니라) — 아니면 가이드가 이름을 가린 채 열린다."""
+    call("/api/reset", id=PID)
+    call("/api/turn", id=PID, mode="guide", event="start")
+    guide, chair = (call("/api/state", id=PID, mode=m)[1]["session"] for m in ("guide", "chair"))
+    assert guide["open_count"] == chair["open_count"] == 1
+    assert [b["name"] for b in guide["blocks"]] == ["개수 세기", None], guide["blocks"]
+    assert [b["name"] for b in chair["blocks"]] == [None, None], chair["blocks"]
+    call("/api/reset", id=PID)
+
+
 def chair_found() -> None:
     """의자에서 찾은 블록의 블록 코드 확인(모델 0회): 맞다고만 하고 진행은 그대로, 그 말은 그 블록을 겨눈다. 가이드는 지금 블록만.
     계획 코드와 글자 그대로 같으면 실행 없이, 틀 줄을 빼고 적으면 실행해 본다(그 문제의 예시만 있는 등록 문제라 그렇다고 말한다)."""
@@ -2014,6 +2026,7 @@ def main() -> None:
         screen_flows()
         debug_pass()
         own_way_flow()
+        state_names_by_mode()
         chair_found()
         language_memory()
         no_tool()

@@ -953,8 +953,8 @@ async function showCode(pid) {
 }
 
 async function loadState(open) {
-  const pid = S.pid;
-  const r = await api("/api/state", { id: pid, mode: S.talk, open: !!open });
+  const pid = S.pid, asked = S.talk;
+  const r = await api("/api/state", { id: pid, mode: asked, open: !!open });
   if (S.pid !== pid) return;
   $("code-error").hidden = r.ok;
   if (!r.ok && r.error.code === "not_found") { // 지워진(없는) 문제: 목록으로 보낸다
@@ -964,6 +964,7 @@ async function loadState(open) {
   }
   if (!r.ok) return void ($("code-error").textContent = errorNote(r.error).text);
   applyState(r.data);
+  if (S.talk !== asked && S.pid === pid) return loadState(); // 처음 열며 그 문제의 방식이 정해졌다: 서버가 이름을 가리는 것은 방식마다 달라, 정해진 방식으로 다시 받는다
 }
 
 /** 서버가 준 문제 상태를 화면 상태로 옮긴다. 처음 받았을 때만 코드 칸과 문제 글을 채운다(적던 글을 덮지 않게). */
