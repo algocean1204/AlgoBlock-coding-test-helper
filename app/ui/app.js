@@ -2207,6 +2207,7 @@ function renderAccounts(a) {
   const ready = a.client === "cli" || !!provider;
   CONN = { ready, name: a.client === "cli" ? "이 PC의 Claude Code" : provider };
   ACCOUNTS = a;
+  if (!paneTimer && !paneDrag) paneSet(a.panes || null, false); // 저장한 칸 너비를 첫 그림 전에(accounts를 기다린 뒤에 route()를 부른다)
   $("themes-now").textContent = a.themes.map((t) => `${t.label} ${t.model_label}`).join(" · ");
   if ($("models").open) renderModels();
   $("conn-now").textContent = keyBad ? "키 확인 필요" : a.client === "cli" ? "이 PC의 Claude Code" : provider || "연결 안 됨";
@@ -2584,6 +2585,148 @@ function grow(ta) {
   ta.style.height = `${Math.min(ta.scrollHeight + 2, 240)}px`;
 }
 
+/* ── 칸 너비: 칸 사이 경계(.sep)를 끌거나 글쇠로 옮긴다. 세 칸의 몫(합 100)을 서버에 적어 다시 켜도 남는다 ── */
+const PANE = ["problem", "code", "tutor"], PANE_NAME = ["문제", "코드"];
+const PANE_DEFAULT = [25.83, 37.75, 36.42]; // 저장한 값이 없을 때의 몫. CSS 기본(0.78 : 1.14 : 1.1)과 같은 비율
+let paneShares = null; // 문제·코드·튜터 칸의 몫. null이면 CSS 기본 배치
+let paneTimer = null, paneDrag = null;
+const paneWidth = (i) => $(`pane-${PANE[i]}`).getBoundingClientRect().width;
+const paneMin = (i) => parseFloat(getComputedStyle($("panes")).getPropertyValue(`--min-${PANE[i]}`)); // 최소 너비는 CSS의 한 곳(--min-*)에서 읽는다
+const narrowPanes = () => matchMedia("(max-width: 1179px)").matches; // 문제 칸이 위 띠가 되어 코드·튜터 둘만 나뉜다
+
+/** 경계 하나가 가르는 두 칸의 지금 모습: 왼쪽 칸 번호, 오른쪽 몫(혼자 풀기에서는 코드와 튜터가 한 몫), 몫, 두 칸 너비의 합(px), 최소 너비 */
+function paneBase(sep) {
+  const left = sep.id === "sep-problem" ? 0 : 1, classes = $("panes").classList, railed = classes.contains("railed");
+  const width = PANE.map((_, i) => paneWidth(i));
+  let shares = (paneShares || PANE_DEFAULT).slice();
+  if (!railed && !classes.contains("folded") && !narrowPanes()) { // 세 칸이 모두 몫으로 나뉠 때는 보이는 너비에서 다시 잡는다(최소 너비에 걸린 채 시작해도 손잡이가 포인터를 따라오게)
+    const total = width[0] + width[1] + width[2];
+    shares = [round2(100 * width[0] / total), round2(100 * width[1] / total)];
+    shares.push(round2(100 - shares[0] - shares[1]));
+  }
+  const right = left === 0 && railed ? [1, 2] : [left + 1];
+  return { left, right, shares, from: width[left], span: width[left] + width[left + 1], min: [paneMin(left), paneMin(left + 1)], sum: shares[left] + right.reduce((n, i) => n + shares[i], 0) };
+}
+
+/* pane-pure:start (DOM을 읽지 않는 계산. test_server.py가 이 둘레를 떼어 서버가 받는 범위와 맞는지 본다) */
+const round2 = (x) => Math.round(x * 100) / 100;
+
+/** 세 몫을 서버가 받는 범위(각각 5에서 90, 합 100)로 맞춘다. 범위 밖으로 나간 만큼은 keep(끈 칸)이 아닌 칸이 여유가 큰 쪽부터 받는다 */
+function paneFit(shares, keep) {
+  const out = shares.map((x) => Math.min(90, Math.max(5, x)));
+  let diff = 100 - out[0] - out[1] - out[2];
+  const order = [0, 1, 2].filter((i) => i !== keep).sort((a, b) => (diff > 0 ? out[a] - out[b] : out[b] - out[a]));
+  order.push(keep);
+  for (const i of order) {
+    const step = Math.min(90, Math.max(5, out[i] + diff)) - out[i];
+    out[i] += step;
+    diff -= step;
+  }
+  const fit = out.map(round2), room = fit.map((x) => Math.min(x - 5, 90 - x));
+  const at = room.indexOf(Math.max(...room)); // 반올림 오차는 여유가 가장 큰 칸이 받는다
+  fit[at] = round2(fit[at] + 100 - fit[0] - fit[1] - fit[2]);
+  return fit;
+}
+
+/** 왼쪽 칸을 want(px)로 옮긴 몫을 돌려준다. 두 칸의 최소 너비 밖으로는 가지 않는다. 두 칸 밖의 몫은 되도록 그대로다 */
+function paneNext(b, want) {
+  const left = Math.min(Math.max(want, b.min[0]), Math.max(b.min[0], b.span - b.min[1]));
+  const next = b.shares.slice(), mine = round2(b.sum * left / b.span), rest = b.sum - mine;
+  next[b.left] = mine;
+  if (b.right.length === 1) next[b.right[0]] = rest;
+  else { next[1] = rest * b.shares[1] / (b.shares[1] + b.shares[2]); next[2] = rest - next[1]; }
+  return paneFit(next, b.left);
+}
+/* pane-pure:end */
+
+function paneMove(b, want, save) {
+  paneSet(paneNext(b, want), save);
+}
+
+/** 몫을 화면에 적는다(null이면 기본). save가 참이면 잠깐 뒤 서버에 한 번 적는다 */
+function paneSet(shares, save) {
+  paneShares = shares;
+  const style = $("panes").style, now = shares && { problem: shares[0], code: shares[1], tutor: shares[2], "code-wide": round2(shares[1] + shares[2]) };
+  for (const name of [...PANE, "code-wide"]) now ? style.setProperty(`--col-${name}`, `${now[name]}fr`) : style.removeProperty(`--col-${name}`);
+  $("panes-reset").hidden = !shares;
+  paneAria();
+  if (!save) return;
+  clearTimeout(paneTimer);
+  paneTimer = setTimeout(paneSave, 400);
+}
+
+async function paneSave() {
+  clearTimeout(paneTimer);
+  paneTimer = null;
+  const r = await api("/api/prefs", { panes: paneShares });
+  if (!r.ok) say(errorNote(r.error).text);
+}
+
+function paneReset() {
+  paneSet(null, true);
+  say("칸 너비를 기본으로 돌렸어요.");
+}
+
+/** 손잡이의 값(왼쪽 칸이 두 칸의 합에서 차지하는 %)을 읽어 주는 도구에 알린다 */
+function paneAria() {
+  for (const sep of document.querySelectorAll(".sep")) {
+    if (!sep.getClientRects().length) continue;
+    const b = paneBase(sep), pct = (px) => Math.round(100 * px / b.span), now = pct(b.from);
+    sep.setAttribute("aria-valuenow", now);
+    sep.setAttribute("aria-valuemin", pct(b.min[0]));
+    sep.setAttribute("aria-valuemax", pct(Math.max(b.min[0], b.span - b.min[1])));
+    sep.setAttribute("aria-valuetext", `${PANE_NAME[b.left]} 칸 ${now}%`);
+  }
+}
+
+function paneKey(e) {
+  if (e.ctrlKey || e.metaKey || e.altKey) return false;
+  const b = paneBase(e.target), step = e.shiftKey ? 96 : 24;
+  const want = { ArrowLeft: b.from - step, ArrowRight: b.from + step, Home: 0, End: Infinity }[e.key];
+  if (want === undefined) return false; // 다루지 않는 키(Esc 등)는 다른 곳으로 넘긴다
+  e.preventDefault();
+  paneMove(b, want, true);
+  return true;
+}
+
+/** 끌기를 마친다. cancel이면 끌기 전 너비로 되돌린다(Esc·포인터를 빼앗길 때) */
+function paneEnd(e, cancel) {
+  const d = paneDrag;
+  if (!d || (e.pointerId !== undefined && e.pointerId !== d.id)) return;
+  paneDrag = null;
+  cancelAnimationFrame(d.frame);
+  d.sep.classList.remove("dragging");
+  document.body.classList.remove("resizing");
+  try { d.sep.releasePointerCapture(d.id); } catch { /* 이미 놓았다 */ }
+  if (cancel) return paneSet(d.before, false);
+  if (!d.moved) return; // 누르기만 했다(두 번 누르기의 첫 번째 같은)
+  if (e.clientX === d.x) return paneSet(d.before, false); // 처음 자리로 돌아와 놓았다. 프레임에 적힌 너비를 걷는다
+  paneMove(d.base, d.base.from + e.clientX - d.x, true);
+}
+
+document.addEventListener("pointerdown", (e) => {
+  const sep = e.target.closest && e.target.closest(".sep");
+  if (!sep || e.button !== 0 || paneDrag) return;
+  e.preventDefault(); // 글자 선택이 시작되지 않게
+  sep.focus();
+  sep.setPointerCapture(e.pointerId);
+  paneDrag = { sep, id: e.pointerId, x: e.clientX, base: paneBase(sep), before: paneShares && paneShares.slice(), frame: 0 };
+  sep.classList.add("dragging");
+  document.body.classList.add("resizing");
+});
+document.addEventListener("pointermove", (e) => {
+  const d = paneDrag;
+  if (!d || e.pointerId !== d.id) return;
+  d.at = e.clientX;
+  d.moved = true;
+  if (!d.frame) d.frame = requestAnimationFrame(() => { d.frame = 0; paneMove(d.base, d.base.from + d.at - d.x, false); }); // 한 프레임에 한 번
+});
+document.addEventListener("pointerup", (e) => paneEnd(e, false));
+document.addEventListener("pointercancel", (e) => paneEnd(e, true));
+document.addEventListener("dblclick", (e) => { if (e.target.closest && e.target.closest(".sep")) paneReset(); });
+new ResizeObserver(paneAria).observe($("panes")); // 창이 바뀌거나 칸이 접히고 펴져도 값이 맞게
+for (const name of PANE) new ResizeObserver(paneAria).observe($(`pane-${name}`));
+
 /* ── 이벤트 ── */
 document.addEventListener("click", (e) => {
   const el = e.target.closest("button");
@@ -2643,6 +2786,7 @@ document.addEventListener("click", (e) => {
     "solo-fold": () => { S.soloOpen = null; render(); $("rail-hint").focus(); },
     "to-explain": () => setMode("explain"),
     "compose-run": composeRun,
+    "panes-reset": paneReset,
     "problem-peek": () => { const open = $("panes").classList.toggle("peek"); el.setAttribute("aria-expanded", String(open)); el.textContent = open ? "문제 접기" : "문제 펼치기"; },
     "lang-yes": () => changeLanguage(S.langWant), "lang-no": () => { S.langWant = null; render(); $("p-lang-select").focus(); }, "debug-start": debugStart, "to-feedback": askFeedback, "fb-again": askFeedback, "fb-get": askFeedback,
     "old-feedback": () => { location.hash = `#/p/${S.pid}/feedback`; },
@@ -2772,6 +2916,8 @@ document.addEventListener("keydown", (e) => {
     e.preventDefault();
     return $(el.dataset.send).click();
   }
+  if (e.key === "Escape" && paneDrag) return paneEnd(e, true); // 끌던 것은 처음 너비로
+  if (el.classList && el.classList.contains("sep") && paneKey(e)) return;
   if (e.key === "Escape" && $("more").open) { $("more").open = false; return $("more").querySelector("summary").focus(); }
   if (e.key === "Escape" && !$("conn-panel").hidden && !el.matches("textarea")) return toggleConn(false);
   if (el.getAttribute && el.getAttribute("role") === "tab" && (e.key === "ArrowRight" || e.key === "ArrowLeft")) {
@@ -2791,7 +2937,7 @@ document.addEventListener("click", (e) => {
   if ($("more").open && !e.target.closest("#more")) $("more").open = false;
 });
 window.addEventListener("hashchange", route);
-window.addEventListener("pagehide", () => { leaving = true; flushSaves(); });
+window.addEventListener("pagehide", () => { leaving = true; flushSaves(); if (paneTimer) paneSave(); });
 window.addEventListener("pageshow", () => { leaving = false; });
 
 // 파일은 등록 화면 어디에 놓아도 받는다(놓친 파일을 브라우저가 열어 적던 글을 잃지 않게)

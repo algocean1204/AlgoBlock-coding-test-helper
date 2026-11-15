@@ -488,13 +488,22 @@ a.ladder-next:hover { background: var(--fill); }
 .steps li.now { color: var(--text); }
 .steps li.now .step-no { background: var(--accent); color: var(--on-accent); }
 
+/* 칸 사이 14px 줄은 실제 격자 칸이고 그 자리에 경계 손잡이(.sep)가 있다. 칸의 몫은 --col-*(끌어서 바꾸면 app.js가 적는다. 없으면 아래 기본), 최소 너비는 minmax()가 지킨다 */
 .panes {
   flex: 1; min-height: 0;
-  display: grid; gap: 14px; padding: 10px 16px 16px 8px;
-  grid-template-columns: minmax(260px, 0.78fr) minmax(390px, 1.14fr) minmax(370px, 1.1fr);
+  --min-problem: 260px; --min-code: 390px; --min-tutor: 370px;
+  display: grid; gap: 14px 0; padding: 10px 16px 16px 8px;
+  grid-template-columns: minmax(var(--min-problem), var(--col-problem, 0.78fr)) 14px minmax(var(--min-code), var(--col-code, 1.14fr)) 14px minmax(var(--min-tutor), var(--col-tutor, 1.1fr));
 }
-.panes.folded { grid-template-columns: minmax(390px, 1.1fr) minmax(370px, 1fr); padding-left: 16px; }
-.panes.folded #pane-problem { display: none; }
+.panes.folded { grid-template-columns: minmax(var(--min-code), var(--col-code, 1.1fr)) 14px minmax(var(--min-tutor), var(--col-tutor, 1fr)); padding-left: 16px; }
+.panes.folded #pane-problem, .panes.folded #sep-problem { display: none; }
+.sep { position: relative; z-index: 2; cursor: col-resize; touch-action: none; }
+.sep::after { content: ""; position: absolute; inset: 0 -10px 0 0; } /* 누르는 자리는 24px. 왼쪽 칸의 스크롤 막대를 가리지 않게 오른쪽으로만 넓힌다 */
+.sep::before { content: ""; position: absolute; left: 50%; top: 50%; width: 4px; height: 32px; margin: -16px 0 0 -2px; border-radius: 2px; background: var(--muted); transition: background-color 0.15s, height 0.15s, margin-top 0.15s; }
+.sep:hover::before, .sep:focus-visible::before, .sep.dragging::before { background: var(--accent-text); height: 56px; margin-top: -28px; }
+.sep:focus-visible { outline: 2px solid var(--accent-text); outline-offset: -2px; border-radius: 7px; }
+body.resizing { cursor: col-resize; user-select: none; -webkit-user-select: none; }
+body.resizing .pane { pointer-events: none; }
 .pane { min-width: 0; min-height: 0; display: flex; flex-direction: column; background: var(--surface); border-radius: var(--r-lg); box-shadow: var(--shadow-card); overflow: hidden; }
 .pane-head { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 48px; padding: 8px 10px 8px 16px; box-shadow: 0 1px 0 var(--line); position: relative; z-index: 1; }
 .pane-head h2 { font-size: 13px; font-weight: 600; color: var(--muted); white-space: nowrap; }
@@ -923,8 +932,9 @@ a.lv.done:hover { background: var(--lvc); color: var(--on-lv); filter: brightnes
 .way-card.primary .tag { background: rgb(255 255 255 / 0.2); color: var(--on-accent); }
 .way-card:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
 .way-card .tag { font-size: 11.5px; }
-.panes.railed { grid-template-columns: minmax(260px, 0.78fr) minmax(390px, 2fr) 150px; }
-.panes.folded.railed { grid-template-columns: minmax(390px, 1fr) 150px; }
+.panes.railed { grid-template-columns: minmax(var(--min-problem), var(--col-problem, 0.78fr)) 14px minmax(var(--min-code), var(--col-code-wide, 2fr)) 14px 150px; }
+.panes.folded.railed { grid-template-columns: minmax(var(--min-code), 1fr) 14px 150px; }
+.panes.railed #sep-tutor { visibility: hidden; } /* 오른쪽 칸 150px는 고정이라 끌 곳이 없다. 간격은 남긴다 */
 .rail { display: grid; align-content: start; gap: 8px; padding: 12px; }
 .rail-btn { display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 12px; border: 0; border-radius: var(--r-md); background: var(--fill); color: var(--text); font: 600 14px/1.2 var(--sans); cursor: pointer; text-align: left; }
 .rail-btn:hover { background: var(--fill-2); }
@@ -968,8 +978,10 @@ body.conn-open main .primary { background: var(--fill); color: var(--text); bord
   .steps li:not(.now) { font-size: 0; gap: 0; }
 }
 @media (max-width: 1179px) { /* 문제 칸은 위 띠로 접히고(한 번 눌러 펼친다) 코드 칸과 주 동작이 첫 화면에 보인다 */
-  .panes, .panes.folded { grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); gap: 10px; padding: 6px 12px 12px; }
-  .panes.railed { grid-template-columns: minmax(0, 1fr) 140px; }
+  .panes, .panes.folded { --min-code: 320px; --min-tutor: 300px; grid-template-columns: minmax(var(--min-code), var(--col-code, 1.2fr)) 10px minmax(var(--min-tutor), var(--col-tutor, 1fr)); grid-template-rows: auto minmax(0, 1fr); gap: 10px 0; padding: 6px 12px 12px; }
+  .panes.railed { grid-template-columns: minmax(0, 1fr) 10px 140px; }
+  .panes.folded.railed { grid-template-columns: minmax(390px, 1fr) 10px 150px; } /* 예전 그대로(접은 채 좁아진 혼자 풀기) */
+  #sep-problem, .panes.folded #sep-problem { display: none; } /* 문제 칸은 위 띠다. 코드와 튜터 사이 손잡이만 남는다 */
   #pane-problem, .panes.folded #pane-problem { display: flex; grid-column: 1 / -1; max-height: 46vh; background: var(--surface); border-radius: var(--r-lg); box-shadow: var(--shadow-card); }
   #pane-problem .pane-head { min-height: 40px; padding: 4px 8px 4px 16px; }
   .panes:not(.peek) #pane-problem .pane-body, .panes:not(.peek) #p-check { display: none; }
@@ -983,7 +995,8 @@ body.conn-open main .primary { background: var(--fill); color: var(--text); bord
 }
 @media (min-width: 1180px) { #problem-peek { display: none; } }
 @media (max-width: 760px) { /* 아주 좁으면 위에서 아래로 쌓는다 */
-  .panes, .panes.folded, .panes.railed { grid-template-columns: minmax(0, 1fr); }
+  .panes, .panes.folded, .panes.railed, .panes.folded.railed { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .sep { display: none; }
   .workspace { flex: none; }
   #pane-code { height: 78vh; min-height: 420px; }
   #pane-tutor { min-height: 320px; }
