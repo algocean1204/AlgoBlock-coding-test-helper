@@ -1,3 +1,4 @@
+import contextlib
 import ctypes
 import functools
 import json
@@ -73,6 +74,7 @@ def _cpu_capped(seconds):
 CREATE_SUSPENDED = 0x00000004
 CREATE_NO_WINDOW = 0x08000000  # 창 없는 앱(설치 파일)에서 채점할 때마다 콘솔 창이 뜨지 않게
 JOB_LIMIT_PROCESS_TIME = 0x00000002  # PerProcessUserTimeLimit
+JOB_LIMIT_ACTIVE_PROCESS = 0x00000008  # ActiveProcessLimit(작업 안에서 동시에 살아 있는 프로세스 수)
 JOB_LIMIT_JOB_MEMORY = 0x00000200  # JobMemoryLimit(작업 전체의 커밋 메모리)
 JOB_LIMIT_DIE_ON_UNHANDLED_EXCEPTION = 0x00000400  # 죽은 프로그램이 오류 보고 창을 띄운 채 시간 초과까지 남지 않게
 JOB_LIMIT_KILL_ON_JOB_CLOSE = 0x00002000
@@ -81,6 +83,17 @@ JOB_ASSOCIATE_COMPLETION_PORT_INFORMATION = 7  # JobObjectAssociateCompletionPor
 JOB_MSG_JOB_MEMORY_LIMIT = 10  # 완료 포트로 오는 알림: 작업의 프로세스가 작업 메모리 상한을 넘는 커밋을 하려 했다
 JOB_MEMORY_FACTOR = 2  # 작업의 커밋 상한 = memory_mb × 이것. 커밋은 실제로 쓰는 메모리(작업 집합)보다 앞서 잡힌다(JVM의 첫 힙 등).
 #                        memory_limit 판정은 POSIX처럼 0.25초마다 재는 작업 집합이 하고, 이 상한은 그 사이의 급한 증가를 막는 바닥이다
+# 작업 안의 동시 프로세스 수 상한(제출 코드 한 번의 실행). 끝없이 프로세스를 만드는 코드(포크 폭탄)가 기기를 느리게 하지 않게 한다.
+# 값의 근거: 정상 풀이는 주 프로세스 하나다. venv의 python.exe는 실제 인터프리터를 한 번 더 띄워 둘이고, 풀이가 subprocess·multiprocessing으로 몇 개를
+# 띄울 수 있다. 코어가 많은 기기의 multiprocessing.Pool(코어 수)도 들어가도록 넉넉히 64로 잡는다(채점에서 이만큼 쓰는 풀이는 없다).
+# 컴파일러(g++, go build가 자식을 많이 띄운다)에는 걸지 않는다(compile_command가 processes=None을 넘긴다)
+JOB_PROCESS_LIMIT = 64
+# SetErrorMode 플래그. 자식은 부모의 오류 모드를 물려받는다: 오류 창을 띄우는 대신 호출이 실패하고 프로세스가 바로 끝난다
+SEM_FAILCRITICALERRORS = 0x0001  # DLL을 찾지 못함(MinGW 런타임 등) 같은 '치명적 오류' 창
+SEM_NOGPFAULTERRORBOX = 0x0002  # 일반 보호 오류(죽은 프로그램) 창
+SEM_NOOPENFILEERRORBOX = 0x8000  # 파일을 열지 못함 창
+ERROR_MODE = SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX | SEM_NOOPENFILEERRORBOX
+ERROR_MODE_LOCK = threading.Lock()  # 오류 모드는 프로세스 전체의 값이라 두 실행이 서로의 '되돌릴 값'을 덮지 않게
 TH32CS_SNAPTHREAD = 0x00000004
 THREAD_SUSPEND_RESUME = 0x0002
 JOB_LOCK = threading.Lock()  # 작업 핸들을 쓰는 것(끝내기)과 닫는 것이 겹치지 않게
@@ -119,7 +132,7 @@ def _kernel32():
     handle, flag, dword, pointer = ctypes.c_void_p, ctypes.c_int, ctypes.c_uint32, ctypes.c_void_p
     for name, result, args in (("CreateJobObjectW", handle, [pointer, ctypes.c_wchar_p]), ("SetInformationJobObject", flag, [handle, ctypes.c_int, pointer, dword]),
                                ("AssignProcessToJobObject", flag, [handle, handle]), ("TerminateJobObject", flag, [handle, ctypes.c_uint]),
-                               ("CloseHandle", flag, [handle]), ("CreateToolhelp32Snapshot", handle, [dword, dword]),
+                               ("CloseHandle", flag, [handle]), ("SetErrorMode", dword, [dword]), ("CreateToolhelp32Snapshot", handle, [dword, dword]),
                                ("Thread32First", flag, [handle, pointer]), ("Thread32Next", flag, [handle, pointer]),
                                ("OpenThread", handle, [dword, flag, dword]), ("ResumeThread", dword, [handle]),
                                ("CreateIoCompletionPort", handle, [handle, handle, ctypes.c_size_t, dword]),
@@ -134,8 +147,22 @@ def _win_error(what):
     return OSError(code, f"{what} 실패(Windows 오류 {code})")
 
 
-def _windows_job(process, cpu_seconds, memory_mb):
-    """멈춘 채 만든 process를 제한을 건 새 작업에 넣고 작업 핸들을 낸다. 실패하면 OSError(만든 작업은 닫는다. 프로세스는 건드리지 않는다)."""
+@contextlib.contextmanager
+def _quiet_errors():
+    """프로세스를 만드는 동안만 이 프로세스의 오류 모드에 오류 창 끄기를 더하고, 끝나면 원래 값으로 되돌린다(앱 자신의 동작은 그대로)."""
+    kernel = _kernel32()
+    with ERROR_MODE_LOCK:
+        before = kernel.SetErrorMode(0)  # 값만 읽는 호출이 없다: 0을 넣어 이전 값을 읽고 바로 다시 정한다
+        kernel.SetErrorMode(before | ERROR_MODE)
+        try:
+            yield
+        finally:
+            kernel.SetErrorMode(before)
+
+
+def _windows_job(process, cpu_seconds, memory_mb, processes=None):
+    """멈춘 채 만든 process를 제한을 건 새 작업에 넣고 작업 핸들을 낸다. processes(없으면 상한 없음)는 작업 안의 동시 프로세스 수 상한이다.
+    실패하면 OSError(만든 작업은 닫는다. 프로세스는 건드리지 않는다)."""
     kernel = _kernel32()
     job = kernel.CreateJobObjectW(None, None)  # 보안 속성 없음: 핸들이 자식에게 상속되지 않는다
     if not job:
@@ -145,6 +172,9 @@ def _windows_job(process, cpu_seconds, memory_mb):
         basic = limit.BasicLimitInformation
         basic.LimitFlags = JOB_LIMIT_KILL_ON_JOB_CLOSE | JOB_LIMIT_DIE_ON_UNHANDLED_EXCEPTION | JOB_LIMIT_PROCESS_TIME
         basic.PerProcessUserTimeLimit = int(cpu_seconds * 10_000_000)  # 100ns 단위. 넘으면 Windows가 그 프로세스를 끝낸다
+        if processes:
+            basic.LimitFlags |= JOB_LIMIT_ACTIVE_PROCESS
+            basic.ActiveProcessLimit = processes
         if memory_mb:
             basic.LimitFlags |= JOB_LIMIT_JOB_MEMORY
             limit.JobMemoryLimit = min(memory_mb * JOB_MEMORY_FACTOR * 2**20, ctypes.c_size_t(-1).value)  # 32비트 파이썬에서 잘려 0이 되지 않게
@@ -208,15 +238,21 @@ def _resume(pid):
         raise _win_error("멈춘 프로세스의 스레드 재개")  # 글에 PID를 넣지 않는다(같은 경고를 한 번만 적는다)
 
 
-def _start_windows(process, cpu_seconds, memory_mb):
-    """멈춘 채 만든 process를 작업에 넣고 재개한다. (종류, 까닭) 또는 (None, None)을 낸다(조용히 넘기지 않는다).
+def _track(process):
+    with RUNNING_LOCK:
+        RUNNING.add(process)
+
+
+def _start_windows(process, cpu_seconds, memory_mb, processes=None):
+    """멈춘 채 만든 process를 작업에 넣고 재개한다. 실행 목록(RUNNING)에는 작업에 넣은 뒤, 재개하기 전에 올린다(작업이 반쯤 붙은 프로세스를 kill_running이 건드리지 않게). (종류, 까닭) 또는 (None, None)을 낸다(조용히 넘기지 않는다).
     종류 no_job: 작업을 쓰지 못해 작업 없이 돌렸다. not_started: 재개하지 못해 끝냈다(실행 오류로 남는다)."""
     kind = warning = None
     try:
-        process.algoblock_job = _windows_job(process, cpu_seconds, memory_mb)
+        process.algoblock_job = _windows_job(process, cpu_seconds, memory_mb, processes)
         process.algoblock_port = _memory_port(process.algoblock_job) if memory_mb else None
     except Exception as error:  # noqa: BLE001 - 작업 없이도 채점은 한다(시간 초과 때 taskkill로 끝내고, 메모리는 작업 집합으로 잰다)
         kind, warning = "no_job", f"Windows 작업 객체를 쓰지 못해 CPU 시간 상한·커밋 메모리 상한·남은 자식 정리 없이 돌렸습니다: {error}"
+    _track(process)
     try:
         _resume(process.pid)
     except Exception as error:  # noqa: BLE001 - 멈춘 채 두면 시간 초과까지 기다린다: 끝내고 실행 오류로 남긴다
@@ -296,9 +332,10 @@ def _memory_mb(process):
         return 0
 
 
-def run_command(command, cwd, stdin="", timeout=TIMEOUT_SECONDS, memory_mb=MEMORY_LIMIT_MB, cpu_seconds=None):
+def run_command(command, cwd, stdin="", timeout=TIMEOUT_SECONDS, memory_mb=MEMORY_LIMIT_MB, cpu_seconds=None, processes=JOB_PROCESS_LIMIT):
     """실행하고 {status, stdout, stderr, time_ms}. 시간(timeout), 출력 크기(OUTPUT_LIMIT), 메모리(memory_mb, None이면 안 봄)를 넘으면 자식까지 끝낸다.
     CPU 시간은 cpu_seconds(없으면 cpu_limit(timeout))를 넘으면 자식이 스스로 끝난다(POSIX는 RLIMIT_CPU, Windows는 작업 객체의 사용자 모드 시간).
+    Windows는 작업 안의 동시 프로세스 수도 processes(None이면 안 건다)로 막고, 프로세스를 만드는 동안 오류 창을 끈다(SetErrorMode).
     Windows에서 작업 객체를 쓰지 못하면 작업 없이 돌리고 결과에 warning(까닭)과 warning_kind(no_job, 시작하지 못했으면 not_started)를 붙인다.
 
     한계: 파일·네트워크 접근은 막지 않는다(사용자 기기에서 사용자 권한으로 도는 자기 코드다). 격리가 필요해지면 컨테이너나 OS 샌드박스로 감싼다.
@@ -313,15 +350,16 @@ def run_command(command, cwd, stdin="", timeout=TIMEOUT_SECONDS, memory_mb=MEMOR
         options = {"start_new_session": True, "preexec_fn": _cpu_capped(cpu)}
     env = {name: value for name, value in os.environ.items()
            if not any(word in name.upper() for word in SECRET_WORDS) and not name.upper().startswith(SECRET_PREFIXES)}  # API 키 같은 비밀 값은 넘기지 않는다
-    process = subprocess.Popen(command, cwd=cwd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                               env={**env, "PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8"}, **options)
-    with RUNNING_LOCK:
-        RUNNING.add(process)
+    with _quiet_errors() if windows else contextlib.nullcontext():  # 자식이 이 오류 모드를 물려받는다
+        process = subprocess.Popen(command, cwd=cwd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                   env={**env, "PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8"}, **options)
     try:
         kind = warning = None
         if windows:
-            kind, warning = _start_windows(process, cpu, memory_mb)
+            kind, warning = _start_windows(process, cpu, memory_mb, processes)  # 작업에 넣은 뒤 실행 목록에 올리고 재개한다
             started = time.perf_counter()  # 작업 준비(작업 만들기, 스레드 찾기)는 실행 시간에 넣지 않는다. 프로세스는 재개한 뒤에야 돈다
+        else:
+            _track(process)
         result = _collect(process, stdin, timeout, memory_mb, started)
         if windows and result["status"] == "runtime_error" and _hit_job_memory(process):
             result = {**result, "status": "memory_limit"}  # 커밋 상한이 할당을 거절해 죽었다(POSIX의 메모리 측정과 같은 판정)
@@ -393,7 +431,7 @@ def _collect(process, stdin, timeout, memory_mb, started):
 
 def compile_command(command, cwd, timeout=COMPILE_TIMEOUT_SECONDS):
     """성공이면 None, 실패면 compile_error 또는 timeout 결과."""
-    result = run_command(command, cwd, timeout=timeout, memory_mb=None)  # 컴파일러의 메모리는 보지 않는다
+    result = run_command(command, cwd, timeout=timeout, memory_mb=None, processes=None)  # 컴파일러의 메모리와 프로세스 수는 보지 않는다(go build 등이 자식을 많이 띄운다)
     if result["status"] == "passed":
         return None
     result["status"] = "timeout" if result["status"] == "timeout" else "compile_error"

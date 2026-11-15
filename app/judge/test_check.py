@@ -571,6 +571,57 @@ class WindowsJobTest(unittest.TestCase):
         plain = self.run_python("raise SystemExit(3)")  # 메모리와 상관없는 실패는 그대로 실행 오류다
         self.assertEqual(plain["status"], "runtime_error", plain)
 
+    # 자식을 count개 띄우고(5초 잠드는 파이썬) 1.5초 뒤 만들지 못했거나 이미 끝난 수를 출력하는 코드. 상한을 넘은 프로세스는 만들기가 실패하거나 바로 끝난다
+    SPAWN = ("import subprocess, sys, time\nkids, fails = [], 0\nfor _ in range({count}):\n    try:\n"
+             "        kids.append(subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(5)'], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL))\n"
+             "    except OSError:\n        fails += 1\ntime.sleep(1.5)\nfails += sum(kid.poll() is not None for kid in kids)\nfor kid in kids:\n    kid.kill()\nprint(fails)\n")
+
+    def test_process_count_is_capped(self):
+        """작업 안의 동시 프로세스 수가 상한을 넘으면 그 프로세스를 만들지 못한다. 상한을 끄면(processes=None) 모두 만들어진다."""
+        capped = self.run_python(self.SPAWN.format(count=8), processes=4)
+        self.assertEqual(capped["status"], "passed", capped)
+        self.assertGreaterEqual(int(capped["stdout"]), 1, "상한(4)을 넘는 자식이 만들어졌다")
+        free = self.run_python(self.SPAWN.format(count=8), processes=None)
+        self.assertEqual((free["status"], free["stdout"].strip()), ("passed", "0"), free)
+
+    def test_default_process_limit_allows_a_few_children(self):
+        """기본 상한은 자식 몇 개를 띄우는 코드를 막지 않는다."""
+        result = self.run_python(self.SPAWN.format(count=5))
+        self.assertEqual((result["status"], result["stdout"].strip()), ("passed", "0"), result)
+
+    def test_error_dialogs_are_off_in_the_child_and_restored_after(self):
+        """자식은 오류 창을 끈 오류 모드(SetErrorMode)로 돈다. 이 프로세스의 오류 모드는 실행이 끝나면 원래대로다."""
+        kernel = common._kernel32()
+        original = kernel.SetErrorMode(0)  # 읽으면서 0으로 둔다: 아래에서 자식이 0이 아니면 run_command가 켠 것이다
+        try:
+            result = self.run_python("import ctypes; print(ctypes.windll.kernel32.SetErrorMode(0))")
+            after = kernel.SetErrorMode(0)
+        finally:
+            kernel.SetErrorMode(original)
+        self.assertEqual(result["status"], "passed", result)
+        self.assertEqual(int(result["stdout"]) & common.ERROR_MODE, common.ERROR_MODE, result)
+        self.assertEqual(after, 0, "실행이 끝난 뒤 이 프로세스의 오류 모드가 되돌려지지 않았다")
+
+    def test_running_list_is_filled_after_the_job_is_attached(self):
+        """실행 목록(RUNNING)에는 작업에 넣은 뒤, 재개하기 전에 올린다. 끝나면 빠진다."""
+        seen = {}
+        real_job, real_resume = common._windows_job, common._resume
+
+        def job(process, *args):
+            seen["process"], seen["at_job"] = process, process in common.RUNNING
+            return real_job(process, *args)
+
+        def resume(pid):
+            seen["at_resume"] = seen["process"] in common.RUNNING
+            return real_resume(pid)
+
+        with mock.patch.object(common, "_windows_job", job), mock.patch.object(common, "_resume", resume):
+            result = self.run_python("print('ok')")
+        self.assertEqual(result["status"], "passed", result)
+        self.assertFalse(seen["at_job"], "작업에 넣기 전에 실행 목록에 올라 있다")
+        self.assertTrue(seen["at_resume"], "재개할 때 실행 목록에 없다")
+        self.assertNotIn(seen["process"], common.RUNNING)
+
     def test_without_job_it_still_runs_and_says_so(self):
         with mock.patch.object(common, "_windows_job", side_effect=OSError(5, "막힘")):
             result = self.run_python("print('ok')")
