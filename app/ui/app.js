@@ -1501,14 +1501,17 @@ const unrun = (r, eff) => { const n = r.cases.filter((c) => c.status === "skippe
 /** 정확성 테스트(공개 예시 + 숨은 테스트)와 효율성 테스트를 나눠 테스트마다 통과 여부와 걸린 시간을 보여 준다.
     숨은 테스트는 통과 여부만 보인다(서버가 입력·기대값을 싣지 않는다). 실행 오류일 때만 예외 이름과 줄 번호, 한 줄 풀이를 칩 아래에 적는다. */
 function testsHtml(r) {
+  const none = (c, what) => (c.status === "timeout" ? "제한 시간 안에 끝나지 않아 멈췄어요" : c.status === "skipped" ? "돌리지 않았어요" : `(아무것도 ${what} 않았어요)`); // 멈춘 케이스를 return을 빠뜨린 것처럼 말하지 않는다
   const chip = (c, label) => {
     const cls = c.status === "passed" ? "pass" : c.status === "skipped" ? "skip" : "fail";
     const time = c.status === "skipped" ? "" : `<span class="ms">${took(c.ms || 0)}${c.status === "timeout" ? " 넘음" : ""}</span>`; // 시간 초과는 제한을 넘은 것
     return `<span class="test ${cls}">${label}${c.kind === "example" ? " <em>예시</em>" : ""} <b>${esc(CASE_STATE[c.status] || c.status)}</b> ${time}</span>`;
   };
   const acc = r.cases.filter((c) => c.kind !== "efficiency"), eff = r.cases.filter((c) => c.kind === "efficiency");
+  const rank = (c) => (c.status === "passed" ? 2 : c.status === "skipped" ? 1 : 0);
+  const worstFirst = (list) => (r.ok ? list : [...list].sort((a, b) => rank(a[0]) - rank(b[0]))); // 틀린 제출은 실패한 테스트를 맨 위에(번호는 그대로, 같은 무리 안은 번호 순서)
   const pre = (label, text, bad) => `<div><span class="io-label">${label}</span><pre class="code${bad ? " bad" : ""}"><code>${esc(text)}</code></pre></div>`;
-  const io = (c, ok) => `<div class="io-case">${pre("입력", c.input || "(입력 없음)")}<div class="io-pair">${pre("기대 출력", c.expected)}${pre("내 출력", c.got || "(아무것도 출력하지 않았어요)", !ok)}</div>
+  const io = (c, ok) => `<div class="io-case">${pre("입력", c.input || "(입력 없음)")}<div class="io-pair">${pre("기대 출력", c.expected)}${pre("내 출력", c.got || none(c, "출력하지"), !ok)}</div>
     ${c.error ? `<p class="hint bad">${esc(errText(c))}${errHint(c)}</p>` : ""}</div>`; // 표준 입출력: 기대 출력과 내 출력을 나란히 두고 줄마다 견준다
   const detail = (c, n) => {
     const ok = c.status === "passed";
@@ -1516,7 +1519,7 @@ function testsHtml(r) {
     if (program()) return `<details class="case ${ok ? "pass" : "fail"}"${ok ? "" : " open"}>${head}${io(c, ok)}</details>`;
     return `<details class="case ${ok ? "pass" : "fail"}"${ok ? "" : " open"}>${head}
       <dl><dt>넣은 값</dt><dd>${esc(callText(c.input))}</dd><dt>기대한 결과</dt><dd>${esc(c.expected)}</dd>
-        <dt>내 코드의 결과</dt><dd${ok ? "" : ' class="bad"'}>${esc(c.got ? shownValue(c.got) : "(아무것도 돌려주지 않았어요)")}</dd>${c.error ? `<dt>오류</dt><dd class="bad">${esc(errText(c))}${errHint(c)}</dd>` : ""}</dl></details>`;
+        <dt>내 코드의 결과</dt><dd${ok ? "" : ' class="bad"'}>${esc(c.got ? shownValue(c.got) : none(c, "돌려주지"))}</dd>${c.error ? `<dt>오류</dt><dd class="bad">${esc(errText(c))}${errHint(c)}</dd>` : ""}</dl></details>`;
   };
   const score = r.score || { accuracy: [acc.filter((c) => c.status === "passed").length, acc.length], efficiency: [0, 0] };
   const hiddenErrors = (list, label) => { // 숨은 테스트의 오류 → 그 오류가 난 테스트 번호들(같은 오류는 한 줄로)
@@ -1525,13 +1528,13 @@ function testsHtml(r) {
     return [...errors].map(([line, { c, ns }]) => `<p class="hint bad">${label} ${ns.join(", ")} · ${esc(line)}${errHint(c)}</p>`).join("");
   };
   let html = `<h4 class="tests-title">${r.run ? "공개 예시" : "정확성 테스트"} <span>${score.accuracy[0]} / ${score.accuracy[1]}${unrun(r, false)}</span></h4>
-    ${acc.map((c, i) => [c, i + 1]).filter(([c]) => c.kind === "example").map(([c, n]) => detail(c, n)).join("")}
-    <div class="tests">${acc.map((c, i) => (c.kind === "example" ? "" : chip(c, `테스트 ${i + 1}`))).join("")}</div>
+    ${worstFirst(acc.map((c, i) => [c, i + 1]).filter(([c]) => c.kind === "example")).map(([c, n]) => detail(c, n)).join("")}
+    <div class="tests">${worstFirst(acc.map((c, i) => [c, i + 1]).filter(([c]) => c.kind !== "example")).map(([c, n]) => chip(c, `테스트 ${n}`)).join("")}</div>
     ${hiddenErrors(acc, "테스트")}`;
   if (eff.length) {
     html += `<h4 class="tests-title">효율성 테스트 <span>${score.efficiency[0]} / ${score.efficiency[1]}${unrun(r, true)}</span></h4>
       <p class="hint">아주 큰 입력에서 제한 시간 안에 끝나는지 봐요. 입력은 보여 주지 않아요.</p>
-      <div class="tests">${eff.map((c, i) => chip(c, `효율성 ${i + 1}`)).join("")}</div>${hiddenErrors(eff, "효율성")}`;
+      <div class="tests">${worstFirst(eff.map((c, i) => [c, i + 1])).map(([c, n]) => chip(c, `효율성 ${n}`)).join("")}</div>${hiddenErrors(eff, "효율성")}`;
   }
   return html;
 }
@@ -1555,7 +1558,7 @@ function ownHtml(r) {
   if (program()) { // 표준 입출력: 넣은 글과 출력 전체(오류로 멈췄으면 그때까지 쓴 것)
     const box = (text) => `<pre class="code"><code>${esc(text)}</code></pre>`;
     return `<h4 class="tests-title">직접 넣은 입력으로 실행 <span>${r.status === "ran" ? took(r.ms || 0) : esc(CASE_STATE[r.status])}</span></h4>
-      <dl class="own-run"><dt>입력</dt><dd>${box(r.input || "(입력 없음)")}</dd><dt>출력</dt><dd>${box(r.got || "(아무것도 출력하지 않았어요)")}</dd>
+      <dl class="own-run"><dt>입력</dt><dd>${box(r.input || "(입력 없음)")}</dd><dt>출력</dt><dd>${box(r.got || (r.status === "timeout" ? "제한 시간 안에 끝나지 않아 멈췄어요" : "(아무것도 출력하지 않았어요)"))}</dd>
         ${r.error ? `<dt>오류</dt><dd class="bad">${esc(errText(r))}${errHint(r)}</dd>` : ""}</dl>`;
   }
   const value = (v) => `<pre class="code"><code>${esc(v ? shownValue(v) : "(아무것도 돌려주지 않았어요)")}</code></pre>`;
