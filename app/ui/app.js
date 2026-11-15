@@ -1106,7 +1106,7 @@ function nextAction() {
   if (tutorWay(S.mode) || S.mode === "explain") {
     if (S.mode === "explain" ? !s.explain : !s[S.mode].length) return "start";
     if (S.mode === "guide" && ownWayOn()) return "compose"; // 끝까지 내 방식으로 쓰기: 블록마다 확인하지 않고 모아서 실행으로 확인한다
-    if (S.mode === "guide" && (s.guide.findLast((m) => m.role === "service") || {}).move === "write") return "check"; // 튜터의 마지막 말이 코드를 적으라는 것: 다음은 다시 보내기가 아니라 그 블록의 코드 확인
+    if (S.mode === "guide" && (s.guide.filter((m) => m.role === "service").pop() || {}).move === "write") return "check"; // 튜터의 마지막 말이 코드를 적으라는 것: 다음은 다시 보내기가 아니라 그 블록의 코드 확인
     if (tutorWay(S.mode) && !blocksReady()) return "talk";
     if (tutorWay(S.mode) && (S.codeTab === "blocks" || codeEmpty())) return "compose";
   }
