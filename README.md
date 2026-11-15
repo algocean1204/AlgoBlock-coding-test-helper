@@ -36,11 +36,11 @@ $\bf{\large{\color{#6580DD} AlgoBlock }}$
 
 ### 연결
 
-오른쪽 위 '연결'에서 Claude 키나 OpenAI 키를 넣거나 ChatGPT로 로그인합니다. 입력한 키는 이 기기에만 저장됩니다.
+오른쪽 위 '설정'의 'AI 연결'에서 Claude 키나 OpenAI 키를 넣거나 ChatGPT로 로그인합니다. 입력한 키는 이 기기에만 저장됩니다.
 
 <p align="center"><img src=".github/assets/connect.png" width="880" alt="AI 연결 창: Claude 키와 OpenAI 키 입력 칸, ChatGPT 요금제로 로그인하는 단추, 더 정하기"></p>
 
-연결 창입니다. 키 입력 칸과 ChatGPT 로그인 단추, 과정별 모델과 업데이트 설정으로 가는 '더 정하기'가 있습니다.
+설정의 'AI 연결' 화면입니다. 키 입력 칸과 ChatGPT 로그인 단추가 있고, 왼쪽 분류에서 모델과 비용, 풀이 환경, 화면, 업데이트로 옮겨 갑니다.
 
 ### 풀고 채점받기
 

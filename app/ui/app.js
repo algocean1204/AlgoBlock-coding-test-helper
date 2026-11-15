@@ -61,8 +61,8 @@ const LOOKS = [["cpp", /#include/], ["kotlin", /\bfun solution\b/], ["go", /\bfu
 const looksLike = (code) => (LOOKS.find(([, re]) => re.test(code)) || [null])[0];
 const ERR = {
   llm_timeout: "튜터 응답이 너무 오래 걸려 멈췄어요. 한 번 더 보내 주세요.",
-  llm_not_configured: "AI가 연결되어 있지 않아요. 오른쪽 위 ‘연결’에서 연결해 주세요.",
-  llm_failed: "튜터가 답을 만들지 못했어요. 잠시 뒤 다시 보내 주세요. 계속되면 ‘연결’에서 연결 상태를 확인해 주세요.",
+  llm_not_configured: "AI가 연결되어 있지 않아요. 오른쪽 위 ‘설정’의 ‘AI 연결’에서 연결해 주세요.",
+  llm_failed: "튜터가 답을 만들지 못했어요. 잠시 뒤 다시 보내 주세요. 계속되면 ‘설정’의 ‘AI 연결’에서 연결 상태를 확인해 주세요.",
   file_missing: "필요한 파일을 찾지 못했어요. 앱을 닫았다가 다시 열어 주세요.",
   invalid_output: "튜터의 답이 규칙에 맞지 않아 보여 주지 않았어요. 한 번 더 보내 주세요.",
   already_started: "이미 시작한 대화예요.",
@@ -280,13 +280,35 @@ const tutorBubble = (text) => `<div class="msg tutor"><span class="who">튜터</
 function show(view) {
   const moved = S.view && S.view !== view;
   S.view = view;
-  for (const name of ["list", "new", "code", "feedback", "report"]) $("view-" + name).hidden = name !== view;
+  for (const name of ["list", "new", "code", "feedback", "report", "settings"]) $("view-" + name).hidden = name !== view;
   const editing = location.hash.startsWith("#/edit/"); // 문제 수정은 등록 화면을 쓰지만 문제 목록에 속한다
-  for (const [id, on] of [["nav-list", editing || (view !== "new" && view !== "report")], ["nav-report", view === "report"], ["nav-new", view === "new" && !editing]]) on ? $(id).setAttribute("aria-current", "page") : $(id).removeAttribute("aria-current");
+  for (const [id, on] of [["nav-list", editing || (view !== "new" && view !== "report" && view !== "settings")], ["nav-report", view === "report"], ["nav-new", view === "new" && !editing]]) on ? $(id).setAttribute("aria-current", "page") : $(id).removeAttribute("aria-current");
   $("main").scrollTop = 0;
+  if (view !== "settings") $("settings-link").removeAttribute("aria-current");
   if (moved) { say(carried); carried = ""; } // 앞 화면의 상태 문구를 남기지 않는다
   if (view !== "code") document.title = "AlgoBlock";
-  if (moved) $({ list: "list-title", new: "new-title-h", code: "p-title", feedback: "fb-title", report: "report-title" }[view]).focus();
+  if (moved) $({ list: "list-title", new: "new-title-h", code: "p-title", feedback: "fb-title", report: "report-title", settings: "set-title" }[view]).focus();
+}
+
+let lastHash = "";
+const SET_PARTS = ["ai", "models", "solve", "look", "update"];
+/** 설정: 분류마다 한 칸(#/settings/<분류>). 예전 연결 창의 칸을 그대로 옮겼다. 분류를 바꾸면 초점이 그 분류의 제목으로 간다. */
+function showSettings(part, from) {
+  const was = S.view === "settings";
+  if (!SET_PARTS.includes(part)) part = "ai";
+  if (!was) S.setFrom = from && from.startsWith("#/p/") ? from : ""; // 문제를 풀다 왔으면 돌아갈 길
+  show("settings");
+  document.title = "설정 · AlgoBlock";
+  for (const k of SET_PARTS) {
+    $("set-" + k).hidden = k !== part;
+    k === part ? $("set-nav-" + k).setAttribute("aria-current", "page") : $("set-nav-" + k).removeAttribute("aria-current");
+  }
+  $("settings-link").setAttribute("aria-current", "page");
+  $("set-back").hidden = !S.setFrom;
+  if (S.setFrom) $("set-back").href = S.setFrom;
+  if (!was) { $("conn-note").textContent = $("tools-note").textContent = ""; accounts(); loadTools(false); }
+  else $("set-h-" + part).focus();
+  if (part === "models" && ACCOUNTS) renderModels();
 }
 
 function route() {
@@ -297,6 +319,9 @@ function route() {
   $("reset").hidden = $("p-edit").hidden = $("p-delete").hidden = false;
   if ($("asset").open) closeAsset();
   const [a, b, c] = location.hash.replace(/^#\/?/, "").split("/");
+  const from = lastHash; lastHash = location.hash;
+  if (S.view === "settings" && a !== "settings") setKeyShown(false); // 화면을 떠나면 입력한 키는 다시 가린다
+  if (a === "settings") return showSettings(b, from);
   if (a === "p" && b) return c === "feedback" ? showFeedback(b) : showCode(b);
   if (a === "new") return showNew();
   if (a === "edit" && b) return showEdit(b);
@@ -2352,21 +2377,14 @@ async function setTheme(theme, tier, effort) {
   $("models-note").textContent = r.ok ? `저장했어요. ${row.label}: ${now.model_label}, 추론 ${EFFORT[now.effort]}` : errorNote(r.error).text;
 }
 
-function openModels() {
-  const box = $("models");
-  renderModels();
-  if (!box.open) box.showModal ? box.showModal() : box.setAttribute("open", "");
-  $("models-title").focus();
-}
 function renderAccounts(a) {
   const provider = a.keys.claude ? "Claude API 키" : a.chatgpt ? "ChatGPT 로그인" : a.keys.openai ? "OpenAI API 키" : "";
   const ready = a.client === "cli" || !!provider;
   CONN = { ready, name: a.client === "cli" ? "이 PC의 Claude Code" : provider };
   ACCOUNTS = a;
   if (!paneTimer && !paneDrag) paneSet(a.panes || null, false); // 저장한 칸 너비를 첫 그림 전에(accounts를 기다린 뒤에 route()를 부른다)
-  $("themes-now").textContent = a.themes.map((t) => `${t.label} ${t.model_label}`).join(" · ");
-  if ($("models").open) renderModels();
-  $("conn-now").textContent = keyBad ? "키 확인 필요" : a.client === "cli" ? "이 PC의 Claude Code" : provider || "연결 안 됨";
+  if (S.view === "settings") renderModels();
+  $("conn-now").textContent = keyBad ? "키 확인 필요" : a.client === "cli" ? "이 PC의 Claude Code" : provider || "AI 연결 안 됨";
   $("conn-dot").classList.toggle("off", !ready);
   $("conn-state").textContent = keyBad ? "넣은 키가 맞지 않아요. 키를 다시 넣어 주세요." : ready ? `지금 연결: ${CONN.name}` : "아직 연결하지 않았어요. 키를 넣으면 튜터를 쓸 수 있어요.";
   $("key-save").classList.toggle("primary", !ready || keyBad);
@@ -2537,7 +2555,7 @@ async function deleteKey() {
   if (r.ok) { KEYUI[name] = null; renderKeyStatus(); }
   renderKeyDelete();
   if (r.ok && ACCOUNTS.keys[name]) $("conn-note").textContent = `${KEY_LABEL[name]} 키를 지웠어요. 그래도 .env나 환경 변수에 키가 있어 계속 연결돼 있어요.`;
-  $("conn-toggle").focus();
+  $("key-value").focus();
 }
 
 async function accounts(path, body, done) {
@@ -2557,7 +2575,7 @@ const TOUR = [
   ["결과 바로 아래에 다음 할 일", "제출하면 결과 아래에 할 일이 하나 나와요. 틀리면 ‘틀린 곳 같이 찾기’나 ‘풀이 힌트 보기’, 통과하면 ‘다음 문제’예요. 통과한 문제는 실전 신호가 열려 비슷한 문제를 알아보는 눈을 길러요."],
   ["내 문제 넣기는 세 걸음", "글을 붙여 넣거나 사진·PDF를 넣고(1 글 넣기), 읽은 글과 자동으로 채운 예시를 확인한 뒤(2 확인하기), 등록해요(3 등록). 등록한 문제도 같은 방식으로 채점해요."],
   ["학습 보고서로 약한 곳을 찾아요", "제출 기록에서 강한 주제와 더 공부할 주제, 자주 하는 실수를 모아 보여 주고, 더 공부할 문제를 바로 열어 줘요."],
-  ["AI 연결은 선택이에요", "튜터는 언어 모델로 움직여요. 쓰려면 오른쪽 위 ‘연결’에서 Claude나 OpenAI 키를 넣거나 ChatGPT로 로그인해요. 키는 이 기기에만 저장해요."],
+  ["AI 연결은 선택이에요", "튜터는 언어 모델로 움직여요. 쓰려면 오른쪽 위 ‘설정’의 ‘AI 연결’에서 Claude나 OpenAI 키를 넣거나 ChatGPT로 로그인해요. 키는 이 기기에만 저장해요."],
 ];
 let tourAt = 0;
 let tourDemos = null; // 데모 묶음을 불러오는 약속(한 번만 부른다). 실패하면 null로 풀린다
@@ -2653,6 +2671,7 @@ function renderUpdate(u) {
   const top = $("upd-open");
   top.hidden = !(v && (busy || u.state === "ready" || v !== u.skip)); // 건너뛴 버전은 막대에 띄우지 않는다('지금 확인'으로는 연다)
   top.textContent = u.state === "downloading" ? `업데이트 받는 중 ${u.progress}%` : u.state === "ready" && u.can_install ? "다시 시작해 업데이트" : busy ? "업데이트하는 중" : `새 버전 ${v} · 업데이트`;
+  $("set-ver").textContent = `지금 버전 ${u.current}`;
   $("upd-now").textContent = `지금 버전 ${u.current}` + (v ? ` · 새 버전이 나왔어요(${v})` : u.state === "latest" ? " · 최신 버전이에요" : "");
   $("upd-auto").checked = u.auto;
   $("upd-title").textContent = v ? `새 버전 ${v}` : "업데이트";
@@ -2682,13 +2701,8 @@ function openUpdate() {
 }
 const closeUpdate = () => { $("upd").close ? $("upd").close() : $("upd").removeAttribute("open"); };
 
-function toggleConn(open) {
-  $("conn-panel").hidden = !open;
-  document.body.classList.toggle("conn-open", open); // 연결 창이 떠 있는 동안 주 동작은 창 안의 것 하나
-  $("conn-toggle").setAttribute("aria-expanded", open ? "true" : "false");
-  if (!open) setKeyShown(false); // 창을 닫으면 입력한 키는 다시 가린다
-  if (open) { $("conn-note").textContent = $("tools-note").textContent = ""; accounts(); loadTools(false); $("conn-close").focus(); } else $("conn-toggle").focus();
-}
+/** 설정의 AI 연결로 간다(연결하기 단추, 마지막 안내 장). */
+const openConn = () => { location.hash = "#/settings/ai"; };
 
 async function chatgptLogin() {
   const r = await api("/api/chatgpt/login");
@@ -2698,7 +2712,7 @@ async function chatgptLogin() {
   $("conn-note").textContent = "‘브라우저에서 로그인 열기’를 눌러 로그인하고 허락하면 여기에 연결됨으로 바뀌어요.";
   clearInterval(loginPoll);
   let left = 100; // 로그인 창구는 5분 열려 있다
-  loginPoll = setInterval(() => { if (--left < 0 || $("conn-panel").hidden) clearInterval(loginPoll); else accounts(); }, 3000);
+  loginPoll = setInterval(() => { if (--left < 0 || S.view !== "settings") clearInterval(loginPoll); else accounts(); }, 3000);
 }
 
 /* ── 글상자: Tab 들여쓰기, Enter 때 들여쓰기 잇기 ── */
@@ -3000,25 +3014,24 @@ document.addEventListener("click", (e) => {
     "edit-yes": () => registerProblem(true), "edit-no": () => { $("edit-confirm").hidden = true; $("new-submit").focus(); },
     "new-next": nextStep, "new-back": () => (history.state && history.state.wstep > 1 ? history.back() : setStep(WSTEP - 1)),
     "tools-refresh": async () => { const r = await loadTools(true); $("tools-note").textContent = r.ok ? "언어 도구를 다시 확인했어요." : errorNote(r.error).text; }, // 창 아래로 밀리지 않게 단추 옆에
-    "conn-toggle": () => toggleConn($("conn-panel").hidden), "conn-close": () => toggleConn(false), "note-conn": () => toggleConn(true),
+    "note-conn": openConn,
     "chatgpt-login": chatgptLogin,
     "upd-open": openUpdate, "upd-close": closeUpdate, "upd-get": () => updAct("download"), "upd-reveal": () => updAct("reveal"),
-    "upd-skip": async () => { const r = await updAct("skip"); if (r.ok) { closeUpdate(); say(`이 버전(${UPD.latest.version})은 건너뛰어요. ‘연결’ → ‘더 정하기’ → ‘지금 확인’에서 다시 볼 수 있어요.`); } },
+    "upd-skip": async () => { const r = await updAct("skip"); if (r.ok) { closeUpdate(); say(`이 버전(${UPD.latest.version})은 건너뛰어요. ‘설정’ → ‘업데이트’ → ‘지금 확인’에서 다시 볼 수 있어요.`); } },
     "upd-install": () => { flushSaves(); return updAct("install"); }, // 쓰던 코드를 먼저 저장한다(앱은 잠시 뒤에 끝난다)
     "upd-check": async () => {
       $("upd-note").textContent = "확인하는 중…";
       const r = await updAct("check");
       if (!r.ok) return void ($("upd-note").textContent = errorNote(r.error).text);
       $("upd-note").textContent = r.data.latest ? "" : r.data.state === "latest" ? "최신 버전이에요." : r.data.message;
-      if (r.data.latest) { toggleConn(false); openUpdate(); }
+      if (r.data.latest) openUpdate();
     },
     "key-reveal": () => { setKeyShown($("key-value").type === "password"); $("key-value").focus(); },
     "key-save": () => saveKey(false), "key-retry": () => saveKey(false), "key-force": () => saveKey(true),
     "key-recheck-claude": () => recheckKey("claude"), "key-recheck-openai": () => recheckKey("openai"),
     "key-del-claude": () => askKeyDelete("claude"), "key-del-openai": () => askKeyDelete("openai"),
     "key-delete-no": () => { const name = keyDeleting; keyDeleting = null; renderKeyDelete(); const back = name && $(`key-del-${name}`); if (back) back.focus(); }, "key-delete-yes": deleteKey,
-    "models-open": () => { toggleConn(false); openModels(); }, "models-close": () => { $("models").close ? $("models").close() : $("models").removeAttribute("open"); $("conn-toggle").focus(); },
-    "tour-open": openTour, "tour-skip": () => { const last = tourAt === TOUR.length - 1; closeTour(); if (last && !CONN.ready) toggleConn(true); }, "tour-prev": () => tourStep(-1), "tour-next": () => tourStep(1),
+        "tour-open": openTour, "tour-skip": () => { const last = tourAt === TOUR.length - 1; closeTour(); if (last && !CONN.ready) openConn(); }, "tour-prev": () => tourStep(-1), "tour-next": () => tourStep(1),
     "drop": () => $("new-files").click(), "read-files": readFiles, "asset-close": closeAsset,
     "case-add": () => { addCaseRow(); $("case-rows").lastElementChild.querySelector("input").focus(); },
     "mode-switch": async () => {
@@ -3079,7 +3092,6 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "Escape" && paneDrag) return paneEnd(e, true); // 끌던 것은 처음 너비로
   if (el.classList && el.classList.contains("sep") && paneKey(e)) return;
   if (e.key === "Escape" && $("more").open) { $("more").open = false; return $("more").querySelector("summary").focus(); }
-  if (e.key === "Escape" && !$("conn-panel").hidden && !el.matches("textarea")) return toggleConn(false);
   if (el.getAttribute && el.getAttribute("role") === "tab" && (e.key === "ArrowRight" || e.key === "ArrowLeft")) {
     const tabs = [...el.parentElement.querySelectorAll("[role=tab]")];
     const next = tabs[(tabs.indexOf(el) + (e.key === "ArrowRight" ? 1 : tabs.length - 1)) % tabs.length];

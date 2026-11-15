@@ -2050,6 +2050,24 @@ def tour_pictures() -> None:
     assert ".mini-head::before" in css and "padding: 28px 56px 0" in css  # 정적 그림의 틀이 움직이는 데모의 창과 같다
 
 
+def settings_screen() -> None:
+    """설정은 따로 된 화면(#/settings/<분류>)이다: 예전 연결 창의 칸이 id 그대로 분류 안으로 옮겨졌고, 창과 과정별 모델 대화상자는 없다. 분류는 링크라서 뒤로 가기·키보드가 된다."""
+    import re
+    html, js = (HERE / "index.html").read_text(encoding="utf-8"), (HERE / "app.js").read_text(encoding="utf-8")
+    assert 'id="conn-panel"' not in html and 'id="models"' not in html and "toggleConn" not in js and "openModels" not in js
+    view = html[html.index('id="view-settings"'):html.index('id="view-feedback"')]
+    parts = re.findall(r'<section id="set-(\w+)" class="set-part"', view)
+    assert parts == ["ai", "models", "solve", "look", "update"] and re.findall(r'<a href="#/settings/(\w+)"', view) == parts
+    moved = {"ai": ["conn-state", "key-rows", "key-value", "key-save", "key-status", "key-delete-confirm", "chatgpt-login", "chatgpt-state", "conn-note"],
+             "models": ["models-body", "models-note"], "solve": ["tools-list", "tools-refresh"], "look": ["scheme-kinds"], "update": ["upd-now", "upd-auto", "upd-check", "upd-note"]}
+    for part, ids in moved.items():
+        block = view[view.index(f'id="set-{part}"'):]
+        block = block[:block.index("</section>")] if part != "ai" else block[:block.index('id="set-models"')]
+        assert all(f'id="{one}"' in block for one in ids), (part, [one for one in ids if f'id="{one}"' not in block])
+    assert 'id="settings-link"' in html and 'href="#/settings/ai"' in html and "‘설정’의 ‘AI 연결’" in js
+    assert 'a === "settings"' in js and "setKeyShown(false)" in js[js.index("function route()"):js.index("function render()")]  # 화면을 떠나면 키를 가린다
+
+
 def new_draft() -> None:
     """내 문제 넣기: 걸음마다 기록을 쌓아 뒤로 가기가 앞 걸음으로 가고, 적던 글은 이 탭의 sessionStorage에만 둔다(서버나 localStorage로 나가지 않는다). 브라우저 동작은 화면 확인으로 본다."""
     js = (HERE / "app.js").read_text(encoding="utf-8")
@@ -2540,6 +2558,7 @@ def main() -> None:
         case_shapes()
         table()
         tour_pictures()
+        settings_screen()
         new_draft()
         hidden_cases()
         hint_by_block()
