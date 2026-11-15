@@ -1329,6 +1329,20 @@ def program_tutor() -> None:
             assert [c["task"] for c in fake.calls] == ["plan.solve", "plan.brute", "plan.draft_blocks"], [c["task"] for c in fake.calls]
 
 
+def guessed_level() -> None:
+    """단계를 고르지 않은 등록 문제는 분석이 어림한 단계를 level_by가 analysis로 싣는다(화면은 수정 칸에 이것을 넣지 않는다). 고른 단계는 user. 어림한 채 고쳐 저장해도 어림으로 남는다."""
+    pid = server.register(GOOD)["id"]
+    with server.tutor() as t:
+        t.adopt(pid, {**FIRST["ready"], "fact": {**FIRST["ready"]["fact"], "level": 2}})  # 분석이 어림한 단계
+    state = call("/api/state", id=pid)[1]["problem"]
+    assert state["level"] == 2 and state["level_by"] == "analysis", (state["level"], state["level_by"])
+    call("/api/problems/edit", id=pid, title="두 수의 합", text=GOOD["text"], cases=GOOD["cases"][:1] + GOOD["cases"][2:], level=0)  # 수정 칸이 비어 있으면 0을 보낸다
+    assert call("/api/state", id=pid)[1]["problem"]["level_by"] == "analysis"
+    call("/api/problems/edit", id=pid, title="두 수의 합", text=GOOD["text"], cases=GOOD["cases"][:1] + GOOD["cases"][2:], level=4)
+    state = call("/api/state", id=pid)[1]["problem"]
+    assert (state["level"], state["level_by"]) == (4, "user"), state
+
+
 def own_guide() -> None:
     """등록한 문제도 엔진이 만들어 둔 풀이 가이드가 있으면 통과 뒤 해설과 실전 신호(가이드의 단서)를 본다. 잠금은 기본 문제와 같다."""
     pid = server.register(GOOD)["id"]
@@ -2038,6 +2052,7 @@ def main() -> None:
         stale_save()
         builtin_prepare()
         own_guide()
+        guessed_level()
         kept_languages()
         edit_changes()
         explicit_mode()
