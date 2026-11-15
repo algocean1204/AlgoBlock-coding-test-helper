@@ -23,6 +23,8 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import updater  # noqa: E402
 
+updater.VERSION = "0.1.0"  # 시험은 지금 앱을 0.1.0으로, 새 릴리스를 0.1.1로 둔다(실제 버전을 올려도 시험이 그대로 맞게)
+
 BASE = updater.DOWNLOADS + "v0.1.1/"
 DMG = "AlgoBlock-macos-arm64.dmg"
 

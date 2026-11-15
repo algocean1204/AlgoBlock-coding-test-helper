@@ -301,12 +301,12 @@ def beside(app: Path, tag: str) -> Path:
     return app.with_name(f".{app.name}.{tag}")
 
 
-def pick(release, current: str = VERSION, name: str | None = None) -> dict | None:
+def pick(release, current: str | None = None, name: str | None = None) -> dict | None:
     """최신 릴리스 응답에서 지금보다 새 버전이면 {version, notes, asset, sums}. 초안·미리 보기·옛 버전·모르는 태그는 None.
     asset은 이 기기의 파일(없으면 None), sums는 SHA256SUMS 파일 주소(없으면 None)."""
     if not isinstance(release, dict) or release.get("draft") or release.get("prerelease"):
         return None
-    version, now = parse(release.get("tag_name")), parse(current)
+    version, now = parse(release.get("tag_name")), parse(current or VERSION)  # 기본은 부를 때의 VERSION
     if version is None or now is None or version <= now:
         return None
     files = {raw.get("name"): raw for raw in release.get("assets") or [] if isinstance(raw, dict)
