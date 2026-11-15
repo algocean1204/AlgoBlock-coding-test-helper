@@ -1153,6 +1153,11 @@ def table() -> None:
     assert found(text="입출력 예\nnumbers\tk\tresult\n[1, 2, 3]\t2\t5\n[4, 5]\t1\t4\n입출력 예 설명\n...") == want  # 화면에서 복사한 표
     assert found(text="numbers   k   return\n[1, 2, 3]   2   5\n[4, 5]  1  4") == want  # 둘 이상의 공백
     assert found(text="입출력 예\nnumbers k result\n[1, 2, 3] 2 5\n[4,5] 1 4\n입출력 예 설명\n입출력 예 #1") == want  # PDF에서 읽은 글: 칸이 공백 하나로 접힌 표
+    bar = "days | limit | result\n[2, 3] | 6 | 5\n[4, 5] | 1 | 4\n\n설명"  # 구분선 없이 |로만 나눈 표: 줄마다 칸 수가 같을 때만
+    assert found(text=bar)["cases"] == [{"input": "[[2, 3], 6]", "expected": "5"}, {"input": "[[4, 5], 1]", "expected": "4"}] and found(text=bar)["names"] == ["days", "limit"]
+    assert len(found(text="days | limit | result\n[2, 3] | 6 | 5\n[4, 5] | 1 | 4 | 9\n[7] | 2 | 3")["cases"]) == 1  # 칸 수가 다른 줄에서 끝난다
+    for text in ("a | b | result\nx | y | z", "비트 연산: a | b 는 둘 중 하나라도 1이면 1입니다.\nresult = a | b", "x | y | result\na | b | c\n1 | 2 | 3"):  # 비트 연산이나 설명 글의 |
+        assert found(text=text)["cases"] == [], text
     assert found(text="s flag answer\n'a b' True None\n['a', 'b'] False [1, 2]\n1,000 1 2") == {
         "names": ["s", "flag"], "cases": [{"input": '["a b", true]', "expected": "null"}, {"input": '[["a", "b"], false]', "expected": "[1, 2]"}], "skipped": 0,
         "missed": ["1,000 1 2"]}  # 파이썬식 값, 읽지 못하는 줄에서 끝난다. 예시처럼 생긴 그 줄은 알린다
@@ -2006,6 +2011,25 @@ def color_tokens() -> None:
     assert html.count('name="theme-color"') == 1 and 'data-scheme-pref="system"' in html
 
 
+def tour_pictures() -> None:
+    """사용법 안내: 그림이 글과 같은 상태를 보인다. 보고서 장은 빈 상태 없이 강점·더 공부가 함께 보이고, 연결 장은 지금 연결을 따르며, 장을 넘기면 첫 내용이 바로 보인다."""
+    js, css = (HERE / "app.js").read_text(encoding="utf-8"), (HERE / "app.css").read_text(encoding="utf-8")
+    bundle = (HERE / "tour-demos.js").read_text(encoding="utf-8")
+    assert "아직 약한 주제로 보이는 곳이 없어요" not in bundle and "더 공부할 주제" in bundle  # 보고서 그림
+    assert "demos.show($(\"tour-live\"), tourAt, { conn })" in js and "Claude API 키" not in bundle  # 연결 그림은 지금 연결을 넘겨 받는다(고정 문구 없음)
+    assert ".tour-scene .a1 { animation: tour-in 0.35s var(--ease) both; }" in css  # 첫 내용은 기다리지 않고 나온다
+    assert ".mini-head::before" in css and "padding: 28px 56px 0" in css  # 정적 그림의 틀이 움직이는 데모의 창과 같다
+
+
+def new_draft() -> None:
+    """내 문제 넣기: 걸음마다 기록을 쌓아 뒤로 가기가 앞 걸음으로 가고, 적던 글은 이 탭의 sessionStorage에만 둔다(서버나 localStorage로 나가지 않는다). 브라우저 동작은 화면 확인으로 본다."""
+    js = (HERE / "app.js").read_text(encoding="utf-8")
+    assert "history.pushState({ wstep: n }" in js and 'addEventListener("popstate"' in js
+    keep = js[js.index("function saveDraft()"):js.index("function restoreDraft()")]
+    assert "sessionStorage.setItem(DRAFT" in keep and "localStorage" not in keep and "api(" not in keep and "fetch(" not in keep
+    assert js.count("sessionStorage.removeItem(DRAFT)") >= 2 and "restoreDraft();" in js  # 비우면 지우고, 처음 열 때 되살린다
+
+
 def pane_widths() -> None:
     """칸 너비: /api/prefs로 세 칸의 몫을 적고, 어긋난 값은 거절한다. 없으면(null) 기본 배치. 다른 설정은 지우지 않는다."""
     import re
@@ -2486,6 +2510,8 @@ def main() -> None:
         own_starter()
         case_shapes()
         table()
+        tour_pictures()
+        new_draft()
         hidden_cases()
         assert not fake.calls, fake.calls  # 고치기·지우기도 모델을 부르지 않는다
         checks()

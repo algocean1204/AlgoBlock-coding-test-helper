@@ -48,7 +48,7 @@
 <a class="skip" href="#main">본문으로 건너뛰기</a>
 
 <header class="top">
-  <strong class="brand"><img class="brand-ico" src="favicon.svg" alt="" width="22" height="22">AlgoBlock</strong>
+  <a class="brand" href="#/list" aria-label="AlgoBlock 홈(문제 목록)"><img class="brand-ico" src="favicon.svg" alt="" width="22" height="22">AlgoBlock</a>
   <nav class="nav" aria-label="화면 이동">
     <a href="#/list" id="nav-list">문제 목록</a>
     <a href="#/new" id="nav-new">내 문제 넣기</a>
@@ -253,7 +253,7 @@
     <div class="problem-bar">
       <div class="problem-id">
         <h1 id="p-title" tabindex="-1"></h1>
-        <span id="p-badges" class="badges"></span>
+        <span id="p-badges" class="badges" tabindex="-1"></span>
         <span id="p-lang" class="tag"></span>
         <select id="p-lang-select" class="select" aria-label="풀이 언어" hidden></select>
         <span id="lang-confirm" class="confirm" hidden>
@@ -323,9 +323,14 @@
           <p id="line-note" class="line-note" hidden></p>
           <p id="starter-note" class="line-note" hidden>케이스 값의 모양을 알아보지 못해 시작 코드를 만들지 못했어요. solution 함수를 직접 만들어 풀이를 담아 주세요.</p>
           <div class="editor" id="editor">
-            <div class="gutter" id="gutter" aria-hidden="true"></div>
-            <div class="line-mark" id="line-mark" hidden></div>
-            <textarea id="code" aria-label="내 코드" aria-describedby="code-help" spellcheck="false" autocapitalize="off" autocomplete="off" wrap="off" data-send="submit" placeholder="여기에 전체 코드를 써요. 풀이는 solution 함수에 담아요."></textarea>
+            <div class="code-scroll" id="code-scroll">
+              <div class="gutter" id="gutter" aria-hidden="true"></div>
+              <div class="code-stack">
+                <div class="line-mark" id="line-mark" hidden></div>
+                <pre class="hl" id="code-hl" aria-hidden="true"></pre>
+                <textarea id="code" aria-label="내 코드" aria-describedby="code-help" spellcheck="false" autocapitalize="off" autocomplete="off" wrap="off" data-send="submit" placeholder="여기에 전체 코드를 써요. 풀이는 solution 함수에 담아요."></textarea>
+              </div>
+            </div>
           </div>
           <p id="code-help" class="sr-only">Tab은 들여쓰기예요. 다음 칸으로 가려면 Esc를 누른 뒤 Tab을 누르세요. Ctrl+Enter 또는 Cmd+Enter로 제출해요.</p>
         </div>
@@ -342,6 +347,7 @@
             <summary>내 입력으로 실행</summary>
             <div class="run-own-row">
               <textarea id="run-input" rows="2" aria-label="직접 넣을 값" spellcheck="false" autocapitalize="off" autocomplete="off" data-send="run-own-go"></textarea>
+              <button type="button" id="run-fill" class="btn quiet small" hidden>예시 입력 넣기</button>
               <button type="button" id="run-own-go" class="btn small" data-model>이 값으로 실행</button>
             </div>
           </details>
@@ -574,6 +580,7 @@
   <div id="asset-body" class="models-body asset-body"></div>
 </dialog>
 
+<script src="highlight.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
