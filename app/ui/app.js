@@ -533,6 +533,51 @@ function syncForm() {
   const draft = !!($("new-title").value.trim() || $("new-text").value.trim() || $("new-theme").value || FILES.length || rows.some((x) => x.input.trim() || x.expected.trim()));
   $("new-clear").hidden = !!EDIT || !draft || !$("new-clear-confirm").hidden;
   if (!draft) $("new-clear-confirm").hidden = true;
+  saveDraft();
+}
+
+/* 적던 글(#115): 새로고침해도 남게 이 탭의 sessionStorage에 둔다. 개인 문제 글이 이 기기 밖(서버 포함)으로 나가지 않고, 탭을 닫으면 사라진다.
+   파일 목록은 남기지 않는다(글로 읽어 온 것만 남는다). 등록하거나 비우면 지운다(emptyForm). 수정 화면은 남기지 않는다 */
+const DRAFT = "algoblock.draft";
+let restoring = false, draftTried = false;
+function saveDraft() {
+  if (EDIT || restoring || S.view !== "new") return;
+  try {
+    const cases = formCases();
+    if (!$("new-title").value.trim() && !$("new-text").value.trim() && !$("new-theme").value && !cases.some((x) => x.input.trim() || x.expected.trim())) return sessionStorage.removeItem(DRAFT);
+    sessionStorage.setItem(DRAFT, JSON.stringify({ title: $("new-title").value, text: $("new-text").value, theme: $("new-theme").value, level: $("new-level").value, lang: $("new-lang").value,
+      mode: $("new-mode").value, cases, float: $("new-float").checked, many: $("new-many").checked, typed: $("case-names").value, names: NAMES, autoTitle, step: WSTEP }));
+  } catch (e) { /* 저장하지 못해도 화면은 그대로 */ }
+}
+function restoreDraft() {
+  let d = null;
+  try { d = JSON.parse(sessionStorage.getItem(DRAFT)); } catch (e) { /* 깨진 보관은 없는 것으로 */ }
+  if (!d || typeof d !== "object" || !Array.isArray(d.cases)) return;
+  restoring = true;
+  try {
+    $("new-title").value = d.title || "";
+    $("new-text").value = d.text || "";
+    $("new-theme").value = d.theme || "";
+    $("new-level").value = d.level || "";
+    if (d.lang) $("new-lang").value = d.lang;
+    $("new-mode").value = d.mode === "program" ? "program" : "function";
+    $("new-float").checked = !!d.float;
+    $("new-many").checked = !!d.many;
+    $("case-names").value = d.typed || "";
+    autoTitle = d.autoTitle || "";
+    $("case-rows").innerHTML = "";
+    for (const x of d.cases.length ? d.cases : [{ input: "", expected: "" }]) {
+      addCaseRow();
+      const [a, b, h] = caseCells($("case-rows").lastElementChild);
+      a.value = x.input || "";
+      b.value = x.expected || "";
+      h.checked = !!x.hidden;
+      showCall(a);
+    }
+    caseHelp();
+    NAMES = Array.isArray(d.names) ? d.names : null;
+    WSTEP = [1, 2, 3].includes(d.step) && d.text ? d.step : 1;
+  } finally { restoring = false; }
 }
 
 async function fillCases(sure, quiet) {
@@ -588,6 +633,7 @@ function emptyForm() {
   $("new-lang")._filled = false;
   resetCases();
   setFiles([]);
+  try { sessionStorage.removeItem(DRAFT); } catch (e) { /* 없어도 된다 */ }
 }
 
 /* 같은 화면을 문항 수정에도 쓴다(#/edit/<id>). EDIT: 고치는 문항 {id, text, cases}(바뀌었는지 볼 원래 값) */
@@ -636,6 +682,7 @@ function setStep(n, focus = true) {
   $("new-submit").hidden = n !== 3;
   $("edit-confirm").hidden = true;
   clearError();
+  saveDraft();
   if (n === 3) renderSummary();
   if (focus) $("wstep-title").focus();
 }
@@ -647,11 +694,17 @@ async function nextStep() {
     if (!$("new-text").value.trim()) return newError("문제 글을 붙여 넣거나 파일을 넣어 주세요.", false, "new-text");
     if (!$("new-title").value.trim()) $("new-title").value = autoTitle = titleOf($("new-text").value);
     if (!formCases().some((x) => x.input.trim() || x.expected.trim())) await fillCases(true, true); // 비어 있을 때만 입출력 예에서 채운다
-    return setStep(2);
+    return forward(2);
   }
   if (!$("new-title").value.trim()) return newError("제목을 적어 주세요.", false, "new-title");
   if (!formCases().some((x) => x.input.trim() && x.expected.trim())) return newError("테스트 케이스를 하나 이상 적어 주세요." + ($("case-fill").hidden ? "" : " 글에 입출력 예 표가 있으면 ‘입출력 예에서 채우기’를 눌러요."), false, "case-input-1");
-  setStep(3);
+  forward(3);
+}
+
+/** 앞 걸음으로 간다. 걸음마다 기록을 하나 쌓아 브라우저의 뒤로 가기가 앞 걸음으로 가게 한다(popstate가 걸음을 맞춘다). */
+function forward(n) {
+  setStep(n);
+  history.pushState({ wstep: n }, "");
 }
 
 /** 수정에서 글(공백 차이는 빼고)이나 케이스를 바꿨다: 서버가 풀이를 다시 준비할 수 있다(edit). */
@@ -817,6 +870,7 @@ function showNew() {
   }
   formMode(false);
   fillLangs();
+  if (!draftTried) { draftTried = true; restoreDraft(); } // 새로고침 뒤 처음 열 때만 적던 글을 되살린다
   syncForm();
   findTable();
   setStep(WSTEP, false);
@@ -2838,7 +2892,7 @@ document.addEventListener("click", (e) => {
       location.hash = "#/list";
     },
     "edit-yes": () => registerProblem(true), "edit-no": () => { $("edit-confirm").hidden = true; $("new-submit").focus(); },
-    "new-next": nextStep, "new-back": () => setStep(WSTEP - 1),
+    "new-next": nextStep, "new-back": () => (history.state && history.state.wstep > 1 ? history.back() : setStep(WSTEP - 1)),
     "tools-refresh": async () => { const r = await loadTools(true); $("tools-note").textContent = r.ok ? "언어 도구를 다시 확인했어요." : errorNote(r.error).text; }, // 창 아래로 밀리지 않게 단추 옆에
     "conn-toggle": () => toggleConn($("conn-panel").hidden), "conn-close": () => toggleConn(false), "note-conn": () => toggleConn(true),
     "chatgpt-login": chatgptLogin,
@@ -2937,6 +2991,12 @@ document.addEventListener("click", (e) => {
   if ($("more").open && !e.target.closest("#more")) $("more").open = false;
 });
 window.addEventListener("hashchange", route);
+window.addEventListener("popstate", () => { // 등록 화면의 뒤로·앞으로 가기: 기록에 적힌 걸음으로(글이 없으면 1걸음)
+  if (S.view !== "new" || !/^#\/(new|edit\/)/.test(location.hash)) return; // 다른 화면으로 가는 길이면 걸음을 건드리지 않는다
+  let n = (history.state && history.state.wstep) || (EDIT ? 2 : 1);
+  if (n > 1 && !EDIT && !$("new-text").value.trim()) n = 1;
+  if (n !== WSTEP) setStep(n, false);
+});
 window.addEventListener("pagehide", () => { leaving = true; flushSaves(); if (paneTimer) paneSave(); });
 window.addEventListener("pageshow", () => { leaving = false; });
 

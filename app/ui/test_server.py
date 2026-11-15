@@ -2011,6 +2011,15 @@ def color_tokens() -> None:
     assert html.count('name="theme-color"') == 1 and 'data-scheme-pref="system"' in html
 
 
+def new_draft() -> None:
+    """내 문제 넣기: 걸음마다 기록을 쌓아 뒤로 가기가 앞 걸음으로 가고, 적던 글은 이 탭의 sessionStorage에만 둔다(서버나 localStorage로 나가지 않는다). 브라우저 동작은 화면 확인으로 본다."""
+    js = (HERE / "app.js").read_text(encoding="utf-8")
+    assert "history.pushState({ wstep: n }" in js and 'addEventListener("popstate"' in js
+    keep = js[js.index("function saveDraft()"):js.index("function restoreDraft()")]
+    assert "sessionStorage.setItem(DRAFT" in keep and "localStorage" not in keep and "api(" not in keep and "fetch(" not in keep
+    assert js.count("sessionStorage.removeItem(DRAFT)") >= 2 and "restoreDraft();" in js  # 비우면 지우고, 처음 열 때 되살린다
+
+
 def pane_widths() -> None:
     """칸 너비: /api/prefs로 세 칸의 몫을 적고, 어긋난 값은 거절한다. 없으면(null) 기본 배치. 다른 설정은 지우지 않는다."""
     import re
@@ -2491,6 +2500,7 @@ def main() -> None:
         own_starter()
         case_shapes()
         table()
+        new_draft()
         hidden_cases()
         assert not fake.calls, fake.calls  # 고치기·지우기도 모델을 부르지 않는다
         checks()
