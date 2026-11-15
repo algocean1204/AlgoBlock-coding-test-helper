@@ -65,19 +65,20 @@ JUDGE_SYSTEM = "너는 코딩테스트 튜터의 판정자다. 판정만 하고 
 
 
 def judge_lines(state, turn, criteria: str) -> list[dict]:
-    """판정 프롬프트 공통. 넣지 않는 것: 언어, 깊이, 참고 코드, 다음 블록, 대화 원칙."""
+    """판정 프롬프트 공통. 넣지 않는 것: 언어, 깊이, 참고 코드, 다음 블록, 대화 원칙.
+    판단 기준(criteria)은 모든 턴에 같은 글이라 캐시되는 앞부분(문제·가이드 뒤)에 둔다. 턴마다 바뀌는 블록·직전 질문·사용자 말은 그 뒤다."""
     block = turn.block
     checks = [f"{n}. {text}" for n, text in enumerate(block.checks, 1)] or ["없음(목표로 판단)"]
     guide = solution_lines(state)
     lines = [
         f"문제:\n{state['ctx'].problem_text}",
         *guide,
+        criteria,
         f"지금 블록:{block.name} ({block.kind})",
         f"목표:{block.goal}",
         "신호:",
         *checks,
         f"직전 질문:{turn.last_question}",
-        criteria,
         f"사용자 말:{state['request'].text or ''}",
     ]
-    return [{"role": "system", "content": JUDGE_SYSTEM}, cached_user(lines, 1 + len(guide))]
+    return [{"role": "system", "content": JUDGE_SYSTEM}, cached_user(lines, 2 + len(guide))]

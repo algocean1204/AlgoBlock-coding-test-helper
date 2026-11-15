@@ -138,6 +138,12 @@ def tables_of(state: MainState, plan, pairs: dict) -> list[dict]:
     return name_tables(len(refs), pairs, scoped_names(refs, language, program_of(state)))
 
 
+CODE_CRITERIA = ("판단 기준: 사용자 블록 코드가 참고 코드와 같은 일을 하면(변수 이름이나 쓰는 꼴만 다르면) Y다. "
+                 "다르면 신호를 1번부터 하나씩 보고, 사용자 블록 코드가 그 신호를 해내는지 본다. 모두 해내면 Y, 못 해낸 신호가 있으면 N과 그 첫 신호 번호다. "
+                 "같은 일을 다른 식으로 쓴 것은 해낸 것이다. 참고 코드도 이 블록만으로는 드러내지 않는 신호(뒤 블록에서 이루어지는 것)는 따지지 않는다. "
+                 "실행은 하지 않는다. 문법이 조금 틀려도 의도가 맞으면 해낸 것이다.")
+
+
 def code_messages(state: MainState, plan, index: int, code: str) -> list[dict]:
     block = plan.blocks[index]
     states = saved_states(state)
@@ -150,19 +156,16 @@ def code_messages(state: MainState, plan, index: int, code: str) -> list[dict]:
         f"문제:\n{state['ctx'].problem_text}",
         f"언어:{state['ctx'].language}",
         *guide,
+        CODE_CRITERIA,  # 모든 블록에 같은 글이라 캐시되는 앞부분에 둔다
         f"이 블록:{block.name} ({block.kind})",
         f"목표:{block.goal}",
         "신호:",
         *checks,
         f"참고 코드(비교용. 같을 필요 없다):\n{block.reference}",
         "앞 블록 코드:\n" + ("\n".join(before) or "없음"),
-        "판단 기준: 사용자 블록 코드가 참고 코드와 같은 일을 하면(변수 이름이나 쓰는 꼴만 다르면) Y다. "
-        "다르면 신호를 1번부터 하나씩 보고, 사용자 블록 코드가 그 신호를 해내는지 본다. 모두 해내면 Y, 못 해낸 신호가 있으면 N과 그 첫 신호 번호다. "
-        "같은 일을 다른 식으로 쓴 것은 해낸 것이다. 참고 코드도 이 블록만으로는 드러내지 않는 신호(뒤 블록에서 이루어지는 것)는 따지지 않는다. "
-        "실행은 하지 않는다. 문법이 조금 틀려도 의도가 맞으면 해낸 것이다.",
         f"사용자 블록 코드:\n{code}",
     ]
-    return [{"role": "system", "content": system}, cached_user(lines, 2 + len(guide))]
+    return [{"role": "system", "content": system}, cached_user(lines, 3 + len(guide))]
 
 
 def missing_name(report: dict) -> str:
