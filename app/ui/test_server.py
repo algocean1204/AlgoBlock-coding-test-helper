@@ -2084,6 +2084,22 @@ def tour_pictures() -> None:
     assert ".mini-head::before" in css and "padding: 28px 56px 0" in css  # 정적 그림의 틀이 움직이는 데모의 창과 같다
 
 
+def tour_follows_screens() -> None:
+    """사용법 안내 1·6장이 새 홈(오늘 할 일)과 설정(AI 연결)을 말한다: 글, 정적 그림, 미리 빌드한 움직이는 그림이 같은 이름을 쓰고, 옛 입구 셋·연결 창 글이 남지 않는다."""
+    js, html, bundle = (HERE / "app.js").read_text(encoding="utf-8"), (HERE / "index.html").read_text(encoding="utf-8"), (HERE / "tour-demos.js").read_text(encoding="utf-8")
+    tour = js[js.index("const TOUR = ["):js.index("let tourAt = 0;")]
+    first, last = tour.split("\n")[1], tour.split("\n")[6]
+    assert "오늘 할 일" in first and "입구가 셋" not in first and "‘내 기록’" not in first  # 1장 글
+    assert "‘설정’의 ‘AI 연결’" in last  # 6장 글
+    scene0 = html[html.index('data-scene="0"'):html.index('data-scene="1"')]
+    assert "오늘 할 일" in scene0 and "내 기록" not in scene0 and '>문제 풀기<' not in scene0  # 1장 정적 그림
+    scene5 = html[html.index('data-scene="5"'):][:1200]
+    assert "설정 · AI 연결" in scene5 and "이미 내는 요금제로 쓰기" in scene5 and "ChatGPT 요금제 쓰기" not in scene5  # 6장 정적 그림
+    assert "설정 · AI 연결" in bundle and "이미 내는 요금제로 쓰기" in bundle and "ChatGPT 요금제 쓰기" not in bundle  # 6장 움직이는 그림(stageshow에서 다시 빌드)
+    assert "sourceMappingURL" not in bundle and "/Users/" not in bundle and "kimtaekyu" not in bundle  # 만든 파일에 개인 경로나 소스맵 줄이 없다
+    assert '$("tour-conn").textContent = CONN.ready ? "연결됨" : "AI 연결 안 됨"' in js
+
+
 def home_screen() -> None:
     """시작 화면은 홈(대시보드)이다: 빈 주소와 알 수 없는 주소가 홈으로 가고, '오늘 할 일'과 학습 보고서의 맨 위 단추가 같은 규칙(서버 큐의 첫 문제)을 쓴다. 홈이 오늘 출석을 찍는 /api/problems를 부른다."""
     html, js = (HERE / "index.html").read_text(encoding="utf-8"), (HERE / "app.js").read_text(encoding="utf-8")
@@ -2670,6 +2686,7 @@ def main() -> None:
         case_shapes()
         table()
         tour_pictures()
+        tour_follows_screens()
         home_screen()
         settings_screen()
         settings_items()
