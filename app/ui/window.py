@@ -4,12 +4,9 @@
 서버(server.py)를 같은 프로세스에서 같이 띄운다. 이미 켜져 있으면(데이터 폴더 잠금) 알리고 끝난다.
 """
 
-import os
 import subprocess
 import sys
 import threading
-import time
-import urllib.request
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -19,11 +16,18 @@ import webview  # noqa: E402
 import server  # noqa: E402
 
 
-SERVED = []  # server.main의 결과: 서버가 돌다 끝나면 True, 새로 띄우지 못했으면 False
+def notify(text: str) -> None:
+    """설치 앱은 콘솔이 없어 표준 오류가 보이지 않는다: 작은 알림 창으로 알린다. 못 띄우면 표준 오류에만."""
+    print(text, file=sys.stderr, flush=True)
+    try:
+        if sys.platform == "darwin":
+            subprocess.run(["osascript", "-e", f'display dialog "{text.replace(chr(34), chr(39))}" with title "AlgoBlock" buttons {{"확인"}} default button 1 giving up after 20'], capture_output=True, timeout=30)
+        elif sys.platform == "win32":
+            import ctypes
 
-
-def serve() -> None:
-    SERVED.append(server.main())
+            ctypes.windll.user32.MessageBoxW(None, text, "AlgoBlock", 0x40)
+    except Exception:  # noqa: BLE001 - 알림이 안 떠도 앱은 어차피 끝난다
+        pass
 
 
 def os_dark() -> bool:
@@ -48,16 +52,11 @@ def background() -> str:
 
 
 def main() -> None:
-    url = f"http://127.0.0.1:{os.environ.get('ALGOBLOCK_UI_PORT', '8791')}/"
-    threading.Thread(target=serve, daemon=True).start()
-    for _ in range(50):  # 서버가 받을 때까지 최대 10초
-        if SERVED:  # 서버를 띄우지 못했다(이미 켜져 있거나 포트가 막힘): 이유는 server.main이 이미 알렸다. 창을 하나 더 열지 않는다
-            return
-        try:
-            urllib.request.urlopen(url, timeout=1).close()
-            break
-        except OSError:
-            time.sleep(0.2)
+    httpd = server.start()  # 잠금과 포트 판단이 끝난 뒤에만 창을 연다(먼저 켜진 앱의 응답을 보고 창을 열지 않게)
+    if isinstance(httpd, str):
+        return notify(httpd)
+    url = f"http://127.0.0.1:{httpd.server_address[1]}/"
+    threading.Thread(target=server.serve, args=(httpd,), daemon=True).start()
     webview.create_window("AlgoBlock", url, width=1440, height=900, min_size=(1024, 680), background_color=background())
     webview.start()  # 창을 닫으면 돌아온다(메뉴의 '끝내기'는 돌아오지 않고 끝나 채점기의 CPU 시간 상한만 남는다)
     server.stop_grading()

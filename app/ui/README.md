@@ -28,7 +28,7 @@ uv run --no-project --python 3.12 --with langgraph --with pypdf --with qdrant-cl
 ```
 
 - 패키지나 모델 파일이 없으면 벡터 검색만 꺼진다. 튜터는 온톨로지와 SQLite만으로 돈다.
-- 네이티브 창으로 열 때는 `ui/window.py`를 쓴다. 서버를 같이 띄우고 창을 연다. 포트를 이미 다른 서버가 쓰고 있으면 새로 띄우지 않고 그 주소를 연다.
+- 네이티브 창으로 열 때는 `ui/window.py`를 쓴다. 서버를 같이 띄우고 창을 연다. 같은 데이터 폴더를 이미 다른 AlgoBlock이 쓰고 있거나 포트를 다른 프로그램이 쓰고 있으면 서버도 창도 새로 띄우지 않고 알림만 보인다(`ui/single.py`의 잠금).
 
 ```bash
 cd app

@@ -2597,30 +2597,41 @@ def stop_grading(*_) -> None:
 atexit.register(stop_grading)
 
 
-def main() -> bool:
-    """서버를 띄워 끝날 때까지 돈다. 새로 띄우지 못했으면(이미 켜져 있거나 포트가 막힘) 알리고 False."""
+def start() -> "ThreadingHTTPServer | str":
+    """잠금과 포트를 잡고 서버를 돌릴 준비를 한다. 새로 띄우지 못하면(이미 켜져 있거나 포트가 막힘) 그 안내 글을 돌려준다."""
     port = int(os.environ.get("ALGOBLOCK_UI_PORT", "8791"))
     other = single.guard(DATA, port)  # 켜져 있으면 키 읽기·업데이트 확인·미리 준비를 하나 더 돌리지 않는다
     if other is not None:
-        print(single.running_message(other), file=sys.stderr, flush=True)
-        return False
+        return single.running_message(other)
     try:
-        server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
+        httpd = ThreadingHTTPServer(("127.0.0.1", port), Handler)
     except OSError as exc:  # 잠금은 잡았으니 다른 프로그램(또는 다른 데이터 폴더의 앱)이 이 포트를 쓰고 있다
-        print(f"{port}번 포트를 이미 다른 프로그램이 쓰고 있어요. 새로 띄우지 않았습니다: {exc}", file=sys.stderr, flush=True)
-        return False
+        return f"{port}번 포트를 이미 다른 프로그램이 쓰고 있어요. 새로 띄우지 않았습니다: {exc}"
     load_keys()
     updater.start()  # 켤 때(마지막 확인에서 24시간이 지났으면)와 24시간마다 새 버전을 뒤에서 본다(실패하면 1시간부터 늘려 다시)
     if threading.current_thread() is threading.main_thread():  # 창(window.py)에서 띄우면 스레드라 신호를 받을 수 없다
         signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))  # 끝내기 전에 atexit의 stop_grading이 돈다
-    server.daemon_threads = True
+    httpd.daemon_threads = True
     print(f"AlgoBlock: http://127.0.0.1:{port}", flush=True)
+    return httpd
+
+
+def serve(httpd) -> None:
     try:
-        server.serve_forever()
+        httpd.serve_forever()
     except KeyboardInterrupt:
         pass
     finally:
         stop_grading()
+
+
+def main() -> bool:
+    """서버를 띄워 끝날 때까지 돈다. 새로 띄우지 못했으면 안내를 표준 오류에 쓰고 False."""
+    httpd = start()
+    if isinstance(httpd, str):
+        print(httpd, file=sys.stderr, flush=True)
+        return False
+    serve(httpd)
     return True
 
 

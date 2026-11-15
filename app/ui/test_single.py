@@ -11,6 +11,8 @@ import socket
 import subprocess
 import sys
 import tempfile
+import threading
+import types
 from pathlib import Path
 from unittest.mock import patch
 
@@ -25,9 +27,48 @@ def holder(folder: Path, port: int) -> subprocess.Popen:
     return proc
 
 
+def release() -> None:
+    """잡은 잠금 파일을 닫는다(윈도는 열린 파일이 든 폴더를 지우지 못한다)."""
+    while single.HELD:
+        single.HELD.pop().close()
+
+
+def window_flow(server, other: Path, free: Path) -> None:
+    """window.main: 이미 켜져 있으면 창을 열지 않고 알리고, 아니면 창을 한 번 연다. 창 모듈은 가짜로 바꾼다."""
+    import signal
+
+    calls = []
+    fake = types.SimpleNamespace(create_window=lambda *a, **k: calls.append("create"), start=lambda: calls.append("start"))
+    sys.modules["webview"] = fake
+    import window
+
+    notes = []
+    holding = holder(other, 8123)
+    with patch.object(server, "DATA", other), patch.object(window, "notify", notes.append):
+        window.main()
+    holding.kill()
+    holding.wait()
+    assert calls == [] and len(notes) == 1 and "이미 켜져" in notes[0], (calls, notes)
+
+    old = signal.getsignal(signal.SIGTERM)
+    with patch.dict(os.environ, {"ALGOBLOCK_UI_PORT": "0"}), patch.object(server, "DATA", free), patch.object(server.updater, "start"), patch.object(server, "load_keys"), \
+            patch.object(window, "background", lambda: "#fff"), patch.object(threading, "Thread") as thread:
+        window.main()
+        thread.call_args.kwargs["args"][0].server_close()
+    signal.signal(signal.SIGTERM, old)
+    assert calls == ["create", "start"], calls
+
+
 def run() -> None:
     import server
 
+    try:
+        body(server)
+    finally:
+        release()
+
+
+def body(server) -> None:
     with tempfile.TemporaryDirectory() as raw:
         folder = Path(raw)
         first = holder(folder, 8791)
@@ -59,6 +100,10 @@ def run() -> None:
             with patch.dict(os.environ, {"ALGOBLOCK_UI_PORT": str(busy.getsockname()[1])}), patch.object(server, "DATA", free), patch.object(server.updater, "start") as start, contextlib.redirect_stderr(err):
                 assert server.main() is False
             assert not start.called and "다른 프로그램" in err.getvalue(), err.getvalue()
+        spare = Path(raw) / "fourth"
+        spare.mkdir()
+        window_flow(server, Path(raw) / "second", spare)
+        release()
     print("ok")
 
 
