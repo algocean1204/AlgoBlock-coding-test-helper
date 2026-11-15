@@ -23,8 +23,6 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import updater  # noqa: E402
 
-updater.VERSION = "0.1.0"  # 시험은 지금 앱을 0.1.0으로, 새 릴리스를 0.1.1로 둔다(실제 버전을 올려도 시험이 그대로 맞게)
-
 BASE = updater.DOWNLOADS + "v0.1.1/"
 DMG = "AlgoBlock-macos-arm64.dmg"
 
@@ -691,6 +689,7 @@ def windows_cases(folder, exe, alive, run, names, log, silent) -> None:
     assert app.read_bytes().endswith(b"old") and names(app.parent) == ["AlgoBlock.exe"], names(app.parent)
 
 
+@patch.object(updater, "VERSION", "0.1.0")  # 시험은 지금 앱을 0.1.0으로, 새 릴리스를 0.1.1로 둔다(실제 버전을 올려도 맞게). 끝나면 원래 값으로 돌아간다
 def run() -> None:
     with tempfile.TemporaryDirectory(prefix="algoblock-update-test-") as tmp:
         root = Path(tmp)
