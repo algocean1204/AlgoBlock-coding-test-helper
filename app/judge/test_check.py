@@ -515,6 +515,25 @@ class LimitTest(unittest.TestCase):
         self.assertEqual([c["status"] for c in report["cases"]], ["timeout", "timeout", "passed", "timeout", "timeout"])
 
 
+class JobEventsTest(unittest.TestCase):
+    """작업의 알림으로 결과를 다듬는 판정(포트 없이 함수만 부른다. 어느 OS에서나 돈다)."""
+
+    def test_process_limit_adds_one_line_unless_passed(self):
+        events = {common.JOB_MSG_ACTIVE_PROCESS_LIMIT}
+        failed = common._apply_job_events({"status": "runtime_error", "stdout": "", "stderr": "Traceback\n"}, events, 64)
+        self.assertEqual((failed["status"], failed["stderr"]), ("runtime_error", "Traceback\n프로세스 수 상한(64)에 걸렸어요\n"))
+        self.assertEqual(common._apply_job_events({"status": "runtime_error", "stderr": ""}, events, 64)["stderr"], "프로세스 수 상한(64)에 걸렸어요\n")
+        self.assertEqual(common._apply_job_events({"status": "runtime_error", "stderr": "끝에 줄바꿈 없음"}, events, 64)["stderr"], "끝에 줄바꿈 없음\n프로세스 수 상한(64)에 걸렸어요\n")
+        passed = {"status": "passed", "stdout": "ok", "stderr": ""}
+        self.assertEqual(common._apply_job_events(passed, events, 64), passed)
+        self.assertEqual(common._apply_job_events({"status": "runtime_error", "stderr": "x"}, set(), 64)["stderr"], "x")  # 알림이 없으면 그대로
+
+    def test_memory_event_decides_memory_limit_only_for_runtime_error(self):
+        events = {common.JOB_MSG_JOB_MEMORY_LIMIT}
+        self.assertEqual(common._apply_job_events({"status": "runtime_error", "stderr": ""}, events, 64)["status"], "memory_limit")
+        self.assertEqual(common._apply_job_events({"status": "timeout", "stderr": ""}, events, 64)["status"], "timeout")
+
+
 class WindowsShapeTest(unittest.TestCase):
     """Windows API에 넘기는 구조체의 크기와 자리(Microsoft 문서의 x64 배치). 순수 ctypes라 어느 64비트 OS에서나 돈다."""
 
@@ -570,6 +589,48 @@ class WindowsJobTest(unittest.TestCase):
         self.assertIn("MemoryError", result["stderr"])
         plain = self.run_python("raise SystemExit(3)")  # 메모리와 상관없는 실패는 그대로 실행 오류다
         self.assertEqual(plain["status"], "runtime_error", plain)
+
+    # 자식을 count개 띄우고(5초 잠드는 파이썬) 1.5초 뒤 만들지 못했거나 이미 끝난 수를 출력하는 코드. 상한을 넘은 프로세스는 만들기가 실패하거나 바로 끝난다
+    SPAWN = ("import subprocess, sys, time\nkids, fails = [], 0\nfor _ in range({count}):\n    try:\n"
+             "        kids.append(subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(5)'], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL))\n"
+             "    except OSError:\n        fails += 1\ntime.sleep(1.5)\nfails += sum(kid.poll() is not None for kid in kids)\nfor kid in kids:\n    kid.kill()\nprint(fails)\n")
+
+    def test_process_count_is_capped(self):
+        """작업 안의 동시 프로세스 수가 상한을 넘으면 그 프로세스를 만들지 못한다. 상한을 끄면(processes=None) 모두 만들어진다."""
+        capped = self.run_python(self.SPAWN.format(count=8), processes=4)
+        self.assertEqual(capped["status"], "passed", capped)
+        self.assertGreaterEqual(int(capped["stdout"]), 1, "상한(4)을 넘는 자식이 만들어졌다")
+        free = self.run_python(self.SPAWN.format(count=8), processes=None)
+        self.assertEqual((free["status"], free["stdout"].strip()), ("passed", "0"), free)
+
+    def test_default_process_limit_allows_a_few_children(self):
+        """기본 상한은 자식 몇 개를 띄우는 코드를 막지 않는다."""
+        result = self.run_python(self.SPAWN.format(count=5))
+        self.assertEqual((result["status"], result["stdout"].strip()), ("passed", "0"), result)
+
+    def test_error_dialogs_are_off_in_the_child_and_restored_after(self):
+        """자식은 오류 창을 끈 오류 모드(SetErrorMode)로 돈다. 이 프로세스의 오류 모드는 실행이 끝나면 원래대로다."""
+        kernel = common._kernel32()
+        original = kernel.SetErrorMode(0)  # 읽으면서 0으로 둔다: 아래에서 자식이 0이 아니면 run_command가 켠 것이다
+        try:
+            result = self.run_python("import ctypes; print(ctypes.windll.kernel32.SetErrorMode(0))")
+            after = kernel.GetErrorMode()
+        finally:
+            kernel.SetErrorMode(original)
+        self.assertEqual(result["status"], "passed", result)
+        self.assertEqual(int(result["stdout"]) & common.ERROR_MODE, common.ERROR_MODE, result)
+        self.assertEqual(after, 0, "실행이 끝난 뒤 이 프로세스의 오류 모드가 되돌려지지 않았다")
+
+    def test_process_limit_line_is_added_to_a_failed_run_only(self):
+        """작업이 '프로세스 수 상한' 알림을 보냈다고 하면(알림만 고정한다) 실패한 실행의 stderr 끝에 한 줄이 붙고, 통과한 실행에는 붙지 않는다."""
+        line = f"프로세스 수 상한({common.JOB_PROCESS_LIMIT})에 걸렸어요"
+        with mock.patch.object(common, "_job_events", return_value={common.JOB_MSG_ACTIVE_PROCESS_LIMIT}):
+            failed = self.run_python("raise SystemExit(1)")
+            passed = self.run_python("print('ok')")
+        self.assertEqual(failed["status"], "runtime_error", failed)
+        self.assertTrue(failed["stderr"].endswith(line + "\n"), failed)
+        self.assertEqual(passed["status"], "passed", passed)
+        self.assertNotIn(line, passed["stderr"])
 
     def test_without_job_it_still_runs_and_says_so(self):
         with mock.patch.object(common, "_windows_job", side_effect=OSError(5, "막힘")):
