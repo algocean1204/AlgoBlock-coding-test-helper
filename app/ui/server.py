@@ -10,6 +10,7 @@
 import ast
 import atexit
 import base64
+import hashlib
 import json
 import os
 import re
@@ -94,6 +95,7 @@ ASSET_TYPES = {"png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg", "w
 OWN_ID = re.compile(r"u[0-9a-f]{8}")  # 사용자가 등록한 문항 id
 PREPARE = os.environ.get("ALGOBLOCK_UI_PREPARE", "1") != "0"  # 0이면 문항을 열 때 뼈대를 미리 뽑지 않는다(개발 중 모델 호출 아끼기)
 
+KEY_CHECK_FILE = DATA / "keychecks.json"  # 공급자마다 마지막 키 확인 {공급자: {"at": ISO 시각, "result": ok·invalid·denied·offline}}. 키 값은 싣지 않는다
 KEY_FILE = DATA / "keys.json"  # 화면에서 넣은 API 키. 이 기기에만, 소유자만 읽게(0600) 둔다
 PREFS_FILE = DATA / "prefs.json"  # 화면 설정: 처음 안내를 봤는지(tour_seen), 과정별 급과 추론 정도(stages. 예전에는 테마별 모델 themes), 마지막으로 고른 풀이 언어(language), 문제·코드·튜터 세 칸의 너비 몫(panes. 합 100. 없으면 기본 배치)
 MODELS_FILE = DATA / "models.json"  # 공급자 목록에서 고른 시리즈마다 최신 이름 {연결: {"at": ISO 시각, "names": {시리즈: 이름}}}. 하루에 한 번까지만 다시 받는다
@@ -118,6 +120,32 @@ def load_keys() -> None:
 
 def save_key(env_name: str, value: str) -> None:
     write_keys({**read_json(KEY_FILE, {}), env_name: value})
+
+
+KEY_CHECK_LOCK = threading.Lock()  # 확인 기록을 읽고 고쳐 쓰는 동안(키 넣기와 다시 확인이 겹쳐도 서로 덮어쓰지 않게)
+
+
+def key_print(key: str) -> str:
+    """키의 지문(sha256 앞 12자). 확인 기록이 지금 키의 것인지 가릴 때만 쓰고, 키를 되살릴 수 없다."""
+    return hashlib.sha256(key.encode("utf-8")).hexdigest()[:12]
+
+
+def note_key_check(name: str, result: str | None, key: str = "") -> None:
+    """공급자의 마지막 키 확인을 그 키의 지문과 함께 남긴다(result가 None이면 지운다)."""
+    with KEY_CHECK_LOCK:
+        rows = {other: value for other, value in read_json(KEY_CHECK_FILE, {}).items() if other != name}
+        write_json(KEY_CHECK_FILE, {**rows, **({name: {"at": now(), "result": result, "fp": key_print(key)}} if result and key else {})})
+
+
+def key_rows() -> dict:
+    """연결 창의 공급자별 키 줄. 키는 끝 4자리만 싣는다(너무 짧은 글은 아예 싣지 않는다). 확인 기록은 지금 키의 지문과 같을 때만 보인다(키가 바뀌었으면 옛 기록은 보이지 않는다)."""
+    saved = read_json(KEY_CHECK_FILE, {})
+    out = {}
+    for name, env in KEYS.items():
+        key, last = os.environ.get(env, ""), saved.get(name) if isinstance(saved.get(name), dict) else {}
+        mine = bool(key) and last.get("fp") == key_print(key)
+        out[name] = {"on": bool(key), "tail": key[-4:] if len(key) >= 12 else "", "at": last.get("at", "") if mine else "", "result": last.get("result", "") if mine else ""}
+    return out
 
 
 def drop_key(env_name: str) -> None:
@@ -525,6 +553,7 @@ def accounts() -> dict:
                      "model": model, "model_label": themes.label(model)})
     return {"client": STATE["client"], "dev": dev_client(), "model": os.environ.get("ALGOBLOCK_LLM_MODEL", ""), "chatgpt": bool(chatgpt.get("connected")), "chatgpt_note": chatgpt.get("error") or "", "connected": connected(),
             "keys": {name: bool(os.environ.get(env)) for name, env in KEYS.items()},
+            "key_rows": key_rows(), "using": themes.provider(),  # using: 튜터가 쓰는 공급자(claude·chatgpt·openai)
             "keys_saved": {name: env in read_json(KEY_FILE, {}) for name, env in KEYS.items()},  # 화면에서 넣은 키(keys.json에 있는 것. 지울 수 있는 것)
             "tour_seen": bool(read_json(PREFS_FILE, {}).get("tour_seen")), "language": last_language(), "panes": panes_pref(),
             "themes": rows, "tiers": [{"key": tier, "label": themes.label(themes.model_of(tier))} for tier in themes.TIERS],
@@ -2266,6 +2295,16 @@ def handle(path: str, body: dict) -> tuple[int, dict]:
                 raise Refuse(f"{label}에 연결하지 못해 키를 확인하지 못했어요. 인터넷 연결을 보고 다시 시도하거나, 확인 없이 저장할 수 있어요.", 409, "key_unverified", "value")
         os.environ[KEYS[body["name"]]] = value
         save_key(KEYS[body["name"]], value)  # 다음에 켜도 쓰게 이 기기에만 저장한다
+        note_key_check(body["name"], found, value)
+        return 200, {**accounts(), "key_check": found}
+    if path == "/api/key/check":  # 지금 쓰는 그 공급자의 키를 다시 확인한다(키 값은 요청으로 받지 않는다)
+        if not isinstance(body.get("name"), str) or body["name"] not in KEYS:
+            raise Refuse("확인할 키 종류를 골라 주세요.")
+        if not os.environ.get(KEYS[body["name"]]):
+            raise Refuse("넣은 키가 없어요.", 409, "key_missing")
+        key = os.environ[KEYS[body["name"]]]
+        found = keycheck.check(body["name"], key)
+        note_key_check(body["name"], found, key)
         return 200, {**accounts(), "key_check": found}  # found: ok·limited(키는 맞음), 그 밖은 확인 없이 저장한 것
     if path == "/api/key/delete":  # 화면에서 넣은 그 공급자의 키만 지운다
         if not isinstance(body.get("name"), str) or body["name"] not in KEYS:
@@ -2276,6 +2315,7 @@ def handle(path: str, body: dict) -> tuple[int, dict]:
         if os.environ.get(env) == saved[env]:  # 환경 변수의 값이 다른 것이면(밖에서 준 키) 그대로 둔다
             os.environ.pop(env)
         drop_key(env)
+        note_key_check(body["name"], None)
         load_keys()  # .env에 같은 공급자의 키가 있으면 다시 올린다(지운 뒤의 연결 상태가 실제와 같게)
         return 200, accounts()
     if path == "/api/update":  # 새 버전: 상태·확인·받기·바꾸기(action)
