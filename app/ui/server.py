@@ -78,6 +78,7 @@ TOUCHED_FILE = DATA / "touched.json"  # 문제를 마지막으로 손댄 시각 
 KINDS = ("example", "accuracy", "efficiency")  # 케이스 종류: 공개 예시, 숨긴 정확성, 숨긴 효율성(큰 입력)
 STATIC = {"/": ("index.html", "text/html"), "/index.html": ("index.html", "text/html"),
           "/app.css": ("app.css", "text/css"), "/app.js": ("app.js", "text/javascript"),
+          "/highlight.js": ("highlight.js", "text/javascript"),  # 코드 칸의 문법 색(채점 언어 7개)
           "/icon.svg": ("icon.svg", "image/svg+xml"), "/favicon.svg": ("favicon.svg", "image/svg+xml"),  # 앱 아이콘과 탭 아이콘(같은 그림, 여백만 다르다)
           "/tour-demos.js": ("tour-demos.js", "text/javascript"), "/tour-demos.css": ("tour-demos.css", "text/css"),  # 처음 안내의 움직이는 데모(stageshow/에서 미리 빌드, 안내를 열 때만 불러온다)
           "/PretendardVariable.woff2": ("PretendardVariable.woff2", "font/woff2")}  # 맥 밖에서 쓰는 글꼴(OFL)

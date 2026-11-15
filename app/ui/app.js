@@ -1099,6 +1099,7 @@ function renderCode() {
   renderCodePane();
   renderResult();
   syncGutter(); // 결과 칸을 그린 뒤(편집기 높이가 정해진 뒤)에 짚은 줄을 맞춘다
+  paintCode($("code")); // 글이나 언어가 바뀌었으면 바로 칠한다(입력 중에는 codeChanged가 한 프레임에 한 번)
   renderTutor();
   renderDebug();
   const stage = nextAction();
@@ -1225,7 +1226,6 @@ function renderBlocks() {
       const current = state === "current";
       const empty = !saved.code.trim();
       const cell = !current || !empty || S.talk === "guide";
-      const rows = Math.min(10, Math.max(2, saved.code.split("\n").length));
       const check = showCheck(b, state, current), st = empty ? "" : blockStatus(b, saved), line = saved.line || {};
       const result = st && st !== "pass" && sameCode(b, saved) && line.text ? `<p class="block-result is-${line.ok === false ? "fail" : "wait"}">${inline(line.text)}${line.skipped ? "" : ' <span class="muted">자세한 말은 오른쪽 튜터의 말에 있어요.</span>'}</p>` : "";
       const skip = current && S.talk === "guide" && (st === "fail" || st === "wait") && sameCode(b, saved) && !!line.text; // 마지막 확인이 통과가 아니면 갇히지 않게 넘어갈 길을 준다
@@ -1234,7 +1234,7 @@ function renderBlocks() {
         <div class="block-head"><span class="sr-only">블록 ${n}.</span>${kindChip(b.kind)}<span class="block-name">${esc(b.name || "지금 찾는 블록")}</span>
           ${st ? `<span class="st">${saved.by === "tutor" ? '<span class="by">튜터가 채움</span>' : ""}<span class="st-chip">${STATUS[st]}</span></span>` : ""}</div>
         ${current && KIND[b.kind] ? `<p class="kind-desc">${esc(KIND[b.kind][1])}</p>` : ""}
-        ${cell ? `<textarea class="codey" data-block="${esc(b.id)}" rows="${rows}" aria-label="블록 ${n} 코드" spellcheck="false" autocapitalize="off" wrap="off" placeholder="이 블록의 코드 (들여쓰기는 쓴 그대로 모여요)">${esc(saved.code)}</textarea>` : ""}
+        ${cell ? `<div class="code-stack codey-box"><pre class="hl" aria-hidden="true"></pre><textarea class="codey" data-block="${esc(b.id)}" aria-label="블록 ${n} 코드" spellcheck="false" autocapitalize="off" wrap="off" placeholder="이 블록의 코드 (들여쓰기는 쓴 그대로 모여요)">${esc(saved.code)}</textarea></div>` : ""}
         ${result}
         <div class="block-actions">
           ${check ? `<button type="button" class="btn small" data-check="${esc(b.id)}" data-model${current ? "" : ` aria-label="블록 ${n} 코드 확인"`}>블록 코드 확인</button>` : ""}
@@ -1245,7 +1245,7 @@ function renderBlocks() {
         </div>
       </li>`;
     }).join("");
-    list.querySelectorAll("textarea").forEach((ta) => { ta._seen = ta.value; });
+    list.querySelectorAll("textarea").forEach((ta) => { ta._seen = ta.value; paintCode(ta); }); // 새로 그린 칸은 바로 칠한다(한 프레임 동안 글이 비어 보이지 않게)
   }
   const own = ownWayOn() ? `<div class="note" role="status">내 방식으로 끝까지 쓰는 중이에요. 블록마다 확인하지 않고, 다 쓴 뒤 ‘모아서 실행’으로 확인해요. <button type="button" class="btn quiet small" data-own-off>튜터 차례로 돌아가기</button></div>` : "";
   $("blocks-note").innerHTML = (S.busy && S.busy.where === "blocks" ? `<div class="note">${waitLine("blocks")}</div>` : "") + own + noteHtml(S.note.blocks);
@@ -1438,28 +1438,83 @@ function syncGutter() {
     gutterKey = `${count}:${hit}`;
     $("gutter").innerHTML = Array.from({ length: count }, (_, i) => `<span${i + 1 === hit ? ' class="hit"' : ""}>${i + 1}</span>`).join("");
   }
-  const height = parseFloat(getComputedStyle(ta).lineHeight) || 22;
-  if (hit !== shownHit && ta.clientHeight) { // 새로 짚은 줄이 편집기 밖이면 그 줄이 보이게 스크롤한다(한 번만. 그 뒤의 스크롤은 사용자 것)
+  const height = parseFloat(getComputedStyle(ta).lineHeight) || 22, box = $("code-scroll");
+  if (hit !== shownHit && box.clientHeight) { // 새로 짚은 줄이 편집기 밖이면 그 줄이 보이게 스크롤한다(한 번만. 그 뒤의 스크롤은 사용자 것)
     shownHit = hit;
     const top = 10 + (hit - 1) * height;
-    if (hit && (top < ta.scrollTop || top + height > ta.scrollTop + ta.clientHeight)) ta.scrollTop = Math.max(0, top - ta.clientHeight / 3);
+    if (hit && (top < box.scrollTop || top + height > box.scrollTop + box.clientHeight)) box.scrollTop = Math.max(0, top - box.clientHeight / 3);
   }
-  $("gutter").scrollTop = ta.scrollTop;
   mark.hidden = !hit || hit > count;
-  mark.style.top = `${10 + (hit - 1) * height - ta.scrollTop}px`;
+  mark.style.top = `${10 + (hit - 1) * height}px`; // 줄 번호·짚은 줄·글이 한 스크롤 칸 안에 있어 스크롤 값을 빼지 않는다
 }
+
+/* 문법 색: 글상자 바로 앞의 pre에 같은 글을 칠해 겹친다(highlight.js). 입력은 글상자가 그대로 받는다.
+   pre에는 줄마다 div 하나를 두고, 한 프레임에 한 번 바뀐 줄만 바꿔 넣는다(전체를 다시 넣으면 긴 코드에서 배치가 입력을 늦춘다).
+   너무 긴 코드는 색 없이 글만 둔다(pre는 크기만 맡는다). */
+const PAINT_MAX_LINES = 500, PAINT_MAX_CHARS = 30000, painting = new Set();
+function paintCode(ta) {
+  const pre = ta.previousElementSibling, lang = (S.problem && S.problem.language) || "", code = ta.value;
+  const plain = code.length > PAINT_MAX_CHARS || code.split("\n").length > PAINT_MAX_LINES, key = (plain ? "" : lang) + "\0" + code;
+  if (!pre || pre._key === key) return;
+  pre._key = key;
+  ta.parentElement.classList.toggle("plain", plain);
+  // ponytail: 글 전체를 매번 다시 나눈다(맥 웹뷰 500줄에서 2~5ms). 한도를 올리려면 바뀐 줄 근처만 다시 나누기로
+  const rows = window.AlgoBlockHighlight.lines(code, plain ? "" : lang), old = pre._rows || [];
+  const [head, tail] = window.AlgoBlockHighlight.same(old, rows); // 앞뒤에서 같은 줄을 건너뛰고 가운데만 바꾼다
+  for (let i = old.length - tail - 1; i >= head; i--) pre.children[i].remove();
+  const html = rows.slice(head, rows.length - tail).map((row) => `<div>${row}\n</div>`).join(""); // 줄 끝의 \n: 글이 글상자와 같아 커서 자리 계산이 맞는다
+  const next = pre.children[head];
+  if (html && next) next.insertAdjacentHTML("beforebegin", html);
+  else if (html) pre.insertAdjacentHTML("beforeend", html);
+  pre._rows = rows;
+  ta.scrollTop = ta.scrollLeft = 0; // 글상자가 제 안에서 밀렸으면(긴 글을 붙여 넣은 때) 되돌린다. 스크롤은 바깥 칸의 몫이다
+}
+function paintSoon(ta) {
+  if (!painting.size) requestAnimationFrame(() => { painting.forEach(paintCode); painting.clear(); followCaret(); });
+  painting.add(ta);
+}
+/** 커서가 보이게 바깥 스크롤 칸을 민다. 글상자는 제 안에서 스크롤하지 않으므로 웹뷰가 커서를 따라 바깥 칸을 밀어 주지 않을 때를 위해 스크립트가 맡는다.
+    세로는 줄 수로, 가로는 색 글(pre)에서 커서 앞 글자의 자리로 잰다(한글처럼 폭이 다른 글자도 맞다). */
+function followCaret() {
+  const ta = document.activeElement;
+  if (!ta || !ta.matches(".code-stack > textarea")) return;
+  const box = ta.closest(".code-scroll, .codey-box"), pre = ta.previousElementSibling, style = getComputedStyle(ta);
+  const at = ta.selectionDirection === "backward" ? ta.selectionStart : ta.selectionEnd, before = ta.value.slice(0, at);
+  const line = before.split("\n").length - 1, col = at - before.lastIndexOf("\n") - 1, height = parseFloat(style.lineHeight) || 22;
+  const edge = box.getBoundingClientRect(), stack = ta.getBoundingClientRect();
+  const top = stack.top - edge.top + box.scrollTop + parseFloat(style.paddingTop) + line * height;
+  let x = stack.left - edge.left + box.scrollLeft + parseFloat(style.paddingLeft);
+  if (col) { // 커서 앞 글자의 오른쪽 끝
+    const walk = document.createTreeWalker(pre, NodeFilter.SHOW_TEXT);
+    let node, left = at;
+    while ((node = walk.nextNode()) && left > node.length) left -= node.length;
+    if (node && left) { const range = document.createRange(); range.setStart(node, left - 1); range.setEnd(node, left); x = range.getBoundingClientRect().right - edge.left + box.scrollLeft; }
+  }
+  const gutter = box.querySelector(".gutter"), from = gutter ? gutter.offsetWidth : 0, pad = 8;
+  if (top < box.scrollTop) box.scrollTop = top - pad;
+  else if (top + height > box.scrollTop + box.clientHeight) box.scrollTop = top + height - box.clientHeight + pad;
+  if (x < box.scrollLeft + from + pad) box.scrollLeft = Math.max(0, x - from - 4 * pad);
+  else if (x > box.scrollLeft + box.clientWidth - pad) box.scrollLeft = x - box.clientWidth + 4 * pad;
+}
+let following = false;
+document.addEventListener("selectionchange", () => { // 화살표·Home·End·누르기로 커서만 옮겼을 때
+  if (following) return;
+  following = true;
+  requestAnimationFrame(() => { following = false; followCaret(); });
+});
 
 function gotoLine() {
   const ta = $("code"), lines = ta.value.split("\n"), n = Math.min(S.debug.line, lines.length);
   const start = lines.slice(0, n - 1).reduce((sum, row) => sum + row.length + 1, 0);
   ta.focus();
   ta.setSelectionRange(start, start + lines[n - 1].length);
-  ta.scrollTop = Math.max(0, (n - 4) * (parseFloat(getComputedStyle(ta).lineHeight) || 22));
+  $("code-scroll").scrollTop = Math.max(0, (n - 4) * (parseFloat(getComputedStyle(ta).lineHeight) || 22));
   syncGutter();
 }
 
 function codeChanged() {
   syncGutter();
+  paintSoon($("code"));
   S.codeNote = "";
   if (S.result && !S.result.alert && !S.result.stale) { S.result.stale = true; render(); }
   saveCodeSoon();
@@ -2980,7 +3035,7 @@ document.addEventListener("input", (e) => {
   if (el.dataset.block) {
     harvest();
     syncCheck(el); // 칸 글이 저장된 글과 달라지면 곧바로 '블록 코드 확인'(같아지면 걷는다)
-    return grow(el);
+    return paintSoon(el); // 칸 높이는 색 글(pre)을 따라 자란다
   }
   if (el.matches(".composer textarea")) grow(el);
 });
@@ -3004,7 +3059,6 @@ document.addEventListener("keydown", (e) => {
   if (el.id === "code" || (el.dataset && el.dataset.block)) codeKeys(e);
 });
 
-$("code").addEventListener("scroll", syncGutter);
 $("more").addEventListener("toggle", () => { if (!$("more").open) { $("reset-confirm").hidden = true; $("reset").hidden = false; } }); // 메뉴를 닫으면 처음부터의 물음도 접는다
 document.addEventListener("click", (e) => {
   const summary = e.target.closest("details.case-fold > summary");
