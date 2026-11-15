@@ -983,8 +983,8 @@ function applyState(data) {
     S.blockCode = data.blocks || {};
     $("p-text").innerHTML = rich(p.text, true, p.mode === "program") + (p.assets.length ? `<p class="assets"><span class="muted">원본</span>${p.assets.map((a) => `<button type="button" class="btn small" data-asset="${a.n}" title="${esc(a.name)}">원본 ${a.n}</button>`).join("")}</p>` : "");
     document.title = `${p.title} · AlgoBlock`;
-    S.solo = { shown: [], seen: p.study.hints_seen, total: p.study.hints_total, sol: null, ask: false, note: null };
-    if (p.study.hints_seen) loadHints(true); // 전에 본 힌트를 다시 보여 준다(새 힌트를 열지 않는다)
+    S.solo = { shown: [], seen: p.study.hints_seen, total: p.study.hints_total, blocks: null, sol: null, ask: false, note: null };
+    if (p.study.hints_seen) loadHints(true); // 전에 본 힌트와 블록 목차를 다시 보여 준다(새 힌트를 열지 않는다. 처음 보면 힌트 칸을 열 때 목차를 받는다)
     if (p.study.has_guide && p.study.passed_now) loadSolution(false); // 이번 풀이에서 통과한 문제는 실전 신호를 준비해 둔다('처음부터' 뒤에는 열 때만 보인다)
     // 방식: 기억한 것, 없으면 대화가 있는 쪽(마지막 말이 늦은 쪽), 없으면 고르기 전(어떻게 풀까요?)
     const lastAt = (chat) => (chat[chat.length - 1] || {}).at || "", sess = data.session;
@@ -1809,11 +1809,18 @@ function renderSolo() {
   if (S.soloOpen === "hint") {
     let hints = `<section class="solo-sec" aria-labelledby="solo-hints"><h3 id="solo-hints">${ico("i-bulb")}풀이 힌트${o.total ? ` <span class="muted">${o.seen} / ${o.total}</span>` : ""}</h3>`;
     if (!o.total) hints += `<p class="hint">이 문제에는 미리 만들어 둔 힌트가 없어요. ${ai ? "‘방식 바꾸기’에서 ‘튜터의 질문으로’를 고르면 튜터가 질문으로 도와줘요." : "튜터를 연결하면 질문으로 도와줘요."}</p>`;
+    else if (!o.blocks) { hints += '<p class="hint">힌트 목차를 불러오는 중…</p>'; if (!o.loading) loadHints(true); }
     else {
-      // 머리: 블록 번호와 종류, 그 블록의 힌트를 모두 본 뒤에는 블록 이름(서버가 그때만 보낸다). '단계'는 난이도에만 쓴다
-      hints += `<p class="hint">풀이를 처음부터 차례로 짚어요. 답을 알려 주지 않고 생각할 거리를 하나씩 드려요. 풀이의 블록마다 힌트가 세 개씩 있어요.</p>
-        ${o.shown.length ? `<ol class="hints">${o.shown.map((h) => `<li><span class="hint-no">${h.kind ? kindChip(h.kind) : ""}블록 ${h.block}${h.name ? ` · ${esc(h.name)}` : ""} · 힌트 ${h.step}</span><p>${esc(h.hint)}</p></li>`).join("")}</ol>` : ""}
-        ${o.seen >= o.total ? '<p class="hint">힌트를 모두 봤어요. 여기까지 보고도 막히면 ‘해설’을 열어 보세요.</p>' : `<button type="button" id="solo-hint" class="btn">${o.shown.length ? "다음 힌트 보기" : "첫 힌트 보기"}</button>`}`;
+      // 블록 목차: 막힌 블록의 힌트부터 연다. 머리는 블록 번호와 종류, 그 블록의 힌트를 모두 본 뒤에는 블록 이름(서버가 그때만 보낸다)
+      hints += `<p class="hint">막힌 블록을 골라 그 블록의 힌트부터 보세요. 답을 알려 주지 않고 생각할 거리를 하나씩 드려요. 블록마다 힌트가 세 개까지 있어요.</p>
+        <ol class="hint-blocks">${o.blocks.map((b) => {
+    const mine = o.shown.filter((h) => h.block === b.block), done = b.seen >= b.total;
+    return `<li data-hint-of="${b.block}"><span class="hint-no">${b.kind ? kindChip(b.kind) : ""}블록 ${b.block}${b.name ? ` · ${esc(b.name)}` : ""} · 힌트 ${b.seen}/${b.total}</span>
+          ${mine.length ? `<ol class="hints">${mine.map((h) => `<li><span class="sr-only">힌트 ${h.step}. </span><p>${esc(h.hint)}</p></li>`).join("")}</ol>` : ""}
+          ${done ? "" : `<button type="button" class="btn small${mine.length ? " quiet" : ""}" data-hint-block="${b.block}" aria-label="블록 ${b.block}의 ${mine.length ? "다음" : "첫"} 힌트 보기">${mine.length ? "다음 힌트" : "이 블록 힌트 보기"}</button>`}</li>`;
+  }).join("")}</ol>
+        ${!o.blocks.length && o.seen < o.total ? '<button type="button" class="btn" data-hint-block="0">첫 힌트 보기</button>' : ""}
+        ${o.seen >= o.total ? '<p class="hint">힌트를 모두 봤어요. 여기까지 보고도 막히면 ‘해설’을 열어 보세요.</p>' : ""}${noteHtml(o.note)}`;
     }
     $("solo-box").innerHTML = hints + "</section>";
     return;
@@ -1829,13 +1836,23 @@ function renderSolo() {
   $("solo-box").innerHTML = sol + `${noteHtml(o.note)}</section>`;
 }
 
-async function loadHints(peek) {
-  const pid = S.pid, r = await api("/api/hint", { id: pid, peek });
+/** 힌트를 연다(peek: 본 것과 목차만 다시 받는다). block: 그 블록의 다음 힌트(1부터). 없으면 아직 다 보지 않은 첫 블록. */
+async function loadHints(peek, block) {
+  const pid = S.pid;
+  if (S.solo) S.solo.loading = true;
+  const r = await api("/api/hint", { id: pid, peek, ...(block ? { block } : {}) });
   if (S.pid !== pid || !S.solo) return;
-  if (r.ok) Object.assign(S.solo, { shown: r.data.shown, seen: r.data.seen, total: r.data.total, note: null });
-  else if (!peek) S.solo.note = errorNote(r.error);
+  S.solo.loading = false;
+  if (r.ok) Object.assign(S.solo, { shown: r.data.shown, seen: r.data.seen, total: r.data.total, blocks: r.data.blocks, note: null });
+  else if (!peek || !S.solo.blocks) { S.solo.blocks = S.solo.blocks || []; S.solo.note = errorNote(r.error); } // 목차를 받지 못해도 다시 부르기를 되풀이하지 않는다
   render();
-  if (r.ok && !peek) { say("힌트를 하나 열었어요."); const last = $("solo-box").querySelector(".hints li:last-child"); if (last) last.scrollIntoView({ block: "nearest" }); }
+  if (r.ok && !peek) {
+    say("힌트를 하나 열었어요.");
+    const box = $("solo-box").querySelector(`[data-hint-of="${r.data.block}"]`), last = box && box.querySelector(".hints li:last-child");
+    if (last) last.scrollIntoView({ block: "nearest" });
+    const again = box && box.querySelector("[data-hint-block]");
+    if (again && block) again.focus(); // 고른 블록의 단추에 초점을 둔다(다 봤으면 단추가 없다)
+  }
 }
 
 async function loadSolution(force) {
@@ -2737,6 +2754,7 @@ document.addEventListener("click", (e) => {
     return void document.querySelectorAll("[data-lang-filter]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.langFilter === LIST_LANG)));
   }
   if (el.dataset.quote) { S.quote = S.quote === el.dataset.quote ? null : el.dataset.quote; S.note.chat = null; render(); return void (S.quote && $("fq-text").focus()); }
+  if (el.dataset.hintBlock) return void loadHints(false, Number(el.dataset.hintBlock));
   if (el.dataset.fill) { // 칸에 적은 것이 있으면 바꿀지 먼저 묻는다
     harvest();
     if (!((S.blockCode[el.dataset.fill] || {}).code || "").trim()) return void fillBlock(el.dataset.fill);
@@ -2777,10 +2795,10 @@ document.addEventListener("click", (e) => {
   }
   const actions = {
     "start": startMode, "submit": submitCode, "run": () => judgeCode(true), "run-own-go": () => judgeCode(true, $("run-input").value),
-    "solo-hint": () => loadHints(false), "solo-open": () => loadSolution(false), "solo-force": () => { S.solo.ask = true; render(); $("solo-force-no").focus(); },
+    "solo-open": () => loadSolution(false), "solo-force": () => { S.solo.ask = true; render(); $("solo-force-no").focus(); },
     "solo-force-no": () => { S.solo.ask = false; render(); }, "solo-force-yes": () => loadSolution(true),
     "result-tutor-hint": tutorHint,
-    "result-hint": () => { S.soloOpen = "hint"; setMode("solo"); if (!S.solo.shown.length) loadHints(false); }, // 결과의 힌트는 처음부터 푸는 힌트(오른쪽 칸에 열린다)
+    "result-hint": () => { S.soloOpen = "hint"; setMode("solo"); }, // 결과의 힌트는 오른쪽 칸에 블록 목차로 열린다(막힌 블록을 고른다)
     "result-learn": async () => { if (!S.solo.sol) await loadSolution(false); S.soloOpen = "sol"; setMode("solo"); $("solo-box").scrollTop = 0; },
     "way-change": () => { S.choosing = !S.choosing && !!S.mode; render(); (S.choosing ? document.querySelector("[data-way]") : $("way-change")).focus(); },
     "solo-fold": () => { S.soloOpen = null; render(); $("rail-hint").focus(); },
@@ -2873,7 +2891,7 @@ document.addEventListener("click", (e) => {
   if (!actions[el.id]) return;
   const done = actions[el.id]();
   // 키보드로 누른 실행·제출·힌트: 다시 그리며(잠겼다 풀리며) 초점이 body로 빠지면 같은 단추로 돌려놓는다
-  if (e.detail === 0 && ["run", "submit", "solo-hint"].includes(el.id)) Promise.resolve(done).then(() => { const again = $(el.id); if (again && !again.disabled && again.offsetParent && document.activeElement === document.body) again.focus(); });
+  if (e.detail === 0 && ["run", "submit"].includes(el.id)) Promise.resolve(done).then(() => { const again = $(el.id); if (again && !again.disabled && again.offsetParent && document.activeElement === document.body) again.focus(); });
 });
 
 document.addEventListener("submit", (e) => {
