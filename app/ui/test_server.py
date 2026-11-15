@@ -2081,6 +2081,17 @@ def tour_pictures() -> None:
     assert ".mini-head::before" in css and "padding: 28px 56px 0" in css  # 정적 그림의 틀이 움직이는 데모의 창과 같다
 
 
+def home_screen() -> None:
+    """시작 화면은 홈(대시보드)이다: 빈 주소와 알 수 없는 주소가 홈으로 가고, '오늘 할 일'과 학습 보고서의 맨 위 단추가 같은 규칙(서버 큐의 첫 문제)을 쓴다. 홈이 오늘 출석을 찍는 /api/problems를 부른다."""
+    html, js = (HERE / "index.html").read_text(encoding="utf-8"), (HERE / "app.js").read_text(encoding="utf-8")
+    assert 'id="view-home"' in html and 'href="#/home" id="nav-home"' in html and 'id="entries"' not in html
+    route = js[js.index("function route()"):js.index("function render()")]
+    assert route.index('a === "list"') < route.index("return showHome()") and 'return showList();' not in route.replace('a === "list") return showList();', "")
+    home = js[js.index("async function showHome()"):js.index("async function showList()")]
+    assert 'api("/api/problems")' in home and "nextOf(d.next)" in home and "nextOf(d.next)" in js[js.index("async function showReport()"):js.index("async function showReport()") + 1500]
+    assert "weaknesses.find" not in js[js.index("async function showReport()"):js.index("async function showReport()") + 1500]  # 보고서 단추가 약한 주제를 따로 앞세우지 않는다
+
+
 def settings_screen() -> None:
     """설정은 따로 된 화면(#/settings/<분류>)이다: 예전 연결 창의 칸이 id 그대로 분류 안으로 옮겨졌고, 창과 과정별 모델 대화상자는 없다. 분류는 링크라서 뒤로 가기·키보드가 된다."""
     import re
@@ -2636,6 +2647,7 @@ def main() -> None:
         case_shapes()
         table()
         tour_pictures()
+        home_screen()
         settings_screen()
         way_info()
         new_draft()

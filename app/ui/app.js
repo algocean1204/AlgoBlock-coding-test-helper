@@ -308,14 +308,15 @@ const tutorBubble = (text) => `<div class="msg tutor"><span class="who">튜터</
 function show(view) {
   const moved = S.view && S.view !== view;
   S.view = view;
-  for (const name of ["list", "new", "code", "feedback", "report", "settings"]) $("view-" + name).hidden = name !== view;
+  for (const name of ["home", "list", "new", "code", "feedback", "report", "settings"]) $("view-" + name).hidden = name !== view;
   const editing = location.hash.startsWith("#/edit/"); // 문제 수정은 등록 화면을 쓰지만 문제 목록에 속한다
-  for (const [id, on] of [["nav-list", editing || (view !== "new" && view !== "report" && view !== "settings")], ["nav-report", view === "report"], ["nav-new", view === "new" && !editing]]) on ? $(id).setAttribute("aria-current", "page") : $(id).removeAttribute("aria-current");
+  for (const [id, on] of [["nav-home", view === "home"], ["nav-list", editing || view === "list" || view === "code" || view === "feedback"], ["nav-report", view === "report"], ["nav-new", view === "new" && !editing]]) on ? $(id).setAttribute("aria-current", "page") : $(id).removeAttribute("aria-current");
   $("main").scrollTop = 0;
   if (view !== "settings") $("settings-link").removeAttribute("aria-current");
   if (moved) { say(carried); carried = ""; } // 앞 화면의 상태 문구를 남기지 않는다
   if (view !== "code") document.title = "AlgoBlock";
-  if (moved) $({ list: "list-title", new: "new-title-h", code: "p-title", feedback: "fb-title", report: "report-title", settings: "set-title" }[view]).focus();
+  if (!S.first) { S.first = true; if (view === "home") $("home-title").focus(); } // 첫 로드에서도 제목에 초점: Tab 한 번에 주 단추
+  if (moved) $({ home: "home-title", list: "list-title", new: "new-title-h", code: "p-title", feedback: "fb-title", report: "report-title", settings: "set-title" }[view]).focus();
 }
 
 let lastHash = "";
@@ -354,7 +355,8 @@ function route() {
   if (a === "new") return showNew();
   if (a === "edit" && b) return showEdit(b);
   if (a === "report") return showReport();
-  return showList();
+  if (a === "list") return showList();
+  return showHome();
 }
 
 function render() {
@@ -378,28 +380,33 @@ const LEGEND = `<p class="hint legend"><span><i class="lv l1 done">1</i>통과(�
   <span>숫자가 단계예요. 1단계 청록에서 5단계 빨강으로 갈수록 어려워요.</span><span class="groups">${Object.entries(GROUP_NAME).map(([k, n]) => `<span><i class="gdot g-${k}" aria-hidden="true"></i>${n}</span>`).join("")}</span></p>`;
 
 let LIST_LANG = ""; // 등록한 문제 목록에서 고른 언어(빈 글은 전체)
+/** 홈(대시보드): '오늘 할 일' 하나. 문제는 서버의 큐 첫 문제(nextOf)이고 결과·피드백·학습 보고서의 '다음 문제'와 같은 규칙이다. */
+async function showHome() {
+  show("home");
+  const [rep] = await Promise.all([api("/api/report"), api("/api/problems")]); // /api/problems가 오늘 출석을 찍는다
+  if (S.view !== "home") return;
+  S.homeAi = connected();
+  const box = $("home-body");
+  if (!rep.ok) return void (box.innerHTML = `${noteHtml(errorNote(rep.error))}<p class="home-links"><a class="btn" href="#/list">문제 목록 열기</a></p>`);
+  const d = rep.data, sum = d.summary, next = nextOf(d.next), fresh = !sum.submissions && !d.themes.some((t) => t.state !== "new");
+  const today = `<section class="today" aria-labelledby="today-h"><h2 id="today-h" class="entry-label">오늘 할 일</h2>
+    ${next ? `<p class="today-title">${esc(next.title)}</p><p class="today-why">${lvBadge(next.level)}${next.theme_name ? `<span>${esc(next.theme_name)}</span>` : ""}<span>${fresh ? "첫 문제예요." : esc(next.why)}</span></p>
+      <div class="today-do"><a class="btn primary big" href="#/p/${esc(next.id)}">${fresh ? "첫 문제 풀기" : "이어서 풀기"}</a>${fresh ? "" : '<a class="link" href="#/list">다른 문제 고르기</a>'}</div>`
+    : '<p class="today-title">기본 문제를 모두 풀었어요</p><div class="today-do"><a class="btn primary big" href="#/list">문제 목록에서 고르기</a></div>'}</section>`;
+  const more = fresh ? `<ol class="steps3"><li><strong>1 문제를 읽고 코드를 써요</strong><span>일곱 언어로 풀 수 있어요.</span></li>
+      <li><strong>2 제출하면 바로 채점해요</strong><span>AI를 연결하지 않아도 돼요.</span></li>
+      <li><strong>3 막히면 힌트나 튜터</strong><span>힌트는 미리 만들어 둔 것이고, 튜터는 AI를 연결하면 써요.</span></li></ol>
+    <p class="home-links"><a class="link" href="#/list">다른 문제 고르기</a> · <a class="link" href="#/new">가진 문제 넣기</a> · <button type="button" class="link-btn" id="note-conn">AI 연결하기</button> · <button type="button" class="link-btn" id="tour-open2">1분 사용법 보기</button></p>`
+    : `<p class="home-links muted">통과 ${sum.solved} / ${sum.total} · 출석 ${d.attendance.days}일 · <a class="link" href="#/list">문제 목록</a> · <a class="link" href="#/new">가진 문제 넣기</a></p>`;
+  box.innerHTML = today + more;
+}
+
 async function showList() {
   show("list");
-  const [r, rep] = await Promise.all([api("/api/problems"), api("/api/report")]);
+  const r = await api("/api/problems");
   if (S.view !== "list") return;
   if (!r.ok) return void ($("list-body").innerHTML = noteHtml(errorNote(r.error)));
   const all = r.data.problems, built = all.filter((p) => p.builtin);
-  const sum = rep.ok ? rep.data.summary : null, next = rep.ok ? nextOf(rep.data.next) : null, fresh = !!sum && !sum.submissions, ai = connected();
-  // 위: 입구 셋. 카드마다 누르면 생기는 일 한 줄, 주 동작은 '문제 풀기'의 단추 하나
-  $("entries").innerHTML = !sum ? "" : `<section class="entry main" aria-labelledby="entry-solve">
-      <h2 class="entry-label" id="entry-solve">문제 풀기</h2>
-      ${next ? `<p class="entry-title">${esc(next.title)}</p><p class="entry-why">${lvBadge(next.level)}${next.theme_name ? `<span>${esc(next.theme_name)}</span>` : ""}<span>${esc(next.why)}</span></p>`
-    : '<p class="entry-title">기본 문제를 모두 풀었어요</p><p class="entry-why">아래에서 다시 풀 문제를 골라요.</p>'}
-      <p class="entry-tutor">${ai ? `<span class="dot" aria-hidden="true"></span>막히면 튜터가 질문으로 이끌어요 · ${esc(CONN.name)} 연결됨`
-    : '막히면 튜터가 질문으로 이끌어요. 튜터는 AI를 연결하면 써요 — <button type="button" class="link-btn" id="note-conn">연결하기</button>'}</p>
-      ${next ? `<div class="entry-do"><a class="btn primary big" href="#/p/${esc(next.id)}">${fresh ? "첫 문제 풀기" : "이어서 풀기"}</a><span class="hint">누르면 문제와 코드 칸이 열려요.</span></div>` : ""}
-    </section>
-    <section class="entry" aria-labelledby="entry-new"><h2 class="entry-label" id="entry-new">내 문제 넣기</h2>
-      <p>가진 문제를 글이나 사진으로 넣어 같은 방식으로 풀어요.</p>
-      <div class="entry-do"><a class="btn" href="#/new">${ico("i-plus")}내 문제 넣기</a><span class="hint">글 넣기 → 확인하기 → 등록, 세 걸음이에요.</span></div></section>
-    <section class="entry" aria-labelledby="entry-me"><h2 class="entry-label" id="entry-me">내 기록</h2>
-      <p><strong class="num">${sum.solved}</strong> / ${sum.total} 문제 통과 · 출석 ${rep.data.attendance.days}일</p>
-      <div class="entry-do"><a class="btn" href="#/report">${ico("i-chart")}학습 보고서 보기</a><span class="hint">강한 주제와 더 공부할 주제를 찾아요.</span></div></section>`;
   // 등록한 문제가 6개 이상이면 머리 옆에 언어 칩(전체 + 목록에 있는 언어). 화면에서만 거르고, 새로 고치면 전체로
   const ownLangs = [...new Set(all.filter((p) => !p.sample).map((p) => p.language))];
   if (!ownLangs.includes(LIST_LANG)) LIST_LANG = "";
@@ -417,7 +424,7 @@ async function showList() {
       <ul class="ladders" aria-labelledby="list-builtin">${r.data.themes.map((t) => `<li class="ladder-row">
         <span class="ladder-name">${gdot(t.key)}${esc(t.name)}<small>${t.solved}/${t.total}</small></span>
         ${levelCells(t.name, built.filter((p) => p.theme === t.key))}
-        ${!t.next ? `<span class="ladder-next all">${ico("i-check")}모두 풀었어요</span>` : next && t.next.id === next.id ? '<span class="ladder-next here">위 ‘문제 풀기’의 문제예요</span>'
+        ${!t.next ? `<span class="ladder-next all">${ico("i-check")}모두 풀었어요</span>`
     : `<a class="ladder-next" href="#/p/${esc(t.next.id)}"><span class="muted">다음</span><span class="ladder-next-title">${esc(t.next.title)}</span>${ico("i-caret")}</a>`}
       </li>`).join("")}</ul>`;
   }
@@ -448,11 +455,11 @@ async function showReport() {
   const touched = d.themes.some((t) => t.state !== "new"), fresh = !sum.submissions && !touched;
   const att = d.attendance, came = att.recent.filter(Boolean).length; // 출석 칸의 색은 단계 색이 아니다(출석·결석만)
   // 맨 위: 한 줄 요약과 주 동작 하나(기록이 없으면 첫 문제, 있으면 약한 주제의 다음 문제)
-  const weak = d.weaknesses.find((x) => x.next), target = !fresh && weak ? { ...weak.next, why: weak.name } : nextOf(d.next);
-  const label = fresh ? "첫 문제 풀기" : weak ? "더 공부할 문제 풀기" : "다음 문제 풀기";
+  const target = nextOf(d.next); // 홈의 '오늘 할 일'과 같은 규칙(서버의 큐 첫 문제). 약한 주제의 문제는 아래 '더 공부할 주제'에서
+  const label = fresh ? "첫 문제 풀기" : "이어서 풀기";
   let html = `<section class="report-top"><div><p class="report-line">${fresh ? "아직 기록이 없어요. 문제를 풀고 제출하면 주제별 진행과 약한 주제가 여기에 쌓여요."
     : `통과 <strong>${sum.solved}</strong> / ${sum.total} · 제출 ${sum.submissions}번 · 첫 제출에 통과 ${Math.round(100 * sum.first_try_rate)}% · 출석 ${att.days}일`}</p>
-    ${target ? `<p class="hint">${fresh ? "" : weak ? `더 공부할 주제: ${esc(weak.name)} · ` : ""}${esc(target.title)}</p>` : ""}</div>
+    ${target ? `<p class="hint">${fresh ? "" : `${esc(target.why)} · `}${esc(target.title)}</p>` : ""}</div>
     ${target ? `<a class="btn primary big" href="#/p/${esc(target.id)}">${label}</a>` : ""}</section>`;
   if (fresh) return void ($("report-body").innerHTML = html);
   const fails = Object.keys(FAIL_WORD).map((kind) => [kind, sum.fails[kind] || 0]); // 기본 문제와 등록한 문제의 제출을 모두 센다
@@ -2436,7 +2443,7 @@ function renderAccounts(a) {
   renderKeyStatus();
   if (a.chatgpt) { clearInterval(loginPoll); $("chatgpt-link").hidden = true; }
   if (S.view === "code" && S.problem) render();
-  if (S.view === "list" && $("entries").innerHTML && !!$("note-conn") === ready) showList(); // 홈의 연결 한 줄을 새로 그린다
+  if (S.view === "home" && S.homeAi !== undefined && S.homeAi !== ready) showHome(); // 홈의 연결 안내를 새로 그린다
 }
 
 /** 화면 색: 라디오를 고른 값(저장 중이면 그 값, 아니면 저장된 값)에 맞추고 화면에도 적용한다(적용 함수는 index.html 머리에 있다). */
@@ -3072,7 +3079,7 @@ document.addEventListener("click", (e) => {
     "key-recheck-claude": () => recheckKey("claude"), "key-recheck-openai": () => recheckKey("openai"),
     "key-del-claude": () => askKeyDelete("claude"), "key-del-openai": () => askKeyDelete("openai"),
     "key-delete-no": () => { const name = keyDeleting; keyDeleting = null; renderKeyDelete(); const back = name && $(`key-del-${name}`); if (back) back.focus(); }, "key-delete-yes": deleteKey,
-    "tour-open": openTour, "tour-skip": () => { const last = tourAt === TOUR.length - 1; closeTour(); if (last && !CONN.ready) openConn(); }, "tour-prev": () => tourStep(-1), "tour-next": () => tourStep(1),
+    "tour-open": openTour, "tour-open2": openTour, "tour-skip": () => { const last = tourAt === TOUR.length - 1; closeTour(); if (last && !CONN.ready) openConn(); }, "tour-prev": () => tourStep(-1), "tour-next": () => tourStep(1),
     "drop": () => $("new-files").click(), "read-files": readFiles, "asset-close": closeAsset,
     "case-add": () => { addCaseRow(); $("case-rows").lastElementChild.querySelector("input").focus(); },
     "mode-switch": async () => {
