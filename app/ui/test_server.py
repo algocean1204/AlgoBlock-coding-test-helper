@@ -1800,6 +1800,48 @@ def color_tokens() -> None:
     assert html.count('name="theme-color"') == 1 and 'data-scheme-pref="system"' in html
 
 
+def scheme_setting() -> None:
+    """화면 색: /api/prefs로 저장하고, 서버가 첫 HTML에 저장한 값을 실어 첫 그림 전에 맞춘다."""
+    import threading
+    from http.client import HTTPConnection
+
+    httpd = server.ThreadingHTTPServer(("127.0.0.1", 0), server.Handler)
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+
+    def first_page() -> str:
+        conn = HTTPConnection("127.0.0.1", httpd.server_port, timeout=60)
+        conn.request("GET", "/")
+        page = conn.getresponse().read().decode("utf-8")
+        conn.close()
+        return page
+
+    assert [f'name="scheme" value="{value}"' in first_page() for value in ("system", "light", "dark")] == [True] * 3  # 설정 창의 라디오 셋
+    saved = server.read_json(server.PREFS_FILE, {})
+    server.write_json(server.PREFS_FILE, {**saved, "language": "javascript", "stages": {"keep": "me"}})  # 다른 설정이 같이 남는지 보려고 심는다
+    try:
+        assert call("/api/accounts")[1]["scheme"] == "system" and 'data-scheme-pref="system"' in first_page()  # 고르지 않았으면 운영체제를 따른다
+        for bad in ({}, {"scheme": "sepia"}, {"scheme": ""}, {"scheme": None}, {"scheme": ["dark"]}, {"scheme": 1}):
+            assert "화면 색" in refuses("/api/prefs", **bad), bad
+        assert "scheme" not in server.read_json(server.PREFS_FILE, {})  # 거절한 값은 적히지 않는다
+        for scheme in ("dark", "light"):
+            assert call("/api/prefs", scheme=scheme)[1]["scheme"] == scheme
+            assert server.read_json(server.PREFS_FILE, {})["scheme"] == scheme and call("/api/accounts")[1]["scheme"] == scheme
+            page = first_page()
+            assert f'<html lang="ko" data-scheme-pref="{scheme}">' in page
+            assert 'data-scheme-pref="system"' in (HERE / "index.html").read_text(encoding="utf-8")  # 파일은 그대로, 내보낼 때만 바꾼다
+            assert page.index("applyScheme(") < page.index('href="app.css"')  # 적용하는 스크립트가 스타일시트보다 앞이다
+        server.write_json(server.PREFS_FILE, {**server.read_json(server.PREFS_FILE, {}), "scheme": "<x>"})  # 손으로 고친 이상한 값은 system으로 본다
+        assert call("/api/accounts")[1]["scheme"] == "system" and 'data-scheme-pref="system"' in first_page()
+        call("/api/prefs", scheme="dark")
+        assert call("/api/prefs", scheme="system")[1]["scheme"] == "system"
+        kept = server.read_json(server.PREFS_FILE, {})
+        assert "scheme" not in kept and kept["language"] == "javascript" and kept["stages"] == {"keep": "me"}  # system은 키를 지우고 다른 설정은 그대로
+    finally:
+        server.write_json(server.PREFS_FILE, saved)
+        httpd.shutdown()
+        httpd.server_close()
+
+
 def stages() -> None:
     """과정별 모델: 급과 추론 정도를 고르면 저장되고 바로 쓰인다. 빈 값은 기본값. 모르는 과정·급·정도는 거절한다.
     예전 설정(테마별 모델 이름, Grok·OpenRouter 키)은 조용히 옮기거나 버린다."""
@@ -2164,6 +2206,7 @@ def main() -> None:
     except server.Refuse as exc:
         assert exc.status == 409
     color_tokens()
+    scheme_setting()
     stages()
     newest_models()
     read_check()

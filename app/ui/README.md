@@ -101,8 +101,9 @@ POST, 문제와 무관한 것 15개
 | `/api/problems/read` | 올린 파일에서 글 읽기(저장하지 않는다) |
 | `/api/problems/cases` | 입출력 예 표나 예제 구역에서 케이스 찾기(모델 0회) |
 | `/api/tools` | 언어 도구 있음·없음. `refresh: true`면 다시 센다 |
-| `/api/accounts` | 연결 상태, 키 있음, 과정별 급과 모델 이름, 주제 목록, 마지막 언어, `tour_seen` |
+| `/api/accounts` | 연결 상태, 키 있음, 과정별 급과 모델 이름, 주제 목록, 마지막 언어, `tour_seen`, `scheme` |
 | `/api/tour` | 처음 안내를 봤다고 적는다 |
+| `/api/prefs` | 화면 색을 저장한다(`scheme`: `system`, `light`, `dark`. `system`이면 저장한 값을 지운다). 그 밖의 값은 거절한다 |
 | `/api/theme` | 과정 하나의 급과 추론 정도를 저장한다(빈 값은 기본값) |
 | `/api/client` | 연결 방식 바꾸기(`cli` 또는 `provider`) |
 | `/api/key` | API 키 넣기(400자까지) |
@@ -169,7 +170,7 @@ POST, 문제 하나에 대한 것 19개. 본문에 `id`가 필요하다.
 
 ## 디자인
 
-- 색은 `app.css` 맨 위 `:root`의 토큰 이름으로만 쓴다. 바탕 `--bg`(#F5F5F7), 면 `--surface`(#FFFFFF), 강조 `--accent`(#0071E3) 하나, 글 `--text`(#1D1D1F). 블록 종류 색(`--k-*`)은 기호에만 쓴다. 밝은 화면과 어두운 화면을 모두 지원한다. 어두운 값은 `:root[data-scheme="dark"]` 한 블록에 있고, `<head>`의 작은 스크립트가 첫 그림 전에 `<html data-scheme>`을 `light`나 `dark`로 정한다(지금은 운영체제 설정을 따른다).
+- 색은 `app.css` 맨 위 `:root`의 토큰 이름으로만 쓴다. 바탕 `--bg`(#F5F5F7), 면 `--surface`(#FFFFFF), 강조 `--accent`(#0071E3) 하나, 글 `--text`(#1D1D1F). 블록 종류 색(`--k-*`)은 기호에만 쓴다. 밝은 화면과 어두운 화면을 모두 지원한다. 어두운 값은 `:root[data-scheme="dark"]` 한 블록에 있고, `<head>`의 작은 스크립트가 첫 그림 전에 `<html data-scheme>`을 `light`나 `dark`로 정한다. 서버가 `index.html`을 내보낼 때 저장한 값을 `data-scheme-pref`에 실어 주고(`system`이면 운영체제 설정을 따른다), '연결' → '더 정하기' → '화면 색'에서 바꾼다. 안내 데모는 이 `data-scheme`을 따른다.
 - 글꼴은 맥에서 시스템 글꼴(`-apple-system`)을 먼저 쓰고, 그 밖에서는 `PretendardVariable.woff2`를 쓴다(`@font-face`).
 - 아이콘은 Phosphor Icons bold(MIT, phosphoricons.com) 한 벌이다. `index.html`의 `<symbol>`로 들어 있다.
 - 글꼴 라이선스는 SIL Open Font License 1.1이다. 전문은 `PretendardVariable-LICENSE.txt`에 있다.
