@@ -45,6 +45,8 @@ FIRST["languages"] = ["python", "javascript"]
 Path(os.environ["ALGOBLOCK_UI_BUILTIN"]).write_text(json.dumps(ROWS, ensure_ascii=False), encoding="utf-8")
 
 import server  # noqa: E402
+
+server.ROOT = TMP  # 저장소의 .env를 읽지 않는다(키 지우기 흐름이 load_keys를 다시 불러도 진짜 키가 환경에 올라오지 않게)
 from tutor.common.scope import ALGORITHMS  # noqa: E402
 from tutor.common.talk_rules import MANY_ANSWERS  # noqa: E402
 from dataclasses import replace  # noqa: E402
@@ -2106,10 +2108,9 @@ def stages() -> None:
     call("/api/theme", theme="read", tier="", effort=""), call("/api/theme", theme="guide", tier="", effort=""), call("/api/theme", theme="blocks", tier="", effort=""), call("/api/theme", theme="talk", tier="", effort="")
     assert all(row["tier"] == row["default_tier"] and row["effort"] == row["default_effort"] for row in call("/api/accounts")[1]["themes"])
 
-    # keys.json의 값이 글이 아니면 그 항목만 건너뛰고, 걷어 낸 공급자의 키(Grok·OpenRouter)는 읽지 않는다(프로젝트의 .env는 읽지 않게 바꿔 끼운다)
+    # keys.json의 값이 글이 아니면 그 항목만 건너뛰고, 걷어 낸 공급자의 키(Grok·OpenRouter)는 읽지 않는다
     server.write_json(server.KEY_FILE, {"OPENAI_API_KEY": 123, "XAI_API_KEY": "xai-test", "OPENROUTER_API_KEY": "or-test"})
-    with patch.object(server, "ROOT", TMP):
-        server.load_keys()
+    server.load_keys()
     assert not {"OPENAI_API_KEY", "XAI_API_KEY", "OPENROUTER_API_KEY"} & set(os.environ)
     assert set(call("/api/accounts")[1]["keys"]) == {"claude", "openai"} and not call("/api/accounts")[1]["connected"]
 
