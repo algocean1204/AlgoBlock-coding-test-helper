@@ -37,7 +37,7 @@ def abstract(state: MainState) -> dict:
         return {}
     return {"abstract": Abstract(spec=got.spec.strip(), patterns=known_patterns(got.patterns), skills=known_skills(got.skills)[:4],
                                  size=got.size if isinstance(got.size, int) and got.size > 0 else 0,
-                                 level=got.level if 1 <= got.level <= 5 else 0, tags=known_techniques(got.tags)[:4])}
+                                 level=whole_level(got.level), tags=known_techniques(got.tags)[:4])}
 
 
 def facts(state: MainState):
