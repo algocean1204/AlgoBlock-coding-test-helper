@@ -1327,9 +1327,9 @@ function renderCodePane() {
   $("pull-blocks").hidden = !direct || !S.session.blocks.length || !tutor;
   $("code-note").textContent = direct ? S.codeNote : "제출하면 ‘코드 전체’ 칸의 코드를 채점해요";
   $("run").hidden = !(S.problem.cases && S.problem.cases.example);
-  const away = S.busy && S.busy.where === "result" && S.busy.pid !== S.pid; // 다른 문제를 채점하는 중이면 실행·제출이 잠긴다
+  const away = S.busy && S.busy.where === "result" && S.busy.pid !== S.pid; // 다른 문제에서 실행·채점하는 중이면 실행·제출이 잠긴다
   const why = noTool() ? `이 기기에 ${LANG[S.problem.language] || S.problem.language} 도구가 없어 실행과 제출을 할 수 없어요.` : "";
-  $("tool-note").textContent = why || (away ? "다른 문제를 채점하는 중이에요. 끝나면 이 문제도 실행하고 제출할 수 있어요." : "");
+  $("tool-note").textContent = why || (away ? "다른 문제에서 실행·채점하는 중이에요. 끝나면 이 문제도 실행하고 제출할 수 있어요." : "");
   $("run").title = $("submit").title = $("run-own-go").title = why;
   $("run-input").placeholder = (S.problem.examples[0] || { input: "" }).input; // 그 문제 첫 예시의 입력
   $("code").placeholder = program() ? "여기에 전체 코드를 써요. 표준 입력을 읽고 답을 출력해요." : "여기에 전체 코드를 써요. 풀이는 solution 함수에 담아요.";
