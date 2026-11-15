@@ -48,8 +48,9 @@
 <a class="skip" href="#main">본문으로 건너뛰기</a>
 
 <header class="top">
-  <a class="brand" href="#/list" aria-label="AlgoBlock 홈(문제 목록)"><img class="brand-ico" src="favicon.svg" alt="" width="22" height="22">AlgoBlock</a>
+  <a class="brand" href="#/home" aria-label="AlgoBlock 홈"><img class="brand-ico" src="favicon.svg" alt="" width="22" height="22">AlgoBlock</a>
   <nav class="nav" aria-label="화면 이동">
+    <a href="#/home" id="nav-home">홈</a>
     <a href="#/list" id="nav-list">문제 목록</a>
     <a href="#/new" id="nav-new">내 문제 넣기</a>
     <a href="#/report" id="nav-report">학습 보고서</a>
@@ -138,10 +139,16 @@
 </section>
 
 <main id="main">
-  <!-- 02 문제 목록(홈): 입구 셋 → 내 문제 → 주제별 단계 -->
+  <!-- 01 홈(대시보드): 오늘 할 일 하나 -->
+  <section id="view-home" class="page" hidden aria-labelledby="home-title">
+    <h1 id="home-title" class="sr-only" tabindex="-1">홈</h1>
+    <div id="home-body"></div>
+  </section>
+
+  <!-- 02 문제 목록: 내 문제 → 주제별 단계 -->
   <section id="view-list" class="page wide" hidden aria-labelledby="list-title">
     <h1 id="list-title" class="sr-only" tabindex="-1">문제 목록</h1>
-    <div id="entries" class="entries"></div>
+    <div class="list-top"><a class="btn small" href="#/new">내 문제 넣기</a></div>
     <div id="list-body"></div>
   </section>
 

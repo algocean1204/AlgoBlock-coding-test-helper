@@ -904,13 +904,11 @@ a.lv.done:hover { background: var(--lvc); color: var(--on-lv); filter: brightnes
 .legend .groups { display: inline-flex; flex-wrap: wrap; gap: 4px 12px; }
 .legend .groups span { gap: 4px; }
 .list-head .hint { margin: 0 4px 0 auto; }
-.ladder-next.here { color: var(--muted); font-size: 13px; font-weight: 600; }
 
 /* ── 홈: 입구 셋 ── */
 .page.wide { max-width: 1040px; padding-top: 28px; }
-.entries { display: grid; grid-template-columns: minmax(0, 1.55fr) repeat(2, minmax(0, 1fr)); gap: 14px; margin-bottom: 30px; }
 .entry { display: flex; flex-direction: column; gap: 8px; min-width: 0; padding: 20px 22px; background: var(--surface); border-radius: var(--r-xl); box-shadow: var(--shadow-card); }
-.entry.main { background: linear-gradient(135deg, var(--accent-soft), var(--surface) 62%); box-shadow: var(--shadow-card), inset 0 0 0 1px var(--accent-ring); }
+.entry.main, .today { background: linear-gradient(135deg, var(--accent-soft), var(--surface) 62%); box-shadow: var(--shadow-card), inset 0 0 0 1px var(--accent-ring); }
 .entry-label { font-size: 13px; font-weight: 700; color: var(--accent-text); }
 .entry > p { font-size: 14px; line-height: 1.6; color: var(--muted); }
 .entry > p.entry-title { font-size: 24px; font-weight: 700; line-height: 1.3; letter-spacing: -0.01em; color: var(--text); }
@@ -920,7 +918,6 @@ a.lv.done:hover { background: var(--lvc); color: var(--on-lv); filter: brightnes
 .entry-do { margin-top: auto; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding-top: 6px; }
 .btn.big { min-height: 44px; padding: 0 22px; font-size: 15px; }
 .link-btn { padding: 0; border: 0; background: none; color: var(--accent-text); font: inherit; font-weight: 650; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
-@media (max-width: 960px) { .entries { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } .entry.main { grid-column: 1 / -1; } }
 
 /* ── 내 문제 넣기: 세 걸음. 칸마다 data-in에 적힌 걸음에서만 보인다 ── */
 .wsteps { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: -10px 0 16px; }
@@ -1035,7 +1032,6 @@ body.conn-open main .primary { background: var(--fill); color: var(--text); bord
   .workspace { flex: none; }
   #pane-code { height: 78vh; min-height: 420px; }
   #pane-tutor { min-height: 320px; }
-  .entries { grid-template-columns: minmax(0, 1fr); }
   .more-grid { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 760px) {
@@ -1079,3 +1075,15 @@ body.conn-open main .primary { background: var(--fill); color: var(--text); bord
   :root, :root[data-scheme="dark"] { --line: var(--line-strong); --muted: var(--text); --code-gutter: var(--text); --syn-comment: var(--text); }
   .btn, .tabs, .tag, .grade, .lv, .state, .test, .select { box-shadow: inset 0 0 0 1px var(--line-strong); }
 }
+
+/* ── 홈(대시보드): 오늘 할 일 하나 ── */
+.today { display: grid; gap: 8px; padding: 24px 26px; border-radius: var(--r-xl); background: linear-gradient(135deg, var(--accent-soft), var(--surface) 62%); box-shadow: var(--shadow-card), inset 0 0 0 1px var(--accent-ring); }
+.today-title { font-size: 28px; font-weight: 700; line-height: 1.3; letter-spacing: -0.01em; }
+.today-why { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: 14px; color: var(--muted); }
+.today-do { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin-top: 8px; }
+.steps3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin: 18px 0; }
+.steps3 li { display: grid; gap: 4px; align-content: start; padding: 16px 18px; border-radius: var(--r-lg); background: var(--surface); box-shadow: var(--shadow-card); }
+.steps3 strong { font-size: 15px; } .steps3 span { font-size: 13.5px; line-height: 1.55; color: var(--muted); }
+.home-links { margin-top: 16px; font-size: 13.5px; } .home-links .link-btn { font-size: inherit; }
+.list-top { display: flex; justify-content: flex-end; margin-bottom: 12px; }
+@media (max-width: 860px) { .steps3 { grid-template-columns: minmax(0, 1fr); } }
