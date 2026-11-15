@@ -1698,6 +1698,66 @@ def key_check_flow() -> None:
         server.drop_key("ANTHROPIC_API_KEY")
 
 
+def key_rows_flow() -> None:
+    """공급자별 키 줄: 연결 여부, 끝 4자리(나머지 글자는 응답 어디에도 없다), 마지막 확인과 그 결과. 다시 확인은 서버에 있는 키로 하고, 지우면 줄의 확인 기록도 지운다."""
+    secret = "sk-ant-api03-" + "Zq7" * 6 + "wxyz"
+    short = "sk-abc"
+    seen = []
+
+    def fake(result):
+        def check(provider, key, **kw):
+            seen.append((provider, key))
+            return result
+        return check
+
+    with patch.dict(os.environ, {}):
+        for name in ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "ALGOBLOCK_LLM_PROVIDER"):
+            os.environ.pop(name, None)
+        server.KEY_FILE.unlink(missing_ok=True)
+        server.KEY_CHECK_FILE.unlink(missing_ok=True)
+        empty = call("/api/accounts")[1]
+        assert empty["key_rows"] == {name: {"on": False, "tail": "", "at": "", "result": ""} for name in ("claude", "openai")}, empty["key_rows"]
+        with patch.object(server.keycheck, "check", fake("ok")):
+            body = call("/api/key", name="claude", value=secret)[1]
+        row = body["key_rows"]["claude"]
+        assert (row["on"], row["tail"], row["result"]) == (True, "wxyz", "ok") and row["at"] and body["using"] == "claude", row
+        assert secret[:-4] not in json.dumps(body, ensure_ascii=False) and secret[:-4] not in server.KEY_CHECK_FILE.read_text(encoding="utf-8")  # 끝 4자리 말고는 응답에도 확인 기록에도 없다
+        record = server.KEY_CHECK_FILE.read_text(encoding="utf-8")
+        assert secret not in record and server.key_print(secret) in record and server.key_print(secret) != secret  # 기록에는 키가 아니라 지문만 있다
+        other = "sk-ant-api03-" + "Nn5" * 6 + "9988"  # 키만 바뀐 경우(.env의 키 B를 두고 화면에서 넣은 키 A를 확인한 뒤 다시 켬): 옛 기록은 지금 키의 것이 아니다
+        os.environ["ANTHROPIC_API_KEY"] = other
+        changed = call("/api/accounts")[1]["key_rows"]["claude"]
+        assert changed == {"on": True, "tail": "9988", "at": "", "result": ""}, changed
+        os.environ["ANTHROPIC_API_KEY"] = secret
+        assert call("/api/accounts")[1]["key_rows"]["claude"]["result"] == "ok"  # 같은 키로 돌아오면 그 기록이 다시 보인다
+        import threading  # 키 넣기와 다시 확인이 겹쳐도 공급자의 기록이 서로 덮이지 않는다
+        pool = [threading.Thread(target=server.note_key_check, args=(name, "ok", key)) for _ in range(8) for name, key in (("claude", secret), ("openai", "sk-proj-" + "b" * 20))]
+        [t.start() for t in pool]
+        [t.join() for t in pool]
+        assert sorted(server.read_json(server.KEY_CHECK_FILE, {})) == ["claude", "openai"]
+        server.note_key_check("openai", None)
+        os.environ["OPENAI_API_KEY"] = short  # 너무 짧은 글은 끝자리도 싣지 않는다
+        assert call("/api/accounts")[1]["key_rows"]["openai"] == {"on": True, "tail": "", "at": "", "result": ""}
+        del os.environ["OPENAI_API_KEY"]
+        for result in ("invalid", "denied", "offline", "ok"):  # 다시 확인: 서버에 있는 키로 한 번, 결과와 시각을 남긴다
+            seen.clear()
+            with patch.object(server.keycheck, "check", fake(result)):
+                got = call("/api/key/check", name="claude")[1]
+            assert seen == [("claude", secret)] and got["key_check"] == result and got["key_rows"]["claude"]["result"] == result, (result, seen)
+            assert secret[:-4] not in json.dumps(got, ensure_ascii=False)
+        for bad in ({"name": "x"}, {"name": ["claude"]}):
+            assert refuses("/api/key/check", **bad)
+        try:
+            call("/api/key/check", name="openai")
+            raise AssertionError("넣지 않은 키는 확인하지 못한다")
+        except server.Refuse as exc:
+            assert (exc.status, exc.code) == (409, "key_missing")
+        deleted = call("/api/key/delete", name="claude")[1]
+        assert deleted["key_rows"]["claude"] == {"on": False, "tail": "", "at": "", "result": ""} and "claude" not in server.read_json(server.KEY_CHECK_FILE, {})
+        os.environ["ANTHROPIC_API_KEY"] = secret  # 밖에서 준 키는 확인 기록이 없다(예전 기록이 남았어도 지금 키의 것이 아니면 보이지 않게 지운 상태)
+        assert call("/api/accounts")[1]["key_rows"]["claude"]["result"] == ""
+
+
 def error_lines() -> None:
     """실행 오류 글에서 고른 한 줄(언어마다)."""
     samples = {
@@ -2326,6 +2386,7 @@ def main() -> None:
         prep_failed()
         key_flow()
         key_check_flow()
+        key_rows_flow()
         prep_unverified()
         stale_save()
         builtin_prepare()
