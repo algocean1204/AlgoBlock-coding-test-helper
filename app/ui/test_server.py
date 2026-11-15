@@ -2496,6 +2496,7 @@ def main() -> None:
         own_starter()
         case_shapes()
         table()
+        tour_pictures()
         hidden_cases()
         assert not fake.calls, fake.calls  # 고치기·지우기도 모델을 부르지 않는다
         checks()
