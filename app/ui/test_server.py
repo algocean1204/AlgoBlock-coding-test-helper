@@ -255,10 +255,12 @@ def builtin(fake) -> None:
     debug = call("/api/debug", id=PID, code=slow)[1]
     assert debug["efficiency_only"] and not debug["passed"]  # 틀린 줄을 찾을 일이 아니다(모델 0회)
 
-    assert call("/api/hint", id=PID, peek=True)[1] == {"seen": 0, "total": 6, "done": False, "shown": []}  # 들여다보기만 하면 새 힌트가 열리지 않는다
+    toc = [{"block": 1, "kind": "loop", "seen": 0, "total": 3}, {"block": 2, "kind": "condition", "seen": 0, "total": 3}]  # 힌트 목차: 이름은 그 블록의 힌트를 다 본 뒤에만
+    assert call("/api/hint", id=PID, peek=True)[1] == {"seen": 0, "total": 6, "done": False, "shown": [], "blocks": toc}  # 들여다보기만 하면 새 힌트가 열리지 않는다
     hints = [call("/api/hint", id=PID)[1] for _ in range(7)]
     assert len(call("/api/hint", id=PID, peek=True)[1]["shown"]) == 6
     assert [(h["block"], h["step"]) for h in hints] == [(1, 1), (1, 2), (1, 3), (2, 1), (2, 2), (2, 3), (2, 3)]
+    assert [b.get("name") for b in hints[-1]["blocks"]] == ["개수 세기", "k번째에 꽂기"]  # 블록을 고르지 않으면 전처럼 블록 1부터 차례로
     assert hints[0]["hint"] == FIRST["ready"]["plan"]["blocks"][0]["hints"][0] and [h["done"] for h in hints[4:]] == [False, True, True] and len(hints[2]["shown"]) == 3
     # 블록 이름(답의 일부)은 그 블록의 힌트를 모두 본 뒤에만 서버가 보낸다. 종류는 늘 보낸다
     assert [h.get("name") for h in hints[:6]] == [None, None, "개수 세기", None, None, "k번째에 꽂기"] and [h["kind"] for h in hints] == ["loop"] * 3 + ["condition"] * 4
@@ -946,6 +948,33 @@ def language_memory() -> None:
     assert call("/api/state", id=opened["id"])[1]["problem"]["language"] == "python"
     call("/api/language", id=PID, language="python")
     assert call("/api/accounts")[1]["language"] == "python"
+
+
+def hint_by_block() -> None:
+    """혼자 풀기의 힌트는 블록마다 고른다(모델 0회): 막힌 블록부터 열고, 본 힌트 수(도움)는 하나씩 는다. '처음부터'와 예전 기록도 맞게 읽는다."""
+    pid = server.register({"title": FIRST["title"], "text": FIRST["text"], "cases": [{"input": e["input"], "expected": e["expected"]} for e in FIRST["examples"]]})["id"]
+    with server.tutor() as t:
+        t.adopt(pid, FIRST["ready"])
+    seen = lambda: call("/api/state", id=pid)[1]["problem"]["study"]["hints_seen"]  # noqa: E731
+    picked = call("/api/hint", id=pid, block=2)[1]
+    assert (picked["block"], picked["step"], picked["seen"], [b["seen"] for b in picked["blocks"]], seen()) == (2, 1, 1, [0, 1], 1), picked
+    assert [(h["block"], h["step"]) for h in call("/api/hint", id=pid, peek=True)[1]["shown"]] == [(2, 1)]
+    for bad in (0, 3, "2", True):
+        assert "블록을 다시 골라" in refuses("/api/hint", id=pid, block=bad), bad
+    last = [call("/api/hint", id=pid, block=2)[1] for _ in range(3)][-1]  # 그 블록을 다 본 뒤에는 그 블록의 마지막 힌트를 다시 준다(세지 않는다)
+    assert (last["step"], last["name"], last["seen"], seen()) == (3, "k번째에 꽂기", 3, 3), last
+    assert [b.get("name") for b in last["blocks"]] == [None, "k번째에 꽂기"]  # 다 본 블록만 이름이 보인다
+    first = call("/api/hint", id=pid)[1]  # 블록을 고르지 않으면 아직 다 보지 않은 첫 블록
+    assert (first["block"], first["step"], first["seen"]) == (1, 1, 4), first
+    rows = server.read_json(server.HINTS_FILE, {})
+    server.write_json(server.HINTS_FILE, {**rows, pid: {"from": 99, "seen": {"2": 3, "1": 1}}})  # 이번 풀이의 것이 아닌 기록: 본 수를 블록 1부터 나눈다
+    assert [b["seen"] for b in call("/api/hint", id=pid, peek=True)[1]["blocks"]] == [3, 1]
+    server.write_json(server.HINTS_FILE, rows)
+    call("/api/reset", id=pid)  # '처음부터' 뒤에는 블록마다 본 수도 처음부터(누적 수는 남는다)
+    assert [b["seen"] for b in call("/api/hint", id=pid, peek=True)[1]["blocks"]] == [0, 0] and seen() == 0
+    assert (call("/api/hint", id=pid, block=2)[1]["step"], seen()) == (1, 1)
+    with server.tutor() as t:
+        assert t.store.study(pid)["hints_seen"] == 5 and t.store.study(pid)["help_first_at"]
 
 
 def no_tool() -> None:
@@ -2513,6 +2542,7 @@ def main() -> None:
         tour_pictures()
         new_draft()
         hidden_cases()
+        hint_by_block()
         assert not fake.calls, fake.calls  # 고치기·지우기도 모델을 부르지 않는다
         checks()
         http()

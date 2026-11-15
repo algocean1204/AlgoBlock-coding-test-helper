@@ -74,6 +74,7 @@ OWN_FILE = DATA / "own_way.json"  # '끝까지 내 방식으로 쓰기'를 켠 �
 CODES_FILE = DATA / "codes.json"  # 언어마다 쓰던 코드 {문항: {언어: 코드}}. 언어를 바꿨다 돌아와도 남아 있게
 ATTEND_FILE = DATA / "attendance.json"  # 출석한 날 ["YYYY-MM-DD", …](기기 현지 날짜)
 CHECKPOINTS_FILE = DATA / "checkpoints.json"  # 언어마다 마지막 체크포인트 {문항: {언어: {code: 직접 풀기 글, blocks: 블록 칸, at: ISO 시각}}}
+HINTS_FILE = DATA / "hints.json"  # 혼자 풀기에서 블록마다 이번 풀이에 본 힌트 수 {문항: {"from": 그때의 hints_at_reset, "seen": {블록 번호: 수}}}. 없거나 맞지 않으면 본 수를 블록 1부터 차례로 나눈다
 TOUCHED_FILE = DATA / "touched.json"  # 문제를 마지막으로 손댄 시각 {문항: ISO 시각}(코드 저장·실행·제출·힌트). '이어서 풀기'가 가장 최근에 쓰던 문제를 고른다
 KINDS = ("example", "accuracy", "efficiency")  # 케이스 종류: 공개 예시, 숨긴 정확성, 숨긴 효율성(큰 입력)
 STATIC = {"/": ("index.html", "text/html"), "/index.html": ("index.html", "text/html"),
@@ -1392,7 +1393,7 @@ def delete(body: dict) -> dict:
             t.store.delete_problem(pid)
             if t.index is not None:  # 비슷한 문항 찾기 색인에서도 뺀다
                 t.index.delete(pid)
-        for path in (BLOCKS_FILE, OWN_FILE, CODES_FILE, CHECKPOINTS_FILE, TOUCHED_FILE):
+        for path in (BLOCKS_FILE, OWN_FILE, CODES_FILE, CHECKPOINTS_FILE, TOUCHED_FILE, HINTS_FILE):
             write_json(path, {key: value for key, value in read_json(path, {}).items() if key != pid})
         shutil.rmtree(ASSETS / pid, ignore_errors=True)
         shutil.rmtree(LARGE / pid, ignore_errors=True)
@@ -1809,10 +1810,35 @@ def hint_rows(t, pid: str) -> list[dict]:
             for n, block in enumerate(blocks, 1) for k, hint in enumerate(block["hints"][:3], 1)]
 
 
-def hints_shown(rows: list[dict], seen: int) -> list[dict]:
-    """본 힌트까지. 블록 이름은 그 블록의 힌트를 모두 본 뒤에만 싣는다(이름이 답의 일부다. 화면에서 가리지 않고 보내지 않는다)."""
-    done = {row["block"] for row in rows[:seen] if row["last"]}
-    return [{key: value for key, value in row.items() if key != "last" and (key != "name" or row["block"] in done)} for row in rows[:seen]]
+def hint_counts(study: dict, rows: list[dict], saved) -> dict[int, int]:
+    """블록마다 이번 풀이에서 본 힌트 수 {블록 번호: 수}. 남겨 둔 수가 이번 풀이의 것이고 합이 본 힌트 수와 같을 때만 쓴다.
+    아니면(예전 기록, '처음부터' 뒤, 계획이 바뀜) 본 수를 블록 1부터 차례로 나눈다(블록마다 고르기 전과 같은 결과)."""
+    sizes = Counter(row["block"] for row in rows)
+    seen = saved.get("seen") if isinstance(saved, dict) and saved.get("from") == study["hints_at_reset"] else None
+    if isinstance(seen, dict):
+        got = {n: seen.get(str(n), 0) for n in sizes}
+        if all(isinstance(k, int) and 0 <= k <= sizes[n] for n, k in got.items()) and sum(got.values()) == hints_now(study, rows):
+            return got
+    left, out = hints_now(study, rows), {}
+    for n, size in sizes.items():
+        out[n] = min(size, left)
+        left -= out[n]
+    return out
+
+
+def hints_shown(rows: list[dict], counts: dict[int, int]) -> list[dict]:
+    """본 힌트(블록 차례, 그 안의 힌트 차례). 블록 이름은 그 블록의 힌트를 모두 본 뒤에만 싣는다(이름이 답의 일부다. 화면에서 가리지 않고 보내지 않는다)."""
+    seen = [row for row in rows if row["step"] <= counts.get(row["block"], 0)]
+    done = {row["block"] for row in seen if row["last"]}
+    return [{key: value for key, value in row.items() if key != "last" and (key != "name" or row["block"] in done)} for row in seen]
+
+
+def hint_blocks(rows: list[dict], counts: dict[int, int]) -> list[dict]:
+    """힌트 목차: 블록마다 번호, 종류, 본 수와 모두의 수. 이름은 그 블록의 힌트를 모두 본 뒤에만."""
+    sizes = Counter(row["block"] for row in rows)
+    firsts = {row["block"]: row for row in reversed(rows)}
+    return [{"block": n, "kind": firsts[n]["kind"], "seen": counts[n], "total": size, **({"name": firsts[n]["name"]} if counts[n] >= size else {})}
+            for n, size in sizes.items()]
 
 
 QUOTE_PAIRS = {"'": "'", '"': '"', "‘": "’", "“": "”"}
@@ -2388,15 +2414,25 @@ def handle(path: str, body: dict) -> tuple[int, dict]:
             if not rows:
                 raise Refuse("이 문제에는 미리 만들어 둔 힌트가 없어요. 튜터를 연결하면 질문으로 도와드려요.", 404, "not_found")
             study = t.store.study(pid)
-            seen = hints_now(study, rows)
+            by_block = hint_counts(study, rows, read_json(HINTS_FILE, {}).get(pid))
+            sizes = Counter(row["block"] for row in rows)
+            want = body.get("block")  # 막힌 블록의 힌트부터 연다(1부터). 주지 않으면 아직 다 보지 않은 첫 블록
+            if want is not None and (type(want) is not int or want not in sizes):
+                raise Refuse("힌트를 볼 블록을 다시 골라 주세요.", field="block")
+            seen = sum(by_block.values())
+            view = lambda: {"seen": seen, "total": len(rows), "done": seen == len(rows), "shown": hints_shown(rows, by_block), "blocks": hint_blocks(rows, by_block)}  # noqa: E731
             if body.get("peek") is True:  # 이번 풀이에서 본 힌트만 다시 보여 준다(문제를 다시 열었을 때). 새 힌트를 열지 않는다
-                return 200, {"seen": seen, "total": len(rows), "done": seen == len(rows), "shown": hints_shown(rows, seen)}
-            if seen < len(rows):  # 다 본 뒤에는 마지막 힌트를 다시 준다
+                return 200, view()
+            block = want or next((n for n in sizes if by_block[n] < sizes[n]), max(sizes))
+            if by_block[block] < sizes[block]:  # 그 블록의 힌트를 다 본 뒤에는 그 블록의 마지막 힌트를 다시 준다
+                by_block[block] += 1
                 seen += 1
-                t.store.set_study(pid, hints_seen=study["hints_seen"] + 1)  # 본 힌트 수는 누적이다
+                t.store.set_study(pid, hints_seen=study["hints_seen"] + 1)  # 본 힌트 수는 누적이다(도움으로 센다)
                 t.store.mark_help(pid)
-            shown = hints_shown(rows, seen)
-            return 200, {**shown[-1], "seen": seen, "total": len(rows), "done": seen == len(rows), "shown": shown}
+                write_json(HINTS_FILE, {**read_json(HINTS_FILE, {}), pid: {"from": study["hints_at_reset"], "seen": {str(n): k for n, k in by_block.items()}}})
+            body_now = view()
+            opened = next((row for row in reversed(body_now["shown"]) if row["block"] == block), None)
+            return 200, {**(opened or {}), **body_now}
         if path == "/api/solution":  # 기본 문제는 실린 해설, 등록한 문제는 엔진이 만들어 둔 그 언어의 풀이 가이드
             own_guide = None if row else t.store.load(pid).solution
             if row is None and own_guide is None:
