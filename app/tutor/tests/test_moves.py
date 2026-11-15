@@ -40,7 +40,7 @@ class ChairMoveTest(unittest.TestCase):
         asked = pick_move("chair", plan, at(basis_asked=True), Verdict(True, basis="g"))  # 문항에 한 번만
         self.assertEqual((asked.move, asked.advance), ("open", True))
         variable = self.pick(Verdict(True, basis="g"), text="이름을 세면 돼요", used=["open"])  # 변수 블록에서는 묻지 않는다
-        self.assertEqual((variable.move, variable.advance, variable.target, variable.lead, variable.saved), ("open", True, 1, FOUND_TIP + OPEN_LEAD, fakes.HINTS2[0]))
+        self.assertEqual((variable.move, variable.advance, variable.target, variable.lead, variable.saved), ("open", True, 1, OPEN_LEAD, fakes.HINTS2[0]))  # 찾은 블록의 안내(FOUND_TIP)는 이 말에 붙이지 않는다
 
     def test_found_with_basis_advances(self):
         got = self.pick(Verdict(True, basis="t"), text="문제에 제목이 같으면 같은 책이라고 있어서요")

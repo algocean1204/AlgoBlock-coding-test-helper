@@ -126,8 +126,12 @@ class ChairTest(unittest.TestCase):
         talk = [fakes.service(fakes.HINTS1[0], 0, "m1"), fakes.user("이름을 세면 돼요", 0), fakes.service("근거는요?", 0, "m2", "basis")]
         done, fake = fakes.go(chair_state("문제에 제목이 같으면 같은 책이라고 해서요", chair=talk), {})
         self.assertEqual(fakes.tasks(fake), [])  # 근거 질문의 답은 판정하지 않고 넘어간다(모델 0회)
-        self.assertEqual(done["result"], {"reply": FOUND_TIP + OPEN_LEAD + fakes.HINTS2[0], "advance": True, "move": "open"})
+        # 찾은 블록의 안내와 다음 블록의 첫 질문은 다른 말이다(한 말에 붙어 다음 블록 아래에 보였다)
+        self.assertEqual(done["result"], {"reply": OPEN_LEAD + fakes.HINTS2[0], "advance": True, "move": "open", "found": FOUND_TIP.strip()})
         self.assertEqual(done["open_count"], 2)
+        from ..feedback.prompts import record_lines
+        found = [fakes.user("이름을 세면 돼요", 0), fakes.service(FOUND_TIP.strip(), 0, "m3", "found"), fakes.service(OPEN_LEAD + fakes.HINTS2[0], 1, "m4")]
+        self.assertEqual(record_lines(fakes.context(chair=found), fakes.planned(fakes.two())), [])  # 찾은 블록에 남긴 안내는 막힌 답이 아니다
 
     def test_last_block_recap(self):
         plan = fakes.planned([fakes.hinted()[0]])
