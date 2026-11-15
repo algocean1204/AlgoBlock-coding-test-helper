@@ -1902,6 +1902,7 @@ async function loadHints(peek) {
   const pid = S.pid, r = await api("/api/hint", { id: pid, peek });
   if (S.pid !== pid || !S.solo) return;
   if (r.ok) Object.assign(S.solo, { shown: r.data.shown, seen: r.data.seen, total: r.data.total, note: null });
+  if (r.ok) S.problem.study.hints_seen = r.data.seen; // 문제 상태의 '본 힌트 수'도 같이 올린다(태그 보임처럼 이것을 보는 화면이 새로고침 없이 따라오게)
   else if (!peek) S.solo.note = errorNote(r.error);
   render();
   if (r.ok && !peek) { say("힌트를 하나 열었어요."); const last = $("solo-box").querySelector(".hints li:last-child"); if (last) last.scrollIntoView({ block: "nearest" }); }
