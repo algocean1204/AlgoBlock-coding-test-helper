@@ -56,11 +56,12 @@ class TutorTest(unittest.TestCase):
             moved = tutor.turn("p1", "chair", "message", text="문제에 제목이 같으면 같은 책이라고 해서요")
             self.assertEqual(moved.body["open_count"], 2)
             self.assertEqual([b["name"] for b in moved.body["blocks"]], ["입력받기", None])  # 찾은 블록은 이름이 열린다
-            self.assertEqual(moved.body["messages"][-1]["text"], "블록 칸에 이 블록의 코드를 적어 보세요. 다음은 '반복' 블록이에요. " + fakes.HINTS2[0])
-            self.assertEqual([m["block_index"] for m in moved.body["messages"]], [0, 0, 0, 0, 1])  # 화면 구분선은 그 말의 블록 종류
+            # 찾은 블록의 안내는 찾은 블록(0)의 말로, 다음 블록의 첫 질문은 다음 블록(1)의 말로 따로 남는다
+            self.assertEqual([m["text"] for m in moved.body["messages"][-2:]], ["블록 칸에 이 블록의 코드를 적어 보세요.", "다음은 '반복' 블록이에요. " + fakes.HINTS2[0]])
+            self.assertEqual([m["block_index"] for m in moved.body["messages"]], [0, 0, 0, 0, 0, 1])  # 화면 구분선은 그 말의 블록 종류
             rows = tutor.store.conn.execute("SELECT role, block_index, move FROM message WHERE problem_id='p1' ORDER BY id").fetchall()
             self.assertEqual([tuple(r) for r in rows], [("service", 0, "open"), ("user", 0, None), ("service", 0, "basis"),
-                                                        ("user", 0, None), ("service", 1, "open")])
+                                                        ("user", 0, None), ("service", 0, "found"), ("service", 1, "open")])
             raw = tutor.store.conn.execute("SELECT plan_json FROM tutor_session WHERE problem_id='p1'").fetchone()[0]
             self.assertIn('"algorithm": "hash"', raw)
             self.assertNotIn("reference", json.dumps(moved.body))

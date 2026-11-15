@@ -62,6 +62,9 @@ jobs:
       - name: 화면 서버 시험
         working-directory: app
         run: python -B ui/test_server.py
+      - name: 코드 칸 문법 색 시험 (러너에 있는 Node)
+        working-directory: app
+        run: node ui/test_highlight.js
 
   judge-tests:
     name: judge-tests

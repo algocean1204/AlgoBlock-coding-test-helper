@@ -46,6 +46,7 @@ cd app
 uv run -q --no-project --python 3.12 --with langgraph --with pypdf python -B ui/test_server.py
 python3 -B ui/test_structure.py   # 저장소 구조
 python3 -B ui/test_publish.py     # 공개 전 검사(키, 개인 경로, 내부 이름, 큰 파일, 링크)
+node ui/test_highlight.js         # 코드 칸 문법 색
 ```
 
 `test_server.py`는 unittest가 아니다. `main()`이 확인 함수를 차례로 부르고, 끝에 `ok`를 찍는다.
@@ -64,6 +65,7 @@ python3 -B ui/test_publish.py     # 공개 전 검사(키, 개인 경로, 내부
 | `window.py` | 서버를 같이 띄우고 네이티브 창으로 연다 |
 | `updater.py` | 새 버전 확인(켤 때와 24시간마다, 실패하면 1시간부터 두 배씩 최대 6시간 간격으로 다시)과 업데이트(받기, SHA-256 확인, 묶인 macOS 앱(`swap.sh`)과 Windows exe(`swap.ps1`)의 바꿔 끼우기와 되돌리기). 앱의 버전(`VERSION`)과 Windows 릴리스 파일 이름(`WINDOWS_ASSET`)도 여기 있다 |
 | `index.html`, `app.css`, `app.js` | 화면. 상태를 바꾸고, 서버에 요청하고, 다시 그린다. 처음 안내는 `index.html`의 `<dialog id="tour">`와 `app.js`의 `TOUR`, `renderTour`, `openTour`다 |
+| `highlight.js` | 코드 칸(코드 전체, 블록 칸)의 문법 색. 채점 언어 7개를 언어마다 정규식 하나로 나눈다. 글상자의 글을 투명하게 두고 같은 자리에 색 글(`pre`, 줄마다 `div` 하나)을 겹친다. 입력하면 바뀐 줄만 다시 칠한다. 500줄 또는 30,000자를 넘으면 색을 끈다 |
 | `builtin.json` | 기본 문제 묶음(75문제). 빌드 결과물이라 손으로 고치지 않는다 |
 | `make_builtin.py` | `problems/`의 문제 폴더를 `builtin.json`으로 묶는다 |
 | `problemkit.py` | 문제 폴더 읽기, 케이스 만들기, 검사(`check`, `stub`, `try`) |
@@ -75,7 +77,7 @@ python3 -B ui/test_publish.py     # 공개 전 검사(키, 개인 경로, 내부
 | `tour-demos.js`, `tour-demos.css` | 처음 안내 데모의 미리 빌드한 묶음 |
 | `PretendardVariable.woff2`, `PretendardVariable-LICENSE.txt` | 맥 밖에서 쓰는 글꼴과 그 라이선스(SIL OFL 1.1). 맥은 시스템 글꼴을 쓴다 |
 | `icon.svg`, `favicon.svg` | 앱 아이콘과 파비콘 |
-| `test_server.py`, `test_update.py`, `test_structure.py`, `test_publish.py` | 화면 서버 시험, 업데이트 시험(`test_server.py`가 부른다), 저장소 구조 시험, 공개 전 검사 |
+| `test_server.py`, `test_update.py`, `test_structure.py`, `test_publish.py`, `test_highlight.js` | 화면 서버 시험, 업데이트 시험(`test_server.py`가 부른다), 저장소 구조 시험, 공개 전 검사, 문법 색 시험(Node) |
 | `data/` | 사용자 데이터 폴더. git에서 빠진다. 들어 있는 파일은 [Docs/architecture/data.md](../../Docs/architecture/data.md)에 있다 |
 
 ## 서버 API
@@ -86,7 +88,7 @@ GET
 
 | 경로 | 설명 |
 | --- | --- |
-| `/`, `/index.html`, `/app.css`, `/app.js`, `/icon.svg`, `/favicon.svg`, `/tour-demos.js`, `/tour-demos.css`, `/PretendardVariable.woff2` | 정적 파일 |
+| `/`, `/index.html`, `/app.css`, `/app.js`, `/highlight.js`, `/icon.svg`, `/favicon.svg`, `/tour-demos.js`, `/tour-demos.css`, `/PretendardVariable.woff2` | 정적 파일 |
 | `/asset/<문제 id>/<번호>` | 등록할 때 올린 원본. 등록한 문제만 된다. `X-Content-Type-Options: nosniff` |
 
 POST, 문제와 무관한 것 16개
@@ -117,7 +119,7 @@ POST, 문제 하나에 대한 것 19개. 본문에 `id`가 필요하다.
 | `/api/state` | 문제 화면 상태. 등록한 문제는 `open: true`면 뒤에서 튜터 준비를 시작한다(기본 문제는 튜터를 시작할 때 준비한다) |
 | `/api/language` | 풀이 언어 바꾸기. 계획, 대화, 블록 진행을 지우고 코드는 언어마다 보관한다 |
 | `/api/run` | 공개 예시만 실행하거나 `input` 하나를 직접 실행한다. 제출로 남기지 않는다 |
-| `/api/hint` | 다음 힌트 하나(`peek: true`면 본 것만 다시 보여 준다) |
+| `/api/hint` | 다음 힌트 하나(`block`: 그 블록의 다음 힌트, 1부터. 없으면 아직 다 보지 않은 첫 블록. `peek: true`면 본 것과 블록 목차만 다시 보여 준다) |
 | `/api/solution` | 해설. 기본 문제는 실린 해설, 등록한 문제는 튜터가 만든 풀이 가이드. 통과 전이면 409, `force: true`면 연다 |
 | `/api/code` | 직접 풀기 코드 저장 |
 | `/api/blocks` | 블록 칸 코드 저장 |

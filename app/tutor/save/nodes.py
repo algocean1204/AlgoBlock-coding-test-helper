@@ -29,6 +29,8 @@ def collect(state: MainState) -> dict:
         if user:
             rows.append(_row(mode, "main", "user", user, current_index(state), None, checked))
         move = state.get("move")
+        if result.get("found"):  # 의자에서 말로 찾은 블록의 안내는 그 블록의 말로, 다음 블록의 첫 질문과 나눠 남긴다
+            rows.append(_row(mode, "main", "service", result["found"], current_index(state), None, "found"))
         rows.append(_row(mode, "main", "service", result.get("reply", ""), move.target if move else None, None, result.get("move")))
     elif request.kind == "followup":
         mode, thread = request.mode or "chair", f"quote:{request.quote_id}"

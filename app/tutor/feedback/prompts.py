@@ -62,7 +62,7 @@ def record_lines(ctx, plan) -> list[str]:
         # 표시가 없는 옛 기록은 거부 말(RETRY_LEAD)로 가른다
         stuck = Counter(user.block_index for user, reply in zip(said, said[1:])
                         if user.role == "user" and not (user.move or "").startswith(CHECKED)
-                        and reply.role == "service" and reply.block_index == user.block_index and reply.move not in STILL
+                        and reply.role == "service" and reply.block_index == user.block_index and reply.move not in (*STILL, "found")
                         and not reply.text.startswith((ANSWER_LEAD, BACK_LEAD, RETRY_LEAD)))
         lines += [f"- {name(i)}: {label} 풀 때 이 블록에서 다음 블록으로 넘어가지 못한 답이 {n}번" for i, n in sorted(stuck.items(), key=lambda kv: kv[0] or 0)]
     for i, block in enumerate(blocks):

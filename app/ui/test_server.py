@@ -255,10 +255,12 @@ def builtin(fake) -> None:
     debug = call("/api/debug", id=PID, code=slow)[1]
     assert debug["efficiency_only"] and not debug["passed"]  # 틀린 줄을 찾을 일이 아니다(모델 0회)
 
-    assert call("/api/hint", id=PID, peek=True)[1] == {"seen": 0, "total": 6, "done": False, "shown": []}  # 들여다보기만 하면 새 힌트가 열리지 않는다
+    toc = [{"block": 1, "kind": "loop", "seen": 0, "total": 3}, {"block": 2, "kind": "condition", "seen": 0, "total": 3}]  # 힌트 목차: 이름은 그 블록의 힌트를 다 본 뒤에만
+    assert call("/api/hint", id=PID, peek=True)[1] == {"seen": 0, "total": 6, "done": False, "shown": [], "blocks": toc}  # 들여다보기만 하면 새 힌트가 열리지 않는다
     hints = [call("/api/hint", id=PID)[1] for _ in range(7)]
     assert len(call("/api/hint", id=PID, peek=True)[1]["shown"]) == 6
     assert [(h["block"], h["step"]) for h in hints] == [(1, 1), (1, 2), (1, 3), (2, 1), (2, 2), (2, 3), (2, 3)]
+    assert [b.get("name") for b in hints[-1]["blocks"]] == ["개수 세기", "k번째에 꽂기"]  # 블록을 고르지 않으면 전처럼 블록 1부터 차례로
     assert hints[0]["hint"] == FIRST["ready"]["plan"]["blocks"][0]["hints"][0] and [h["done"] for h in hints[4:]] == [False, True, True] and len(hints[2]["shown"]) == 3
     # 블록 이름(답의 일부)은 그 블록의 힌트를 모두 본 뒤에만 서버가 보낸다. 종류는 늘 보낸다
     assert [h.get("name") for h in hints[:6]] == [None, None, "개수 세기", None, None, "k번째에 꽂기"] and [h["kind"] for h in hints] == ["loop"] * 3 + ["condition"] * 4
@@ -962,6 +964,33 @@ def language_memory() -> None:
     assert call("/api/accounts")[1]["language"] == "python"
 
 
+def hint_by_block() -> None:
+    """혼자 풀기의 힌트는 블록마다 고른다(모델 0회): 막힌 블록부터 열고, 본 힌트 수(도움)는 하나씩 는다. '처음부터'와 예전 기록도 맞게 읽는다."""
+    pid = server.register({"title": FIRST["title"], "text": FIRST["text"], "cases": [{"input": e["input"], "expected": e["expected"]} for e in FIRST["examples"]]})["id"]
+    with server.tutor() as t:
+        t.adopt(pid, FIRST["ready"])
+    seen = lambda: call("/api/state", id=pid)[1]["problem"]["study"]["hints_seen"]  # noqa: E731
+    picked = call("/api/hint", id=pid, block=2)[1]
+    assert (picked["block"], picked["step"], picked["seen"], [b["seen"] for b in picked["blocks"]], seen()) == (2, 1, 1, [0, 1], 1), picked
+    assert [(h["block"], h["step"]) for h in call("/api/hint", id=pid, peek=True)[1]["shown"]] == [(2, 1)]
+    for bad in (0, 3, "2", True):
+        assert "블록을 다시 골라" in refuses("/api/hint", id=pid, block=bad), bad
+    last = [call("/api/hint", id=pid, block=2)[1] for _ in range(3)][-1]  # 그 블록을 다 본 뒤에는 그 블록의 마지막 힌트를 다시 준다(세지 않는다)
+    assert (last["step"], last["name"], last["seen"], seen()) == (3, "k번째에 꽂기", 3, 3), last
+    assert [b.get("name") for b in last["blocks"]] == [None, "k번째에 꽂기"]  # 다 본 블록만 이름이 보인다
+    first = call("/api/hint", id=pid)[1]  # 블록을 고르지 않으면 아직 다 보지 않은 첫 블록
+    assert (first["block"], first["step"], first["seen"]) == (1, 1, 4), first
+    rows = server.read_json(server.HINTS_FILE, {})
+    server.write_json(server.HINTS_FILE, {**rows, pid: {"from": 99, "seen": {"2": 3, "1": 1}}})  # 이번 풀이의 것이 아닌 기록: 본 수를 블록 1부터 나눈다
+    assert [b["seen"] for b in call("/api/hint", id=pid, peek=True)[1]["blocks"]] == [3, 1]
+    server.write_json(server.HINTS_FILE, rows)
+    call("/api/reset", id=pid)  # '처음부터' 뒤에는 블록마다 본 수도 처음부터(누적 수는 남는다)
+    assert [b["seen"] for b in call("/api/hint", id=pid, peek=True)[1]["blocks"]] == [0, 0] and seen() == 0
+    assert (call("/api/hint", id=pid, block=2)[1]["step"], seen()) == (1, 1)
+    with server.tutor() as t:
+        assert t.store.study(pid)["hints_seen"] == 5 and t.store.study(pid)["help_first_at"]
+
+
 def no_tool() -> None:
     """언어 도구가 없어 채점하지 못한 것은 제출로 세지 않는다(새 제출도, 예전에 저장된 기록도)."""
     before = (next(row for row in call("/api/problems")[1]["problems"] if row["id"] == PID)["submitted"], call("/api/report")[1]["summary"]["submissions"])
@@ -1167,6 +1196,11 @@ def table() -> None:
     assert found(text="입출력 예\nnumbers\tk\tresult\n[1, 2, 3]\t2\t5\n[4, 5]\t1\t4\n입출력 예 설명\n...") == want  # 화면에서 복사한 표
     assert found(text="numbers   k   return\n[1, 2, 3]   2   5\n[4, 5]  1  4") == want  # 둘 이상의 공백
     assert found(text="입출력 예\nnumbers k result\n[1, 2, 3] 2 5\n[4,5] 1 4\n입출력 예 설명\n입출력 예 #1") == want  # PDF에서 읽은 글: 칸이 공백 하나로 접힌 표
+    bar = "days | limit | result\n[2, 3] | 6 | 5\n[4, 5] | 1 | 4\n\n설명"  # 구분선 없이 |로만 나눈 표: 줄마다 칸 수가 같을 때만
+    assert found(text=bar)["cases"] == [{"input": "[[2, 3], 6]", "expected": "5"}, {"input": "[[4, 5], 1]", "expected": "4"}] and found(text=bar)["names"] == ["days", "limit"]
+    assert len(found(text="days | limit | result\n[2, 3] | 6 | 5\n[4, 5] | 1 | 4 | 9\n[7] | 2 | 3")["cases"]) == 1  # 칸 수가 다른 줄에서 끝난다
+    for text in ("a | b | result\nx | y | z", "비트 연산: a | b 는 둘 중 하나라도 1이면 1입니다.\nresult = a | b", "x | y | result\na | b | c\n1 | 2 | 3"):  # 비트 연산이나 설명 글의 |
+        assert found(text=text)["cases"] == [], text
     assert found(text="s flag answer\n'a b' True None\n['a', 'b'] False [1, 2]\n1,000 1 2") == {
         "names": ["s", "flag"], "cases": [{"input": '["a b", true]', "expected": "null"}, {"input": '[["a", "b"], false]', "expected": "[1, 2]"}], "skipped": 0,
         "missed": ["1,000 1 2"]}  # 파이썬식 값, 읽지 못하는 줄에서 끝난다. 예시처럼 생긴 그 줄은 알린다
@@ -2020,6 +2054,25 @@ def color_tokens() -> None:
     assert html.count('name="theme-color"') == 1 and 'data-scheme-pref="system"' in html
 
 
+def tour_pictures() -> None:
+    """사용법 안내: 그림이 글과 같은 상태를 보인다. 보고서 장은 빈 상태 없이 강점·더 공부가 함께 보이고, 연결 장은 지금 연결을 따르며, 장을 넘기면 첫 내용이 바로 보인다."""
+    js, css = (HERE / "app.js").read_text(encoding="utf-8"), (HERE / "app.css").read_text(encoding="utf-8")
+    bundle = (HERE / "tour-demos.js").read_text(encoding="utf-8")
+    assert "아직 약한 주제로 보이는 곳이 없어요" not in bundle and "더 공부할 주제" in bundle  # 보고서 그림
+    assert "demos.show($(\"tour-live\"), tourAt, { conn })" in js and "Claude API 키" not in bundle  # 연결 그림은 지금 연결을 넘겨 받는다(고정 문구 없음)
+    assert ".tour-scene .a1 { animation: tour-in 0.35s var(--ease) both; }" in css  # 첫 내용은 기다리지 않고 나온다
+    assert ".mini-head::before" in css and "padding: 28px 56px 0" in css  # 정적 그림의 틀이 움직이는 데모의 창과 같다
+
+
+def new_draft() -> None:
+    """내 문제 넣기: 걸음마다 기록을 쌓아 뒤로 가기가 앞 걸음으로 가고, 적던 글은 이 탭의 sessionStorage에만 둔다(서버나 localStorage로 나가지 않는다). 브라우저 동작은 화면 확인으로 본다."""
+    js = (HERE / "app.js").read_text(encoding="utf-8")
+    assert "history.pushState({ wstep: n }" in js and 'addEventListener("popstate"' in js
+    keep = js[js.index("function saveDraft()"):js.index("function restoreDraft()")]
+    assert "sessionStorage.setItem(DRAFT" in keep and "localStorage" not in keep and "api(" not in keep and "fetch(" not in keep
+    assert js.count("sessionStorage.removeItem(DRAFT)") >= 2 and "restoreDraft();" in js  # 비우면 지우고, 처음 열 때 되살린다
+
+
 def pane_widths() -> None:
     """칸 너비: /api/prefs로 세 칸의 몫을 적고, 어긋난 값은 거절한다. 없으면(null) 기본 배치. 다른 설정은 지우지 않는다."""
     import re
@@ -2501,7 +2554,10 @@ def main() -> None:
         own_starter()
         case_shapes()
         table()
+        tour_pictures()
+        new_draft()
         hidden_cases()
+        hint_by_block()
         assert not fake.calls, fake.calls  # 고치기·지우기도 모델을 부르지 않는다
         checks()
         http()
