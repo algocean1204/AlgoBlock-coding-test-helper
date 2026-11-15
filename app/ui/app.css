@@ -476,7 +476,7 @@ a.ladder-next:hover { background: var(--fill); }
 .own-tools .confirm > span, #edit-confirm > span { flex-basis: 100%; }
 /* 언어 도구가 없을 때 실행·제출 옆의 까닭 줄, 연결 칸의 언어 도구 목록 */
 .code-actions .note { padding: 4px 10px; font-size: 12.5px; }
-.tools-list { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 16px; justify-self: stretch; }
+.tools-list { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; justify-self: stretch; }
 .tools-list li { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 14px; }
 #code-error { margin: 8px 16px 0; }
 
@@ -859,7 +859,10 @@ details.solution > * + * { margin-top: 8px; }
 .theme { display: grid; gap: 8px; padding: 18px 0; }
 .theme + .theme { border-top: 1px solid var(--line); }
 .theme-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 30px; }
-.theme-head h3 { font-size: 16px; font-weight: 650; }
+.theme-head h3, .theme-head h4 { font-size: 16px; font-weight: 650; }
+.theme-group + .theme-group { margin-top: 8px; } .theme-group > h3 { padding-top: 18px; font-size: 13px; font-weight: 700; color: var(--accent-text); }
+.tag.heavy { background: var(--warning-soft); color: var(--warning); }
+.tools-list li { flex-wrap: wrap; } .tools-list li .hint { flex-basis: 100%; }
 .theme-row { display: grid; grid-template-columns: 64px minmax(0, 1fr); align-items: center; gap: 8px; }
 .theme-row .label { color: var(--muted); }
 .picks { display: flex; flex-wrap: wrap; gap: 6px; }

@@ -2394,33 +2394,35 @@ async function loadTools(refresh) {
   const r = await api("/api/tools", { refresh });
   if (!r.ok) return r;
   TOOLS = r.data.tools;
-  $("tools-list").innerHTML = Object.entries(TOOLS).map(([key, ok]) => `<li><span>${esc(LANG[key] || key)}</span><span class="state ${ok ? "strong" : "weak"}">${ok ? "있음" : "없음"}</span></li>`).join("");
+  $("tools-list").innerHTML = Object.entries(TOOLS).map(([key, ok]) => `<li><span>${esc(LANG[key] || key)}</span><span class="state ${ok ? "strong" : "weak"}">${ok ? "있음" : "없음"}</span>${ok ? "" : `<span class="hint">${esc(TOOL[key] || "")}가 필요해요</span>`}</li>`).join("");
   if (S.view === "new") fillLangs();
   render();
   return r;
 }
 
 /* ── 과정별 모델 ── */
+// 과정 여덟을 언제 불리는지로 묶고, 상대 사용량을 적는다. 금액은 재지 않았으므로 숫자를 쓰지 않는다
 const THEME_HELP = {
-  read: "문제를 넣을 때 이미지에서 글을 읽어요.",
-  guide: "문제를 넣을 때 한 번: 문제의 뼈대와 풀이 가이드(정답 코드). 뒤의 모든 대화가 이 결과를 따라요.",
-  blocks: "문제를 넣을 때 한 번: 풀이를 블록으로 나누고 블록마다 힌트 질문을 만들어요.",
-  talk: "튜터가 매번 건네는 말: 질문, 꼬리질문 답, 블록 채우기.",
-  judge: "내 답과 블록 코드가 맞는지 보는 짧은 판정.",
-  explain: "튜터의 해설.",
-  feedback: "제출 뒤의 피드백.",
-  debug: "틀린 코드에서 원인이 있는 줄 찾기.",
+  read: ["사진·PDF에서 글을 읽어요. 글로 넣으면 쓰지 않아요.", "많음"],
+  guide: ["문제의 뼈대와 정답 풀이를 만들어요. 뒤의 모든 대화가 이 결과를 따라요. 여기를 낮추면 튜터의 말이 틀릴 수 있어요.", "많음"],
+  blocks: ["풀이를 블록으로 나누고 블록마다 힌트 질문을 만들어요.", "많음"],
+  talk: ["튜터가 건네는 질문, 꼬리질문 답, 블록 채우기.", "적음 × 횟수"],
+  judge: ["내 답과 블록 코드가 맞는지 보는 짧은 판정.", "적음 × 횟수"],
+  explain: ["튜터의 해설. 문제와 언어마다 한 번 써요.", "적음"],
+  feedback: ["제출 뒤의 피드백.", "보통"],
+  debug: ["틀린 곳 같이 찾기에서 원인이 있는 줄을 찾아요.", "보통"],
 };
+const THEME_GROUPS = [["문제를 넣을 때 한 번", ["read", "guide", "blocks"]], ["튜터와 풀 때 매번", ["talk", "judge"]], ["제출한 뒤, 누를 때만", ["explain", "feedback", "debug"]]];
 const EFFORT = { low: "낮음", medium: "보통", high: "높음" };
 
 function renderModels() {
   const a = ACCOUNTS;
-  $("models-body").innerHTML = a.themes.map((t) => {
+  const card = (t) => {
     const changed = t.tier !== t.default_tier || t.effort !== t.default_effort;
     return `<section class="theme" aria-labelledby="theme-${t.key}">
-      <div class="theme-head"><h3 id="theme-${t.key}">${esc(t.label)}</h3>
+      <div class="theme-head"><h4 id="theme-${t.key}">${esc(t.label)}</h4>
         ${changed ? `<button type="button" class="btn quiet small" data-theme="${t.key}" data-pick="" data-effort="" aria-label="${esc(t.label)} 기본값으로">기본값으로</button>` : '<span class="tag">기본값</span>'}</div>
-      <p class="hint">${THEME_HELP[t.key]}</p>
+      <p class="hint">${THEME_HELP[t.key][0]} <span class="tag${THEME_HELP[t.key][1] === "많음" ? " heavy" : ""}">사용량 ${THEME_HELP[t.key][1]}</span></p>
       <div class="theme-row"><span class="label">모델</span><div class="picks" role="group" aria-label="${esc(t.label)} 모델">
         ${a.tiers.map((m) => `<button type="button" class="pick" data-theme="${t.key}" data-pick="${m.key}" data-effort="${t.effort}" aria-pressed="${m.key === t.tier}">${esc(m.label)}</button>`).join("")}
       </div></div>
@@ -2428,7 +2430,8 @@ function renderModels() {
         ${Object.entries(EFFORT).map(([key, name]) => `<button type="button" class="pick" data-theme="${t.key}" data-pick="${t.tier}" data-effort="${key}" aria-pressed="${key === t.effort}">${name}</button>`).join("")}
       </div></div>
     </section>`;
-  }).join("");
+  };
+  $("models-body").innerHTML = THEME_GROUPS.map(([title, keys]) => `<section class="theme-group" aria-label="${title}"><h3>${title}</h3>${keys.map((key) => card(a.themes.find((t) => t.key === key))).filter(Boolean).join("")}</section>`).join("");
   $("models-note").textContent = a.model ? `개발용 환경 변수 ALGOBLOCK_LLM_MODEL(${a.model})이 있어서, 지금은 모든 과정이 그 모델을 써요.` : "";
 }
 
@@ -2456,6 +2459,7 @@ function renderAccounts(a) {
   document.querySelector(".dev-conn").hidden = !a.dev; // 개발용 연결로 띄웠을 때만 이 칸이 있다
   document.querySelectorAll('input[name="client"]').forEach((el) => { el.checked = el.value === a.client; });
   renderScheme();
+  renderDefaultLang();
   $("provider-now").textContent = provider ? `지금은 ${provider}` : "아직 없음";
   $("chatgpt-state").textContent = a.chatgpt ? "연결됨 · ChatGPT 요금제를 쓰는 중" : a.chatgpt_note || "연결 안 됨"; // 연결되지 않은 까닭(허락하지 않음, 자격 없음, 다시 로그인 필요)
   $("chatgpt-usage").hidden = !a.chatgpt;
@@ -2469,6 +2473,12 @@ function renderAccounts(a) {
 
 /** 화면 색: 라디오를 고른 값(저장 중이면 그 값, 아니면 저장된 값)에 맞추고 화면에도 적용한다(적용 함수는 index.html 머리에 있다). */
 let schemePicked = null; // 방금 고른 값. 늦게 온 /api/accounts 응답이 예전 값으로 되돌리지 못하게 응답보다 앞선다
+/** 설정의 기본 언어: 처음 여는 문제의 언어. 고르면 바로 저장한다. */
+function renderDefaultLang() {
+  const pick = $("set-lang");
+  if (!pick._filled) { pick.innerHTML = Object.entries(LANG).map(([key, name]) => `<option value="${key}">${name}</option>`).join(""); pick._filled = true; }
+  pick.value = (ACCOUNTS && ACCOUNTS.language) || "python";
+}
 function renderScheme() {
   const pref = schemePicked || (ACCOUNTS && ACCOUNTS.scheme) || "system";
   document.querySelectorAll('input[name="scheme"]').forEach((el) => { el.checked = el.value === pref; });
@@ -3132,6 +3142,10 @@ document.addEventListener("change", (e) => {
   if (e.target.id === "upd-auto") return void updAct("auto", { on: e.target.checked });
   if (e.target.name === "keyname") { setKeyShown(false); return renderKeyStatus(); }
   if (e.target.name === "scheme") return void chooseScheme(e.target.value);
+  if (e.target.id === "set-lang") return void (async () => { // 기본 언어: 고르면 바로 저장한다
+    const r = await accounts("/api/prefs", { language: e.target.value }, "");
+    $("set-lang-note").textContent = r.ok ? `저장했어요. 문제를 처음 열 때 ${LANG[e.target.value]}로 시작해요.` : errorNote(r.error).text;
+  })();
   if (e.target.name === "client") accounts("/api/client", { client: e.target.value }, e.target.value === "cli" ? "이 PC의 Claude Code로 튜터를 불러요." : "연결한 AI로 튜터를 불러요.");
 });
 

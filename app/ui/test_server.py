@@ -2158,6 +2158,23 @@ def way_info() -> None:
     assert "way-card:disabled" not in css and not re.search(r"\.way-card\[aria-disabled[^}]*opacity", css)  # 잠긴 카드의 글은 흐리지 않는다
 
 
+def settings_items() -> None:
+    """설정의 기본 언어: /api/prefs가 language를 받아 적고(모르는 언어는 거절), 다른 설정을 지우지 않으며, 다음에 처음 여는 문제의 언어가 된다. 모델 설정은 세 묶음으로 보이고 사용량 글에 숫자가 없다."""
+    import re
+    saved = server.read_json(server.PREFS_FILE, {})
+    try:
+        server.write_json(server.PREFS_FILE, {**saved, "stages": {"keep": "me"}, "scheme": "dark"})
+        assert call("/api/prefs", language="go")[1]["language"] == "go" and server.read_json(server.PREFS_FILE, {})["stages"] == {"keep": "me"}
+        assert server.read_json(server.PREFS_FILE, {})["scheme"] == "dark" and server.last_language() == "go"
+        assert "고를 수 없는 언어" in refuses("/api/prefs", language="cobol") and server.last_language() == "go"
+        assert refuses("/api/prefs")  # 보낸 것이 없으면 거절
+    finally:
+        server.write_json(server.PREFS_FILE, saved)
+    js = (HERE / "app.js").read_text(encoding="utf-8")
+    groups = js[js.index("const THEME_GROUPS = "):js.index("const EFFORT =")]
+    assert all(f'"{key}"' in groups for key in server.themes.THEMES) and not re.search(r"\d+\s*(원|달러|\$|토큰)", js[js.index("const THEME_HELP"):js.index("const EFFORT =")])
+
+
 def new_draft() -> None:
     """내 문제 넣기: 걸음마다 기록을 쌓아 뒤로 가기가 앞 걸음으로 가고, 적던 글은 이 탭의 sessionStorage에만 둔다(서버나 localStorage로 나가지 않는다). 브라우저 동작은 화면 확인으로 본다."""
     js = (HERE / "app.js").read_text(encoding="utf-8")
@@ -2653,6 +2670,7 @@ def main() -> None:
         tour_pictures()
         home_screen()
         settings_screen()
+        settings_items()
         way_info()
         new_draft()
         hidden_cases()
