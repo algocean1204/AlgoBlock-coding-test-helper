@@ -1119,12 +1119,12 @@ function renderCheckLine(p) {
 }
 
 /** 상태마다 주 동작 하나(파란 채움): 그 단추에만 primary를 붙이고 나머지에서는 뗀다. 붙인 단추를 돌려준다. */
-const PRIMARY = { choose: '[data-way="solo"]', run: "#run", submit: "#submit", compose: "#compose-run", start: "#start", talk: "#send", follow: "#fq-send",
+const PRIMARY = { run: "#run", submit: "#submit", compose: "#compose-run", start: "#start", talk: "#send", follow: "#fq-send",
   debug: "#debug-send", find: "#debug-start", hint: "#result-hint", next: "#result-next", review: "#result-next", feedback: "#to-feedback" };
 function applyPrimary(stage) {
   document.querySelectorAll("#view-code .primary").forEach((el) => el.classList.remove("primary"));
   const shown = (sel) => { const el = document.querySelector(`#view-code ${sel}`); return el && !el.closest("[hidden]") && !el.disabled ? el : null; };
-  const el = shown(PRIMARY[stage]) || shown("#run") || shown("#submit");
+  const el = stage === "choose" ? null : shown(PRIMARY[stage]) || shown("#run") || shown("#submit"); // 방식을 고르기 전에는 어느 것도 고른 것처럼 칠하지 않는다
   if (el) el.classList.add("primary");
   return el;
 }
@@ -1406,7 +1406,9 @@ function renderCodePane() {
   const why = noTool() ? `이 기기에 ${LANG[S.problem.language] || S.problem.language} 도구가 없어 실행과 제출을 할 수 없어요.` : "";
   $("tool-note").textContent = why || (away ? "다른 문제에서 실행·채점하는 중이에요. 끝나면 이 문제도 실행하고 제출할 수 있어요." : "");
   $("run").title = $("submit").title = $("run-own-go").title = why;
-  $("run-input").placeholder = (S.problem.examples[0] || { input: "" }).input; // 그 문제 첫 예시의 입력
+  const ex = S.problem.examples[0];
+  $("run-input").placeholder = ex ? `예: ${ex.input}` : ""; // 회색 글은 값이 아니라 본보기다(그대로 실행되지 않는다)
+  $("run-fill").hidden = !ex;
   $("code").placeholder = program() ? "여기에 전체 코드를 써요. 표준 입력을 읽고 답을 출력해요." : "여기에 전체 코드를 써요. 풀이는 solution 함수에 담아요.";
   $("tool-note").hidden = !why && !away;
   $("starter-note").hidden = S.problem.sample || program() || !!S.problem.starter || !direct; // 등록한 함수 문제인데 케이스에서 형을 정하지 못했다
@@ -1767,7 +1769,7 @@ function renderWay() {
   const ai = connected();
   $("way-box").innerHTML = `<div class="ways" role="group" aria-label="푸는 방식">${["solo", "guide", "chair"].map((k) => `<button type="button" class="way-card" data-way="${k}"${k !== "solo" && !ai ? " disabled" : ""} aria-describedby="way-${k}">
       <strong>${WAYS[k][0]}${S.mode === k ? '<em class="tag">지금 방식</em>' : ""}</strong><span id="way-${k}">${WAYS[k][1]}</span></button>`).join("")}</div>
-    ${ai ? '<p class="hint">고른 방식은 이 문제에 기억해요. 위의 ‘방식 바꾸기’로 언제든 바꿔요.</p>' : '<div class="note"><span>튜터 둘은 AI를 연결하면 쓸 수 있어요.</span><button type="button" class="btn small" id="note-conn">연결하기</button></div>'}`;
+    ${ai ? '<p class="hint">고른 방식은 이 문제에 기억해요. 고른 뒤에도 ‘방식 바꾸기’로 언제든 바꿔요.</p>' : '<div class="note"><span>튜터 둘은 AI를 연결하면 쓸 수 있어요.</span><button type="button" class="btn small" id="note-conn">연결하기</button></div>'}`;
 }
 
 function renderTutor() {
@@ -2842,6 +2844,7 @@ document.addEventListener("click", (e) => {
   }
   const actions = {
     "start": startMode, "submit": submitCode, "run": () => judgeCode(true), "run-own-go": () => judgeCode(true, $("run-input").value),
+    "run-fill": () => { $("run-input").value = S.problem.examples[0].input; $("run-input").focus(); }, // 첫 예시의 입력을 한 번에 채운다
     "solo-hint": () => loadHints(false), "solo-open": () => loadSolution(false), "solo-force": () => { S.solo.ask = true; render(); $("solo-force-no").focus(); },
     "solo-force-no": () => { S.solo.ask = false; render(); }, "solo-force-yes": () => loadSolution(true),
     "result-tutor-hint": tutorHint,
