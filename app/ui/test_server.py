@@ -2264,7 +2264,7 @@ def report_terms() -> None:
     """학습 보고서의 낱말 풀이와 할 일 하나(화면 코드 확인): 준비도·기준·출석·실전 신호를 한 줄로 풀고, 다음에 배울 주제의 첫 문제가 ‘이어서 풀기’와 같으면 따로 링크하지 않는다."""
     js = (HERE / "app.js").read_text(encoding="utf-8")
     for text in ("도움(튜터·힌트·해설) 없이 푼 기본 문제가 얼마나 쌓였는지 보는 단계예요.", "준비도 기준 보기(어떤 통과를 도움 없이 푼 것으로 세는지)", "앱을 연 날을 세요.",
-                 "실전 신호는 풀이 가이드가 짚어 준 단서예요.", "단계는 주제별로 익힌 정도로 정해져요.", "첫 줄이 위의 ‘이어서 풀기’와 같아요."):
+                 "실전 신호는 풀이 가이드가 짚어 준 단서예요.", "단계는 주제별로 익힌 정도로 정해져요.", "첫 줄이 위의 ‘이어서 풀기’와 같아요.", "모든 문제의 제출을 합친 수예요."):
         assert text in js, text
     import re
     import shutil
@@ -2280,6 +2280,20 @@ console.log(JSON.stringify([focusTail({ next: { id: "a" } }, t), focusTail({ nex
     same, other, none, no_target, side_same, side_other, side_none = json.loads(subprocess.run([node, "-e", script], capture_output=True, text=True, check=True).stdout)
     assert "첫 문제는 위의" in same and "끝낸 뒤" in other and none == "" and "끝낸 뒤" in no_target  # 같을 때만 ‘첫 문제는 위’, 다르면 링크 없이 순서만
     assert side_same == "" and side_other == "‘이어서 풀기’를 끝낸 뒤: B" and side_none == ""
+    pure = js[js.index("const FAIL_WORD"):js.index("const when = ")] + source
+    script = pure + """
+const f = (o) => failTip(Object.entries({ failed: 0, runtime_error: 0, timeout: 0, compile_error: 0, ...o }));
+console.log(JSON.stringify([f({ failed: 1 }), f({ failed: 3 }), f({ failed: 3, timeout: 1 }), f({ failed: 2, timeout: 2 }),
+  nextNote([{ why: "쓰던 문제예요." }]), nextNote([{ why: "이어서 풀기" }]), nextNote([{ why: "도움 없이 다시 풀기('처음부터' 뒤 24시간이 지나 다시 풀면 인정)" }]), nextNote([{ why: "새 주제 시작" }])]));
+"""
+    one, only, most, tie, cont1, cont2, again, fresh = json.loads(subprocess.run([node, "-e", script], capture_output=True, text=True, check=True).stdout)
+    assert "가장 많아요" not in one and "한 번뿐" in one and "가장 많아요" not in only and "모두 ‘오답’" in only  # 한 종류뿐이면(1건이든 여럿이든) 가장 많다고 하지 않는다
+    assert "오답이 가장 많아요." in most and "같은 수" in tie  # 비교할 종류가 둘 이상일 때만
+    assert "위의 ‘이어서 풀기’와 같아요" in cont1 and "위의 ‘이어서 풀기’와 같아요" in cont2 and "이어서 풀기" not in again and "이어서 풀기" not in fresh  # 첫 줄이 이어서 풀기일 때만 그 말
+    src = (HERE / "server.py").read_text(encoding="utf-8")
+    watched = re.search(r"nextNote = \(nexts\) => \(nexts\[0\] && /\^\(([^)]*)\)/", js).group(1).split("|")  # nextNote가 보는 글머리
+    assert watched == ["쓰던 문제", "이어서 풀기"] and '"쓰던 문제예요."' in src and '(row["next"], row["name"], "이어서 풀기", row["key"])' in src  # 서버의 두 why 문구가 바뀌면 여기서 깨진다(같이 고칠 것)
+    assert '"쓰던 문제예요."'.strip('"').startswith(watched[0]) and "이어서 풀기".startswith(watched[1])
     assert "focusTail(focus, target)" in js and "sideNext(x, target)" in js and 'href="#/p/${esc(focus.next.id)}"' not in js
 
 
