@@ -2290,6 +2290,10 @@ console.log(JSON.stringify([f({ failed: 1 }), f({ failed: 3 }), f({ failed: 3, t
     assert "가장 많아요" not in one and "한 번뿐" in one and "가장 많아요" not in only and "모두 ‘오답’" in only  # 한 종류뿐이면(1건이든 여럿이든) 가장 많다고 하지 않는다
     assert "오답이 가장 많아요." in most and "같은 수" in tie  # 비교할 종류가 둘 이상일 때만
     assert "위의 ‘이어서 풀기’와 같아요" in cont1 and "위의 ‘이어서 풀기’와 같아요" in cont2 and "이어서 풀기" not in again and "이어서 풀기" not in fresh  # 첫 줄이 이어서 풀기일 때만 그 말
+    src = (HERE / "server.py").read_text(encoding="utf-8")
+    watched = re.search(r"nextNote = \(nexts\) => \(nexts\[0\] && /\^\(([^)]*)\)/", js).group(1).split("|")  # nextNote가 보는 글머리
+    assert watched == ["쓰던 문제", "이어서 풀기"] and '"쓰던 문제예요."' in src and '(row["next"], row["name"], "이어서 풀기", row["key"])' in src  # 서버의 두 why 문구가 바뀌면 여기서 깨진다(같이 고칠 것)
+    assert '"쓰던 문제예요."'.strip('"').startswith(watched[0]) and "이어서 풀기".startswith(watched[1])
     assert "focusTail(focus, target)" in js and "sideNext(x, target)" in js and 'href="#/p/${esc(focus.next.id)}"' not in js
 
 
