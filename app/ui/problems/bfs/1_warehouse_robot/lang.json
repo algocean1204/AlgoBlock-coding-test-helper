@@ -1,0 +1,80 @@
+{
+ "python": [
+  {
+   "file": "lang_1.py",
+   "trap": "python.shared_rows",
+   "fails": {
+    "1": "failed",
+    "3": "failed",
+    "6": "failed",
+    "7": "failed",
+    "8": "failed",
+    "11": "failed",
+    "12": "failed",
+    "13": "failed",
+    "14": "failed",
+    "15": "failed",
+    "16": "failed",
+    "17": "failed",
+    "18": "failed",
+    "19": "failed",
+    "20": "failed",
+    "21": "failed",
+    "22": "failed",
+    "23": "failed"
+   }
+  }
+ ],
+ "java": [
+  {
+   "file": "lang_1.java",
+   "trap": "java.string_equals",
+   "fails": {
+    "1": "failed",
+    "3": "failed",
+    "4": "failed",
+    "5": "failed",
+    "8": "failed",
+    "11": "failed",
+    "12": "failed",
+    "13": "failed",
+    "14": "failed",
+    "15": "failed",
+    "16": "failed",
+    "17": "failed",
+    "18": "failed",
+    "19": "failed",
+    "20": "failed",
+    "21": "failed",
+    "22": "failed",
+    "23": "failed"
+   }
+  }
+ ],
+ "javascript": [
+  {
+   "file": "lang_1.js",
+   "trap": "javascript.fill_shared",
+   "fails": {
+    "1": "failed",
+    "3": "failed",
+    "6": "failed",
+    "7": "failed",
+    "8": "failed",
+    "11": "failed",
+    "12": "failed",
+    "13": "failed",
+    "14": "failed",
+    "15": "failed",
+    "16": "failed",
+    "17": "failed",
+    "18": "failed",
+    "19": "failed",
+    "20": "failed",
+    "21": "failed",
+    "22": "failed",
+    "23": "failed"
+   }
+  }
+ ]
+}

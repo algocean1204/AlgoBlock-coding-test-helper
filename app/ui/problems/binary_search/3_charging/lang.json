@@ -1,0 +1,127 @@
+{
+ "python": [
+  {
+   "file": "lang_1.py",
+   "trap": "python.true_division",
+   "fails": {
+    "1": "failed",
+    "2": "failed",
+    "3": "failed",
+    "5": "failed",
+    "6": "failed",
+    "7": "failed",
+    "8": "failed",
+    "10": "failed",
+    "11": "failed",
+    "12": "failed",
+    "13": "failed",
+    "14": "failed",
+    "15": "failed",
+    "16": "failed",
+    "17": "failed",
+    "18": "failed",
+    "19": "failed",
+    "20": "failed",
+    "21": "failed",
+    "22": "failed",
+    "23": "failed",
+    "24": "failed",
+    "25": "failed",
+    "26": "failed"
+   }
+  }
+ ],
+ "java": [
+  {
+   "file": "lang_1.java",
+   "trap": "java.int_overflow",
+   "at": "n은 1 이상 500,000,000 이하입니다.",
+   "fails": {
+    "22": "failed",
+    "23": "failed",
+    "25": "failed"
+   }
+  },
+  {
+   "file": "lang_2.java",
+   "trap": "java.int_multiply",
+   "at": "n은 1 이상 500,000,000 이하입니다.",
+   "fails": {
+    "20": "failed",
+    "21": "failed",
+    "24": "failed",
+    "25": "failed",
+    "26": "failed"
+   }
+  }
+ ],
+ "javascript": [
+  {
+   "file": "lang_1.js",
+   "trap": "javascript.shift_32bit",
+   "at": "n은 1 이상 500,000,000 이하입니다.",
+   "fails": {
+    "20": "timeout",
+    "21": "timeout",
+    "24": "timeout",
+    "26": "timeout"
+   }
+  },
+  {
+   "file": "lang_2.js",
+   "trap": "javascript.float_division",
+   "fails": {
+    "7": "failed",
+    "10": "failed",
+    "11": "failed",
+    "12": "failed",
+    "13": "failed",
+    "14": "failed",
+    "15": "failed",
+    "16": "failed",
+    "17": "failed",
+    "18": "failed",
+    "19": "failed",
+    "24": "failed",
+    "25": "failed",
+    "26": "failed"
+   }
+  }
+ ],
+ "cpp": [
+  {
+   "file": "lang_1.cpp",
+   "trap": "cpp.int_overflow",
+   "at": "n은 1 이상 500,000,000 이하입니다.",
+   "fails": {
+    "22": "failed",
+    "23": "failed",
+    "25": "failed"
+   }
+  },
+  {
+   "file": "lang_2.cpp",
+   "trap": "cpp.int_multiply",
+   "at": "n은 1 이상 500,000,000 이하입니다.",
+   "fails": {
+    "20": "failed",
+    "24": "failed",
+    "26": "failed"
+   }
+  }
+ ],
+ "rust": [
+  {
+   "file": "lang_1.rs",
+   "trap": "rust.i32_wrap",
+   "at": "n은 1 이상 500,000,000 이하입니다.",
+   "fails": {
+    "20": "failed",
+    "21": "failed",
+    "24": "failed",
+    "25": "failed",
+    "26": "failed"
+   }
+  }
+ ]
+}

@@ -14,7 +14,10 @@ app에서:
 4. brute.py(문제 글의 정의를 그대로 옮긴 풀이)가 예시·정확성 케이스와 무작위 입력 ROUNDS개에서 solution.py와 같은지.
 5. wrong_*.py(흔한 오답)가 모두 걸리는지, slow_*.py(느린 풀이)가 3의 제한에서 효율성 케이스를 시간 초과하는지.
 6. --langs: solution.<확장자>가 있는 언어마다 모든 케이스를 통과하고, 효율성 케이스를 그 언어 제한(3처럼 정한다)의 1/2 안에 끝내는지.
-통과하면 폴더에 cases.json(얼린 케이스와 기대 결과. 큰 입력은 만드는 번호만)과 limits.json(언어별 제한. 효율성 케이스가 있을 때만)을 쓴다.
+7. 언어 함정(lang_<번호>.<확장자>): 첫 줄의 id가 problems/lang_traps.json에 있고 구절이 문제 글에 있는지, 정답 풀이에서 실수 하나만 바꿨는지,
+   그리고 케이스에서 실제로 떨어지는지(파이썬은 늘, 다른 언어는 --langs일 때).
+통과하면 폴더에 cases.json(얼린 케이스와 기대 결과. 큰 입력은 만드는 번호만)과 limits.json(언어별 제한. 효율성 케이스가 있을 때만),
+lang.json(언어 함정이 어느 케이스에서 어떤 상태로 떨어졌는지. 증명 파일이 있을 때만)을 쓴다.
 """
 
 import importlib.util
@@ -25,6 +28,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+from collections import Counter
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -224,6 +228,7 @@ def check(folder, langs: bool = False) -> list[str]:
     saved = problem["dir"] / "ready.json"  # 풀이 가이드·블록(모델이 만들었거나 손으로 고친 것)도 같은 규칙을 지킨다
     if saved.exists():
         found += ready_bound(json.loads(saved.read_text(encoding="utf-8")).get("ready") or {})
+    found += lang_check(problem)
     for name in ("solution.py", "brute.py", "gen.py"):
         if name not in files:
             found.append(f"{name}가 없다")
@@ -352,7 +357,11 @@ def check(folder, langs: bool = False) -> list[str]:
                 found.append(f"{name}가 케이스 {bad[0]['id']}({bad[0]['kind']})에서 {bad[1]['status']}: {str(bad[1]['got'])[:80]} {bad[1]['why']}")
             elif large:
                 measure(language, name, ran, 2)  # 다른 언어는 제한이 짧아 여유를 절반으로 본다
+    ran_langs = [language for language in EXT if language == "python" or langs]
+    if not found:  # 7. 언어 함정(파이썬은 늘, 다른 언어는 --langs일 때 돌린다)
+        proofs, found = lang_run(problem, cases, ran_langs, {**before, **limits})
     if not found:
+        write_lang(problem, proofs, ran_langs)
         frozen = [{"id": case["id"], "kind": case["kind"], "expected": case["expected"],
                    **({"gen": case["gen"]} if case["kind"] == "efficiency" else {"input": json.dumps(case["args"], ensure_ascii=False)})} for case in cases]
         (problem["dir"] / "cases.json").write_text(json.dumps(frozen, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
@@ -392,6 +401,152 @@ def attempt(folder, path) -> bool:
     return good == len(rows)
 
 
+# 언어 함정: 해설의 정답 코드 위에 '이 언어에서 조심할 것'을 보인다. 보일 글은 목록(problems/lang_traps.json) 한 곳에만 있다.
+# 문제 폴더의 lang_<번호>.<확장자>는 정답 풀이에 그 실수 하나만 넣은 풀이이고, 이 문제의 케이스에서 실제로 떨어져야 한다(증명).
+TRAPS = HERE / "problems" / "lang_traps.json"
+TRAP_MAX, TRAP_CHARS, TRAP_FILES, TRAP_LINES = 12, 80, 3, 6  # 언어마다 항목 수, what·fix 길이, 문제·언어마다 증명 파일 수, 증명 파일에만 있는 줄 수
+TRAP_KEYS = ("id", "what", "fix", "wrong", "right", "recipe")
+FALLS = ("failed", "runtime_error", "timeout", "memory_limit", "skipped")  # 케이스에서 떨어진 상태. 빌드가 안 된 것(컴파일 오류 등)은 증명이 아니다
+LANG_FILE = re.compile(r"lang_\d+\.([a-z]+)")
+TRAP_HEAD = re.compile(r'(?:#|//) 언어 함정: ([a-z]+\.[a-z0-9_]+)(?: @ "([^"]+)")?')
+
+
+def traps() -> dict:
+    """함정 목록 {언어: [{id, what, fix, wrong, right, recipe}]}. 없으면 빈 것."""
+    return json.loads(TRAPS.read_text(encoding="utf-8")) if TRAPS.is_file() else {}
+
+
+def has_term(term: str, text: str) -> bool:
+    """글에 이름이 있는가. 낱말 글자로 시작·끝나는 이름은 다른 낱말의 일부(print 속의 int)로 세지 않는다."""
+    return re.search((_L if re.match(r"\w", term[0]) else "") + re.escape(term) + (_R if re.match(r"\w", term[-1]) else ""), text) is not None
+
+
+def proof_files(problem: dict) -> list[tuple[str, str, str, str]]:
+    """문제 폴더의 증명 파일: (파일 이름, 언어, 함정 id, 구절). 모르는 확장자면 언어가, 첫 줄을 못 읽으면 id가 빈 글이다."""
+    language_of = {ext: language for language, ext in EXT.items()}
+    out = []
+    for name in sorted(problem["files"]):
+        match = LANG_FILE.fullmatch(name)
+        if match:
+            head = TRAP_HEAD.fullmatch(problem["files"][name].split("\n", 1)[0].strip())
+            out.append((name, language_of.get(match[1], ""), head[1] if head else "", (head[2] or "") if head else ""))
+    return out
+
+
+def code_lines(text: str) -> Counter:
+    return Counter(line.strip() for line in text.splitlines() if line.strip())
+
+
+def lang_check(problem: dict, listed: dict | None = None) -> list[str]:
+    """증명 파일의 모양(채점기 없이): 첫 줄, 목록에 있는 id, 문제 글의 구절, 바꾼 줄(닻·좁힘), 파일 수."""
+    listed, files, found, seen = traps() if listed is None else listed, problem["files"], [], {}
+    text = problem["statement"] + "\n" + "\n".join(problem["limits"])
+    for name, language, trap, phrase in proof_files(problem):
+        solution = files.get(f"solution.{EXT.get(language, '')}")
+        mark = "#" if language == "python" else "//"
+        row = next((row for row in listed.get(language, []) if row.get("id") == trap), None)
+        if solution is None:
+            found.append(f"{name}: 같은 언어의 정답 풀이(solution.<확장자>)가 없다")
+            continue
+        if not trap or not files[name].startswith(mark + " "):
+            found.append(f"{name} 첫 줄이 '{mark} 언어 함정: <목록의 id>' 또는 '{mark} 언어 함정: <목록의 id> @ \"문제 글의 구절\"'이 아니다")
+            continue
+        if row is None:
+            found.append(f"{name}: {trap}가 lang_traps.json의 {language} 목록에 없다")
+            continue
+        if phrase and phrase not in text:
+            found.append(f"{name}: 구절 {phrase!r}가 문제 글·제한사항에 글자 그대로 없다")
+        seen.setdefault(language, []).append(trap)
+        proof, base = code_lines(files[name].split("\n", 1)[1] if "\n" in files[name] else ""), code_lines(solution)
+        added, removed = list((proof - base).elements()), list((base - proof).elements())
+        if not added and not removed:
+            found.append(f"{name}: 정답 풀이와 같다(실수 하나를 넣는다)")
+        elif len(added) > TRAP_LINES:
+            found.append(f"{name}: 정답 풀이에 없는 줄이 {len(added)}개다({TRAP_LINES}개까지. 실수 하나만 넣는다)")
+        if not any(has_term(term, line) for term in row["wrong"] for line in added) and not any(has_term(term, line) for term in row["right"] for line in removed):
+            found.append(f"{name}: 바꾼 줄에 {trap}의 이름이 없다(넣은 줄에 wrong {row['wrong']}, 또는 지운 줄에 right {row['right']})")
+        if not any(has_term(term, solution) for term in row["right"]):
+            found.append(f"{name}: 정답 풀이에 {trap}의 right {row['right']}가 없다")
+    for language, ids in seen.items():
+        if len(ids) > TRAP_FILES:
+            found.append(f"{language} 증명 파일이 {len(ids)}개다({TRAP_FILES}개까지)")
+        if len(set(ids)) < len(ids):
+            found.append(f"{language}에서 같은 함정을 증명 파일 둘이 보인다")
+    return found
+
+
+def lang_run(problem: dict, cases: list[dict], languages: list[str], limits: dict) -> tuple[dict, list[str]]:
+    """그 언어들의 증명 파일을 케이스 전부에 돌린다. ({언어: [lang.json의 행]}, 걸린 것). 모든 케이스를 통과하면 증명이 아니다."""
+    rows, found = {}, []
+    for name, language, trap, phrase in proof_files(problem):
+        if language not in languages:
+            continue
+        ran = run(language, problem["files"][name], cases, limits.get(language) or LIMIT[language])
+        fails = {case["id"]: row["status"] for case, row in zip(cases, ran) if row["status"] != "passed"}
+        odd = sorted(set(fails.values()) - set(FALLS))
+        if not fails:
+            found.append(f"{name}({trap})가 모든 케이스를 통과한다: 이 문제에서는 증명되지 않으니 파일을 지운다")
+        elif odd:
+            found.append(f"{name}({trap})를 돌리지 못했다({', '.join(odd)}): 증명 파일은 빌드되고 실행돼야 한다 {ran[0]['why'][-300:]}")
+        else:
+            rows.setdefault(language, []).append({"file": name, "trap": trap, **({"at": phrase} if phrase else {}), "fails": fails})
+    return rows, found
+
+
+def write_lang(problem: dict, proofs: dict, ran: list[str]) -> None:
+    """lang.json을 쓴다. 이번에 돌리지 않은 언어는 지난 값을 두되, 지금 없는 파일의 행은 뺀다. 증명이 하나도 없으면 지운다."""
+    path = problem["dir"] / "lang.json"
+    old = json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {}
+    kept = {language: [row for row in rows if row["file"] in problem["files"]] for language, rows in old.items() if language not in ran}
+    out = {language: proofs.get(language) or kept.get(language) for language in EXT if proofs.get(language) or kept.get(language)}
+    if out:
+        path.write_text(json.dumps(out, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+    elif path.exists():
+        path.unlink()
+
+
+def lang_frozen(problem: dict) -> list[str]:
+    """lang.json(지난 검사가 얼린 것)이 지금의 증명 파일과 맞는가(채점기 없이). 증명 파일의 이름·id·구절을 견준다."""
+    path = problem["dir"] / "lang.json"
+    saved = json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {}
+    have = sorted((row["file"], language, row["trap"], row.get("at", "")) for language, rows in saved.items() for row in rows if row.get("fails"))
+    return [] if have == proof_files(problem) else ["lang.json이 증명 파일(lang_*)과 다르다: check(다른 언어는 --langs)로 다시 쓴다"]
+
+
+def trap_list_check(listed: dict | None = None, root: Path = HERE / "problems") -> list[str]:
+    """함정 목록의 모양, 그리고 쓰는 증명 파일이 하나도 없는 항목(증명 없는 글은 두지 않는다). 채점기 없이 본다."""
+    listed = traps() if listed is None else listed
+    used = {head[1] for path in root.glob("*/*/lang_*.*") for head in [TRAP_HEAD.fullmatch(path.read_text(encoding="utf-8").split("\n", 1)[0].strip())] if head}
+    found, ids = [], []
+    for language, rows in listed.items():
+        if language not in EXT or not isinstance(rows, list):
+            found.append(f"lang_traps.json: {language!r}는 언어가 아니거나 항목 목록이 아니다")
+            continue
+        if len(rows) > TRAP_MAX:
+            found.append(f"lang_traps.json: {language} 항목이 {len(rows)}개다({TRAP_MAX}개까지)")
+        for row in rows:
+            texts = all(isinstance(row.get(key), str) and row[key].strip() for key in ("id", "what", "fix", "recipe"))
+            names = all(isinstance(row.get(key), list) and row[key] and all(isinstance(term, str) and term for term in row[key]) for key in ("wrong", "right"))
+            if sorted(row) != sorted(TRAP_KEYS) or not texts or not names:
+                found.append(f"lang_traps.json: {language}의 {row.get('id')!r}: 칸은 {', '.join(TRAP_KEYS)}이고, 글은 비지 않고, wrong·right는 이름 목록이다")
+                continue
+            trap, ticks = row["id"], re.findall(r"`([^`]+)`", row["what"])
+            ids.append(trap)
+            if not trap.startswith(language + ".") or not TRAP_HEAD.fullmatch(f"# 언어 함정: {trap}"):
+                found.append(f"lang_traps.json: {trap}: id는 '{language}.<소문자·숫자·_>'이다")
+            for key in ("what", "fix"):
+                if len(row[key]) > TRAP_CHARS:
+                    found.append(f"lang_traps.json: {trap}의 {key}가 {len(row[key])}자다({TRAP_CHARS}자까지)")
+            if not ticks or any(tick not in row["wrong"] for tick in ticks):
+                found.append(f"lang_traps.json: {trap}의 what에는 wrong의 이름을 백틱으로 하나 이상, 그것만 쓴다")
+            if any(has_term(term, row["what"]) for term in row["right"]):
+                found.append(f"lang_traps.json: {trap}의 what에 고치는 이름(right)이 있다: 고치는 법은 fix에 쓴다")
+            if trap not in used:
+                found.append(f"lang_traps.json: {trap}를 증명하는 파일(lang_*)이 없다: 증명 없는 글은 두지 않는다")
+    found += [f"lang_traps.json: id {trap}가 두 번 있다" for trap in sorted({trap for trap in ids if ids.count(trap) > 1})]
+    return found
+
+
 def folders(paths: list[str]) -> list[Path]:
     out = []
     for path in map(Path, paths):
@@ -415,6 +570,11 @@ def main() -> None:
         print(f"{'통과' if not found else '실패'} {folder}")
         for line in found:
             print(f"  - {line}")
+    listed = trap_list_check()  # 목록은 모든 문제의 증명 파일과 견준다(어느 폴더를 검사하든 같다)
+    bad += bool(listed)
+    print(f"{'통과' if not listed else '실패'} {TRAPS.name}")
+    for line in listed:
+        print(f"  - {line}")
     sys.exit(1 if bad else 0)
 
 

@@ -1539,7 +1539,7 @@ def own_guide() -> None:
     assert call("/api/submit", id=pid, code="def solution(a, b):\n    return a + b\n")[1]["ok"]
     status, sol = call("/api/solution", id=pid)
     assert status == 200 and sol["signals"] == [{"phrase": "제목이 같으면 같은 책입니다", "means": "개수를 센다"}, {"phrase": "", "means": "입력이 크다"}]
-    assert (sol["code"], sol["language"], sol["verified"], sol["next"]) == (CODE, "python", False, None)
+    assert (sol["code"], sol["language"], sol["verified"], sol["next"], sol["traps"]) == (CODE, "python", False, None, [])  # 언어 함정은 기본 문제에만(증명이 없다)
     with server.tutor() as t:
         assert not t.store.study(pid)["solution_before_pass"]  # 통과한 뒤에 열었다
     assert [row["phrase"] for row in server.clue_signals(["'1. 금메달이 앞섭니다.' 와 '2. 은메달' → 순서", "“\"문자열\" s” → 뜻", " '한 번만' → 센다"])] == [
@@ -2887,8 +2887,114 @@ def neutral_notes() -> None:
         assert problemkit.language_bound({**bad, "pitfalls": [word], "signals": [{"means": "x"}]}), word
 
 
+def lang_traps() -> None:
+    """언어 함정(채점기 없이 보는 것과 Python 하나만 돌리는 것): 저장소의 목록과 증명 파일이 검사를 통과하고, 묶음은 실을 언어의 함정만 싣는다.
+    걸러야 할 것(목록에 없는 id, 문제 글에 없는 구절, 쓰지 않는 목록 항목, 바꾼 줄에 함정 이름이 없음, 너무 많이 바꿈, 통과해 버리는 증명 풀이)이 걸린다."""
+    import shutil
+    import problemkit
+    listed = problemkit.traps()
+    assert problemkit.trap_list_check() == [] and listed and all(len(rows) <= problemkit.TRAP_MAX for rows in listed.values())
+    found = []
+    for folder in problemkit.folders([str(HERE / "problems")]):
+        problem = problemkit.load(folder)
+        found += [f"{folder.name}: {line}" for line in problemkit.lang_check(problem, listed) + problemkit.lang_frozen(problem)]
+    assert not found, found
+    text = {row["id"]: row for rows in listed.values() for row in rows}
+    shipped = 0
+    for row in ROWS:  # 시험 묶음은 --no-langs라 Python 함정만 실린다. 글은 목록에서, 떨어진 케이스는 lang.json에서
+        path = HERE / "problems" / row["theme"] / row["id"].removeprefix(row["theme"] + "_") / "lang.json"
+        frozen = json.loads(path.read_text(encoding="utf-8")).get("python", []) if path.is_file() else []
+        mine = (row.get("traps") or {}).get("python", [])
+        assert set(row.get("traps") or {}) <= {"python"} and [trap["id"] for trap in mine] == [trap["trap"] for trap in frozen], row["id"]
+        assert all(trap["what"] == text[trap["id"]]["what"] and trap["fix"] == text[trap["id"]]["fix"] and trap["fails"] for trap in mine), row["id"]
+        shipped += len(mine)
+    assert shipped >= 5, shipped
+
+    root = TMP / "trap-root"  # 본보기 문제의 사본에서 걸러야 할 것을 하나씩 넣어 본다
+    copy = root / "hash" / "1_popular_shelf"
+    shutil.copytree(HERE / "problems" / "hash" / "1_popular_shelf", copy)
+    good = (copy / "lang_1.py").read_text(encoding="utf-8")
+    solution = (copy / "solution.py").read_text(encoding="utf-8")
+    body = good.split("\n", 1)[1]
+
+    def check(text: str, name: str = "lang_1.py") -> str:
+        (copy / name).write_text(text, encoding="utf-8")
+        return "\n".join(problemkit.lang_check(problemkit.load(copy), listed))
+
+    assert check(good) == ""
+    assert "목록에 없다" in check("# 언어 함정: python.no_such_trap\n" + body)
+    assert "글자 그대로 없다" in check('# 언어 함정: python.missing_key @ "문제 글에 없는 말"\n' + body)
+    assert "첫 줄이" in check("// 언어 함정: python.missing_key\n" + body) and "첫 줄이" in check(body)
+    assert "정답 풀이와 같다" in check("# 언어 함정: python.missing_key\n" + solution)
+    assert "바꾼 줄에" in check("# 언어 함정: python.missing_key\n" + solution.replace("shelf = []", "shelf = list()"))  # 함정과 상관없는 줄만 바꿨다
+    assert "6개까지" in check("# 언어 함정: python.missing_key\n" + body.replace("    return shelf", "".join(f"    x{n} = {n}\n" for n in range(7)) + "    return shelf"))
+    for n in (2, 3, 4):
+        (copy / f"lang_{n}.py").write_text(good, encoding="utf-8")
+    many = check(good)
+    assert "4개다(3개까지)" in many and "같은 함정" in many
+    for n in (2, 3, 4):
+        (copy / f"lang_{n}.py").unlink()
+    check(good)
+
+    # 목록: 쓰는 증명 파일이 없는 항목, 글의 규칙, 상한
+    row = dict(text["python.missing_key"])
+    assert problemkit.trap_list_check({"python": [row]}, root) == []
+    assert "증명하는 파일" in "\n".join(problemkit.trap_list_check({"python": [row, {**row, "id": "python.unused"}]}, root))
+    for bad, words in (({"what": "백틱이 없는 글"}, "백틱"), ({"what": "`get`으로 읽어요"}, "백틱"), ({"what": "`KeyError`가 나요. get으로"}, "고치는 이름"),
+                       ({"fix": "가" * 81}, "81자"), ({"id": "java.missing_key"}, "id는"), ({"right": []}, "이름 목록")):
+        assert words in "\n".join(problemkit.trap_list_check({"python": [{**row, **bad}]}, root)), bad
+    assert "13개다" in "\n".join(problemkit.trap_list_check({"python": [row] + [{**row, "id": f"python.more_{n}"} for n in range(12)]}, root))
+
+    # 실행: 증명 풀이가 떨어진 케이스와 상태를 남기고, 모두 통과하는 풀이는 걸린다(Python 채점기만 쓴다)
+    problem, cases = problemkit.load(copy), problemkit.frozen_cases(problemkit.load(copy))
+    rows, more = problemkit.lang_run(problem, cases, ["python"], {})
+    assert more == [] and rows["python"][0]["trap"] == "python.missing_key" and set(rows["python"][0]["fails"].values()) == {"runtime_error"}, (rows, more)
+    (copy / "lang_1.py").write_text("# 언어 함정: python.missing_key\n" + solution, encoding="utf-8")
+    rows, more = problemkit.lang_run(problemkit.load(copy), cases, ["python"], {})
+    assert rows == {} and "모든 케이스를 통과한다" in more[0], more
+    # lang.json: 이번에 돌리지 않은 언어는 지난 값을 두고, 지운 파일의 행은 뺀다
+    (copy / "lang_1.py").write_text(good, encoding="utf-8")
+    before = json.loads((copy / "lang.json").read_text(encoding="utf-8"))
+    problemkit.write_lang(problemkit.load(copy), {"python": before["python"]}, ["python"])
+    assert json.loads((copy / "lang.json").read_text(encoding="utf-8")) == before and problemkit.lang_frozen(problemkit.load(copy)) == []
+    (copy / "lang_1.java").unlink()
+    assert problemkit.lang_frozen(problemkit.load(copy))  # 파일을 지웠는데 다시 쓰지 않았다
+    problemkit.write_lang(problemkit.load(copy), {"python": before["python"]}, ["python"])
+    assert "java" not in json.loads((copy / "lang.json").read_text(encoding="utf-8")) and problemkit.lang_frozen(problemkit.load(copy)) == []
+
+
+def solution_traps() -> None:
+    """해설은 보이는 정답 코드의 언어에서 증명된 함정을 싣는다(글·고치는 법·문제 글 구절만, 떨어진 케이스는 내보내지 않는다). 화면은 정답 코드 위에 그린다."""
+    traps = {"python": [{"id": "python.a", "what": "`a`를 쓰면", "fix": "b", "at": "제목이 같으면 같은 책입니다", "fails": {"1": "failed"}}],
+             "javascript": [{"id": "javascript.c", "what": "`c`를 쓰면", "fix": "d", "fails": {"2": "runtime_error"}}]}
+    with patch.dict(server.BUILTIN[PID], {"traps": traps}):
+        assert call("/api/solution", id=PID, force=True)[1]["traps"] == [{"what": "`a`를 쓰면", "fix": "b", "at": "제목이 같으면 같은 책입니다"}]
+        call("/api/language", id=PID, language="javascript")
+        try:
+            assert call("/api/solution", id=PID, force=True)[1]["traps"] == [{"what": "`c`를 쓰면", "fix": "d"}]
+        finally:
+            call("/api/language", id=PID, language="python")
+    with patch.dict(server.BUILTIN[PID]):
+        server.BUILTIN[PID].pop("traps", None)
+        assert call("/api/solution", id=PID, force=True)[1]["traps"] == []  # 증명이 없는 문제
+    js, css = (HERE / "app.js").read_text(encoding="utf-8"), (HERE / "app.css").read_text(encoding="utf-8")
+    assert '<div class="traps"><h5>이 언어로 풀 때 조심할 것</h5>' in js and js.index('class="traps"') < js.index('<pre class="code"><code>${esc(sol.code') and ".traps {" in css
+    assert "kept.sol" in js and "S.soloOpen = kept.open;" in js and "S.solo.codeOpen" in js  # 언어를 바꿔도 열어 둔 해설을 새 언어로 다시 받는다
+    import re
+    import shutil
+    node = shutil.which("node")
+    if not node:
+        return print("node가 없어 글 꾸미기 시험은 건너뜀")
+    source = js[:js.index("\n", js.index("const esc"))] + re.search(r"/\* inline-pure:start.*?\*/(.*?)/\* inline-pure:end \*/", js, re.S).group(1)
+    script = source + 'console.log(JSON.stringify([inline("`a**b**c` 와 **굵게**"), inline("`x` < **y**"), inline("**`k`**")]));'
+    code, other, wrapped = json.loads(subprocess.run([node, "-e", script], capture_output=True, text=True, check=True).stdout)
+    assert code == "<code>a**b**c</code> 와 <strong>굵게</strong>", code  # 백틱 안의 **는 그대로
+    assert other == "<code>x</code> &lt; <strong>y</strong>" and wrapped == "<strong><code>k</code></strong>", (other, wrapped)  # 코드를 감싼 굵게는 그대로 된다
+
+
 def main() -> None:
     neutral_notes()
+    lang_traps()
     build_only()
     error_lines()
     broken_files()
@@ -2899,6 +3005,7 @@ def main() -> None:
         bundle()
         limits()
         builtin(fake)
+        solution_traps()
         compose()
         report()
         pitfalls_repeated()

@@ -205,7 +205,7 @@ input:focus-visible, textarea:focus-visible { outline: none; border-color: var(-
 label, .label, legend { font-size: 13px; font-weight: 600; color: var(--text); }
 legend { float: left; width: 100%; padding: 0; } /* 띄우면 테두리 줄에 걸치지 않고 보통 글처럼 놓인다 */
 .hint { font-size: 12.5px; line-height: 1.55; color: var(--muted); }
-.hint code, .prose code, .msg code, .err-hint code { padding: 1px 5px; border-radius: 5px; background: var(--fill); font-size: 0.9em; }
+.hint code, .prose code, .msg code, .err-hint code, .traps code { padding: 1px 5px; border-radius: 5px; background: var(--fill); font-size: 0.9em; }
 .tag { display: inline-flex; align-items: center; padding: 1px 8px; border-radius: 999px; background: var(--fill); font-size: 12px; font-weight: 600; color: var(--muted); white-space: nowrap; }
 
 .select { min-height: 28px; padding: 0 28px 0 10px; border: 0; border-radius: 999px; background: var(--fill) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 4.5 6 8l3.5-3.5' fill='none' stroke='%238E8E93' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat right 9px center / 11px; color: var(--text); font: 600 12.5px/1.2 var(--sans); cursor: pointer; appearance: none; -webkit-appearance: none; }
@@ -711,7 +711,7 @@ pre.code.bad { color: var(--danger); }
 /* 혼자 풀기: 미리 만든 힌트와 해설(모델을 쓰지 않는다) */
 #solo-title { font-size: 13px; font-weight: 600; color: var(--muted); padding-left: 6px; }
 .solo { display: grid; gap: 22px; align-content: start; font-size: 14.5px; line-height: 1.65; }
-.solo-sec { display: grid; gap: 10px; justify-items: start; }
+.solo-sec { display: grid; gap: 10px; justify-items: start; min-width: 0; } /* 정답 코드의 긴 줄이 칸을 넓혀 글이 잘리지 않게(코드는 제 칸 안에서 가로로 민다) */
 .solo-sec + .solo-sec { padding-top: 20px; border-top: 1px solid var(--line); }
 .solo-sec > * { max-width: 100%; }
 .solo-sec > .signals, .solo-sec > .hints, .solo-sec > details, .solo-sec > .note, .solo-sec > pre { justify-self: stretch; }
@@ -730,10 +730,15 @@ pre.code.bad { color: var(--danger); }
 .plain-list { display: grid; gap: 4px; padding-left: 18px; list-style: disc; justify-self: stretch; }
 .plain-list.numbered { list-style: decimal; }
 .plain-list li::marker { color: var(--faint); }
-details.solution { padding-top: 6px; }
+details.solution { min-width: 0; padding-top: 6px; }
 details.solution > summary { width: fit-content; padding: 4px 8px 4px 2px; border-radius: 6px; font-size: 14px; font-weight: 650; color: var(--accent-text); cursor: pointer; }
 details.solution[open] > summary { margin-bottom: 4px; }
 details.solution > * + * { margin-top: 8px; }
+/* 정답 코드 위: 고른 언어에서 이 문제에 실제로 틀리는 것이 확인된 실수 */
+.traps { display: grid; gap: 6px; padding: 10px 12px; border-radius: var(--r-md); background: var(--warning-soft); font-size: 14px; line-height: 1.55; }
+.traps h5 { margin: 0; font-size: 13px; font-weight: 700; color: var(--warning); }
+.traps small { font-size: 12px; color: var(--muted); }
+.traps q { quotes: "“" "”"; }
 .solo-actions, .solo-next { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .solo-next { margin-top: 10px; }
 .lock-line { display: flex; align-items: center; gap: 6px; }

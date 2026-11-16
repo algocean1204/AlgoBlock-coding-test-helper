@@ -202,7 +202,13 @@ const pending = (where) => (S.busy && S.busy.where === where ? `<div class="msg 
 const HEADING = /^(문제 설명|제한 ?사항|입출력 예( 설명)?|입출력 예 ?#\d+|입력|출력|예시)$/;
 // 예제 구역의 머리(서버 sample_cases와 같은 규칙): 머리 다음부터 다음 머리나 빈 줄 둘 전까지가 그 예제의 글이다
 const SAMPLE_HEAD = /^(?:#+\s*)?(예제\s*입력|입력\s*예|sample\s+input|예제\s*출력|출력\s*예|sample\s+output)\s*(\d+)\s*(?:복사)?\s*:?$/i;
-const inline = (t) => esc(t).replace(/`([^`\n]+)`/g, "<code>$1</code>").replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>");
+/* inline-pure:start 백틱 안은 코드 그대로 둔다: 먼저 코드를 떼어 두고 굵게를 바꾼 뒤 되돌린다(코드 속 **가 굵게가 되지 않는다). node로도 시험한다 */
+function inline(t) {
+  const codes = [];
+  return esc(t).replace(/\u0000/g, "").replace(/`([^`\n]+)`/g, (_, code) => `\u0000${codes.push(code) - 1}\u0000`)
+    .replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>").replace(/\u0000(\d+)\u0000/g, (_, n) => `<code>${codes[n]}</code>`);
+}
+/* inline-pure:end */
 
 /** program: 표준 입출력 문제. 예제 구역은 글 그대로 <pre>에 담고, 같은 번호의 입력·출력은 두 칸으로 나란히 둔다. */
 // 탭·공백으로 나눈 입출력 예 표(서버 table_cases·flat_table과 같은 규칙의 가장 작은 판정): 머리 줄의 마지막 칸이 결과 낱말이고 뒤 줄들의 칸 수가 맞을 때만 표다
@@ -2089,12 +2095,13 @@ function solutionHtml(sol, passed) {
     <ul class="signals">${sol.signals.map((x) => `<li class="signal">${x.phrase ? `<q>${esc(x.phrase)}</q>` : ""}<span>${esc(x.means)}</span></li>`).join("")}</ul>
     ${sol.pattern || sol.learn ? `<h4>이 문제로 익힌 것 <span class="tag">${esc(sol.pattern)}</span></h4><p>${esc(sol.learn)}</p>` : ""}
     ${sol.pitfalls.length ? `<h4>흔한 실수</h4><ul class="plain-list">${sol.pitfalls.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}
-    <details class="solution"${passed ? "" : " open"}><summary>풀이 해설과 정답 코드</summary>
+    <details class="solution"${passed && !S.solo.codeOpen ? "" : " open"}><summary>풀이 해설과 정답 코드</summary>
       ${sol.verified === false || sol.verified === null ? '<p class="hint">이 풀이는 테스트로 확인하지 못했어요.</p>' : ""}
       ${sol.approach ? `<h4>푸는 방향</h4><p>${esc(sol.approach)}</p>` : ""}
       ${sol.clues.length ? `<h4>문제 글에서 읽어낸 것</h4><ul class="plain-list">${sol.clues.map((x) => `<li>${inline(x)}</li>`).join("")}</ul>` : ""}
       ${sol.steps.length ? `<h4>푸는 순서</h4><ol class="plain-list numbered">${sol.steps.map((x) => `<li>${inline(x)}</li>`).join("")}</ol>` : ""}
       <h4>정답 풀이 <span class="tag">${esc(LANG[sol.language] || sol.language)}</span></h4>${guide ? "" : '<p class="hint">이 문제는 글로 된 해설이 아직 없어요. 정답 코드만 있어요.</p>'}
+      ${(sol.traps || []).length ? `<div class="traps"><h5>이 언어로 풀 때 조심할 것</h5><ul class="plain-list">${sol.traps.map((x) => `<li>${inline(x.what)} ${inline(x.fix)}${x.at ? ` <small>문제 글: <q>${esc(x.at)}</q></small>` : ""}</li>`).join("")}</ul></div>` : ""}
       <pre class="code"><code>${esc(sol.code.replace(/\s+$/, ""))}</code></pre></details>${passed ? "" : next}`;
 }
 
@@ -2170,8 +2177,15 @@ async function changeLanguage(language) {
     .finally(() => { $("code").readOnly = false; });
   if (!r || S.pid !== pid) return;
   if (!r.ok) { $("code-error").textContent = errorNote(r.error).text; $("code-error").hidden = false; return render(); }
+  const details = $("solo-box").querySelector("details.solution"); // 열어 둔 해설 칸·받은 해설·펼친 정답 코드는 새 언어로 다시 받아 그대로 둔다
+  const kept = { mode: S.mode, open: S.soloOpen, sol: !!(S.solo && S.solo.sol), code: !!(details && details.open) };
   clearProblem(pid);
   applyState(r.data);
+  if (kept.mode === "solo" && kept.open) S.mode = "solo"; // 기억하지 않은 방식(결과에서 연 해설)이어도 그 칸에 머문다
+  S.soloOpen = kept.open;
+  S.solo.codeOpen = kept.code;
+  if (kept.sol && !(S.problem.study.has_guide && S.problem.study.passed_now)) loadSolution(false); // applyState가 이미 부른 경우는 빼고
+  else render();
   if (ACCOUNTS) ACCOUNTS.language = language; // 서버가 기억한 마지막 언어(등록 화면의 기본값)
   say(`언어를 바꿨어요: ${LANG[language] || language}`);
 }

@@ -2543,12 +2543,13 @@ def handle(path: str, body: dict) -> tuple[int, dict]:
                 t.store.mark_help(pid)
             if own_guide is not None:
                 return 200, {"signals": clue_signals(own_guide.clues), "pattern": "", "learn": "", "pitfalls": [], "ladder": [], "clues": own_guide.clues,
-                             "approach": own_guide.approach, "steps": own_guide.steps, "code": own_guide.code, "language": language, "next": None, "verified": own_guide.verified}
+                             "approach": own_guide.approach, "steps": own_guide.steps, "code": own_guide.code, "language": language, "next": None, "verified": own_guide.verified, "traps": []}
             guide = (row.get("ready") or {}).get("solution") or {}
             shown = language if language in row["solutions"] else "python"
+            traps = [{key: trap[key] for key in ("what", "fix", "at") if key in trap} for trap in (row.get("traps") or {}).get(shown, [])]  # 보이는 정답 코드의 언어에서 증명된 함정
             return 200, {"signals": row["signals"], "pattern": row["pattern"], "learn": row["learn"], "pitfalls": row["pitfalls"], "ladder": row["ladder"],
                          "clues": guide.get("clues") or [], "approach": guide.get("approach") or "", "steps": guide.get("steps") or [],
-                         "code": row["solutions"][shown], "language": shown, "next": next_problem(pid, {key for key, (ok, _) in counts(t).items() if ok}), "verified": True}
+                         "code": row["solutions"][shown], "language": shown, "next": next_problem(pid, {key for key, (ok, _) in counts(t).items() if ok}), "verified": True, "traps": traps}
         if path == "/api/code":
             t.store.update_code(pid, code_of(body))
             return 200, {"ok": True}
