@@ -107,6 +107,13 @@ class BeginnerMoveTest(unittest.TestCase):
             got = pick_move(mode, PLAN, turn(text="그게 뭐예요?", used=["open"]), Verdict(False, aside="W"))
             self.assertEqual((got.move, got.advance, got.target, got.saved, got.lead), ("term", False, 0, None, ""), mode)  # 모델이 뜻과 예를 짓는다
 
+    def test_term_during_verify_keeps_the_way_to_write(self):
+        """확인 질문(verify) 중에 낱말의 뜻을 물었다(term). 뜻을 들은 뒤 답하면 처음 생각은 이미 맞았으니 코드로 적게 한다(그 길을 놓쳤다)."""
+        asked = pick_move("guide", PLAN, turn(text="range가 뭐예요?", used=["blank", "verify"]), Verdict(False, aside="W"))
+        self.assertEqual(asked.move, "term")
+        after = pick_move("guide", PLAN, turn(text="0부터 n-1까지 돌아요", used=["blank", "verify", "term"]), Verdict(False))
+        self.assertEqual((after.move, after.saved), ("write", WRITE_TIP))
+
     def test_too_hard_gets_smaller_saved_hint(self):
         from ..common.talk_rules import HARD_LEAD
 
@@ -145,3 +152,21 @@ class GuideMoveTest(unittest.TestCase):
         self.assertEqual(last.saved, WRITE_TIP_LAST)  # 마지막 블록에는 '다음 블록이 열려요'라고 하지 않는다
         filled = pick_move("guide", PLAN, turn(event="block_filled", text=""), Verdict(True))  # 코드 확인이 통과해야 연다
         self.assertEqual((filled.move, filled.advance, filled.target), ("blank", True, 1))
+
+    def test_right_idea_asked_as_question_is_not_write_tip(self):
+        """맞는 생각을 물음으로 냈다: 코드로 적으라는 고정 말(물음에 답하지 않는다) 대신 모델이 스스로 확인할 질문을 짓는다. 맞다고 말하지 않는다."""
+        for text in ("처음부터 끝까지 range로 돌려야 하나요?", "이름마다 세면 될까", "count에 1을 더하면 되죠"):
+            got = self.pick(Verdict(True), text=text, used=["blank"])
+            self.assertEqual((got.move, got.advance, got.saved), ("verify", False, None), text)
+        said = self.pick(Verdict(True), text="이름마다 1씩 더해서 세요", used=["blank"])  # 말로 맞힌 생각은 그대로 코드로 적게 한다
+        self.assertEqual((said.move, said.saved), ("write", WRITE_TIP))
+        traced = self.pick(Verdict(False), text="owl이 2가 돼요", used=["blank", "verify"])  # 확인 질문에 답했다: 처음 생각이 맞았으니 코드로 적게 한다
+        self.assertEqual((traced.move, traced.saved), ("write", WRITE_TIP))
+        for text in ("이름마다 세어 가요", "같은 이름이 또 나오니까 1을 더해요", "다 세고 나면 돌려줘요"):  # 물음 어미가 아닌 평서문
+            self.assertEqual(self.pick(Verdict(True), text=text, used=["blank"]).move, "write", text)
+        for text in ("이름별로 세는 건가요", "1부터 시작하는가요", "range로 돌려도 될까"):
+            self.assertEqual(self.pick(Verdict(True), text=text, used=["blank"]).move, "verify", text)
+        twice = self.pick(Verdict(True), text="그럼 1을 더하면 되나요?", used=["blank", "verify", "blank"])  # 확인 질문은 블록에 한 번만
+        self.assertEqual((twice.move, twice.saved), ("write", WRITE_TIP))
+        again = self.pick(Verdict(False), text="모르겠어요", used=["blank", "verify"])
+        self.assertEqual(again.saved, fakes.HINTS1[1])  # 내용 없는 답은 전과 같이 저장 힌트

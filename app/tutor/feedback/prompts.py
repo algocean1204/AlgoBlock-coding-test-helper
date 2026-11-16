@@ -45,7 +45,12 @@ def used_blocks(ctx) -> bool:
     return bool(ctx.chair or ctx.guide or ctx.block_states)
 
 
-STILL = ("basis", "recap", "run", "close", "done", "write", "term")  # 같은 블록에 남았어도 막힌 것이 아닌 말(근거 질문, 마지막 정리, 가이드에서 맞힌 빈칸을 코드로 적으라는 말)
+# 앞 답이 블록을 찾지(빈칸을 맞히지) 못했을 때만 나오는 튜터의 차례(turn/moves.py의 사다리와 짚기). 이 차례가 같은 블록에서 사용자 말 뒤에 온 것만 센다.
+# 막히지 않은 말(근거 질문, 마지막 정리, 다시 짜기, 코드로 적으라는 말 등)을 빼는 목록으로 두었더니 새 차례가 생길 때마다 막힌 답으로 셌다
+MISSED = ("open", "clue", "trace", "assume", "edge", "blank", "tool", "shape")
+# 방식마다 그 방식에서 일어나는 일만 쓴다. '다음 블록으로 넘어가지 못한 답'은 어느 방식의 말에도 맞지 않았다(의자는 말로 블록을 찾고, 가이드는 코드 확인으로만 넘어간다)
+MISSED_TEXT = {"chair": "'튜터의 질문으로'에서 이 블록을 찾지 못한 답", "guide": "'튜터와 차례로'에서 빈칸을 맞히지 못한 말"}
+REPLANNED = "- '튜터의 질문으로'에서 사용자가 말한 방법으로 블록을 다시 짰다(그 전의 대화는 다른 블록 순서라 블록별로 세지 않는다)"
 # 제출 결과 종류를 화면(통계)이 쓰는 말로('runtime_error 1번, failed 1번'을 모델이 그대로 옮겼다)
 FAIL_WORD = {"failed": "오답", "wrong_answer": "오답", "runtime_error": "실행 오류", "timeout": "시간 초과", "compile_error": "컴파일·형식 오류",
              "memory_limit": "메모리 초과", "output_limit": "출력 초과"}
@@ -57,14 +62,19 @@ def record_lines(ctx, plan) -> list[str]:
     blocks = plan.blocks if plan else []
     name = lambda i: f"블록 {i + 1}({blocks[i].name})" if i is not None and 0 <= i < len(blocks) else "블록"
     lines = []
-    for label, said in (("튜터의 질문으로", ctx.chair), ("튜터와 차례로", ctx.guide)):  # '가이드 블록 1'로 옮겨 썼다. 화면의 방식 이름으로
+    for mode, said in (("chair", ctx.chair), ("guide", ctx.guide)):  # '가이드 블록 1'로 옮겨 썼다. 화면의 방식 이름으로
+        # 다시 짜기(replan) 앞의 말은 다른 계획의 블록 번호다(블록 이름이 화면과 달랐다). 턴 준비(turn/context.py)처럼 그 뒤만 본다
+        cut = max((i for i, m in enumerate(said) if m.role == "service" and m.move == "replan"), default=-1)
+        if cut >= 0:
+            lines.append(REPLANNED)
+        said = said[max(cut, 0):]
         # 답 조르기·딴소리는 막힌 것이 아니다. 블록 코드 확인(판정 표시 CHECKED가 붙은 글)은 아래 블록 상태로만 센다('확인 전'은 막힘이 아니다).
         # 표시가 없는 옛 기록은 거부 말(RETRY_LEAD)로 가른다
         stuck = Counter(user.block_index for user, reply in zip(said, said[1:])
                         if user.role == "user" and not (user.move or "").startswith(CHECKED)
-                        and reply.role == "service" and reply.block_index == user.block_index and reply.move not in (*STILL, "found")
+                        and reply.role == "service" and reply.block_index == user.block_index and reply.move in MISSED
                         and not reply.text.startswith((ANSWER_LEAD, BACK_LEAD, RETRY_LEAD)))
-        lines += [f"- {name(i)}: {label} 풀 때 이 블록에서 다음 블록으로 넘어가지 못한 답이 {n}번" for i, n in sorted(stuck.items(), key=lambda kv: kv[0] or 0)]
+        lines += [f"- {name(i)}: {MISSED_TEXT[mode]}이 {n}번" for i, n in sorted(stuck.items(), key=lambda kv: kv[0] or 0)]
     for i, block in enumerate(blocks):
         state = ctx.block_states.get(block.id)
         wrong = 0 if state is None else state.tries - (state.verdict in ("Y", "?"))  # '?': 통과했다가 앞 블록이 바뀌어 확인 전으로 돌아갔다

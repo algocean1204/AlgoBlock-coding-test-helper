@@ -63,7 +63,7 @@
   <a id="settings-link" class="btn small" href="#/settings">설정</a>
 </header>
 
-<main id="main">
+<main id="main" tabindex="-1">
   <!-- 01 홈(대시보드): 오늘 할 일 하나 -->
   <section id="view-home" class="page" hidden aria-labelledby="home-title">
     <h1 id="home-title" class="sr-only" tabindex="-1">홈</h1>
@@ -116,7 +116,7 @@
       <div class="field" data-in="2">
         <label for="new-title">제목</label>
         <input id="new-title" type="text" aria-label="제목" aria-describedby="new-title-note" autocomplete="off">
-        <small id="new-title-note" class="hint">글의 첫 줄에서 채웠어요. 고쳐도 돼요.</small>
+        <small id="new-title-note" class="hint">문제 목록에 보이는 이름이에요.</small>
       </div>
       <fieldset class="cases" data-in="2">
         <legend>테스트 케이스</legend>
@@ -266,6 +266,7 @@
           </div>
           <p id="code-help" class="sr-only">Tab은 들여쓰기예요. 다음 칸으로 가려면 Esc를 누른 뒤 Tab을 누르세요. Ctrl+Enter 또는 Cmd+Enter로 제출해요.</p>
         </div>
+        <p id="tab-hint" class="tab-hint" aria-hidden="true">Tab은 들여쓰기예요. 다음 칸으로 나가려면 Esc를 누른 뒤 Tab을 누르세요.</p>
         <div class="code-actions">
           <span id="code-confirm" class="confirm" role="group" aria-label="코드 칸 확인" hidden>
             <span id="code-confirm-text" role="status"></span>

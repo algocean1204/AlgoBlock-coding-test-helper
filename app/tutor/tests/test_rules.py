@@ -54,14 +54,65 @@ class BlockRuleTest(unittest.TestCase):
             "지어낸 인용": [fakes.HINTS1[0], "'글자는 모두 다르다'를 보면 어떨까요?", fakes.HINTS1[2]],
             "코드 펜스": [fakes.HINTS1[0], fakes.HINTS1[1], "```x```로 해 볼까요?"],
             "참고 코드": [fakes.HINTS1[0], fakes.HINTS1[1], "REF_ONE을 쓰면 어떨까요?"],
+            # 문제 글의 'k번째로 빌려지는'에서 낱말 중간을 떼었다
+            "깨진 인용": [fakes.HINTS1[0], "'번째로 빌려지는 바로 그때'를 보면 무엇을 세어야 할까요?", fakes.HINTS1[2]],
+            "줄인 인용": [fakes.HINTS1[0], "'어떤 책이 … 꽂습니다'를 보면 무엇을 세어야 할까요?", fakes.HINTS1[2]],
+            "같은 질문 되풀이": [fakes.HINTS1[0], "책마다 무엇을 기록해 둬야 하나요?", fakes.HINTS1[2]],
         }
         for why, hints in cases.items():
             with self.subTest(why=why):
                 broken = [replace(good[0], hints=hints), good[1]]
                 self.assertEqual(clean_blocks(broken, fakes.PROBLEM)[0].hints, [])
                 self.assertEqual(clean_blocks(broken, fakes.PROBLEM)[1].hints, fakes.HINTS2)
+        # 문제 글에 없는 코드 이름: 참고 코드의 인자 이름(day)을 낱말처럼 썼다. 문제 글에 있는 이름(loans, k)과 백틱 안 코드는 된다
+        coded = [replace(good[0], reference="def borrowed(day):\n    return day"), good[1]]
+        named = [replace(coded[0], hints=[fakes.HINTS1[0], fakes.HINTS1[1], "day일까지 몇 번 빌려졌는지 어떻게 셀까요?"]), good[1]]
+        self.assertEqual(clean_blocks(named, fakes.PROBLEM)[0].hints, [])
+        fine = [replace(coded[0], hints=[fakes.HINTS1[0], fakes.HINTS1[1], "loans가 owl, tide이고 k가 1이면 `borrowed`는 무엇을 셀까요?"]), good[1]]
+        self.assertEqual(len(clean_blocks(fine, fakes.PROBLEM)[0].hints), 3)
         capped = clean_blocks([replace(good[0], checks=["a", "b", "c", "d", " "], hints=fakes.HINTS1 + ["넷째 질문인가요?"])], fakes.PROBLEM)[0]
         self.assertEqual((len(capped.checks), len(capped.hints)), (3, 3))
+
+
+class BrokenQuoteTest(unittest.TestCase):
+    def test_quote_cut_inside_a_word(self):
+        """인용이 문제 글의 낱말 중간에서 시작했다. 대화의 말도 같은 검사를 받는다(줄인 인용은 저장 질문만 막는다)."""
+        from ..common.talk_rules import broken_quotes
+
+        self.assertEqual(broken_quotes("'번째로 빌려지는 바로 그때'에는 무엇을 볼까요?", fakes.PROBLEM), ["번째로 빌려지는 바로 그때"])
+        self.assertEqual(broken_quotes("'k번째로 빌려지는 바로 그때'에는 무엇을 볼까요?", fakes.PROBLEM), [])
+        self.assertEqual(broken_quotes("'제목이 같으면'을 보면 무엇을 셀까요?", fakes.PROBLEM), [])  # 낱말 첫머리에서 시작하면 뒤 조사를 떼도 된다
+        elided = "'어떤 책이 … 꽂습니다'를 보면 무엇을 셀까요?"
+        self.assertEqual((broken_quotes(elided, fakes.PROBLEM), broken_quotes(elided, fakes.PROBLEM, cut=True)), ([], ["어떤 책이 … 꽂습니다"]))
+        series = "점검일은 first, first + gap, …, last일입니다."
+        self.assertEqual(broken_quotes("'first, first + gap, …, last일입니다'를 보면 무엇을 셀까요?", series, cut=True), [])  # 문제 글 자체의 '…'
+        self.assertIn("깨진 인용", reply_problems("'번째로 빌려지는 바로 그때'는 언제일까요?", move="clue", problem=fakes.PROBLEM))
+
+    def test_builtin_hints_pass_the_hint_rules(self):
+        """기본 문제의 저장 힌트도 깨진 인용·문제 글에 없는 코드 이름·되풀이 검사를 지난다('day일까지 점검이 몇 번인지')."""
+        import json
+        from pathlib import Path
+
+        from ..common.talk_rules import broken_quotes, code_names, repeated_hints
+
+        path = Path(__file__).resolve().parents[2] / "ui" / "builtin.json"
+        if not path.exists():
+            self.skipTest("ui/builtin.json 없음")
+        found = []
+        for row in json.loads(path.read_text(encoding="utf-8")):
+            blocks = ((row.get("ready") or {}).get("plan") or {}).get("blocks") or []
+            code = "\n".join(b["reference"] for b in blocks)
+            for b in blocks:
+                found += [(row["id"], b["id"], "되풀이")] if repeated_hints(b["hints"]) else []
+                found += [(row["id"], b["id"], h) for h in b["hints"] if code_names(h, code, row["text"]) or broken_quotes(h, row["text"], cut=True)]
+        self.assertEqual(found, [])
+
+    def test_hint_rules_reach_the_prompt(self):
+        from ..plan.prompts import HINT_RULES
+
+        rules = "\n".join(HINT_RULES)
+        for part in ("문제 글에 이미 적힌 것", "세 질문은 서로 다른 것을 묻는다", "낱말 중간에서 끊지 않고", "판정 낱말"):
+            self.assertIn(part, rules)
 
 
 class SectionRuleTest(unittest.TestCase):
@@ -634,9 +685,10 @@ class ModelTalkRuleTest(unittest.TestCase):
 
         self.assertEqual([batchim(w) for w in ("name", "line", "table", "value", "tom", "remaining", "r", "for")], [True, True, True, False, True, True, True, False])
         # 코드 이름 뒤에 조사를 붙이지 않는다
-        self.assertEqual(rename_note([["g", "name"]]), "이 블록에서 쓴 이름(`g`)을 튜터의 코드는 다른 이름(`name`)으로 불러요. 뒤 블록을 '이 블록 채우기'로 채우면 내 이름으로 바꿔 채워요.")
-        self.assertEqual(rename_note([["cnt", "count"], ["r", "name"]]),
-                         "이 블록에서 쓴 이름(`cnt`, `r`)을 튜터의 코드는 차례대로 다른 이름(`count`, `name`)으로 불러요. 뒤 블록을 '이 블록 채우기'로 채우면 내 이름으로 바꿔 채워요.")
+        self.assertEqual(rename_note([["g", "name"]]), "같은 값을 튜터의 코드는 다른 이름으로 써요(내 이름 → 튜터의 이름: `g` → `name`). 이름이 달라도 이어서 돌아가요. "
+                                                       "뒤 블록을 '이 블록 채우기'로 채우면 튜터의 코드를 내 이름으로 바꿔 넣어요.")
+        # 이름이 여럿이면 '차례대로'로 묶지 않고 짝마다 쓴다('counts, picked를 count, shelf로'는 어느 것이 어느 것인지 알기 어려웠다)
+        self.assertIn("(내 이름 → 튜터의 이름: `cnt` → `count`, `r` → `name`)", rename_note([["cnt", "count"], ["r", "name"]]))
 
 
 class EchoClauseTest(unittest.TestCase):
@@ -697,6 +749,23 @@ class ToldAnswerTest(unittest.TestCase):
                      "limit이 10이고 boxes가 [4, 4, 4]라고 해 봅시다. 셋째 상자는 언제 오를까요?"):  # 작은 예
             self.assertNotIn("답을 말함", reply_problems(fine, move="trace", problem=problem, reference=start), fine)
         self.assertIn("답을 말함", reply_problems("벨트 위 무게 합과 맨 앞 상자 번호는 0이에요.", move="open", problem=problem, reference=start))  # 지울 수 없으면 대체 질문
+
+
+class DebugOpeningRuleTest(unittest.TestCase):
+    def test_line_forms_pieces_and_expected_answer(self):
+        from ..debug.rules import leaks_piece, names_line
+        from ..turn.moves import rule_verdict
+
+        for said in ("4번째 줄", "4줄에서", "12행", "네 번째 줄", "열 번째 행", "line 4", "Line 12"):
+            self.assertTrue(names_line(f"{said} count는 몇인가요?"), said)
+        for said in ("한 줄씩 따라가 보면 어디서 달라질까요?", "코드 첫 줄부터 따라가 보면 어떨까요?", "두 번째 tom을 만나면 count는 몇인가요?"):
+            self.assertFalse(names_line(said), said)
+        code = "for name in a:\n    count[name] = 1"
+        self.assertTrue(leaks_piece("count.get(name, 0) + 1로 바꾸면?", "count[name] = count.get(name, 0) + 1", code))
+        self.assertFalse(leaks_piece("두 번째 tom에서 count[name]은 몇이 되나요?", "count[name] = count.get(name, 0) + 1", code))  # 사용자 코드에 있던 조각
+        for text in ("기대 답 보여줘", "예상 답 알려 주세요"):  # 기대한 값을 묻는 말은 답 요청이 아니다
+            self.assertNotEqual(getattr(rule_verdict(text), "aside", ""), "A", text)
+        self.assertEqual(rule_verdict("답 알려 주세요").aside, "A")
 
 
 class DebugSaidLineTest(unittest.TestCase):
