@@ -467,6 +467,10 @@ function failTip(fails) {
 }
 const when = (at) => String(at || "").slice(0, 16).replace("T", " ");
 
+/* report-pure:start 보고서의 ‘첫 할 일은 하나’ 분기(node로도 시험한다). 맨 위 ‘이어서 풀기’(target)와 같은 문제만 가리키고, 다른 문제는 링크로 내지 않는다. */
+const focusTail = (focus, target) => (!focus.next ? "" : target && focus.next.id === target.id ? " · 첫 문제는 위의 ‘이어서 풀기’예요" : " — ‘이어서 풀기’를 끝낸 뒤");
+const sideNext = (x, target) => (x.next && !(target && x.next.id === target.id) ? `‘이어서 풀기’를 끝낸 뒤: ${x.next.title}` : "");
+/* report-pure:end */
 async function showReport() {
   show("report");
   const [rep, ps] = await Promise.all([api("/api/report"), api("/api/problems")]);
@@ -497,15 +501,15 @@ async function showReport() {
   const rd = d.readiness, focus = rd.focus, SHOWN = 5; // 남은 주제는 앞의 다섯 줄만 펼쳐 두고 나머지는 접는다
   const lefts = (rows) => `<ul class="points plain">${rows.map((x) => `<li><strong>${esc(x.name)}</strong>
       <span>${esc(x.todo)}${x.after.length ? ` · 먼저 ${esc(x.after.join(", "))}` : ""}</span></li>`).join("")}</ul>`;
-  html += `<div class="sides${d.patterns.length ? "" : " full"}"><section class="card side"><h2>준비도 <span class="muted">${esc(rd.label)}</span></h2><p class="hint">도움(튜터·힌트·해설) 없이 푼 기본 문제가 얼마나 쌓였는지 보는 단계예요.</p><p>${esc(rd.line)}</p>
-    ${focus ? `<p class="hint">다음에 배울 주제: <strong>${esc(focus.name)}</strong>${focus.next ? (target && focus.next.id === target.id ? " · 첫 문제는 위의 ‘이어서 풀기’예요" : ` · <a class="link" href="#/p/${esc(focus.next.id)}">${esc(focus.next.title)}</a>`) : ""}</p>` : ""}
+  html += `<div class="sides${d.patterns.length ? "" : " full"}"><section class="card side"><h2>준비도 <span class="muted">${esc(rd.label)}</span></h2><p class="hint">도움(튜터·힌트·해설) 없이 푼 기본 문제가 얼마나 쌓였는지 보는 단계예요. 단계는 주제별로 익힌 정도로 정해져요.</p><p>${esc(rd.line)}</p>
+    ${focus ? `<p class="hint">다음에 배울 주제: <strong>${esc(focus.name)}</strong>${focusTail(focus, target)}</p>` : ""}
     ${rd.remaining.length ? `<p class="hint">${esc(rd.goal)}까지 남은 주제</p>${lefts(rd.remaining.slice(0, SHOWN))}` : ""}
     ${rd.remaining.length > SHOWN ? `<details class="signal-group"><summary>나머지 ${rd.remaining.length - SHOWN}개 주제 보기</summary>${lefts(rd.remaining.slice(SHOWN))}</details>` : ""}
     <details class="signal-group"><summary>준비도 기준 보기(어떤 통과를 도움 없이 푼 것으로 세는지)</summary><ul class="plain-list">${rd.rules.map((x) => `<li>${esc(x)}</li>`).join("")}</ul></details>
     <p class="hint">${esc(rd.basis)}</p></section>
     ${d.patterns.length ? `<section class="card side"><h2>여러 주제에서 되풀이된 실패</h2><ul class="points">${d.patterns.map((x) => `<li>${esc(x.line)}</li>`).join("")}</ul></section>` : ""}</div>`;
   const side = (title, rows, cls) => `<section class="card side ${cls}"><h2>${title}</h2><ul class="points">${rows.map((x) => `<li><strong>${esc(x.name)}</strong><span>${esc(x.why)}</span>
-    ${x.next && !(target && x.next.id === target.id) ? `<a class="link" href="#/p/${esc(x.next.id)}">다음에 풀 문제: ${esc(x.next.title)}</a>` : ""}</li>`).join("")}</ul></section>`;
+    ${sideNext(x, target) ? `<span class="hint">${esc(sideNext(x, target))}</span>` : ""}</li>`).join("")}</ul></section>`;
   const sides = [d.weaknesses.length ? side("더 공부할 주제", d.weaknesses, "weak") : "", d.strengths.length ? side("강한 주제", d.strengths, "strong") : ""].filter(Boolean); // 빈 카드는 보이지 않는다
   if (sides.length) html += `<div class="sides">${sides.join("")}</div>`;
   const nexts = d.next; // 첫 줄이 홈의 ‘이어서 풀기’와 결과·피드백의 ‘다음 문제’다
@@ -523,7 +527,7 @@ async function showReport() {
       <p class="hint">${failTip(fails)}</p></section>` : "",
     `<section class="card side"><h2>되풀이한 실수</h2>${d.pitfalls.length ? "" : `<p class="hint">같은 실수를 두 번 이상 하면 여기에 모여요. ‘틀린 곳 같이 찾기’를 쓰면 쌓여요(제출이 틀린 것만으로는 쌓이지 않아요).</p>`}<ul class="points plain">${d.pitfalls.map((x) => `<li><strong>${esc(x.name)}</strong><span>${x.count}번</span>${x.problems.length ? `<span class="pit-from muted">${x.problems.map((p) => `<a href="#/p/${esc(p.id)}">${esc(p.title)}</a>`).join(" · ")}</span>` : ""}</li>`).join("")}</ul></section>`].filter(Boolean);
   if (cards.length) html += `<div class="sides">${cards.join("")}</div>`;
-  if (d.signals.length) html += fold("실전 신호 모음", `${d.signals.reduce((n, g) => n + g.items.length, 0)}개`, `<p class="hint">실전 신호는 문제 글에서 어떤 방법을 쓸지 알려 주는 표현이에요. 통과한 문제에서 모았어요. 실전에서 이런 표현을 보면 이 방법을 떠올려요.</p>
+  if (d.signals.length) html += fold("실전 신호 모음", `${d.signals.reduce((n, g) => n + g.items.length, 0)}개`, `<p class="hint">실전 신호는 풀이 가이드가 짚어 준 단서예요. 어떤 표현이 어떤 방법을 떠올리게 하는지 통과한 문제에서 모았어요. 실전에서 이런 표현을 보면 이 방법을 떠올려요.</p>
     ${d.signals.map((g) => `<details class="signal-group"><summary>${ico("i-caret")}${esc(g.name)} <span class="muted">${g.items.length}개</span></summary><ul class="signals">${g.items.map((x) => `<li class="signal"><q>${esc(x.phrase)}</q><span>${esc(x.means)}</span><small>${esc(x.title)}</small></li>`).join("")}</ul></details>`).join("")}`);
   if (d.feedbacks.length) html += `<h2 class="list-label">받은 AI 피드백</h2><ul class="rows">${d.feedbacks.map((f) => `<li><a class="row" href="#/p/${esc(f.id)}/feedback"><span><span class="row-title">${esc(f.title)}</span>
     <span class="row-meta">${esc(when(f.at))}${f.summary ? ` · ${esc(f.summary.length > 90 ? `${f.summary.slice(0, 90).replace(/\s*\S*$/, "")}…` : f.summary)}` : ""}</span></span><span></span>${ico("i-caret")}<span class="sr-only">피드백 열기</span></a></li>`).join("")}</ul>`;
