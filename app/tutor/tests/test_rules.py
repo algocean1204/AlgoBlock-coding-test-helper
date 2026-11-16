@@ -756,9 +756,9 @@ class DebugOpeningRuleTest(unittest.TestCase):
         from ..debug.rules import leaks_piece, names_line
         from ..turn.moves import rule_verdict
 
-        for said in ("4번째 줄", "4줄에서", "12행", "네 번째 줄", "열 번째 행", "line 4", "Line 12"):
+        for said in ("4번째 줄", "4줄에서", "12행", "네 번째 줄", "열 번째 행", "line 4", "Line 12", "3번 줄의", "10번 행", "첫 번째 줄", "3번 라인", "3번 줄이 하는 일은"):
             self.assertTrue(names_line(f"{said} count는 몇인가요?"), said)
-        for said in ("한 줄씩 따라가 보면 어디서 달라질까요?", "코드 첫 줄부터 따라가 보면 어떨까요?", "두 번째 tom을 만나면 count는 몇인가요?"):
+        for said in ("범위를 2번 줄이면", "값이 3번 줄어들면", "2번 행렬", "1번 행동", "3번 반복할 때 어디서 달라질까요?", "한 줄씩 따라가 보면 어디서 달라질까요?", "코드 첫 줄부터 따라가 보면 어떨까요?", "두 번째 tom을 만나면 count는 몇인가요?"):
             self.assertFalse(names_line(said), said)
         code = "for name in a:\n    count[name] = 1"
         self.assertTrue(leaks_piece("count.get(name, 0) + 1로 바꾸면?", "count[name] = count.get(name, 0) + 1", code))
@@ -766,6 +766,35 @@ class DebugOpeningRuleTest(unittest.TestCase):
         for text in ("기대 답 보여줘", "예상 답 알려 주세요"):  # 기대한 값을 묻는 말은 답 요청이 아니다
             self.assertNotEqual(getattr(rule_verdict(text), "aside", ""), "A", text)
         self.assertEqual(rule_verdict("답 알려 주세요").aside, "A")
+
+
+class DebugLineWithFixTest(unittest.TestCase):
+    def _reply(self, step, text, user):
+        from ..debug import nodes
+        from ..state import TutorRequest
+
+        draft = {"step_name": step, "recent": [], "hash": "h", "kind": "logic", "line": 3, "cause": "", "fixed_line": "count[name] = count.get(name, 0) + 1", "step": 1}
+        state = {"request": TutorRequest(kind="debug", problem_id="p1", code="for name in a:\n    x = 1\n    count[name] = 1", text=user), "ctx": fakes.context(),
+                 "draft": draft, "reply_draft": text}
+        return nodes.check_reply(state)["result"]["reply"], nodes
+
+    def test_line_number_with_fix_piece_is_blocked_only_where_line_is_hidden(self):
+        said = "3번째 줄에서 count.get(name, 0) + 1처럼 바꾸면 어떨까요?"
+        reply, nodes = self._reply("trace", said, "모르겠어요")
+        self.assertEqual(reply, nodes.rules.FALLBACK["trace"])
+        ok = "3번째 줄에서 바로 그 덮어쓰기가 문제였죠. fruit[name] = fruit.get(name, 0) + 1처럼 쓰면 fruit는 어떻게 될까요?"
+        self.assertEqual(self._reply("fix", ok, "get 쓰는 법을 모르겠어요")[0], ok)  # fix 단계는 문법 예를 보여 준다
+
+
+class FeedbackAdviceTest(unittest.TestCase):
+    def test_advice_points_where_to_look_not_the_fix_order(self):
+        from ..feedback.prompts import ADVICE, SOLO_ADVICE, system
+
+        for line in (ADVICE["keep_flow"], ADVICE["canonical"], SOLO_ADVICE["canonical"]):
+            self.assertIn("어디", line)
+        for line in (*ADVICE.values(), *SOLO_ADVICE.values()):
+            self.assertFalse(any(w in line for w in ("지우", "바꾸라")), line)
+        self.assertIn("고치는 순서", system(True))
 
 
 class UnsaidCreditTest(unittest.TestCase):
