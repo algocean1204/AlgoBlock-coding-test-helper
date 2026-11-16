@@ -88,6 +88,25 @@ class BrokenQuoteTest(unittest.TestCase):
         self.assertEqual(broken_quotes("'first, first + gap, …, last일입니다'를 보면 무엇을 셀까요?", series, cut=True), [])  # 문제 글 자체의 '…'
         self.assertIn("깨진 인용", reply_problems("'번째로 빌려지는 바로 그때'는 언제일까요?", move="clue", problem=fakes.PROBLEM))
 
+    def test_builtin_hints_pass_the_hint_rules(self):
+        """기본 문제의 저장 힌트도 깨진 인용·문제 글에 없는 코드 이름·되풀이 검사를 지난다('day일까지 점검이 몇 번인지')."""
+        import json
+        from pathlib import Path
+
+        from ..common.talk_rules import broken_quotes, code_names, repeated_hints
+
+        path = Path(__file__).resolve().parents[2] / "ui" / "builtin.json"
+        if not path.exists():
+            self.skipTest("ui/builtin.json 없음")
+        found = []
+        for row in json.loads(path.read_text(encoding="utf-8")):
+            blocks = ((row.get("ready") or {}).get("plan") or {}).get("blocks") or []
+            code = "\n".join(b["reference"] for b in blocks)
+            for b in blocks:
+                found += [(row["id"], b["id"], "되풀이")] if repeated_hints(b["hints"]) else []
+                found += [(row["id"], b["id"], h) for h in b["hints"] if code_names(h, code, row["text"]) or broken_quotes(h, row["text"], cut=True)]
+        self.assertEqual(found, [])
+
     def test_hint_rules_reach_the_prompt(self):
         from ..plan.prompts import HINT_RULES
 

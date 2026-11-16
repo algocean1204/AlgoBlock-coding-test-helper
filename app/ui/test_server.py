@@ -2210,6 +2210,29 @@ def aid_note() -> None:
     assert not server.unaided_open(SimpleNamespace(builtin=True), [], study, "2026-01-01T00:00:00+00:00", False)  # 튜터와 말했다
 
 
+def report_terms() -> None:
+    """학습 보고서의 낱말 풀이와 할 일 하나(화면 코드 확인): 준비도·기준·출석·실전 신호를 한 줄로 풀고, 다음에 배울 주제의 첫 문제가 ‘이어서 풀기’와 같으면 따로 링크하지 않는다."""
+    js = (HERE / "app.js").read_text(encoding="utf-8")
+    for text in ("도움(튜터·힌트·해설) 없이 푼 기본 문제가 얼마나 쌓였는지 보는 단계예요.", "준비도 기준 보기(어떤 통과를 도움 없이 푼 것으로 세는지)", "앱을 연 날을 세요.",
+                 "실전 신호는 풀이 가이드가 짚어 준 단서예요.", "단계는 주제별로 익힌 정도로 정해져요.", "첫 줄이 위의 ‘이어서 풀기’와 같아요."):
+        assert text in js, text
+    import re
+    import shutil
+    node = shutil.which("node")
+    if not node:
+        return print("node가 없어 보고서 분기 시험은 건너뜀")
+    source = re.search(r"/\* report-pure:start.*?\*/(.*?)/\* report-pure:end \*/", js, re.S).group(1)
+    script = source + """
+const t = { id: "a" };
+console.log(JSON.stringify([focusTail({ next: { id: "a" } }, t), focusTail({ next: { id: "b" } }, t), focusTail({ next: null }, t), focusTail({ next: { id: "a" } }, null),
+  sideNext({ next: { id: "a", title: "A" } }, t), sideNext({ next: { id: "b", title: "B" } }, t), sideNext({ next: null }, t)]));
+"""
+    same, other, none, no_target, side_same, side_other, side_none = json.loads(subprocess.run([node, "-e", script], capture_output=True, text=True, check=True).stdout)
+    assert "첫 문제는 위의" in same and "끝낸 뒤" in other and none == "" and "끝낸 뒤" in no_target  # 같을 때만 ‘첫 문제는 위’, 다르면 링크 없이 순서만
+    assert side_same == "" and side_other == "‘이어서 풀기’를 끝낸 뒤: B" and side_none == ""
+    assert "focusTail(focus, target)" in js and "sideNext(x, target)" in js and 'href="#/p/${esc(focus.next.id)}"' not in js
+
+
 def way_info() -> None:
     """푸는 방식 설명: 네 방식이 한 자료에서 나오고, ⓘ는 눌러 펴며(키보드·Esc), 잠긴 방식도 글이 읽히고 ⓘ가 열린다. 브라우저 동작은 화면 확인으로 본다."""
     import re
@@ -2755,6 +2778,7 @@ def main() -> None:
         settings_screen()
         settings_items()
         way_info()
+        report_terms()
         new_draft()
         hidden_cases()
         hint_by_block()
