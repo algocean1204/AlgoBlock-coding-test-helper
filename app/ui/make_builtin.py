@@ -210,6 +210,9 @@ def build(args: list[str]) -> int:
                     why = f"{type(exc).__name__}: {str(exc)[:600]}"
             else:
                 return name, row, f"가이드·블록을 만들지 못했다(가이드 없이 싣는다): {why}"
+        else:
+            have = f"ready.json의 출처 값 {kept['source']}이(가) 지금 글·정답 풀이의 값 {row['source']}과 다르다" if kept.get("source") is not None else "ready.json이 없다"
+            return name, row, f"가이드 없이 싣는다: {have}. 모델 없이는 다시 만들 수 없다(모델로 build하거나, 가이드와 상관없는 수정이면 출처 값을 맞춘다)"
         return name, row, ""
 
     contexts = [copy_context() for _ in folders]
