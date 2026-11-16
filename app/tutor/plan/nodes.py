@@ -146,9 +146,11 @@ def cross_check(state: MainState, got: Solved, passed: bool | None, report: dict
     """모델의 풀이는 실행으로 확인한 것만 믿는다. 공개 예시를 통과한 정답 풀이를, 정의 그대로 옮긴 단순 풀이와
     생성기가 만든 작은·경계 입력에서 대조한다. 실행은 모두 cross.run(채점기 프로세스)이 하고, 맞으면 그 입력이 숨은 케이스가 된다.
     다르면 그 입력을 보여 주며 가운데 급으로 한 번, 그래도 다르면 큰 급으로 한 번 다시 푼다(다시 푼 코드도 공개 예시를 통과해야 쓴다).
+    풀이 가이드 과정을 가운데 급 이상으로 골랐으면 첫 다시 풀기는 그 급 그대로다. 결과의 tiers는 처음 풀이부터 실제로 쓴 급의 차례다.
     결과(검증, 쓴 호출 수와 급, 확인이 필요한 곳)는 cross.done으로 남긴다. 고른 풀이와 검증(all·examples·none)을 돌려준다."""
     pid = state["ctx"].problem_id
-    verdict = {"verified": "none", "calls": 0, "tiers": ["middle"], "doubts": [], "why": "", "hidden": 0, "efficiency": 0}
+    first = themes.chosen("guide")[0]  # 처음 풀이를 쓴 급(풀이 가이드 과정)
+    verdict = {"verified": "none", "calls": 0, "tiers": [first], "doubts": [], "why": "", "hidden": 0, "efficiency": 0}
     if passed is None:  # 채점하지 못했다: 풀이가 틀렸다고 말하지 않는다
         status = (report or {}).get("status") or "no_cases"
         verdict.update(why=f"튜터의 풀이를 확인하지 못했어요. {unrun_why(status)}.{UNRUN_FIX.get(status, '')}")
@@ -179,11 +181,13 @@ def cross_check(state: MainState, got: Solved, passed: bool | None, report: dict
         retry = "\n".join([f"코드:\n{got.code}", "문제 정의를 그대로 옮긴 느린 풀이와 결과가 다른 입력이 있다(느린 풀이가 틀렸을 수도 있으니 문제 글로 다시 따진다).",
                            f"입력: {found.get('input')}", f"이 코드의 결과: {found.get('got')}", f"느린 풀이의 결과: {found.get('want')}"])
         try:
-            again: Solved = llm(model_name() if tier == "middle" else themes.model_of("large")).use(solve_messages(state, retry), solved_schema(state), task="plan.solve")
+            # 처음 풀이가 작은 급(기본값)이면 가운데 급으로 올리고, 가운데 이상이면 그 과정의 모델 그대로 다시 푼다
+            used, model = (first, model_name()) if tier == "middle" and first != "small" else (tier, themes.model_of(tier))
+            again: Solved = llm(model).use(solve_messages(state, retry), solved_schema(state), task="plan.solve")
         except LlmError:
             break
         verdict["calls"] += 1
-        verdict["tiers"].append(tier)
+        verdict["tiers"].append(used)
         code = strip_fence(again.code or "").strip("\n")
         if code.strip() and again.approach.strip() and not head_differs(state, code) and (check(pid, code) or {}).get("status") == "passed":
             got = replace(again, code=code)
