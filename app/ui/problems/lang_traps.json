@@ -11,7 +11,7 @@
   {"id": "python.true_division", "what": "`/`는 정수끼리 나눠도 소수가 붙은 값을 돌려줘요.", "fix": "몫만 필요하면 `//`로 나눠요.",
    "code": [], "right": ["//"], "recipe": "정답 풀이의 `//` 하나를 `/`로 바꾼다"},
   {"id": "python.shared_rows", "what": "바깥 목록을 `*`로 늘려 만든 2차원 목록은 모든 줄이 같은 목록 하나예요.", "fix": "줄마다 새 목록이 생기게 `[[0] * m for _ in range(n)]`처럼 만들어요.",
-   "code": [], "right": ["for _ in range"], "recipe": "정답 풀이의 2차원 목록을 `[[값] * 가로] * 세로`로 만든다"}
+   "code": [], "right": ["for _ in range"], "shape": "\\[\\s*\\[[^\\[\\]]*\\](?:\\s*\\*[^\\]\\n]*)?\\]\\s*\\*", "recipe": "정답 풀이의 2차원 목록을 `[[값] * 가로] * 세로`로 만든다"}
  ],
  "java": [
   {"id": "java.missing_key_null", "what": "`get`은 없는 키에 `null`을 돌려주고, 그 값으로 셈을 하면 `NullPointerException`이 나요.", "fix": "없을 수 있는 키는 `getOrDefault(키, 0)`으로 읽어요.",

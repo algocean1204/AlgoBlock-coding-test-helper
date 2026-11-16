@@ -3092,6 +3092,37 @@ def lang_trap_counterexamples() -> None:
     plain = files["solution.java"].replace("long", "var")  # long을 쓰지 않은 풀이(var)
     assert trap_candidates([overflow], other, plain) == [] and trap_candidates([overflow], same, plain) == [overflow]
 
+    # 바깥 *로 늘린 2차원 목록만 그 함정이다(다른 구조로 풀고 다른 버그로 -1을 돌려준 풀이는 아니다)
+    files, warehouse = traps("bfs/1_warehouse_robot")
+    rows = one(warehouse["python"], "python.shared_rows")
+    cid, out = next(iter(rows["outs"].items()))
+    same = {"status": "failed", "cases": [{"id": cid, "status": "failed", "got": out}]}
+    assert trap_candidates([rows], same, files["lang_1.py"]) == [rows] and trap_candidates([rows], same, files["wrong_3.py"]) == []
+    assert trap_candidates([rows], same, "grid = [[]] * n") == [rows] and trap_candidates([rows], same, files["solution.py"]) == []
+
+
+def problemkit_alone() -> None:
+    """설치 묶음에는 튜터 원본 파일이 없다. 서버가 늘 가져오는 problemkit은 가져올 때 튜터를 읽지 않는다(증명 파일을 다룰 때만 가져온다)."""
+    folder = TMP / "problemkit-alone"
+    folder.mkdir()
+    for name in ("problemkit.py", "casegen.py"):
+        (folder / name).write_text((HERE / name).read_text(encoding="utf-8"), encoding="utf-8")
+    done = subprocess.run([sys.executable, "-B", "-I", "-c", "import sys; sys.path.insert(0, sys.argv[1]); import problemkit; print(problemkit.fits(1, 'int'))", str(folder)],
+                          capture_output=True, text=True, cwd=folder)
+    assert done.returncode == 0 and done.stdout.strip() == "True", done.stderr[-500:]
+    # 증명을 다룰 때는 튜터의 판정 파일을 경로로 읽는다(튜터 묶음과 langgraph 없이). 그 파일이 패키지 안의 다른 모듈을 가져오기 시작하면 이 길이 깨진다
+    import problemkit
+    from tutor.debug import rules
+
+    text = problemkit.TRAP_RULES.read_text(encoding="utf-8")
+    assert not [line for line in text.splitlines() if line.lstrip().startswith(("from .", "import tutor", "from tutor"))], "rules.py는 표준 라이브러리만 가져온다"
+    loaded = problemkit.trap_rules()
+    assert loaded is not rules and loaded.out_key("찍은 줄\n[1, 2]") == rules.out_key("[1,2]") == "[1,2]"
+    shape = {"id": "cpp.unsigned_loop", "shape": r"\bsize_t\s+(\w+)\s*=[^;]*;\s*\1\s*>=\s*0\s*;"}
+    assert loaded.shape_in(shape, "for (size_t i = n - 1; i >= 0; i--)") and not loaded.shape_in(shape, "// for (size_t i = n - 1; i >= 0; i--)\nint x;")
+    trap = {"id": "python.true_division", "code": [], "right": ["//"], "fails": {"1": "failed"}, "outs": {"1": "2.5"}, "right_base": 1}
+    assert loaded.trap_candidates([trap], {"status": "failed", "cases": [{"id": "1", "status": "failed", "got": "2.5"}]}, "a / 2") == [trap]
+
 
 def solution_traps() -> None:
     """해설은 보이는 정답 코드의 언어에서 증명된 함정을 싣는다(글·고치는 법·문제 글 구절만, 떨어진 케이스는 내보내지 않는다). 화면은 정답 코드 위에 그린다.
@@ -3144,6 +3175,7 @@ def main() -> None:
     neutral_notes()
     lang_traps()
     lang_trap_counterexamples()
+    problemkit_alone()
     build_only()
     error_lines()
     broken_files()

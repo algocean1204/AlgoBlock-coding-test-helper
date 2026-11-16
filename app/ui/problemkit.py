@@ -20,6 +20,7 @@ app에서:
 lang.json(언어 함정이 어느 케이스에서 어떤 상태로 떨어졌는지. 증명 파일이 있을 때만)을 쓴다.
 """
 
+import functools
 import importlib.util
 import json
 import os
@@ -421,17 +422,17 @@ def attempt(folder, path) -> bool:
 # 언어 함정: 해설의 정답 코드 위에 '이 언어에서 조심할 것'을 보인다. 보일 글은 목록(problems/lang_traps.json) 한 곳에만 있다.
 # 문제 폴더의 lang_<번호>.<확장자>는 정답 풀이에 그 실수 하나만 넣은 풀이이고, 이 문제의 케이스에서 실제로 떨어져야 한다(증명).
 TRAPS = HERE / "problems" / "lang_traps.json"
+TRAP_RULES = HERE.parent / "tutor" / "debug" / "rules.py"
 
 
-def _trap_rules():
-    """튜터가 후보를 거르는 판정(돌려준 값의 꼴, 주석 빼기, 모양 식). 같은 판정으로 증명을 얼리고 확인한다. 표준 라이브러리만 쓰는 파일이라 경로로 읽는다(튜터 묶음 전체를 부르지 않는다)."""
-    spec = importlib.util.spec_from_file_location("trap_rules", HERE.parent / "tutor" / "debug" / "rules.py")
+@functools.cache
+def trap_rules():
+    """증명을 얼리고 확인하는 판정(돌려준 값의 꼴, 모양 식). 튜터가 후보를 거르는 것과 같은 파일을 judge()처럼 경로로 읽는다:
+    튜터 묶음(tutor/__init__)을 부르지 않아 langgraph 없이 돌고, 쓰는 함수 안에서만 읽어 서버(fits만 쓴다)는 이 파일을 읽지 않는다."""
+    spec = importlib.util.spec_from_file_location("algoblock_trap_rules", TRAP_RULES)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
-
-
-TRAP_RULES = _trap_rules()
 TRAP_MAX, TRAP_CHARS, TRAP_FILES, TRAP_LINES, TRAP_AT = 12, 80, 3, 6, 2  # 언어마다 항목 수, what·fix 길이, 문제·언어마다 증명 파일 수, 넣은 줄·지운 줄 수, 구절 수
 TRAP_KEYS = ("id", "what", "fix", "code", "right", "recipe")  # 그 밖에 "varies": true(결과가 정해지지 않은 동작이라 떨어지는 케이스가 기기마다 다를 수 있다)
 # 그리고 "shape": 실수의 모양 식(정규식, 주석 밖 코드에 맞춘다). 이름만으로 다른 버그와 가를 수 없을 때 둔다. varies 함정은 이것이 없으면 튜터가 후보로 내지 않는다
@@ -503,7 +504,7 @@ def lang_check(problem: dict, listed: dict | None = None) -> list[str]:
             found.append(f"{name}: 바꾼 줄에 {trap}의 표시가 없다(넣은 줄에만 있는 code {row['code']}, 또는 지운 줄에만 있는 right {row['right']}. 흔한 낱말과 한 글자는 세지 않는다)")
         if not any(has_term(term, solution) for term in row["right"]):
             found.append(f"{name}: 정답 풀이에 {trap}의 right {row['right']} 가운데 하나도 없다")
-        if isinstance(row.get("shape"), str) and (not TRAP_RULES.shape_in(row, files[name]) or TRAP_RULES.shape_in(row, solution)):
+        if isinstance(row.get("shape"), str) and not _shape_ok(row, files[name], solution):
             found.append(f"{name}: {trap}의 모양 식(shape)이 증명 풀이에는 맞고 정답 풀이에는 맞지 않아야 한다")
     for language, ids in seen.items():
         if len(ids) > TRAP_FILES:
@@ -511,6 +512,11 @@ def lang_check(problem: dict, listed: dict | None = None) -> list[str]:
         if len(set(ids)) < len(ids):
             found.append(f"{language}에서 같은 함정을 증명 파일 둘이 보인다")
     return found
+
+
+def _shape_ok(row: dict, proof: str, solution: str) -> bool:
+    """모양 식이 증명 풀이에는 맞고 정답 풀이에는 맞지 않는가."""
+    return trap_rules().shape_in(row, proof) and not trap_rules().shape_in(row, solution)
 
 
 def lang_run(problem: dict, cases: list[dict], languages: list[str], limits: dict, listed: dict | None = None) -> tuple[dict, list[str]]:
@@ -523,7 +529,7 @@ def lang_run(problem: dict, cases: list[dict], languages: list[str], limits: dic
             continue
         ran = run(language, problem["files"][name], cases, limits.get(language) or LIMIT[language])
         fails = {case["id"]: row["status"] for case, row in zip(cases, ran) if row["status"] not in ("passed", "skipped")}
-        outs = {case["id"]: TRAP_RULES.out_key(row["got"]) for case, row in zip(cases, ran) if row["status"] == "failed"}  # 틀린 답은 돌려준 값까지(같은 케이스에서 틀리는 다른 버그와 가른다)
+        outs = {case["id"]: trap_rules().out_key(row["got"]) for case, row in zip(cases, ran) if row["status"] == "failed"}  # 틀린 답은 돌려준 값까지(같은 케이스에서 틀리는 다른 버그와 가른다)
         odd = sorted(set(fails.values()) - set(FALLS))
         if not fails:
             found.append(f"{name}({trap})가 모든 케이스를 통과한다: 이 문제에서는 증명되지 않으니 파일을 지운다")
