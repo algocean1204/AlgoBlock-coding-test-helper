@@ -1173,7 +1173,7 @@ def results() -> None:
     big = {**fake, "cases": [{**case, "id": "1", "kind": "example", "status": "passed"}, {**case, "id": "2", "kind": "efficiency", "status": "timeout"},
                              {**case, "id": "3", "kind": "efficiency", "status": "failed", "expected": "9" * 300, "got": "8" * 300}]}
     long = server.tutor_view(big)["cases"][2]  # 큰 입력의 값은 줄여 싣고, 함정을 견줄 꼴은 줄이기 전의 값으로
-    assert (long["input"], len(long["expected"]), len(long["got"]), long["out"]) == ("(아주 큰 입력)", server.BIG_SHOWN + 1, server.BIG_SHOWN + 1, server.out_key("8" * 300)), long
+    assert (long["input"], len(long["expected"]), len(long["got"]), long["out"]) == ("(아주 큰 입력)", server.BIG_SHOWN + len("…(앞부분만)"), server.BIG_SHOWN + len("…(앞부분만)"), server.out_key("8" * 300)), long
     assert not server.slow_only(big) and server.slow_only({**big, "cases": big["cases"][:2] + [{**case, "id": "3", "kind": "efficiency", "status": "skipped"}]})  # 큰 입력에서 틀린 답은 시간 문제가 아니다
     assert not server.slow_only({**big, "cases": big["cases"][:2] + [{**case, "id": "3", "kind": "efficiency", "status": "runtime_error"}]})
     sent, server.grade = [], lambda *args, **kwargs: big

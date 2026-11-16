@@ -369,11 +369,11 @@ def notice_of(raw: dict) -> str:
 LIMIT_WORDS = {"output_limit": "출력이 너무 많아 멈췄어요(끝나지 않는 반복일 수 있어요)", "memory_limit": "메모리를 너무 많이 써서 멈췄어요"}
 
 
-BIG_SHOWN = 200  # 큰 입력(효율성 케이스)의 기대값·내 결과는 이 길이까지만 엔진에 넘긴다(튜터의 말에 그대로 실린다)
+BIG_SHOWN = 60  # 큰 입력(효율성 케이스)의 기대값·내 결과는 이 길이까지만 엔진에 넘긴다(튜터의 말에 그대로 실린다. 잘린 값에는 앞부분만이라고 붙인다)
 
 
 def clipped(text: str) -> str:
-    return text if len(text) <= BIG_SHOWN else text[:BIG_SHOWN] + "…"
+    return text if len(text) <= BIG_SHOWN else text[:BIG_SHOWN] + "…(앞부분만)"
 
 
 def tutor_view(report: dict) -> dict:
