@@ -84,11 +84,12 @@ def entry(folder: Path, langs: bool = True, check: bool = True) -> dict:
 
 
 def traps_of(problem: dict, solutions: dict) -> dict:
-    """싣는 언어의 증명된 함정: {언어: [{id, what, fix, at(있으면), fails}]}. 글은 함정 목록에서, 증명은 lang.json(검사가 얼린 것)에서 온다."""
+    """싣는 언어의 증명된 함정: {언어: [{id, what, fix, at(구절 목록, 있으면), fails 또는 varies}]}. 글은 함정 목록에서, 증명은 lang.json(검사가 얼린 것)에서 온다.
+    varies: 결과가 정해지지 않은 동작이라 떨어지는 케이스가 기기마다 다를 수 있다(떨어진 케이스 목록을 싣지 않는다)."""
     path = problem["dir"] / "lang.json"
     saved = json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {}
     text = {row["id"]: row for rows in problemkit.traps().values() for row in rows}
-    return {language: [{"id": row["trap"], "what": text[row["trap"]]["what"], "fix": text[row["trap"]]["fix"], **({"at": row["at"]} if "at" in row else {}), "fails": row["fails"]}
+    return {language: [{"id": row["trap"], "what": text[row["trap"]]["what"], "fix": text[row["trap"]]["fix"], **{key: row[key] for key in ("at", "fails", "varies") if key in row}}
                        for row in rows if row["trap"] in text] for language, rows in saved.items() if language in solutions}
 
 

@@ -3,16 +3,21 @@
   {
    "file": "lang_1.py",
    "trap": "python.recursion_limit",
-   "at": "폴더 속의 폴더까지 모두",
+   "at": [
+    "폴더 속의 폴더까지 모두"
+   ],
    "fails": {
     "20": "runtime_error",
     "21": "runtime_error"
-   }
+   },
+   "source": 3676338334
   },
   {
    "file": "lang_2.py",
    "trap": "python.negative_index",
-   "at": "parent[0]은 -1입니다",
+   "at": [
+    "parent[0]은 -1입니다"
+   ],
    "fails": {
     "1": "failed",
     "3": "failed",
@@ -20,47 +25,30 @@
     "13": "failed",
     "16": "failed",
     "20": "failed"
-   }
+   },
+   "source": 534672119
   }
  ],
  "javascript": [
   {
    "file": "lang_1.js",
    "trap": "javascript.recursion_depth",
-   "at": "폴더 속의 폴더까지 모두",
+   "at": [
+    "폴더 속의 폴더까지 모두"
+   ],
    "fails": {
     "20": "runtime_error",
     "21": "runtime_error"
-   }
+   },
+   "source": 2193449523
   }
  ],
  "cpp": [
   {
    "file": "lang_1.cpp",
    "trap": "cpp.unsigned_loop",
-   "fails": {
-    "1": "runtime_error",
-    "2": "runtime_error",
-    "3": "runtime_error",
-    "4": "runtime_error",
-    "5": "runtime_error",
-    "6": "runtime_error",
-    "7": "runtime_error",
-    "8": "runtime_error",
-    "9": "runtime_error",
-    "10": "runtime_error",
-    "11": "runtime_error",
-    "12": "runtime_error",
-    "13": "runtime_error",
-    "14": "runtime_error",
-    "15": "runtime_error",
-    "16": "runtime_error",
-    "17": "runtime_error",
-    "18": "runtime_error",
-    "19": "runtime_error",
-    "20": "runtime_error",
-    "21": "runtime_error"
-   }
+   "varies": true,
+   "source": 3632734608
   }
  ]
 }

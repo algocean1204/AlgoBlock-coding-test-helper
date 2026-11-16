@@ -1,56 +1,56 @@
 {
  "python": [
   {"id": "python.missing_key", "what": "딕셔너리에 없는 키를 읽거나 거기에 `+= 1`을 하면 `KeyError`로 멈춰요.", "fix": "처음 보는 키는 `get(키, 0)`처럼 기본값을 주고 읽어요.",
-   "wrong": ["+= 1", "KeyError"], "right": ["get"], "recipe": "정답 풀이에서 기본값을 주고 읽는 곳을 `표[키] += 1`로 바꾼다"},
+   "code": [], "right": [".get(", "setdefault", "defaultdict", "Counter"], "recipe": "정답 풀이에서 기본값을 주고 읽는 곳을 `표[키] += 1`로 바꾼다"},
   {"id": "python.heap_unordered", "what": "힙으로 정리하지 않은 목록에서 `heappop`을 부르면 가장 작은 값이 나온다는 보장이 없어요.", "fix": "목록을 힙으로 쓰기 전에 `heapify`를 한 번 불러요.",
-   "wrong": ["heappop"], "right": ["heapify"], "recipe": "정답 풀이에서 `heapify` 줄을 지운다"},
+   "code": [], "right": ["heapify"], "recipe": "정답 풀이에서 `heapify` 줄을 지운다"},
   {"id": "python.recursion_limit", "what": "재귀 호출이 1,000번쯤 깊어지면 `RecursionError`로 멈춰요.", "fix": "깊어질 수 있으면 스택을 직접 두고 `while` 반복문으로 바꿔요.",
-   "wrong": ["RecursionError"], "right": ["while"], "recipe": "정답 풀이의 스택 반복을 같은 순서로 도는 재귀 함수로 바꾼다"},
+   "code": [], "right": [".pop()", "while"], "recipe": "정답 풀이의 스택 반복을 같은 순서로 도는 재귀 함수로 바꾼다"},
   {"id": "python.negative_index", "what": "`-1` 같은 음수 번호로 읽으면 오류 없이 뒤에서부터 센 원소를 읽어요.", "fix": "번호가 음수가 될 수 있으면 읽기 전에 따로 걸러요.",
-   "wrong": ["-1"], "right": ["!= -1"], "recipe": "정답 풀이에서 음수 번호를 거르는 조건 하나를 지운다"},
+   "code": [], "right": ["!= -1", ">= 0", "< 0"], "recipe": "정답 풀이에서 음수 번호를 거르는 조건 하나를 지운다"},
   {"id": "python.true_division", "what": "`/`는 정수끼리 나눠도 소수가 붙은 값을 돌려줘요.", "fix": "몫만 필요하면 `//`로 나눠요.",
-   "wrong": ["/"], "right": ["//"], "recipe": "정답 풀이의 `//` 하나를 `/`로 바꾼다"},
-  {"id": "python.shared_rows", "what": "바깥 목록을 `*`로 늘려 만든 2차원 목록은 모든 줄이 같은 목록 하나예요.", "fix": "줄마다 새 목록이 생기게 `[[0] * m for _ in range(n)]`처럼 `for`로 만들어요.",
-   "wrong": ["*"], "right": ["for"], "recipe": "정답 풀이의 2차원 목록을 `[[값] * 가로] * 세로`로 만든다"}
+   "code": [], "right": ["//"], "recipe": "정답 풀이의 `//` 하나를 `/`로 바꾼다"},
+  {"id": "python.shared_rows", "what": "바깥 목록을 `*`로 늘려 만든 2차원 목록은 모든 줄이 같은 목록 하나예요.", "fix": "줄마다 새 목록이 생기게 `[[0] * m for _ in range(n)]`처럼 만들어요.",
+   "code": [], "right": ["for _ in range"], "recipe": "정답 풀이의 2차원 목록을 `[[값] * 가로] * 세로`로 만든다"}
  ],
  "java": [
   {"id": "java.missing_key_null", "what": "`get`은 없는 키에 `null`을 돌려주고, 그 값으로 셈을 하면 `NullPointerException`이 나요.", "fix": "없을 수 있는 키는 `getOrDefault(키, 0)`으로 읽어요.",
-   "wrong": ["get", "null", "NullPointerException"], "right": ["getOrDefault"], "recipe": "정답 풀이의 `getOrDefault(키, 0)`을 `get(키)`로 바꾼다"},
+   "code": [".get("], "right": ["getOrDefault", "containsKey", "merge"], "recipe": "정답 풀이의 `getOrDefault(키, 0)`을 `get(키)`로 바꾼다"},
   {"id": "java.int_overflow", "what": "`int`에 담은 값이 2,147,483,647을 넘으면 오류 없이 틀린 값이 돼요.", "fix": "합이나 개수가 커질 수 있으면 `long`에 담아요.",
-   "wrong": ["int"], "right": ["long"], "recipe": "정답 풀이에서 큰 값을 담는 `long` 변수 하나를 `int`로 바꾼다"},
+   "code": [], "right": ["long"], "recipe": "정답 풀이에서 큰 값을 담는 `long` 변수 하나를 `int`로 바꾼다"},
   {"id": "java.int_multiply", "what": "`int`끼리 곱하면 결과를 `long` 변수에 담아도 곱이 먼저 넘쳐요.", "fix": "곱하기 전에 한쪽을 `(long)`으로 바꿔요.",
-   "wrong": ["int", "long"], "right": ["(long)"], "recipe": "정답 풀이의 곱에서 `(long)`을 지운다"},
+   "code": [], "right": ["(long)", "1L *"], "recipe": "정답 풀이의 곱에서 `(long)`을 지운다"},
   {"id": "java.string_equals", "what": "`String`을 `==`로 견주면 글자가 같아도 거짓이 나올 수 있어요.", "fix": "문자열은 `equals`로 견주고, 글자 하나는 `charAt`으로 꺼내 견줘요.",
-   "wrong": ["String", "=="], "right": ["charAt"], "recipe": "정답 풀이에서 `charAt`으로 글자를 견주는 곳 하나를 한 글자 문자열의 `==` 비교로 바꾼다"}
+   "code": ["== \""], "right": ["charAt", ".equals("], "recipe": "정답 풀이에서 `charAt`으로 글자를 견주는 곳 하나를 한 글자 문자열의 `==` 비교로 바꾼다"}
  ],
  "cpp": [
   {"id": "cpp.max_heap", "what": "`priority_queue`는 기본이 가장 큰 값을 먼저 꺼내는 최대 힙이에요.", "fix": "가장 작은 값부터 꺼내려면 세 번째 형 인자로 `greater`를 줘요.",
-   "wrong": ["priority_queue"], "right": ["greater"], "recipe": "정답 풀이의 `priority_queue`에서 `greater`를 빼 기본 꼴로 만든다"},
-  {"id": "cpp.int_overflow", "what": "`int`에 담은 값이 2,147,483,647을 넘으면 오류 없이 틀린 값이 돼요.", "fix": "합이나 개수가 커질 수 있으면 `long long`에 담아요.",
-   "wrong": ["int"], "right": ["long long"], "recipe": "정답 풀이에서 큰 값을 담는 `long long` 변수 하나를 `int`로 바꾼다"},
-  {"id": "cpp.int_multiply", "what": "`int`끼리 곱하면 결과를 `long long` 변수에 담아도 곱이 먼저 넘쳐요.", "fix": "곱하기 전에 한쪽을 `(long long)`으로 바꿔요.",
-   "wrong": ["int", "long long"], "right": ["(long long)"], "recipe": "정답 풀이의 곱에서 `(long long)`을 지운다"},
-  {"id": "cpp.unsigned_loop", "what": "`size_t`에는 음수가 없어서 거꾸로 도는 반복의 `i >= 0`이 늘 참이 되고 범위 밖을 읽어요.", "fix": "거꾸로 도는 반복의 번호는 `int`로 둬요.",
-   "wrong": ["size_t", "i >= 0"], "right": ["int"], "recipe": "정답 풀이에서 거꾸로 도는 반복의 번호를 `size_t i = v.size() - 1`로 바꾼다"}
+   "code": [], "right": ["greater"], "recipe": "정답 풀이의 `priority_queue`에서 `greater`를 빼 기본 꼴로 만든다"},
+  {"id": "cpp.int_overflow", "what": "`int`에 담기에 큰 값(약 21억 넘음)을 담으면 틀린 값이 되고, `int`끼리 셈이 넘치면 결과가 정해지지 않아요.", "fix": "합이나 개수가 커질 수 있으면 `long long`에 담아요.",
+   "code": [], "right": ["long long"], "recipe": "정답 풀이에서 큰 값을 담는 `long long` 변수 하나를 `int`로 바꾼다"},
+  {"id": "cpp.int_multiply", "what": "`int`끼리 곱이 넘치면 결과가 정해지지 않아요. `long long` 변수에 담아도 곱은 먼저 `int`로 셈해요.", "fix": "곱하기 전에 한쪽을 `(long long)`으로 바꿔요.",
+   "code": [], "right": ["(long long)", "1LL *"], "varies": true, "recipe": "정답 풀이의 곱에서 `(long long)`을 지운다"},
+  {"id": "cpp.unsigned_loop", "what": "`size_t`는 음수가 없어 거꾸로 돌 때 `i >= 0`이 늘 참이고, 범위 밖을 읽어 결과가 정해지지 않아요.", "fix": "거꾸로 도는 반복의 번호는 `int`로 둬요.",
+   "code": ["size_t"], "right": ["int"], "varies": true, "recipe": "정답 풀이에서 거꾸로 도는 반복의 번호를 `size_t i = v.size() - 1`로 바꾼다"}
  ],
  "javascript": [
-  {"id": "javascript.missing_key_undefined", "what": "`Map`의 `get`은 없는 키에 `undefined`를 돌려주고, 거기에 수를 더하면 `NaN`이 돼요.", "fix": "없을 수 있는 키는 `(map.get(key) || 0)`처럼 기본값을 붙여 읽어요.",
-   "wrong": ["Map", "get", "undefined", "NaN"], "right": ["||"], "recipe": "정답 풀이에서 `get` 뒤의 기본값(`|| 0`)을 지운다"},
-  {"id": "javascript.recursion_depth", "what": "재귀 호출이 수만 번 깊어지면 `RangeError`로 멈춰요.", "fix": "깊어질 수 있으면 스택을 직접 두고 `while` 반복문으로 바꿔요.",
-   "wrong": ["RangeError"], "right": ["while"], "recipe": "정답 풀이의 스택 반복을 같은 순서로 도는 재귀 함수로 바꾼다"},
+  {"id": "javascript.missing_key_undefined", "what": "`Map`의 `get`은 없는 키에 `undefined`를 돌려주고, 거기에 수를 더하면 `NaN`이 돼요.", "fix": "없을 수 있는 키는 `(map.get(key) ?? 0)`처럼 기본값을 붙여 읽어요.",
+   "code": [], "right": ["??", "||", ".has("], "recipe": "정답 풀이에서 `get` 뒤의 기본값(`|| 0`이나 `?? 0`)을 지운다"},
+  {"id": "javascript.recursion_depth", "what": "재귀 호출이 수천 번 깊어지면 `RangeError`로 멈출 수 있어요.", "fix": "깊어질 수 있으면 스택을 직접 두고 `while` 반복문으로 바꿔요.",
+   "code": [], "right": [".pop()", "while"], "recipe": "정답 풀이의 스택 반복을 같은 순서로 도는 재귀 함수로 바꾼다"},
   {"id": "javascript.shift_32bit", "what": "`>>` 같은 비트 연산은 수를 32비트 정수로 잘라서 2,147,483,647보다 큰 수가 틀어져요.", "fix": "큰 수를 2로 나눌 때는 `Math.floor(x / 2)`를 써요.",
-   "wrong": [">>"], "right": ["Math.floor"], "recipe": "정답 풀이의 `Math.floor(x / 2)` 하나를 `x >> 1`로 바꾼다"},
+   "code": [">>"], "right": ["Math.floor", "Math.trunc"], "recipe": "정답 풀이의 `Math.floor(x / 2)` 하나를 `x >> 1`로 바꾼다"},
   {"id": "javascript.float_division", "what": "`/`는 정수끼리 나눠도 소수가 붙은 값을 돌려줘요.", "fix": "몫만 필요하면 `Math.floor`로 내려요.",
-   "wrong": ["/"], "right": ["Math.floor"], "recipe": "정답 풀이에서 몫을 구하는 `Math.floor` 하나를 지운다"},
+   "code": [], "right": ["Math.floor", "Math.trunc"], "recipe": "정답 풀이에서 몫을 구하는 `Math.floor` 하나를 지운다"},
   {"id": "javascript.fill_shared", "what": "`fill`에 배열을 넘기면 모든 칸이 같은 배열 하나를 가리켜요.", "fix": "줄마다 새 배열이 생기게 `Array.from({ length: n }, () => …)`으로 만들어요.",
-   "wrong": ["fill"], "right": ["Array.from"], "recipe": "정답 풀이의 2차원 배열을 `new Array(세로).fill(new Array(가로).fill(값))`으로 만든다"}
+   "code": [".fill(new", ".fill(["], "right": ["Array.from"], "recipe": "정답 풀이의 2차원 배열을 `new Array(세로).fill(new Array(가로).fill(값))`으로 만든다"}
  ],
  "rust": [
   {"id": "rust.unwrap_none", "what": "`unwrap`은 값이 없을 때(`None`) 패닉으로 멈춰요.", "fix": "없을 수 있는 키는 `entry(키).or_insert(0)`으로 넣고 읽어요.",
-   "wrong": ["unwrap", "None"], "right": ["or_insert"], "recipe": "정답 풀이의 `entry(…).or_insert(0)`을 `get_mut(…).unwrap()`으로 바꾼다"},
+   "code": ["unwrap"], "right": ["or_insert", "unwrap_or"], "recipe": "정답 풀이의 `entry(…).or_insert(0)`을 `get_mut(…).unwrap()`으로 바꾼다"},
   {"id": "rust.max_heap", "what": "`BinaryHeap`은 가장 큰 값을 먼저 꺼내는 최대 힙이에요.", "fix": "가장 작은 값부터 꺼내려면 값을 `Reverse`로 감싸 넣어요.",
-   "wrong": ["BinaryHeap"], "right": ["Reverse"], "recipe": "정답 풀이에서 `Reverse`로 감싸고 푸는 곳을 모두 뺀다"},
+   "code": [], "right": ["Reverse"], "recipe": "정답 풀이에서 `Reverse`로 감싸고 푸는 곳을 모두 뺀다"},
   {"id": "rust.i32_wrap", "what": "`i32` 계산이 넘치면 채점할 때는 멈추지 않고 틀린 값이 돼요.", "fix": "값이 커질 수 있으면 계산 전에 `as i64`로 바꿔 `i64`로 셈해요.",
-   "wrong": ["i32"], "right": ["i64"], "recipe": "정답 풀이에서 큰 값을 셈하는 곳 하나를 `i32`로 셈한다"}
+   "code": ["i32"], "right": ["i64"], "recipe": "정답 풀이에서 큰 값을 담는 `i64` 하나를 `i32`로 바꾼다"}
  ]
 }

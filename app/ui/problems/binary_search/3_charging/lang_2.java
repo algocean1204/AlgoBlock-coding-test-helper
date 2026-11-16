@@ -1,4 +1,4 @@
-// 언어 함정: java.int_multiply @ "n은 1 이상 500,000,000 이하입니다."
+// 언어 함정: java.int_multiply @ "n은 1 이상 500,000,000 이하" "chargers의 원소는 1 이상 100,000 이하"
 class Solution {
     public long solution(int n, int[] chargers) {
         int fastest = chargers[0];

@@ -28,44 +28,56 @@
     "24": "failed",
     "25": "failed",
     "26": "failed"
-   }
+   },
+   "source": 1171825235
   }
  ],
  "java": [
   {
    "file": "lang_1.java",
    "trap": "java.int_overflow",
-   "at": "n은 1 이상 500,000,000 이하입니다.",
+   "at": [
+    "n은 1 이상 500,000,000 이하"
+   ],
    "fails": {
     "22": "failed",
     "23": "failed",
     "25": "failed"
-   }
+   },
+   "source": 3412664028
   },
   {
    "file": "lang_2.java",
    "trap": "java.int_multiply",
-   "at": "n은 1 이상 500,000,000 이하입니다.",
+   "at": [
+    "n은 1 이상 500,000,000 이하",
+    "chargers의 원소는 1 이상 100,000 이하"
+   ],
    "fails": {
     "20": "failed",
     "21": "failed",
     "24": "failed",
     "25": "failed",
     "26": "failed"
-   }
+   },
+   "source": 1931392506
   }
  ],
  "javascript": [
   {
    "file": "lang_1.js",
    "trap": "javascript.shift_32bit",
-   "at": "n은 1 이상 500,000,000 이하입니다.",
+   "at": [
+    "n은 1 이상 500,000,000 이하",
+    "chargers의 원소는 1 이상 100,000 이하"
+   ],
    "fails": {
     "20": "timeout",
     "21": "timeout",
     "24": "timeout",
     "26": "timeout"
-   }
+   },
+   "source": 1082534123
   },
   {
    "file": "lang_2.js",
@@ -85,43 +97,33 @@
     "24": "failed",
     "25": "failed",
     "26": "failed"
-   }
+   },
+   "source": 1191915441
   }
  ],
  "cpp": [
   {
    "file": "lang_1.cpp",
    "trap": "cpp.int_overflow",
-   "at": "n은 1 이상 500,000,000 이하입니다.",
+   "at": [
+    "n은 1 이상 500,000,000 이하"
+   ],
    "fails": {
     "22": "failed",
     "23": "failed",
     "25": "failed"
-   }
+   },
+   "source": 146370699
   },
   {
    "file": "lang_2.cpp",
    "trap": "cpp.int_multiply",
-   "at": "n은 1 이상 500,000,000 이하입니다.",
-   "fails": {
-    "20": "failed",
-    "24": "failed",
-    "26": "failed"
-   }
-  }
- ],
- "rust": [
-  {
-   "file": "lang_1.rs",
-   "trap": "rust.i32_wrap",
-   "at": "n은 1 이상 500,000,000 이하입니다.",
-   "fails": {
-    "20": "failed",
-    "21": "failed",
-    "24": "failed",
-    "25": "failed",
-    "26": "failed"
-   }
+   "at": [
+    "n은 1 이상 500,000,000 이하",
+    "chargers의 원소는 1 이상 100,000 이하"
+   ],
+   "varies": true,
+   "source": 1445001208
   }
  ]
 }

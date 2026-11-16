@@ -1,4 +1,4 @@
-// 언어 함정: cpp.int_overflow @ "n은 1 이상 500,000,000 이하입니다."
+// 언어 함정: cpp.int_overflow @ "n은 1 이상 500,000,000 이하"
 #include <string>
 #include <vector>
 #include <algorithm>

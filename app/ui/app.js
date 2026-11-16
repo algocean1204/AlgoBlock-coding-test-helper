@@ -2086,6 +2086,11 @@ function renderTutor() {
 }
 
 /* ── 혼자 풀기: 미리 만들어 둔 힌트와 해설(모델 0회) ── */
+/* code-open-pure:start 해설의 '풀이 해설과 정답 코드'를 펼칠지(node로도 시험한다): 사용자가 펼치거나 접었으면 그대로, 아니면 통과 전에만 펼친다 */
+const codeOpen = (solo, passed) => (solo && typeof solo.codeOpen === "boolean" ? solo.codeOpen : !passed);
+/** 요약을 누른 때의 펼침 상태로 사용자가 고른 것을 적는다(누름이 그 뒤에 상태를 뒤집는다). 다시 그려도, 언어를 바꿔도 이 값을 따른다 */
+const noteCodeToggle = (solo, wasOpen) => { if (solo) solo.codeOpen = !wasOpen; };
+/* code-open-pure:end */
 function solutionHtml(sol, passed) {
   const guide = sol.approach || sol.clues.length || sol.steps.length;
   const r = S.result, shownNext = (r && r.ok && !r.run && !r.stale) || (!r && S.problem.passed > 0); // 결과 상자에 '다음 문제'가 있으면 여기에는 두지 않는다(같은 곳으로 가는 길은 하나)
@@ -2095,13 +2100,13 @@ function solutionHtml(sol, passed) {
     <ul class="signals">${sol.signals.map((x) => `<li class="signal">${x.phrase ? `<q>${esc(x.phrase)}</q>` : ""}<span>${esc(x.means)}</span></li>`).join("")}</ul>
     ${sol.pattern || sol.learn ? `<h4>이 문제로 익힌 것 <span class="tag">${esc(sol.pattern)}</span></h4><p>${esc(sol.learn)}</p>` : ""}
     ${sol.pitfalls.length ? `<h4>흔한 실수</h4><ul class="plain-list">${sol.pitfalls.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}
-    <details class="solution"${passed && !S.solo.codeOpen ? "" : " open"}><summary>풀이 해설과 정답 코드</summary>
+    <details class="solution"${codeOpen(S.solo, passed) ? " open" : ""}><summary>풀이 해설과 정답 코드</summary>
       ${sol.verified === false || sol.verified === null ? '<p class="hint">이 풀이는 테스트로 확인하지 못했어요.</p>' : ""}
       ${sol.approach ? `<h4>푸는 방향</h4><p>${esc(sol.approach)}</p>` : ""}
       ${sol.clues.length ? `<h4>문제 글에서 읽어낸 것</h4><ul class="plain-list">${sol.clues.map((x) => `<li>${inline(x)}</li>`).join("")}</ul>` : ""}
       ${sol.steps.length ? `<h4>푸는 순서</h4><ol class="plain-list numbered">${sol.steps.map((x) => `<li>${inline(x)}</li>`).join("")}</ol>` : ""}
       <h4>정답 풀이 <span class="tag">${esc(LANG[sol.language] || sol.language)}</span></h4>${guide ? "" : '<p class="hint">이 문제는 글로 된 해설이 아직 없어요. 정답 코드만 있어요.</p>'}
-      ${(sol.traps || []).length ? `<div class="traps"><h5>이 언어로 풀 때 조심할 것</h5><ul class="plain-list">${sol.traps.map((x) => `<li>${inline(x.what)} ${inline(x.fix)}${x.at ? ` <small>문제 글: <q>${esc(x.at)}</q></small>` : ""}</li>`).join("")}</ul></div>` : ""}
+      ${(sol.traps || []).length ? `<div class="traps"><h5>이 언어로 풀 때 조심할 것</h5><ul class="plain-list">${sol.traps.map((x) => `<li>${inline(x.what)} ${inline(x.fix)}${(x.at || []).length ? ` <small>문제 글: ${x.at.map((at) => `<q>${esc(at)}</q>`).join(", ")}</small>` : ""}</li>`).join("")}</ul></div>` : ""}
       <pre class="code"><code>${esc(sol.code.replace(/\s+$/, ""))}</code></pre></details>${passed ? "" : next}`;
 }
 
@@ -2172,13 +2177,13 @@ async function changeLanguage(language) {
   clearTimeout(codeTimer); clearTimeout(blocksTimer); codeTimer = blocksTimer = null;
   S.langWant = null;
   $("code").readOnly = true; // 바꾸는 동안 적은 옛 언어의 코드가 새 언어 칸에 저장되지 않게 잠근다. 다 바꾸면 서버가 준 새 언어의 코드로 채운다
+  // 열어 둔 해설 칸·받은 해설·펼친 정답 코드는 새 언어로 다시 받아 그대로 둔다. 기다리는 동안 다시 그리기 전에 적어 둔다
+  const kept = { mode: S.mode, open: S.soloOpen, sol: !!(S.solo && S.solo.sol), code: S.solo ? S.solo.codeOpen : undefined };
   // 튜터가 뒤에서 이 문제의 계획을 만드는 중이면 그것이 끝날 때까지 기다린다(길면 30초쯤). 그동안 무엇을 하는지 보여 준다
   const r = await work(`언어를 바꾸는 중: ${LANG[language] || language}…`, "lang", () => api("/api/language", { id: pid, language, ...(codeEmpty() ? {} : { code }) })) // 시작 코드뿐이면 저장하지 않는다
     .finally(() => { $("code").readOnly = false; });
   if (!r || S.pid !== pid) return;
   if (!r.ok) { $("code-error").textContent = errorNote(r.error).text; $("code-error").hidden = false; return render(); }
-  const details = $("solo-box").querySelector("details.solution"); // 열어 둔 해설 칸·받은 해설·펼친 정답 코드는 새 언어로 다시 받아 그대로 둔다
-  const kept = { mode: S.mode, open: S.soloOpen, sol: !!(S.solo && S.solo.sol), code: !!(details && details.open) };
   clearProblem(pid);
   applyState(r.data);
   if (kept.mode === "solo" && kept.open) S.mode = "solo"; // 기억하지 않은 방식(결과에서 연 해설)이어도 그 칸에 머문다
@@ -3318,6 +3323,10 @@ document.addEventListener("click", (e) => {
   if (el) focusAfter(el);
 }, true); // 앞서 받아 둔다(다른 처리기가 단추를 다시 그리면 이 단추는 문서에서 빠져 ‘어느 화면의 단추’인지 알 수 없다)
 /** 건너뛰기 링크: 주소(#main)를 바꾸면 화면이 홈으로 가므로, 주소는 두고 지금 화면의 본문 제목으로 초점을 옮긴다. */
+document.addEventListener("click", (e) => {
+  const summary = e.target.closest("#solo-box details.solution > summary");
+  if (summary) noteCodeToggle(S.solo, summary.parentElement.open);
+}, true);
 document.addEventListener("click", (e) => {
   if (!e.target.closest("a.skip")) return;
   e.preventDefault();

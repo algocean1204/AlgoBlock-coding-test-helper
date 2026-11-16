@@ -3,7 +3,9 @@
   {
    "file": "lang_1.py",
    "trap": "python.missing_key",
-   "at": "제목이 같으면 같은 책입니다",
+   "at": [
+    "제목이 같으면 같은 책입니다"
+   ],
    "fails": {
     "1": "runtime_error",
     "2": "runtime_error",
@@ -27,14 +29,17 @@
     "20": "runtime_error",
     "21": "runtime_error",
     "22": "runtime_error"
-   }
+   },
+   "source": 774382100
   }
  ],
  "java": [
   {
    "file": "lang_1.java",
    "trap": "java.missing_key_null",
-   "at": "제목이 같으면 같은 책입니다",
+   "at": [
+    "제목이 같으면 같은 책입니다"
+   ],
    "fails": {
     "1": "runtime_error",
     "2": "runtime_error",
@@ -58,14 +63,17 @@
     "20": "runtime_error",
     "21": "runtime_error",
     "22": "runtime_error"
-   }
+   },
+   "source": 3228102713
   }
  ],
  "javascript": [
   {
    "file": "lang_1.js",
    "trap": "javascript.missing_key_undefined",
-   "at": "제목이 같으면 같은 책입니다",
+   "at": [
+    "제목이 같으면 같은 책입니다"
+   ],
    "fails": {
     "1": "failed",
     "2": "failed",
@@ -84,14 +92,17 @@
     "20": "failed",
     "21": "failed",
     "22": "failed"
-   }
+   },
+   "source": 3530572271
   }
  ],
  "rust": [
   {
    "file": "lang_1.rs",
    "trap": "rust.unwrap_none",
-   "at": "제목이 같으면 같은 책입니다",
+   "at": [
+    "제목이 같으면 같은 책입니다"
+   ],
    "fails": {
     "1": "runtime_error",
     "2": "runtime_error",
@@ -115,7 +126,8 @@
     "20": "runtime_error",
     "21": "runtime_error",
     "22": "runtime_error"
-   }
+   },
+   "source": 927005392
   }
  ]
 }
