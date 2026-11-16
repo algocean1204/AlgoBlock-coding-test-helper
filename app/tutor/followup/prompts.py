@@ -29,7 +29,7 @@ def quote_context(state: MainState) -> dict:
         "mode": req.mode,
         "problem": state["ctx"].problem_text,
         "guide": solution_lines(state),
-        "examples": skill_examples(state["ctx"].skills),
+        "examples": skill_examples(state["ctx"].skills, state["ctx"].language),
     }
 
 

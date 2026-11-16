@@ -2340,7 +2340,8 @@ def case_arg_count() -> None:
     import re
     import shutil
     js, html = (HERE / "app.js").read_text(encoding="utf-8"), (HERE / "index.html").read_text(encoding="utf-8")
-    assert "인자 목록 전체를 대괄호로 감싸 적어요. 인자가 둘이면 [1, 2], 리스트 하나가 인자면 [[1, 2, 3]]처럼 한 번 더 감싸요." in html and html.count("[[1, 2, 3]]") == 1
+    assert "인자 목록 전체를 대괄호로 감싸 적어요. 인자가 둘이면 [1, 2], 배열 하나가 인자면 [[1, 2, 3]]처럼 한 번 더 감싸요." in html and html.count("[[1, 2, 3]]") == 1
+    assert "리스트" not in html and "리스트" not in js  # 어느 언어로 푸는 사람에게도 보이는 입력 안내라 파이썬 낱말을 쓰지 않는다
     assert "showCalls();" in js and "argNote(args.length, expectedArgs(row))" in js and ".case-call.warn" in (HERE / "app.css").read_text(encoding="utf-8")
     node = shutil.which("node")
     if not node:

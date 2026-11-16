@@ -1549,6 +1549,14 @@ class OtherFeatureTest(unittest.TestCase):
         done, _ = fakes.go(fakes.make_state("followup", ctx, mode="chair", quote_id="m1", text="왜"), {"followup.answer": ["정답은 딕셔너리예요."]})
         self.assertEqual(done["result"]["reply"], FALLBACK["followup"])
 
+    def test_followup_syntax_examples_follow_the_language(self):
+        """문법 예는 파이썬으로만 써 두었으니 파이썬 사용자의 꼬리질문에만 들어간다."""
+        chair = [fakes.service("인용문장?", 0, "m1")]
+        for language, shown in (("python", True), ("java", False)):
+            ctx = fakes.context(plan=fakes.planned(fakes.two()), open_count=1, chair=chair, skills=["dict_count"], language=language)
+            _, fake = fakes.go(fakes.make_state("followup", ctx, mode="chair", quote_id="m1", text="왜"), {"followup.answer": ["그럴 때 무엇을 놓칠까요?"]})
+            self.assertEqual("fruit.get(name, 0)" in fakes.prompt(fake, "followup.answer"), shown, language)
+
     def test_syntax_example_passes(self):
         """문법을 물으면 대체 질문만 나왔다. 문제와 무관한 예의 코드 안 문자열은 인용 검사에서 뺀다."""
         ctx = fakes.context(plan=fakes.planned(fakes.two()), open_count=1, chair=[fakes.service("인용문장?", 0, "m1")])

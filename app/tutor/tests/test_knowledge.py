@@ -47,3 +47,37 @@ class OntologyTest(unittest.TestCase):
         self.assertIn("key_missing", got)
         self.assertNotIn("없는_함정", got)
         self.assertEqual(o.known_skills(["swap", "없는_기술"]), ["swap"])
+
+    def test_syntax_examples_only_for_python(self):
+        """문법 예는 파이썬으로만 써 두었다. 다른 언어의 튜터 지시에는 넣지 않는다."""
+        self.assertEqual(len(o.skill_examples(["dict_count", "swap"], "python")), 2)
+        for language in ("java", "javascript", "cpp", "rust"):
+            self.assertEqual(o.skill_examples(["dict_count", "swap"], language), [])
+
+    def test_python_only_pitfalls_stay_out_of_other_languages(self):
+        python = o.pitfall_candidates([], language="python")
+        java = o.pitfall_candidates([], language="java")
+        self.assertTrue({"missing_colon", "indent", "no_return"} <= set(python))
+        self.assertFalse(o.PYTHON_ONLY & set(java))
+        self.assertIn("wrong_init", java)
+
+    def test_shared_wording_has_no_python_only_words(self):
+        """모든 언어의 지시에 들어가는 이름·설명에는 파이썬 낱말이 없다."""
+        words = ("리스트", "딕셔너리", "튜플", "pop(0)", "elif")
+        shared = [name for _, name, _ in o.TECHNIQUES.values()] + [text for name, when, _ in o.SKILLS.values() for text in (name, when)]
+        shared += [text for pid, (_, name, why, seed) in o.PITFALLS.items() if pid not in o.PYTHON_ONLY for text in (name, why, seed)]
+        shared += [text for _, _, why, seed in o.PATTERNS.values() for text in (why, seed)]
+        self.assertEqual([t for t in shared if any(w in t for w in words)], [])
+
+
+class PlanExampleTest(unittest.TestCase):
+    def test_example_code_follows_the_language(self):
+        from ..plan.prompts import example
+        self.assertIn("count.get(title, 0)", example("python"))
+        java = example("java")
+        self.assertIn("getOrDefault", java)
+        self.assertNotIn("for title in loans", java)
+        for other in ("javascript", "cpp", "rust"):
+            self.assertNotIn("count.get(title, 0)", example(other))
+            self.assertNotIn("for title in loans", example(other))
+        self.assertNotIn("reference", example("go"))  # 예가 없는 언어에는 지어내지 않는다

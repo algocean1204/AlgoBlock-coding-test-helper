@@ -25,7 +25,7 @@ def gather(state: MainState) -> dict:
         "previous": None if saved is None else saved.step,
         "recent": [f"{'튜터' if m.role == 'service' else '사용자'}: {m.text}" for m in said][-4:],
         "last_question": service[-1].text if service else "없음",
-        "candidates": pitfall_candidates(ctx.patterns, [pid for pid, _ in ctx.frequent_pitfalls]),
+        "candidates": pitfall_candidates(ctx.patterns, [pid for pid, _ in ctx.frequent_pitfalls], language=ctx.language),
         "found": False,
     }
     if saved is not None:

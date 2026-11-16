@@ -12,9 +12,9 @@ import re
 
 # 기법: id → (유형, 이름, 사용자가 말하기 전에는 의자가 말하지 않는 낱말들)
 TECHNIQUES = {
-    "count_map": ("hash", "개수 세기(딕셔너리)", ["딕셔너리", "dict", "해시", "Counter"]),
+    "count_map": ("hash", "개수 세기(키-값 표)", ["딕셔너리", "dict", "맵", "map", "해시", "Counter"]),
     "seen_set": ("hash", "본 것 기억하기(집합)", ["집합", "set"]),
-    "lookup_map": ("hash", "짝 찾아보기(딕셔너리)", ["딕셔너리", "dict", "해시"]),
+    "lookup_map": ("hash", "짝 찾아보기(키-값 표)", ["딕셔너리", "dict", "맵", "map", "해시"]),
     "stack": ("stack_queue", "스택", ["스택", "stack", "append", "pop"]),
     "queue": ("stack_queue", "큐", ["큐", "queue", "deque", "덱"]),
     "last_compare": ("stack_queue", "마지막 것과 비교", ["스택", "stack"]),
@@ -117,8 +117,8 @@ PITFALLS = {
     "assign_vs_equal": ("syntax", "= 와 == 혼동", "조건에서 같은지 물을 때 =를 썼다", "값을 넣는 것과 같은지 묻는 것은 기호가 어떻게 다를까요?"),
     "paren_mismatch": ("syntax", "괄호·따옴표 짝 안 맞음", "여는 괄호나 따옴표가 닫히지 않았다", "이 줄에서 연 괄호와 닫은 괄호의 수를 세어 보면 어떤가요?"),
     "undefined_name": ("runtime", "만들지 않은 이름 사용", "변수를 만들기 전에 쓰거나 이름 철자가 다르다", "이 이름은 어느 줄에서 처음 만들어졌나요? 철자가 똑같은가요?"),
-    "key_missing": ("runtime", "없는 키 읽기", "딕셔너리에 아직 없는 키를 읽거나 더했다", "이 키를 처음 만났을 때 그릇 안에는 그 키가 있을까요?"),
-    "index_range": ("runtime", "범위 밖 자리 읽기", "리스트 길이를 넘는 자리나 빈 리스트의 마지막을 읽었다", "반복의 마지막 차례에서 이 자리 번호는 얼마인가요? 그 자리가 있나요?"),
+    "key_missing": ("runtime", "없는 키 읽기", "키-값 표에 아직 없는 키를 읽거나 더했다", "이 키를 처음 만났을 때 그릇 안에는 그 키가 있을까요?"),
+    "index_range": ("runtime", "범위 밖 자리 읽기", "배열 길이를 넘는 자리나 빈 배열의 마지막을 읽었다", "반복의 마지막 차례에서 이 자리 번호는 얼마인가요? 그 자리가 있나요?"),
     "empty_pop": ("runtime", "빈 것에서 꺼내기", "비어 있는데 꺼내거나 마지막 것을 봤다", "꺼내려는 순간 안에 아무것도 없을 수 있는 입력은 무엇일까요?"),
     "type_mix": ("runtime", "글자와 숫자 섞기", "문자열과 숫자를 더하거나 비교했다", "이 값은 글자인가요 숫자인가요? 어디서 어떤 모양으로 만들어졌나요?"),
     "no_return": ("logic", "돌려주지 않음(None)", "return이 없거나 print만 했다, 또는 조건 안에서만 return 한다", "함수가 끝까지 갔을 때 무엇을 돌려주나요? 모든 경우에 돌려주는 값이 있나요?"),
@@ -134,15 +134,15 @@ PITFALLS = {
     "update_in_wrong_branch": ("logic", "갱신 위치가 틀림", "값을 바꾸는 줄이 조건 밖이나 엉뚱한 갈래에 있다", "이 줄은 어떤 경우에만 실행되어야 하나요? 지금은 어떤 경우에 실행되나요?"),
     "missed_case": ("logic", "빠진 경우", "특정 경우(같은 값, 빈 입력, 하나뿐인 입력)를 다루지 않는다", "가장 작은 입력이나 값이 모두 같은 입력에서는 어떻게 되나요?"),
     "no_normalize": ("logic", "맞춰 놓지 않고 비교", "뒤집을 수 있는데 원래 놓인 대로만 비교했다", "항목을 돌려 놓아도 된다면 지금 비교는 어떤 경우를 놓치나요?"),
-    "mutate_while_loop": ("logic", "도는 중에 지움", "반복 중인 리스트에서 지워 자리가 밀린다", "하나를 지우면 그 뒤 것들의 자리 번호는 어떻게 바뀌나요?"),
+    "mutate_while_loop": ("logic", "도는 중에 지움", "반복 중인 배열에서 지워 자리가 밀린다", "하나를 지우면 그 뒤 것들의 자리 번호는 어떻게 바뀌나요?"),
     "sort_as_text": ("logic", "숫자를 글자로 정렬", "문자열 그대로 정렬해 '10'이 '9'보다 앞에 온다", "'10'과 '9'를 글자로 비교하면 무엇이 앞에 오나요?"),
     "visit_on_pop": ("timeout", "꺼낼 때 방문 표시", "큐에 넣을 때가 아니라 꺼낼 때 방문 표시를 해 같은 곳이 여러 번 들어간다", "같은 칸이 큐에 두 번 들어가는 경우가 있나요? 방문 표시는 언제 하나요?"),
     "str_immutable": ("runtime", "문자열의 글자를 직접 바꾸려 함", "문자열은 한 글자만 바꿀 수 없다(s[i] = ...)", "문자열의 한 글자를 바꾼 결과를 얻으려면 어디에 새로 만들어 담아야 할까요?"),
     "int_division": ("logic", "나눗셈 종류 혼동", "/ 는 소수가 나오고 // 는 몫만 나온다", "7을 2로 나눈 결과가 3.5가 필요한가요, 3이 필요한가요?"),
     "grid_out": ("runtime", "격자 밖으로 나감", "움직인 뒤 위치가 범위 안인지 확인하지 않았다", "가장자리 칸에서 바깥쪽으로 움직이려 하면 어떤 위치가 되나요?"),
     "condition_order": ("logic", "조건 순서가 틀림", "먼저 걸러야 할 조건이 뒤에 있어 앞 조건에서 먼저 걸린다", "두 조건에 모두 해당하는 값은 어느 갈래로 가야 하나요? 지금은 어디로 가나요?"),
-    "slow_search_in_loop": ("timeout", "반복 안에서 처음부터 찾기", "반복마다 리스트 전체를 찾거나(in, count, index) 지운다", "입력이 100,000개라면 이 줄은 모두 몇 번쯤 실행될까요?"),
-    "pop_front": ("timeout", "리스트 앞에서 꺼내기", "pop(0)이나 insert(0)은 뒤의 것을 모두 민다", "맨 앞 하나를 꺼내면 나머지 것들에는 무슨 일이 생기나요?"),
+    "slow_search_in_loop": ("timeout", "반복 안에서 처음부터 찾기", "반복마다 배열 전체를 훑어 찾거나 세거나 지운다", "입력이 100,000개라면 이 줄은 모두 몇 번쯤 실행될까요?"),
+    "pop_front": ("timeout", "배열 앞에서 꺼내기", "맨 앞에서 꺼내거나 맨 앞에 넣으면 뒤의 것을 모두 민다", "맨 앞 하나를 꺼내면 나머지 것들에는 무슨 일이 생기나요?"),
     "revisit": ("timeout", "방문 표시 없음", "갔던 곳을 다시 가서 끝나지 않거나 너무 오래 걸린다", "이미 갔던 곳에 다시 가지 않는다는 것을 코드의 어디서 확인하나요?"),
 }
 
@@ -194,12 +194,12 @@ PREREQUISITE = {
 
 
 # 구현 기술: id → (이름, 언제 필요한가, 이 문제와 상관없는 변수로 쓴 문법 예 한 줄). 알고리즘은 아는데 손이 안 움직일 때 쓰는 것이다.
-# 문법 예는 사람이 써서 확인한 것이라 꼬리질문·디버그의 '같은 문법의 다른 예'에 그대로 쓴다(파이썬).
+# 문법 예는 파이썬으로 써서 확인한 것이라 꼬리질문·디버그의 '같은 문법의 다른 예'에는 파이썬일 때만 쓴다(skill_examples). 이름과 '언제'는 언어와 상관없는 말이다.
 SKILLS = {
-    "dict_count": ("딕셔너리로 개수 세기", "값마다 몇 번 나왔는지 셀 때", "fruit[name] = fruit.get(name, 0) + 1"),
-    "dict_loop": ("딕셔너리 훑기", "키와 값을 함께 볼 때", "for name, count in fruit.items():"),
-    "list_last": ("리스트의 마지막 것 보기·꺼내기", "방금 넣은 것과 비교하거나 되돌릴 때", "last = basket[-1]  # 꺼내려면 basket.pop()"),
-    "list_empty": ("리스트가 비었는지 확인", "꺼내기 전에", "if len(basket) == 0:"),
+    "dict_count": ("키-값 표로 개수 세기", "값마다 몇 번 나왔는지 셀 때", "fruit[name] = fruit.get(name, 0) + 1"),
+    "dict_loop": ("키-값 표 훑기", "키와 값을 함께 볼 때", "for name, count in fruit.items():"),
+    "list_last": ("배열의 마지막 것 보기·꺼내기", "방금 넣은 것과 비교하거나 되돌릴 때", "last = basket[-1]  # 꺼내려면 basket.pop()"),
+    "list_empty": ("배열이 비었는지 확인", "꺼내기 전에", "if len(basket) == 0:"),
     "range_pairs": ("겹치지 않게 두 개 고르는 이중 반복", "모든 쌍을 한 번씩 볼 때", "for i in range(len(scores)):\n    for j in range(i + 1, len(scores)):"),
     "swap": ("두 값 맞바꾸기", "큰 쪽·작은 쪽을 맞춰 놓을 때", "apple, pear = pear, apple"),
     "sort_key": ("기준을 정해 정렬", "길이·둘째 값 등으로 줄 세울 때", "words.sort(key=lambda word: len(word))"),
@@ -215,7 +215,7 @@ SKILLS = {
     "deque_use": ("앞에서 빨리 꺼내기", "대기열처럼 앞에서 빼고 뒤에 넣을 때", "from collections import deque\nline = deque([1, 2, 3])\nfirst = line.popleft()"),
     "max_min_update": ("가장 큰 값 갱신", "하나씩 보며 최댓값을 구할 때", "if height > tallest:\n    tallest = height"),
     "early_stop": ("찾으면 바로 끝내기", "조건에 맞는 첫 번째를 찾을 때", "for name in guests:\n    if name == 'kim':\n        return name"),
-    "two_d_list": ("2차원 리스트 다루기", "행과 열이 있는 값을 볼 때", "for row in table:\n    for value in row:"),
+    "two_d_list": ("2차원 배열 다루기", "행과 열이 있는 값을 볼 때", "for row in table:\n    for value in row:"),
 }
 
 # 입력 크기 경험칙: (N이 이 값 이하이면, 쓸 수 있는 방법). 대략 1초에 1억 번 연산이 기준이다. 정밀한 계산이 아니라 방법을 좁히는 어림이다.
@@ -248,8 +248,11 @@ def known_skills(ids) -> list[str]:
     return [sid for sid in ids or [] if sid in SKILLS]
 
 
-def skill_examples(ids, limit: int = 3) -> list[str]:
-    """구현 기술의 문법 예(이 문제와 상관없는 변수로 쓴 것). 꼬리질문과 디버그가 문법을 보여 줄 때 참고한다."""
+def skill_examples(ids, language: str, limit: int = 3) -> list[str]:
+    """구현 기술의 문법 예(이 문제와 상관없는 변수로 쓴 것). 꼬리질문과 디버그가 문법을 보여 줄 때 참고한다.
+    예는 파이썬뿐이라 다른 언어에는 주지 않는다(지어내지 않는다)."""
+    if language != "python":
+        return []
     return [f"- {SKILLS[sid][0]}: {SKILLS[sid][2]}" for sid in known_skills(ids)[:limit]]
 
 
@@ -280,11 +283,15 @@ def techniques_of(pattern_ids) -> list[str]:
     return seen
 
 
-def pitfall_candidates(pattern_ids, frequent=(), limit: int = 14) -> list[str]:
-    """디버그 진단 후보: 이 사용자가 자주 밟은 것 → 문제의 기법에 딸린 것 → 어느 문제에나 나오는 것."""
+# 파이썬 문법·동작에서만 생기는 함정(다른 언어의 진단 후보에는 넣지 않는다)
+PYTHON_ONLY = {"missing_colon", "indent", "no_return", "int_division"}
+
+
+def pitfall_candidates(pattern_ids, frequent=(), limit: int = 14, language: str = "python") -> list[str]:
+    """디버그 진단 후보: 이 사용자가 자주 밟은 것 → 문제의 기법에 딸린 것 → 어느 문제에나 나오는 것. 언어에 없는 함정은 뺀다."""
     out = []
     for pid in [*frequent, *(p for t in techniques_of(pattern_ids) for p in PRONE_TO.get(t, [])), *GENERAL]:
-        if pid in PITFALLS and pid not in out:
+        if pid in PITFALLS and pid not in out and (language == "python" or pid not in PYTHON_ONLY):
             out.append(pid)
     return out[:limit]
 
