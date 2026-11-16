@@ -96,11 +96,16 @@ def symptom(report: dict) -> str:
 def batchim(text: str) -> bool:
     """끝 글자에 받침이 있는가(조사 이·가 고르기. '9이(가) 나왔어요'). 끝의 괄호·따옴표는 건너뛴다.
     숫자는 읽는 소리(영·일·삼·육·칠·팔), 영문은 l·m·n으로 끝나면 받침으로 본다(null → 널, tom → 톰).
+    모음 뒤의 p·k·c·b(map → 맵, Vec → 벡), ck(Stack → 스택), que(deque → 덱), 짧은 낱말(4자 이하)의 모음 뒤 t·d(get → 겟, set → 셋)도 받침이다.
+    자음 뒤(sort → 소트, append → 어펜드, ArrayList → 어레이리스트)와 g(log → 로그, tag → 태그)는 소리가 갈려 받침으로 보지 않는다.
     끝의 e가 소리 나지 않는 l·m·n + e도 받침이다(name → 네임, line, table. 'name라고'). ng(ㅇ)와 한 글자 r(알)도 받침이다."""
     tail = re.sub(r"[\W_]+$", "", text)
     if not tail:
         return False
-    if re.search(r"[lmn]e$|ng$|(?<![A-Za-z])r$", tail, re.IGNORECASE):
+    if re.search(r"[lmn]e$|ng$|(?<![A-Za-z])r$|que$|ck$|[aeiou][pkcb]$", tail, re.IGNORECASE):
+        return True
+    word = re.search(r"[A-Z]?[a-z]*$|[A-Z]+$", tail)[0]  # 낱말의 마지막 도막(HashSet → Set)
+    if len(word) <= 4 and re.search(r"[aeiou][td]$", word, re.IGNORECASE):
         return True
     last = tail[-1]
     if "가" <= last <= "힣":

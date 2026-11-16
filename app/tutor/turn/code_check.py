@@ -53,13 +53,15 @@ NO_NAME = "`{name}`{josa} 이름을 찾지 못했어요. 만들기 전에 썼거
 NO_CLASS = "`{name}`{josa} 이름을 찾지 못했어요. 맨 위의 가져오기(import)가 빠졌거나 철자가 다른지 " + EASY_END
 # 실행 오류의 이유(다섯 언어의 같은 실수는 같은 뜻의 말로. 화면의 풀이와 뜻을 맞춘다). 앞에서부터 찾는다: map::at의 out_of_range는 '없는 키'가 먼저다
 _RUNTIME = tuple((re.compile(pattern), said + EASY_END) for pattern, said in (
-    (r"KeyError|no entry found for key|map::at", "없는 키를 읽었어요. 처음 보는 값일 때를 따져 보고, 읽기 전에 키가 있는지 "),
-    (r"IndexError|IndexOutOfBounds|index out of bounds|out of range for slice|std::out_of_range",
+    (r"KeyError|no entry found for key|map::at|Map\.get\(", "없는 키를 읽었어요. 처음 보는 값일 때를 따져 보고, 읽기 전에 키가 있는지 "),
+    (r"IndexError|IndexOutOfBounds|index out of bounds|out of range for slice|std::out_of_range(?!: sto)",
      "범위를 벗어난 자리를 읽었어요. 비어 있거나 마지막 자리 다음을 읽은 건 아닌지 "),
     (r"ZeroDivisionError|/ by zero|divide by zero|divisor of zero", "0으로 나눴어요. 나누는 값이 0이 되는 경우가 있는지 "),
     (r"RecursionError|StackOverflowError|Maximum call stack size exceeded|overflowed its stack|stack overflow",
      "재귀가 너무 깊어요. 끝나는 조건이 있는지, 반복문으로 바꿀 수 있는지 "),
-    (r"NullPointerException|Cannot read properties of (?:undefined|null)", "값이 없는데(null, undefined) 그 값을 썼어요. 쓰기 전에 값이 있는지 "),
+    (r"NullPointerException", "null인 값을 썼어요. 만들지 않은 객체나 값이 없는 변수를 쓰기 전에 null인지 "),
+    (r"Cannot read properties of (?:undefined|null)", "값이 없는(undefined, null) 걸 썼어요. 범위 밖 자리나 없는 키를 읽어 값이 없었는지 "),
+    (r"sto\w+: out of range", "숫자가 너무 커서 그 형에 담지 못했어요. 바꾸는 글자의 크기를 "),
 ))
 
 
