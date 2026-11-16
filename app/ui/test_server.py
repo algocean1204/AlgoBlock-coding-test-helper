@@ -1070,6 +1070,23 @@ def guide_spoken() -> None:
     assert body["open_count"] == 2, body
 
 
+def same_check_once() -> None:
+    """바뀌지 않은 블록 코드를 거듭 확인해 같은 말이 나오면 대화에 또 쌓지 않는다(모델 0회). 실제 기본 문제·채점기로, 이름을 짝짓지 못해 '확인 전'으로 끝나는 확인.
+    코드를 바꾸면 다시 쌓인다. 화면은 쌓지 않은 까닭을 블록 칸에 알린다."""
+    from tutor.turn.code_check import hold_name
+    pid = "hash_2_steady_climbers"
+    call("/api/turn", id=pid, mode="guide", event="start")
+    first = call("/api/turn", id=pid, mode="guide", event="block_filled", block_id="b1", code="records = {}")[1]
+    assert first["unsure"] and not first["repeated"] and first["messages"][-1]["text"] == hold_name(["last", "visits", "broken"]), first["messages"][-1]
+    for _ in range(2):
+        again = call("/api/turn", id=pid, mode="guide", event="block_filled", block_id="b1", code="records = {}")[1]
+        assert again["unsure"] and again["repeated"] and again["messages"] == first["messages"], again["messages"][len(first["messages"]):]
+    changed = call("/api/turn", id=pid, mode="guide", event="block_filled", block_id="b1", code="records = {}\nseen = {}")[1]
+    assert not changed["repeated"] and len(changed["messages"]) == len(first["messages"]) + 2, changed
+    js = (HERE / "app.js").read_text(encoding="utf-8")
+    assert "r.data.repeated) S.note.blocks = { type: \"warn\", text: REPEATED }" in js
+
+
 def result_guides() -> None:
     """채점 결과와 방식 화면의 안내(화면 코드 확인): 큰 입력의 실행 오류는 시간 부족이라 하지 않고, 효율성만 실패하면 ‘틀린 곳 같이 찾기’가 없는 까닭을 말하며,
     튜터 방식 전환 단추는 무엇이 바뀌는지 말하고, 튜터의 질문으로에서 코드 칸으로 가는 길이 보인다. 브라우저 동작은 화면 확인으로 본다."""
@@ -3267,6 +3284,7 @@ def main() -> None:
         keyboard_focus()
         chair_found()
         guide_spoken()
+        same_check_once()
         result_guides()
         language_memory()
         no_tool()

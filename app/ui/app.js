@@ -2272,6 +2272,7 @@ async function fillBlock(blockId) {
   if (S.pid === pid) await loadState();
 }
 
+const REPEATED = "코드가 그대로라 확인 결과도 같아서 대화에 다시 적지 않았어요. 튜터의 마지막 말을 보고 코드를 고친 뒤 다시 확인해 보세요.";
 /** 블록 코드 확인: 가이드는 지금 블록, 의자는 이미 찾은 블록(맞는지만 알려 주고 진행은 그대로). */
 async function checkBlock(blockId) {
   harvest();
@@ -2285,6 +2286,7 @@ async function checkBlock(blockId) {
   if (!r.ok) S.note.chat = errorNote(r.error);
   say(r.ok ? "튜터가 블록 코드를 봤어요." : "");
   await loadState();
+  if (r.ok && S.pid === pid && r.data.repeated) S.note.blocks = { type: "warn", text: REPEATED }; // 대화에 같은 말을 또 쌓지 않았다: 그 까닭을 블록 칸에 한 번 알린다
   if (r.ok && S.pid === pid) markChecked(block.id, code, r.data);
 }
 

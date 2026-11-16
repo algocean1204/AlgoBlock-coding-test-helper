@@ -87,6 +87,7 @@ def body_for(request, result: dict, ctx) -> dict:
         if request.event == "block_filled":  # 이름만 달라 통과한 블록 코드의 [내 이름, 튜터 코드의 이름](없으면 빈 목록)
             body["renamed"] = result.get("renamed") or []
             body["withdrawn"] = result.get("withdrawn") or []  # 이번 확인으로 통과를 물린 뒤 블록 id(화면이 그 칸에 '앞 블록이 바뀌었어요'를 보인다)
+            body["repeated"] = bool(result.get("repeated"))  # 바뀌지 않은 코드를 다시 확인해 같은 말이 나와 대화에 더하지 않았다(화면이 그 사실을 한 번 알린다)
             body["unsure"] = bool(result.get("unsure"))  # 실행이 뒷받침하지 못했다(실행하지 못하고 코드를 읽어 판정했거나, 확인 전으로 넘어왔거나, 내 블록 탓이라 할 수 없다. 화면이 그 칸을 '확인 전'으로 보인다)
         return body
     if kind == "followup":
