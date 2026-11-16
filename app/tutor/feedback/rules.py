@@ -1,6 +1,7 @@
 """피드백 검사. 확신 표시를 채우고, 힌트 머리를 맞추고, 금지 표현을 지운다. 코드 펜스는 거절한다."""
 
 import re
+from difflib import SequenceMatcher
 
 from ..common.talk_rules import BANNED
 from ..state import ErrorInfo
@@ -13,26 +14,48 @@ _GUESS = re.compile(r"일 수 있|로 보입니다|로 보여요")
 
 _COUNTED = re.compile(r"\d+\s*(?:번째\s*줄|째\s*줄|번)")
 _BLOCK = re.compile(r"블록\s*(\d+)")
+_BLOCK_NAME = re.compile(r"블록\s*\d+(?:\([^)]*\))?")
+SHARED = 6  # 수 없이 블록을 짚은 문장이 그 블록의 기록 줄과 이만큼(공백을 뺀 글자) 이어서 같아야 기록을 옮긴 것으로 본다
+
+
+def _squash(text: str) -> str:
+    return re.sub(r"\s+", "", text or "")
 
 
 def _counts(text: str) -> set[str]:
-    return {re.sub(r"\s+", "", hit) for hit in _COUNTED.findall(text or "")}
+    return {_squash(hit) for hit in _COUNTED.findall(text or "")}
+
+
+def _facts(line: str) -> list[tuple[str, str]]:
+    """기록 줄의 센 사실 [(수, 수 앞의 낱말)]. 낱말은 마지막 구분(:, 쉼표, 따옴표, 괄호) 뒤의 마지막 세 낱말에서 끝 조사를 뗀 것('오답', '찾지 못한 답').
+    줄 번호(…번째 줄)는 수가 곧 사실이라 낱말을 보지 않는다."""
+    out = []
+    for hit in _COUNTED.finditer(line):
+        words = re.split(r"[:,'()]", line[:hit.start()])[-1].split()[-3:]
+        key = "" if "줄" in hit.group() else re.sub(r"(이|가|은|는|을|를)$", "", "".join(words))
+        out.append((_squash(hit.group()), key))
+    return out
 
 
 def recorded(body: str, record: str) -> bool | None:
-    """문장이 기록의 센 사실을 옮겼는가. 센 수가 없으면 None. 문장이 블록을 짚으면 그 블록의 기록 줄에 같은 수가 있어야 참이다
-    (기록에 없는 '블록 1에서 넘어가지 못한 답 2번'이 다른 줄의 '2번' 덕에 [확실]이 되었다)."""
-    counts = _counts(body)
-    if not counts:
+    """문장이 기록의 사실을 옮겼는가. 센 수도 블록도 없으면 None.
+    센 수가 있으면 기록 줄 하나에 같은 수와 그 수 앞의 낱말이 함께 있어야 참이다('실행 오류가 2번'이 제출 기록의 '오답 2번' 덕에 [확실]이었다).
+    문장이 블록을 짚으면 그 블록의 기록 줄만 본다. 수 없이 블록을 짚었으면 그 블록의 기록 줄과 SHARED자 넘게 이어서 같아야 참이다."""
+    counts, blocks, flat = _counts(body), set(_BLOCK.findall(body)), _squash(body)
+    lines = [line for line in (record or "").splitlines() if not blocks or blocks & set(_BLOCK.findall(line))]
+    if counts:
+        return any(hit in counts and key in flat for line in lines for hit, key in _facts(line))
+    if not blocks:
         return None
-    blocks = set(_BLOCK.findall(body))
-    return any(counts & _counts(line) and (not blocks or blocks & set(_BLOCK.findall(line))) for line in (record or "").splitlines())
+    rest = _squash(_BLOCK_NAME.sub("", body))
+    return any(SequenceMatcher(None, rest, other, autojunk=False).find_longest_match(0, len(rest), 0, len(other)).size >= SHARED
+               for other in (_squash(_BLOCK_NAME.sub("", line)) for line in lines))
 
 
 def mark_claims(analysis: str, record: str = "") -> str:
     """주장 문장은 모두 확신 표시로 시작하고, 질문 문장에는 표시가 없다. 말끝이 표시와 어긋나면 말끝을 따르고, 표시 없는 주장에는 [추측].
     이번 풀이의 기록에 있는 수(…번, …번째 줄)를 그대로 옮긴 문장은 [확실]이다(센 사실에 [추측]이 붙었다).
-    블록을 짚어 센 수를 말했는데 기록에 없는 문장은 [확실]일 수 없다: [추측]."""
+    센 수나 블록을 짚었는데 기록과 맞지 않는 문장은 [확실]일 수 없다: [추측]."""
     out = []
     for part in [p.strip() for p in re.split(r"(?<=[.?!？])\s+", (analysis or "").strip()) if p.strip()]:
         found = _MARK.match(part)
@@ -47,7 +70,7 @@ def mark_claims(analysis: str, record: str = "") -> str:
             out.append(f"[확실] {body}")
             continue
         mark = "[가능성 높음]" if _HIGH.search(body) else "[추측]" if _GUESS.search(body) else (found.group(0).strip() if found else "[추측]")
-        if mark == "[확실]" and source is False and _BLOCK.search(body):
+        if mark == "[확실]" and source is False:  # 센 수나 블록을 짚었는데 기록과 맞지 않는다
             mark = "[추측]"
         out.append(f"{mark} {body}")
     return " ".join(out)

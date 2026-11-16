@@ -1577,7 +1577,7 @@ class OtherFeatureTest(unittest.TestCase):
                  fakes.user("belt = deque()", 0, "u3"), fakes.service("맞아요.", 0, "m4", "done")]  # 통과한 코드를 다시 확인했다(tries는 그대로)
         ctx = fakes.context(plan=fakes.planned(fakes.two()), open_count=2, latest_submission=sub, chair=chair,
                             block_states={"b1": BlockState("b1", "belt = deque()", "h", "Y", None, 2)})
-        analysis = {"analysis": "벨트에서 꺼낼 때 비어 있을 수 있을까요? 블록 1에서 다음 블록으로 넘어가지 못한 답이 1번이었습니다. 제출은 통과했습니다.",
+        analysis = {"analysis": "벨트에서 꺼낼 때 비어 있을 수 있을까요? 블록 1에서 찾지 못한 답이 1번이었습니다. 제출은 통과했습니다.",
                     "similar_hint": "h", "advice": "c"}
         done, fake = fakes.go(fakes.make_state("feedback", ctx), {"feedback.assess": ["[check]90 Y"], "feedback.analyze": [analysis]})
         self.assertNotIn("틀린 코드", fakes.prompt(fake, "feedback.analyze"))  # 튜터의 오판은 세지 않는다
@@ -1586,7 +1586,7 @@ class OtherFeatureTest(unittest.TestCase):
         tried = [m for w in wrongs for m in (w, fakes.service(RETRY_LEAD + "다시.", 0, "r" + w.id))] + chair[5:]
         lines = record_lines(fakes.context(chair=tried, block_states={"b1": BlockState("b1", "belt = deque()", "h", "Y", None, 4)}), fakes.planned(fakes.two()))
         self.assertIn("블록 1(입력받기) 블록 코드 확인에서 튜터의 코드와 이어지지 않은 횟수 3번", "\n".join(lines))  # 같은 맞는 코드를 두 번 확인해도 3번
-        self.assertIn("[확실] 블록 1에서 다음 블록으로 넘어가지 못한 답이 1번이었습니다.", done["result"]["analysis"])
+        self.assertIn("[확실] 블록 1에서 찾지 못한 답이 1번이었습니다.", done["result"]["analysis"])
         from ..feedback.rules import mark_claims
         self.assertEqual(mark_claims("7번째 줄을 고쳤다.", "- 디버그: 틀린 곳은 7번째 줄."), "[확실] 7번째 줄을 고쳤다.")
         self.assertEqual(mark_claims("3번 틀렸다.", "- 본 힌트: 1개"), "[추측] 3번 틀렸다.")  # 기록에 없는 수
@@ -1611,6 +1611,11 @@ class OtherFeatureTest(unittest.TestCase):
         self.assertEqual(mark_claims("[확실] 블록 1에서 찾지 못한 답이 2번이었습니다.", record), "[추측] 블록 1에서 찾지 못한 답이 2번이었습니다.")  # 2번은 다른 줄(제출)의 수다
         self.assertEqual(mark_claims("블록 1에서 찾지 못한 답이 1번이었습니다.", record), "[확실] 블록 1에서 찾지 못한 답이 1번이었습니다.")
         self.assertEqual(mark_claims("[확실] 오답이 2번 나왔습니다.", record), "[확실] 오답이 2번 나왔습니다.")
+        # 수만 같고 다른 사실(수 앞의 낱말이 기록 줄에 없다), 기록과 맞지 않게 블록을 짚은 수 없는 문장은 [확실]이 아니다
+        for wrong in ("실행 오류가 2번 났습니다.", "블록 코드 확인을 2번 틀렸습니다.", "블록 1에서 다음 블록으로 넘어가지 못했습니다."):
+            self.assertEqual(mark_claims(f"[확실] {wrong}", record), f"[추측] {wrong}", wrong)
+        self.assertEqual(mark_claims("[확실] 블록 1에서 이 블록을 찾지 못한 답이 있었습니다.", record), "[확실] 블록 1에서 이 블록을 찾지 못한 답이 있었습니다.")  # 그 블록의 기록 줄과 같은 말
+        self.assertEqual(mark_claims("[확실] 반복문이 끝까지 돕니다.", record), "[확실] 반복문이 끝까지 돕니다.")  # 수도 블록도 없는 코드 이야기는 모델의 표시를 둔다
 
     def test_unchecked_block_answers_are_not_stuck(self):
         """블록 코드 확인의 글에는 판정이 남고, '확인 전'으로 끝난 확인은 막힌 답으로 세지 않는다(표시 없는 옛 기록은 그대로 읽는다)."""
