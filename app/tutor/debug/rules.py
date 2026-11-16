@@ -8,6 +8,8 @@ LOGIC = ("symptom", "trace", "line", "cause")  # 답이 틀렸을 때: 증상 �
 ERROR = ("error", "form", "cause")  # 문법·실행 오류: 오류 뜻과 줄 → 같은 문법의 다른 예 → 원인
 # 이 단계부터 줄 번호를 화면에 알려 준다. fix: 사용자가 먼저 원인 줄을 짚어 line 단계를 건너뛰어도 그 줄을 확인해 준다
 SHOWS_LINE = ("line", "cause", "error", "form", "fix")
+# 답(고친 코드)을 달라고 했다: 분명히 거절하고 대안(볼 곳을 좁히는 다음 질문)을 말한다. 의자의 ANSWER_LEAD와 같은 자리
+ANSWER_LEAD = "고친 코드는 드리지 않아요. 직접 찾아 고쳐야 다음에 같은 실수를 알아볼 수 있어요. 대신 볼 곳을 좁혀 볼게요. "
 FIX_TEXT = "{line}번째 줄을 고친 뒤 같은 입력으로 다시 실행해 보면 무엇이 나올까요?"
 FALLBACK = {
     "symptom": "고친 코드로 다시 돌려 보니 아직 기대와 다른 입력이 있어요. 그 입력을 코드 첫 줄부터 손으로 따라가 보면 어디서 달라질까요?",
@@ -144,3 +146,19 @@ def leaks_fix(reply: str, fixed_line: str, code: str) -> bool:
     if len(fixed) < 5 or fixed in {_squash(line) for line in (code or "").splitlines()}:
         return False
     return fixed in _squash(reply)
+
+
+PIECE = 6  # 첫 질문에서 고친 줄의 조각으로 보는 길이(공백을 뺀 글자). 'count.get(name, 0) + 1로 바꾸면…'은 줄 전체가 아니라 조각이 샜다
+# 줄 번호의 여러 꼴: '4번째 줄', '4줄', '4행', '네 번째 줄', 'line 4'
+LINE_WORD = re.compile(r"\d+\s*(?:번째\s*)?(?:줄|행)|(?:한|두|세|네|다섯|여섯|일곱|여덟|아홉|열)\s*번째\s*(?:줄|행)|\bline\s*\d+", re.IGNORECASE)
+
+
+def leaks_piece(reply: str, fixed_line: str, code: str) -> bool:
+    """고친 줄 가운데 사용자 코드에 없는 조각(PIECE자 이상)이 말에 들어 있는가. 첫 질문에서만 쓴다(뒤 단계는 줄을 짚고 고칠 곳을 묻는다)."""
+    fixed, mine, said = _squash(fixed_line), _squash(code), _squash(reply)
+    return any(fixed[i:i + PIECE] in said and fixed[i:i + PIECE] not in mine for i in range(len(fixed) - PIECE + 1))
+
+
+def names_line(reply: str) -> bool:
+    """말이 줄 번호를 어떤 꼴로든 말하는가."""
+    return bool(LINE_WORD.search(reply or ""))
