@@ -677,6 +677,14 @@ class ModelTalkRuleTest(unittest.TestCase):
         self.assertNotIn("문제 글에 없는 인용", reply_problems(text, move="open", problem=problem))
         self.assertEqual(repair("'그때까지 ... 없는 말'을 보면 무엇을 남길까요?", problem), "그때까지 ... 없는 말을 보면 무엇을 남길까요?")
 
+    def test_english_name_batchim_by_sound(self):
+        """영어 이름의 끝소리: 받침으로 읽히는 꼴은 받침(맵·겟·벡·덱·스택), 모음·자음 뒤의 t·d(트·드)와 r·s·x는 받침이 아니다."""
+        from ..debug.rules import batchim
+
+        got = {"HashMap": 1, "map": 1, "get": 1, "set": 1, "HashSet": 1, "Vec": 1, "deque": 1, "BTreeMap": 1, "Stack": 1, "Heap": 1, "len": 1, "size": 0,
+               "ArrayList": 0, "Scanner": 0, "PriorityQueue": 0, "push": 0, "sort": 0, "append": 0, "count": 0, "log": 0, "dfs": 0}
+        self.assertEqual({w: int(batchim(w)) for w in got}, got)
+
     def test_silent_e_has_batchim(self):
         from ..common.talk_rules import rename_note
         from ..debug.rules import batchim

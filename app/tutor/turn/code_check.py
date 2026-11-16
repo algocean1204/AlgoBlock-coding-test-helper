@@ -45,21 +45,33 @@ _MISSING = re.compile(r"NameError: name '(\w+)' is not defined|local variable '(
 # 없는 멤버·이름·클래스 오류의 원문은 다섯 언어 모두 쉬운 말로 알린다(이름은 위 _MISSING을 재사용한다)
 _NO_MEMBER = re.compile(r"^cannot find symbol: (?!variable |class )\w+ (\w+)$|has no attribute '(\w+)'|no member named [‘'](\w+)[’']"
                         r"|no (?:method|field|function or associated item) named `(\w+)`|no field `(\w+)`|(\w+) is not a function")
-_NO_CLASS = re.compile(r"^cannot find symbol: class (\w+)$")
+_NO_CLASS = re.compile(r"^cannot find symbol: class (\w+)$|cannot find type `(\w+)` in this scope")
 _NO_VAR = re.compile(r"^cannot find symbol: variable (\w+)$")
 EASY_END = "확인해 보세요."
 NO_MEMBER = "`{name}`{josa} 이름을 찾지 못했어요. 철자가 맞는지, 그 값에서 쓸 수 있는 이름인지 " + EASY_END
 NO_NAME = "`{name}`{josa} 이름을 찾지 못했어요. 만들기 전에 썼거나 철자가 다른지 " + EASY_END
 NO_CLASS = "`{name}`{josa} 이름을 찾지 못했어요. 맨 위의 가져오기(import)가 빠졌거나 철자가 다른지 " + EASY_END
+# 실행 오류의 이유(다섯 언어의 같은 실수는 같은 뜻의 말로. 화면의 풀이와 뜻을 맞춘다). 앞에서부터 찾는다: map::at의 out_of_range는 '없는 키'가 먼저다
+_RUNTIME = tuple((re.compile(pattern), said + EASY_END) for pattern, said in (
+    (r"KeyError|no entry found for key|map::at|Map\.get\(", "없는 키를 읽었어요. 처음 보는 값일 때를 따져 보고, 읽기 전에 키가 있는지 "),
+    (r"IndexError|IndexOutOfBounds|index out of bounds|out of range for slice|std::out_of_range(?!: sto)",
+     "범위를 벗어난 자리를 읽었어요. 비어 있거나 마지막 자리 다음을 읽은 건 아닌지 "),
+    (r"ZeroDivisionError|/ by zero|divide by zero|divisor of zero", "0으로 나눴어요. 나누는 값이 0이 되는 경우가 있는지 "),
+    (r"RecursionError|StackOverflowError|Maximum call stack size exceeded|overflowed its stack|stack overflow",
+     "재귀가 너무 깊어요. 끝나는 조건이 있는지, 반복문으로 바꿀 수 있는지 "),
+    (r"NullPointerException", "null인 값을 썼어요. 만들지 않은 객체나 값이 없는 변수를 쓰기 전에 null인지 "),
+    (r"Cannot read properties of (?:undefined|null)", "값이 없는(undefined, null) 걸 썼어요. 범위 밖 자리나 없는 키를 읽어 값이 없었는지 "),
+    (r"sto\w+: out of range", "숫자가 너무 커서 그 형에 담지 못했어요. 바꾸는 글자의 크기를 "),
+))
 
 
 def _easy(row: str) -> str:
-    """없는 멤버·이름·클래스 오류 한 줄을 쉬운 말로. 아니면 빈 글."""
+    """없는 멤버·이름·클래스 오류, 흔한 실행 오류(_RUNTIME) 한 줄을 쉬운 말로. 아니면 빈 글."""
     for pattern, said in ((_NO_CLASS, NO_CLASS), (_NO_VAR, NO_NAME), (_NO_MEMBER, NO_MEMBER), (_MISSING, NO_NAME)):
         if found := pattern.search(row):
             name = next(g for g in found.groups() if g)
             return said.format(name=name, josa="이라는" if batchim(name) else "라는")
-    return ""
+    return next((said for pattern, said in _RUNTIME if pattern.search(row)), "")
 
 
 SHOWN = 80  # 말에 싣는 값의 최대 길이(오류 원문은 자르지 않는다)
@@ -207,13 +219,19 @@ def _error_row(text: str, first: bool = False, whole: bool = False, easy: bool =
     """오류 글에서 한 줄: 오류 이름이 있는 줄(컴파일 오류는 첫 줄, 실행 오류는 마지막 줄). 임시 폴더 경로는 뗀다.
     모은 파일의 '파일이름:줄(:칸): error: '는 사용자가 볼 수 없어 떼고, Java 'cannot find symbol'에는 그 이름을 붙이고,
     Python의 'Did you mean: …' 꼬리(고칠 답)는 뗀다. whole이면 자르지 않는다."""
-    rows = [re.sub(r"[^\s\"'`]*[/\\]", "", row).strip() for row in (text or "").splitlines() if row.strip()]
+    if not first:  # 실행 오류의 이유 줄을 고른다: Rust 패닉의 머리는 떼어 이유 줄이 남게 하고, 안내(note:)와 스택 줄(at …)은 건너뛴다
+        text = re.sub(r"thread '[^']*'(?: \(\d+\))? panicked at [^\n]*?\d+:\d+:\n", "", text or "")
+        text = re.sub(r"thread '[^']*'(?: \(\d+\))? panicked at '(.*)', \S+:\d+:\d+", r"\1", text)
+    rows = [re.sub(r"[^\s\"'`]+[/\\]", "", row).strip() for row in (text or "").splitlines() if row.strip()]
+    rows = rows if first else [row for row in rows if not re.match(r"(?:note|help):|stack backtrace|at |\d+: ", row)]
     named = [i for i, row in enumerate(rows) if re.search(r"error|exception", row, re.IGNORECASE)] or list(range(len(rows)))
     if not named:
         return ""
     at = named[0] if first else named[-1]
     row = re.sub(r"^[\w.-]+:\d+(?::\d+)?:\s*", "", rows[at])
     row = re.sub(r"^(?:fatal\s+)?error(?:\[\w+\])?:\s*", "", row)
+    row = re.sub(r"^Exception in thread \"[^\"]*\" ", "", row)  # Java: 머리와 패키지 이름은 떼고 예외 이름과 메시지만
+    row = re.sub(r"\b(?:[a-z_]\w*\.)+(?=[A-Z]\w*(?:Error|Exception)\b)", "", row)
     if row.startswith("cannot find symbol"):
         symbol = next((f"{m.group(1)} {m.group(2)}" for later in rows[at + 1:] if (m := re.search(r"symbol:\s+(\w+)\s+(\w+)", later))), "")
         row = f"cannot find symbol: {symbol}" if symbol else row

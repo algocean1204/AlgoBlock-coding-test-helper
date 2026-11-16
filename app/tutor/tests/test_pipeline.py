@@ -15,8 +15,10 @@ from ..llm import LlmFailed, LlmTimeout
 from ..main import AGENTS, build
 from ..state import BlockState, DebugState, FilledBlock, Solution, Submission
 from ..feedback.prompts import WAY_TEXT
-from ..turn.code_check import BRACE_CLOSE, BRACE_OPEN, NOT_JOINED, brace_note, code_hash, unrun_note
+from ..turn.code_check import BRACE_CLOSE, BRACE_OPEN, NOT_JOINED, _RUNTIME, brace_note, code_hash, unrun_note
 from ..turn.moves import FOUND_OK, FOUND_TIP, HINTS_DONE, HINTS_DONE_UNFOUND, WRITE_TIP
+
+ZERO = _RUNTIME[2][1]  # 0으로 나눈 실행 오류의 쉬운 말
 
 DRAFT = {"plan.draft_blocks": [fakes.drafted([fakes.as_dict(b) for b in fakes.hinted()])]}
 
@@ -856,9 +858,9 @@ class BlockCheckNewNameTest(unittest.TestCase):
              "line": next(n for n, row in enumerate(code.splitlines(), 1) if "// 0" in row)}]}
         done, seen = self.turn(blocks, {}, "b1", "s = q[0] // 0\nhi = q[1]\nextra = 0", broken)
         self.assertEqual((done["verdict"].seen, done["block_check"].verdict, len(seen) > 1),  # 어림 짝을 다 돌려 보고 모두 실패했다: 이어지지 않아요(난 곳을 말한다)
-                         ("내 블록 1번째 줄(`s = q[0] // 0`)에서 실행 오류가 났어요.\n`ZeroDivisionError: division by zero`\n" + assumed([["s", "start"]]) + " " + NOT_JOINED, "N", True))
+                         ("내 블록 1번째 줄(`s = q[0] // 0`)에서 실행 오류가 났어요.\n" + ZERO + "\n" + assumed([["s", "start"]]) + " " + NOT_JOINED, "N", True))
         done, seen = self.turn(blocks, {}, "b1", "s = q[0] // 0\nhi = q[1]", broken)  # 확실한 짝: 첫 시도가 내 코드의 일이다
-        self.assertEqual((done["verdict"].seen, done["block_check"].verdict), ("내 블록 1번째 줄(`s = q[0] // 0`)에서 실행 오류가 났어요.\n`ZeroDivisionError: division by zero`\n" + NOT_JOINED, "N"))
+        self.assertEqual((done["verdict"].seen, done["block_check"].verdict), ("내 블록 1번째 줄(`s = q[0] // 0`)에서 실행 오류가 났어요.\n" + ZERO + "\n" + NOT_JOINED, "N"))
         self.assertIn("return s + hi", seen[0])
 
 
@@ -1061,7 +1063,7 @@ class BlockCheckInvariantTest(unittest.TestCase):
         self.assertNotIn(fakes.HINTS2[1], done["result"]["reply"])
         done, _ = fakes.go(fakes.make_state("turn", ctx, mode="guide", event="block_filled", block_id="b2", code="i = 1\nwhile i <= n:\n    total += 10 // (i - 1)"), {},
                            exec_check([], [([3], 6)]))  # 시간 초과가 아닌 실패도 계획이 for로 연 자리면 while 문장
-        self.assertTrue(done["verdict"].seen.endswith("ZeroDivisionError: integer division or modulo by zero`\n" + NOT_JOINED + " " + WHILE_NOTE), done["verdict"].seen)
+        self.assertTrue(done["verdict"].seen.endswith(ZERO + "\n" + NOT_JOINED + " " + WHILE_NOTE), done["verdict"].seen)
         states = {"b1": passed_block("b1", "def solution(n):\n    acc = 0\n    t = 5", [("acc", "total")]),  # 짝(acc)이 뜻과 다르다(t가 답)
                   "b2": passed_block("b2", "for i in range(1, n + 1):\n    t += i")}
         ctx = fakes.context(plan=fakes.planned(SUM3), open_count=3, block_states=states)
@@ -2200,3 +2202,38 @@ class BlockCheckTextTest(unittest.TestCase):
         said = failure_verdict(report, [span], False, "", True).seen
         self.assertIn("내 블록 1번째 줄(`int n = piles.size();`)에서 컴파일 오류가 났어요.\n`size`라는 이름을 찾지 못했어요. 철자가 맞는지, 그 값에서 쓸 수 있는 이름인지 확인해 보세요.", said)
         self.assertNotIn("cannot find symbol", said)
+
+    def test_runtime_error_reason_is_picked_and_said_in_easy_words(self):
+        """실행 오류의 이유 줄을 고르고(note·스택 줄은 건너뛴다) 다섯 언어의 같은 실수가 같은 말을 받는다(이 맥의 python3·javac·clang++·rustc·node가 낸 글)."""
+        from ..turn.code_check import _RUNTIME, NO_CLASS, _error_row
+
+        key, index, zero, deep, null, undefined, big = (said for _, said in _RUNTIME)
+        tb = 'Traceback (most recent call last):\n  File "/tmp/x/main.py", line 2, in <module>\n    {src}\n{err}\n'
+        js = '/tmp/x/main.js:1\n{src}\n   ^\n\n{err}\n    at Object.<anonymous> (/tmp/x/main.js:1:36)\n    at Module._compile (node:internal/modules/cjs/loader:1929:14)\n\nNode.js v24.0.0\n'
+        rust = "\nthread 'main' (1627) panicked at main.rs:1:78:\n{err}\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n"
+        java = 'Exception in thread "main" java.lang.{err}\n\tat Main.main(Main.java:1)\n'
+        cases = (
+            (key, (tb.format(src="print(d['x'])", err="KeyError: 'x'"), rust.format(err="no entry found for key"),
+                   java.format(err='NullPointerException: Cannot invoke "java.lang.Integer.intValue()" because the return value of "java.util.Map.get(Object)" is null'),
+                   "libc++abi: terminating due to uncaught exception of type std::out_of_range: map::at:  key not found\n")),
+            (index, (tb.format(src="print(a[100])", err="IndexError: list index out of range"),
+                     java.format(err="ArrayIndexOutOfBoundsException: Index 100 out of bounds for length 3"),
+                     "libc++abi: terminating due to uncaught exception of type std::out_of_range: vector\n",
+                     rust.format(err="index out of bounds: the len is 3 but the index is 100"),
+                     "thread 'main' panicked at 'index out of bounds: the len is 3 but the index is 100', main.rs:1:78\nnote: run with `RUST_BACKTRACE=1`\n")),
+            (zero, (tb.format(src="print(1//z)", err="ZeroDivisionError: division by zero"), java.format(err="ArithmeticException: / by zero"),
+                    rust.format(err="attempt to divide by zero"))),
+            (deep, (tb.format(src="print(f(0))", err="RecursionError: maximum recursion depth exceeded"),
+                    java.format(err="StackOverflowError").replace("\n\tat", "\n\tat Main.f(Main.java:1)\n\tat", 1),
+                    js.format(src="function f(n){return f(n+1)+1}", err="RangeError: Maximum call stack size exceeded"),
+                    "\nthread 'main' (1628) has overflowed its stack\nfatal runtime error: stack overflow, aborting\n")),
+            (null, (java.format(err='NullPointerException: Cannot invoke "String.length()" because "<local1>" is null'),)),
+            (undefined, (js.format(src="console.log(a[100].x);", err="TypeError: Cannot read properties of undefined (reading 'x')"),)),
+            (big, ("libc++abi: terminating due to uncaught exception of type std::out_of_range: stoi: out of range\n",)))
+        for said, raws in cases:
+            for raw in raws:
+                self.assertEqual(_error_row(raw, whole=True), said, raw)
+        # 쉬운 말이 없는 오류도 안내·스택 줄이 아니라 이유 줄이다(Java는 머리와 패키지를 뗀다)
+        self.assertEqual(_error_row(rust.format(err="called `Option::unwrap()` on a `None` value"), whole=True), "called 'Option::unwrap()' on a 'None' value")
+        self.assertEqual(_error_row(java.format(err='NumberFormatException: For input string: "a"'), whole=True), 'NumberFormatException: For input string: "a"')
+        self.assertEqual(_error_row("error[E0433]: cannot find type `HashMap` in this scope\n --> main.rs:1:34", first=True, whole=True), NO_CLASS.format(name="HashMap", josa="이라는"))  # 빠진 Rust 가져오기
