@@ -31,6 +31,38 @@ def agree_opening(text: str, problem: str = "") -> bool:
     head = without_problem_quotes(text, problem).lstrip()
     return head.startswith(AGREE_OPENERS) or bool(_AGREE.match(head))
 
+# 사용자가 하지 않은 판단을 인정했다('잘 모르겠어요'에 '…을 짚으셨는데, 그 판단은 맞는 방향입니다').
+# 판단을 맞다고 하는 평서문은 늘 판정이다(원칙 1). 사용자 말에 생각이 담기지 않았으면 그 말에 기대는 문장('짚으셨는데', '말씀하신 대로')도 없는 판단을 지어낸 것이다
+_VERDICT = re.compile(r"(?:판단|생각|방향|짐작|추측|짚은\s*것)[은는이가]?\s*(?:맞|옳|정확)(?!는지|은지|을지|는가|을까)"
+                      r"|(?:맞는|옳은|정확한)\s*(?:방향|판단|생각|짐작)|제대로\s*짚|잘\s*짚")
+_CREDIT = re.compile(r"(?:짚|말씀하|말하|생각하|판단하|짐작하|찾|보)(?:으)?(?:셨|신)|짚었|하신\s*(?:대로|것처럼|말)")
+_NO_CLAIM = re.compile(r"모르|몰라|글쎄|헷갈|감이\s*안|막혔")
+NO_CLAIM_CHARS = 15  # 공백을 뺀 사용자 말이 이보다 짧고 막힌 말이면 인정할 판단이 없다
+
+
+def unsaid_credit(text: str, user: str = "") -> list[str]:
+    """사용자가 하지 않은 판단을 인정한 문장들. 판단을 맞다고 하는 평서문은 늘, 생각이 담기지 않은 사용자 말('잘 모르겠어요') 뒤에는 그 말에 기대는 문장도."""
+    plain = re.sub(r"\s+", "", user or "")
+    empty = not plain or (len(plain) < NO_CLAIM_CHARS and bool(_NO_CLAIM.search(plain)))
+    return [part for part in sentences(text)
+            if (_VERDICT.search(part) and not part.rstrip().endswith(("?", "？"))) or (empty and _CREDIT.search(part))]
+
+
+_ASKED = re.compile(r"(?:[?？]|나요|까요?|(?:인|는|건|은|한)가요|죠)\s*$")
+
+
+def asked_count(text: str) -> int:
+    """사용자 말 속 물음의 수(문장·줄마다 물음표나 물음 어미로 끝나는가)."""
+    parts = [part.strip() for part in re.split(r"(?<=[.?!？])\s+|\n", text or "") if part.strip()]
+    return sum(bool(_ASKED.search(part)) for part in parts)
+
+
+def many_asks_line(text: str) -> list[str]:
+    """사용자 말에 물음이 여럿이면 질문 프롬프트에 넣을 지시 한 줄(둘 가운데 하나만 받았다)."""
+    n = asked_count(text)
+    return [f"사용자 말에 물음이 {n}개 있다. 모두 짧게 받거나, 하나만 받을 때는 그 하나를 먼저 본다고 한 구절로 말한다."] if n > 1 else []
+
+
 OPEN_LEAD = "다음 블록을 열었어요. "  # 이음말
 KIND_LABEL = {"var_from_problem": "문제에서 바로 오는 변수", "var_during": "풀이 중에 만드는 변수", "loop": "반복", "condition": "한 가지를 따지는 조건", "branch": "경우 나누기"}
 
@@ -269,7 +301,7 @@ def names_block(name: str, body: str, problem: str) -> bool:
 
 def reply_problems(
     text: str, *, move: str, problem: str, reference: str = "", later_names: list[str] = (), said: str = "", language: str = "python",
-    loose_names: bool = False,
+    loose_names: bool = False, user: str = "",
 ) -> list[str]:
     """말풍선 검사. 위반 이유 목록(비면 통과). said는 인용해도 되는 사용자 말·앞 대화(clue는 문항 글만).
     loose_names: 뒤 블록 이름을 names_block으로 좁혀 본다(가이드가 사용자 말에 답할 때. 의자는 블록 이름이 찾을 답이라 그대로)."""
@@ -307,6 +339,8 @@ def reply_problems(
         found.append("3인칭 메모")  # '사용자는 …하게 하자' 같은 모델 메모가 샌 것
     if _ENGLISH.search(plain):
         found.append("영어 지시문")
+    if unsaid_credit(body, user):
+        found.append("말하지 않은 판단 인정")  # user: 이번 사용자 말(인정할 판단이 있는지 본다)
     return found
 
 
@@ -378,7 +412,7 @@ def drop_told(text: str, reference: str, language: str, problem: str) -> str:
     return " ".join(rest)
 
 
-def repair(text: str, problem: str, said: str = "", move: str = "", reference: str = "", language: str = "python") -> str:
+def repair(text: str, problem: str, said: str = "", move: str = "", reference: str = "", language: str = "python", user: str = "") -> str:
     """모델을 다시 부르지 않고 고칠 수 있는 위반을 고친다. 되받는 첫 절·문장, 블록의 답을 말한 평서문, 근거 없는 따옴표는 지우고,
     마지막 물음표 뒤 글은 자르고, 뒤 세 문장만 남긴다. 근거 질문(basis)은 사용자 말을 인용해 묻는 것이 설계라 되받기를 지우지 않는다."""
 
@@ -393,6 +427,9 @@ def repair(text: str, problem: str, said: str = "", move: str = "", reference: s
     if move != "basis":
         body = drop_echo(body)
     body = drop_told(body, reference, language, problem)
+    credit = unsaid_credit(body, user)
+    if credit and _asks([part for part in sentences(body) if part not in credit]):  # 하지 않은 판단을 인정한 문장은 지운다(질문이 남을 때만)
+        body = _CONNECTIVE.sub("", " ".join(part for part in sentences(body) if part not in credit))
     last = max(body.rfind("?"), body.rfind("？"))
     if last >= 0:
         body = body[: last + 1]

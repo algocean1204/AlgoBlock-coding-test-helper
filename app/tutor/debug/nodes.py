@@ -1,6 +1,6 @@
 """디버그 노드: gather → locate/judge → pick_step → speak → check_reply(graph.py)."""
 
-from ..common.talk_rules import BACK_LEAD, agree_opening, banned_in, quotes_ok, repair, without_code
+from ..common.talk_rules import BACK_LEAD, agree_opening, banned_in, quotes_ok, repair, unsaid_credit, without_code
 from ..common.verdict import ASIDE_RULE, FOUND_RULE, ask_verdict
 from ..knowledge.ontology import PITFALLS, pitfall_candidates, pitfall_lines
 from ..llm import llm, model_name
@@ -90,12 +90,13 @@ def check_reply(state: MainState) -> dict:
     text = state.get("reply_draft") or ""
     first = opening(state)
     said = "\n".join([req.code or "", req.text or "", *draft["recent"]])
-    text = repair(text, state["ctx"].problem_text, said)
+    text = repair(text, state["ctx"].problem_text, said, user=req.text or "")
     bad = (not text or "```" in text or not text.rstrip().endswith(("?", "？"))
            or banned_in(text, state["ctx"].problem_text + "\n" + said) or agree_opening(text, state["ctx"].problem_text)
            or rules.leaks_fix(text, draft["fixed_line"], req.code or "")
            # 문제 글·내 말에 없는 큰따옴표 인용("앞 사람 여분을 먼저 확인한다")이 나왔다
            or not quotes_ok(without_code(text), state["ctx"].problem_text, said, double=True)
+           or unsaid_credit(text, req.text or "")  # 하지 않은 판단을 인정했다
            # 첫 질문이 원인 줄이나 고친 줄의 조각을 알려 주면 사다리가 무너진다('4줄에서…', '네 번째 줄', 'count.get(name, 0) + 1로')
            or (first and (rules.names_line(text) or rules.leaks_piece(text, draft["fixed_line"], req.code or ""))))
     if first:
