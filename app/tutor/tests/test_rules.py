@@ -632,9 +632,10 @@ class ModelTalkRuleTest(unittest.TestCase):
 
         self.assertEqual([batchim(w) for w in ("name", "line", "table", "value", "tom", "remaining", "r", "for")], [True, True, True, False, True, True, True, False])
         # 코드 이름 뒤에 조사를 붙이지 않는다
-        self.assertEqual(rename_note([["g", "name"]]), "이 블록에서 쓴 이름(`g`)을 튜터의 코드는 다른 이름(`name`)으로 불러요. 뒤 블록을 '이 블록 채우기'로 채우면 내 이름으로 바꿔 채워요.")
-        self.assertEqual(rename_note([["cnt", "count"], ["r", "name"]]),
-                         "이 블록에서 쓴 이름(`cnt`, `r`)을 튜터의 코드는 차례대로 다른 이름(`count`, `name`)으로 불러요. 뒤 블록을 '이 블록 채우기'로 채우면 내 이름으로 바꿔 채워요.")
+        self.assertEqual(rename_note([["g", "name"]]), "같은 값을 튜터의 코드는 다른 이름으로 써요(내 이름 → 튜터의 이름: `g` → `name`). 이름이 달라도 이어서 돌아가요. "
+                                                       "뒤 블록을 '이 블록 채우기'로 채우면 튜터의 코드를 내 이름으로 바꿔 넣어요.")
+        # 이름이 여럿이면 '차례대로'로 묶지 않고 짝마다 쓴다('counts, picked를 count, shelf로'는 어느 것이 어느 것인지 알기 어려웠다)
+        self.assertIn("(내 이름 → 튜터의 이름: `cnt` → `count`, `r` → `name`)", rename_note([["cnt", "count"], ["r", "name"]]))
 
 
 class EchoClauseTest(unittest.TestCase):
