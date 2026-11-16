@@ -98,9 +98,10 @@ def rename_note(pairs: list[list[str]]) -> str:
     코드 이름 뒤 조사를 어림하면 틀렸다('remaining라고', 'cnt, r라고'). 이름을 괄호에 넣어 조사가 붙지 않게 쓴다."""
     if not pairs:
         return ""
-    mine, plan = ", ".join(f"`{a}`" for a, _ in pairs), ", ".join(f"`{b}`" for _, b in pairs)
-    return (f"이 블록에서 쓴 이름({mine})을 튜터의 코드는 {'차례대로 ' if len(pairs) > 1 else ''}다른 이름({plan})으로 불러요. "
-            "뒤 블록을 '이 블록 채우기'로 채우면 내 이름으로 바꿔 채워요.")
+    # '이름(`a`, `b`)을 차례대로 다른 이름(`c`, `d`)으로'는 어느 이름이 어느 이름인지 알기 어려웠다. 짝마다 화살표로 쓴다
+    shown = ", ".join(f"`{a}` → `{b}`" for a, b in pairs)
+    return (f"같은 값을 튜터의 코드는 다른 이름으로 써요(내 이름 → 튜터의 이름: {shown}). 이름이 달라도 이어서 돌아가요. "
+            "뒤 블록을 '이 블록 채우기'로 채우면 튜터의 코드를 내 이름으로 바꿔 넣어요.")
 
 FALLBACK = {
     "replan": "말한 방법에서 가장 먼저 정해야 할 것은 무엇일까요?",
