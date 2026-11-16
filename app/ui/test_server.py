@@ -2651,7 +2651,19 @@ def build_only() -> None:
     assert run("--only", "hash/없는_폴더").returncode == 2 and run("--only").returncode == 2
 
 
+def neutral_notes() -> None:
+    """기본 문제 해설(단서의 뜻·익힌 것·흔한 실수·사다리)은 언어마다 갈리지 않으니 한 언어에만 있는 낱말(KeyError, 딕셔너리, heapq 등)이 없어야 한다."""
+    import problemkit
+    found = [f"{row['id']}: {line}" for row in ROWS for line in problemkit.language_bound(row)]
+    assert not found, found
+    bad = {"learn": "x", "pattern": "x", "ladder": "x", "pitfalls": ["count[k] += 1에서 KeyError가 난다"], "signals": [{"means": "딕셔너리에 넣는다"}]}
+    assert len(problemkit.language_bound(bad)) == 2  # 걸러야 할 글은 실제로 걸린다
+    for word in ("KeyError가 난다", "heapq에서 꺼낸다", "dict로 센다", "int에 담는다", "IndexError가 난다", "long으로 더한다"):  # 한글 조사가 붙은 낱말도 걸린다
+        assert problemkit.language_bound({**bad, "pitfalls": [word], "signals": [{"means": "x"}]}), word
+
+
 def main() -> None:
+    neutral_notes()
     build_only()
     error_lines()
     broken_files()
