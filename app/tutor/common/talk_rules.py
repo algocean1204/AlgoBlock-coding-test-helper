@@ -37,6 +37,9 @@ _VERDICT = re.compile(r"(?:판단|생각|방향|짐작|추측|짚은\s*것)[은�
                       r"|(?:맞는|옳은|정확한)\s*(?:방향|판단|생각|짐작)|제대로\s*짚|잘\s*짚")
 # 판단을 받는 동사만 본다: '따라가 보셨나요?', '앞에서 찾으신 값은…?'은 한 일을 묻는 말이지 판단을 인정하는 말이 아니다
 _CREDIT = re.compile(r"(?:짚|말씀하|말하|판단하|짐작하|생각하)(?:으)?(?:셨|신)|짚었")
+# 학습자의 가정을 되짚는 문장에 붙은 동의 말('말씀하신 대로 …라고 가정하셨네요'). 되짚는 말이 맞다고 인정하는 것처럼 들린다
+# 문장 첫머리의 '말씀하신 대로 …(평서)'나 '그렇죠.' 홀로만 본다. '가정하신 대로라면 …인데 실제로는 …'처럼 가정과 실제를 견주는 조건·반박은 동의가 아니다
+_LEAN_AGREE = re.compile(r"^\s*(?:(?:말씀(?:하신)?|말하신|짚으신)\s*(?:대로|처럼)(?!\s*(?:라면|하면|이면|면))|그렇죠\s*[.!]?\s*$)")
 _NO_CLAIM = re.compile(r"모르|몰라|글쎄|헷갈|감이\s*안|막혔")
 NO_CLAIM_CHARS = 15  # 공백을 뺀 사용자 말이 이보다 짧고 막힌 말이면 인정할 판단이 없다
 
@@ -46,7 +49,7 @@ def unsaid_credit(text: str, user: str = "") -> list[str]:
     plain = re.sub(r"\s+", "", user or "")
     empty = not plain or (len(plain) < NO_CLAIM_CHARS and bool(_NO_CLAIM.search(plain)))
     return [part for part in sentences(text)
-            if (_VERDICT.search(part) and not part.rstrip().endswith(("?", "？"))) or (empty and _CREDIT.search(part))]
+            if ((_VERDICT.search(part) or _LEAN_AGREE.search(part)) and not part.rstrip().endswith(("?", "？"))) or (empty and _CREDIT.search(part))]
 
 
 # 물음 어미: 물음표, '~나요', '~까(요)'('~니까'는 빼고), '~(인·는·건·은·한·뭔)가요', '~죠', 뜻 묻기('뭐예요', '뭐야', '뭔데'), 반말 '~나'('맞나'. '하나'·'그러나'는 빼고)
