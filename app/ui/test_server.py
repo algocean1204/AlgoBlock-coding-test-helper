@@ -2572,7 +2572,7 @@ def cross_cases() -> None:
     assert not [case for case in hidden if "5000" in case["input"]]  # 제한사항(원소 1,000 이하)을 어긴 입력은 버렸다
     row = next(row for row in call("/api/problems")[1]["problems"] if row["id"] == pid)
     assert (row["verified"], row["verified_name"], row["check"]["hidden"], row["check"]["efficiency"], row["check"]["calls"], row["check"]["tiers"]) == (
-        "all", "예시와 자동 테스트 모두 통과", len(hidden), 1, 2, ["middle"]), row
+        "all", "예시와 자동 테스트 모두 통과", len(hidden), 1, 2, ["small"]), row
     state = call("/api/state", id=pid)[1]["problem"]
     assert len(state["own_cases"]) == 1 and state["cases"] == {"example": 1, "accuracy": len(hidden), "efficiency": 1}  # 수정 화면에는 내가 넣은 케이스만
     wrong = "def solution(numbers):\n    if len(numbers) == 1:\n        return 0\n    return sum(numbers)"  # 공개 예시는 통과한다

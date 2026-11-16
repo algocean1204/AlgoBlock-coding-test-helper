@@ -480,7 +480,7 @@ class TutorTest(unittest.TestCase):
     MAKER = {"code": "def small():\n    return [[['a'], []]]\ndef edge():\n    return []\ndef large():\n    return []", "bounds": [{"arg": 0, "shortest": 1, "longest": 100000}]}
 
     def test_cross_check_agrees_and_keeps_the_guide(self):
-        """대조가 맞으면 가이드를 그대로 쓰고 결과(모두 통과, 숨은 케이스 수, 호출 2회, 가운데 급만)를 남긴다. 단순 풀이·생성기 코드의 울타리는 벗겨 실행기에 넘긴다."""
+        """대조가 맞으면 가이드를 그대로 쓰고 결과(모두 통과, 숨은 케이스 수, 호출 2회, 처음 풀이의 급만)를 남긴다. 단순 풀이·생성기 코드의 울타리는 벗겨 실행기에 넘긴다."""
         tutor, fake, seen = self.crossed({"plan.solve": [SOLVED], "plan.brute": [self.BRUTE], "plan.cases": [self.MAKER], **LINED},
                                          [{"status": "same", "hidden": 12, "efficiency": 2}])
         try:
@@ -490,7 +490,7 @@ class TutorTest(unittest.TestCase):
             code, brute, maker, bounds = seen["runs"][0]
             self.assertEqual((code, brute.startswith("def solution"), bounds[0].longest), (CODE, True, 100000))
             self.assertEqual({k: seen["done"][0][k] for k in ("verified", "calls", "tiers", "hidden", "efficiency")},
-                             {"verified": "all", "calls": 2, "tiers": ["middle"], "hidden": 12, "efficiency": 2})
+                             {"verified": "all", "calls": 2, "tiers": ["small"], "hidden": 12, "efficiency": 2})
             self.assertIn("정의 그대로 푸는 검산자", fakes.prompt(fake, "plan.brute") + fake.calls[1]["messages"][0]["content"])
         finally:
             tutor.close()
@@ -510,7 +510,7 @@ class TutorTest(unittest.TestCase):
             self.assertIn('입력: [["a", "b"], ["b"]]', fake.calls[3]["messages"][-1]["content"])  # 다른 입력과 두 결과를 보여 준다
             self.assertIn('느린 풀이의 결과: "a"', fake.calls[3]["messages"][-1]["content"])
             done = seen["done"][0]
-            self.assertEqual((done["verified"], done["tiers"], done["calls"]), ("none", ["middle", "middle", "large"], 4))
+            self.assertEqual((done["verified"], done["tiers"], done["calls"]), ("none", ["small", "middle", "large"], 4))
             self.assertLessEqual(done["calls"], 5)
             self.assertEqual(len(seen["runs"]), 3)
             self.assertEqual(tutor.store.load("p1").solution.code, other["code"])  # 예시를 통과한 마지막 풀이
@@ -524,9 +524,56 @@ class TutorTest(unittest.TestCase):
         try:
             self.assertEqual(tutor.prepare("p1").status, 200)
             self.assertEqual(tutor.store.load("p1").solution.code, fixed["code"])
-            self.assertEqual((seen["runs"][1][0], seen["done"][0]["verified"], seen["done"][0]["tiers"]), (fixed["code"], "all", ["middle", "middle"]))
+            self.assertEqual((seen["runs"][1][0], seen["done"][0]["verified"], seen["done"][0]["tiers"]), (fixed["code"], "all", ["small", "middle"]))
         finally:
             tutor.close()
+
+    def test_cross_check_on_the_provider_path_reads_bounds_and_climbs_tiers(self):
+        """가짜 모델이 아니라 공급자 경로(app.llm의 요청·응답 읽기)로: 생성기의 제한사항(low·high가 든 bounds)을 읽어 실행기에 넘기고,
+        대조가 계속 다르면 기본(작음) → 가운데 → 큼 차례로 Haiku → Sonnet → Opus를 부른다. 네트워크는 쓰지 않는다(전송을 바꿔 끼운다)."""
+        from dataclasses import asdict, is_dataclass
+
+        from ..llm import client
+        client._backend_session()  # 저장소 루트를 경로에 더해 app.llm을 부른다
+        from app.llm.wire import set_transport
+
+        maker = {**self.MAKER, "bounds": [{"arg": 0, "low": 1, "high": 100, "shortest": 1, "longest": 100000}]}
+        replies = {"plan.solve": [SOLVED] * 3, "plan.brute": [self.BRUTE], "plan.cases": [maker],
+                   "plan.draft_blocks": [asdict(b) if is_dataclass(b) else b for b in LINED["plan.draft_blocks"]]}
+        now, asked = {"task": ""}, []
+        backend = client._backend_use
+
+        def tracked(model, messages, schema, *, task=None, **params):
+            now["task"] = task
+            return backend(model, messages, schema, task=task, **params)
+
+        def transport(url, headers, body, timeout):
+            asked.append((now["task"], body["model"]))
+            got = replies[now["task"]]
+            return {"content": [{"type": "text", "text": json.dumps(got.pop(0) if len(got) > 1 else got[0], ensure_ascii=False)}], "stop_reason": "end_turn", "usage": {}}
+
+        seen = {"runs": [], "done": []}
+
+        def run(pid, code, brute, maker_code, bounds):
+            seen["runs"].append(bounds)
+            return {"status": "differ", "input": "[]", "got": "1", "want": "2"}
+
+        cross = mock.Mock(mode=lambda pid: "function", run=run, done=lambda pid, verdict: seen["done"].append(verdict))
+        env = {"ANTHROPIC_API_KEY": "test", "ALGOBLOCK_LLM_PROVIDER": "", "ALGOBLOCK_LLM_MODEL": "", "ALGOBLOCK_THEME_GUIDE": "", "ALGOBLOCK_THEME_INGEST": "",
+               "ALGOBLOCK_THEME_BLOCKS": "", "ALGOBLOCK_LLM_USAGE_LOG": "", "ALGOBLOCK_LLM_PROMPT_DIR": ""}
+        set_transport(transport)
+        self.addCleanup(set_transport, None)
+        with mock.patch.dict("os.environ", env), mock.patch.object(client, "_backend_use", tracked):
+            tutor = Tutor(self.path, check=lambda pid, code: {"status": "passed", "cases": []}, cross=cross)
+            try:
+                tutor.store.put_problem("p1", "python", fakes.PROBLEM, title="추천 서가에 꽂히는 책")
+                tutor.store.put_fact("p1", "문자열 배열 둘, 남는 원소 하나", [])
+                self.assertEqual(tutor.prepare("p1").status, 200)
+            finally:
+                tutor.close()
+        self.assertEqual([model for task, model in asked if task == "plan.solve"], ["claude-haiku-5-5", "claude-sonnet-5-5", "claude-opus-5-5"])
+        self.assertEqual([(b.arg, b.low, b.high, b.shortest, b.longest) for b in seen["runs"][0]], [(0, 1, 100, 1, 100000)])
+        self.assertEqual((seen["done"][0]["verified"], seen["done"][0]["tiers"]), ("none", ["small", "middle", "large"]))
 
     def test_cross_check_skips_when_examples_never_pass(self):
         """공개 예시를 끝내 통과하지 못하면 대조하지 않고(모델 0회 더) 그 예시를 '확인이 필요한 곳'으로 남긴다(문제를 잘못 읽었을 수 있다)."""
