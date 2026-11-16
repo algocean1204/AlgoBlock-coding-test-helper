@@ -25,7 +25,7 @@ def gather(state: MainState) -> dict:
         "previous": None if saved is None else saved.step,
         "recent": [f"{'튜터' if m.role == 'service' else '사용자'}: {m.text}" for m in said][-4:],
         "last_question": service[-1].text if service else "없음",
-        "candidates": pitfall_candidates(ctx.patterns, [pid for pid, _ in ctx.frequent_pitfalls]),
+        "candidates": pitfall_candidates(ctx.patterns, [pid for pid, _ in ctx.frequent_pitfalls], ctx.language),
         "found": False,
     }
     if saved is not None:
@@ -39,7 +39,7 @@ def locate(state: MainState) -> dict:
     messages = locate_messages(state)
     if draft["candidates"]:
         hint = ["pitfall: 아래 초보자 함정 목록(참고용 분류표)에서 이 원인에 해당하는 id 하나. 맞는 것이 없으면 빈 글로 둔다(억지로 고르지 않는다). 진단은 코드와 채점 결과로 한다.",
-                *pitfall_lines(draft["candidates"])]
+                *pitfall_lines(draft["candidates"], state["ctx"].language)]
         messages[-1] = {**messages[-1], "content": messages[-1]["content"] + "\n" + "\n".join(hint)}
     got: Diagnosis = llm(model_name()).use(messages, Diagnosis, task="debug.locate")
     total = len((state["request"].code or "").splitlines())

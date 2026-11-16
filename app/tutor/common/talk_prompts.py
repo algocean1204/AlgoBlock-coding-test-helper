@@ -1,6 +1,6 @@
 """의자·가이드·꼬리질문 시스템 프롬프트. 대화 원칙은 talk_rules.py 머리말과 같다."""
 
-from ..knowledge.ontology import PITFALLS
+from ..knowledge.ontology import PITFALLS, pitfall_fits, pitfall_text
 from ..llm import cached_user
 from .solution import solution_lines
 from .scope import PRINCIPLES
@@ -15,8 +15,8 @@ LEVEL_TEXT = {
 
 
 def weak_pitfalls(ctx) -> list[str]:
-    """이 사용자가 여러 문항에서 되풀이한 함정 '이름(n번)', 많아야 3개. 계획·피드백·의자·가이드가 같이 쓴다."""
-    return [f"{PITFALLS[pid][1]}({count}번)" for pid, count in ctx.frequent_pitfalls if pid in PITFALLS][:3]
+    """이 사용자가 여러 문항에서 되풀이한 함정 '이름(n번)', 많아야 3개. 지금 언어에 없는 함정은 뺀다. 계획·피드백·의자·가이드가 같이 쓴다."""
+    return [f"{pitfall_text(pid, ctx.language)[0]}({count}번)" for pid, count in ctx.frequent_pitfalls if pid in PITFALLS and pitfall_fits(pid, ctx.language)][:3]
 
 
 def learner_lines(ctx) -> list[str]:

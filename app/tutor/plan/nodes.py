@@ -13,7 +13,7 @@ from ..common.solution import entry_params, frame_flags, solution_of
 from ..common.talk_prompts import weak_pitfalls
 from ..common.talk_rules import UNRUN_FIX, unrun_why
 from ..debug.rules import error_tail, symptom
-from ..knowledge.ontology import SKILLS, known_patterns, known_skills, known_techniques, pattern_context, size_rule
+from ..knowledge.ontology import SKILLS, known_patterns, known_skills, known_techniques, pattern_context, size_rule, skill_name
 from ..llm import LlmError, llm, model_name, themes
 from ..output_check.nodes import strip_fence
 from ..state import Abstract, BlockPlan, CaseMaker, DraftedBlocks, ErrorInfo, LabeledSolved, MainState, MendedHints, Solution, Solved, Written
@@ -224,11 +224,11 @@ def recall(state: MainState, config) -> dict:
     ctx = state["ctx"]
     known = facts(state)
     spec, patterns = known.spec, list(known.patterns)
-    lines = pattern_context(patterns)
+    lines = pattern_context(patterns, ctx.language)
     rule = size_rule(known.size)
     if rule:
         lines.append(f"- 입력 크기: {rule}")
-    skills = [f"- 구현 기술 '{SKILLS[sid][0]}': {SKILLS[sid][1]}" for sid in known_skills(known.skills)]
+    skills = [f"- 구현 기술 '{skill_name(sid, ctx.language)}': {SKILLS[sid][1]}" for sid in known_skills(known.skills)]
     weak = weak_pitfalls(ctx)
     return {"recall": {"spec": spec, "patterns": lines, "skills": skills, "weak": weak}, "link": _link(state, config, spec, patterns)}
 

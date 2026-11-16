@@ -114,7 +114,7 @@ def speak_messages(state: MainState) -> list[dict]:
         "디버깅 대화:",
     ]
     lines = stable + (draft["recent"] or ["없음"])
-    examples = skill_examples(state["ctx"].skills)
+    examples = skill_examples(state["ctx"].skills, state["ctx"].language)
     if examples and draft["step_name"] in ("form", "fix", "cause"):
         lines += ["참고 — 문법 예(이 문제와 상관없는 변수로 쓴 것. 같은 문법을 보여 줄 때만 쓴다):", *examples]
     aside = draft.get("aside")

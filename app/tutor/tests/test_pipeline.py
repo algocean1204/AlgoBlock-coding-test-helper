@@ -1501,7 +1501,7 @@ class HonestCheckTest(unittest.TestCase):
         head = "def solution(a, b):\n    answer = 0\n    return answer\n"
         starter_line = f"시작 코드(사용자가 받는 코드다. 진입 함수의 머리 — 함수 이름, 인자 이름과 차례 — 를 이것 그대로 쓴다):\n{head}"
         asked = ("tags: 아래 기법 목록에서 위 code가 실제로 쓰는 방법의 id 2~4개. code에 없는 방법은 쓰지 않는다(목록에 없는 낱말도 쓰지 않는다).\n"
-                 f"{technique_list()}\n{LEVEL_TEXT} 위 code가 쓰는 방법으로 정한다.\n"
+                 f"{technique_list("python")}\n{LEVEL_TEXT} 위 code가 쓰는 방법으로 정한다.\n"
                  'JSON {"clues": ["..."], "approach", "steps": ["..."], "code", "tags": [id], "level"}\n')
         plain = 'JSON {"clues": ["..."], "approach", "steps": ["..."], "code"}\n'
         follow = 'JSON {"clues": ["..."], "approach", "steps": ["..."], "code", "followed": true 또는 false}\n'  # 사용자 방법 따르기: 따랐는가를 묻고 태그·단계는 묻지 않는다
@@ -1550,6 +1550,24 @@ class OtherFeatureTest(unittest.TestCase):
         self.assertEqual(done["open_count"], 1)
         done, _ = fakes.go(fakes.make_state("followup", ctx, mode="chair", quote_id="m1", text="왜"), {"followup.answer": ["정답은 딕셔너리예요."]})
         self.assertEqual(done["result"]["reply"], FALLBACK["followup"])
+
+    def test_followup_syntax_examples_follow_the_language(self):
+        """문법 예는 파이썬으로만 써 두었으니 파이썬 사용자의 꼬리질문에만 들어간다."""
+        chair = [fakes.service("인용문장?", 0, "m1")]
+        for language, shown in (("python", True), ("java", False)):
+            ctx = fakes.context(plan=fakes.planned(fakes.two()), open_count=1, chair=chair, skills=["dict_count"], language=language)
+            _, fake = fakes.go(fakes.make_state("followup", ctx, mode="chair", quote_id="m1", text="왜"), {"followup.answer": ["그럴 때 무엇을 놓칠까요?"]})
+            self.assertEqual("fruit.get(name, 0)" in fakes.prompt(fake, "followup.answer"), shown, language)
+
+    def test_debug_question_prompt_syntax_examples_follow_the_language(self):
+        """디버그 질문 프롬프트의 '문법 예'는 파이썬 사용자에게만 간다."""
+        from ..debug.prompts import speak_messages
+        draft = {"line": 4, "cause": "원인", "fixed_line": "x", "recent": [], "step_name": "fix"}
+        for language, shown in (("python", True), ("java", False)):
+            state = fakes.make_state("debug", fakes.context(language=language, skills=["dict_count"]), text="왜")
+            state["draft"] = draft
+            text = "\n".join(m["content"] for m in speak_messages(state))
+            self.assertEqual("fruit.get(name, 0)" in text, shown, language)
 
     def test_syntax_example_passes(self):
         """문법을 물으면 대체 질문만 나왔다. 문제와 무관한 예의 코드 안 문자열은 인용 검사에서 뺀다."""

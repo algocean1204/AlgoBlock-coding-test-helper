@@ -54,7 +54,7 @@ from tutor.save.respond import blocks_body, shown_count  # noqa: E402
 from tutor.ingest import IngestError, ocr_doubts, read_pages, reread  # noqa: E402
 from tutor.ingest.files import split_files  # noqa: E402
 from tutor.eval.scenarios import all_scenarios  # noqa: E402
-from tutor.knowledge.ontology import PITFALL_GROUPS, PITFALLS, TECHNIQUES, techniques_of  # noqa: E402
+from tutor.knowledge.ontology import PITFALL_GROUPS, PITFALLS, TECHNIQUES, pitfall_text, technique_name, techniques_of  # noqa: E402
 from tutor.llm import LlmNotConfigured, themes, use_llm  # noqa: E402
 from tutor.store.sqlite import now  # noqa: E402
 
@@ -689,19 +689,19 @@ def report_themes(t) -> tuple[dict, dict]:
     return theme_of, differ
 
 
-def labels_of(t, p, marks: dict | None = None) -> dict:
+def labels_of(t, p, language: str, marks: dict | None = None) -> dict:
     """문제의 라벨: 단계(사용자가 고친 것 > 분석이 붙인 것), 태그(쓰는 방법. 온톨로지 기법 이름), 검증(verified: all·examples·none, 아직 대조 전이면 빈 글)과 그 말.
-    등록한 문제는 대조 결과(check)의 숨은·효율성 케이스 수와 확인이 필요한 곳(doubts), 까닭(why)도. marks: 미리 읽은 store.labels()(목록은 한 번만 읽는다)."""
+    등록한 문제는 대조 결과(check)의 숨은·효율성 케이스 수와 확인이 필요한 곳(doubts), 까닭(why)도. marks: 미리 읽은 store.labels()(목록은 한 번만 읽는다). language: 사용자가 그 문제에 고른 언어(태그의 그릇 낱말이 이 언어를 따른다)."""
     if p.builtin:
         tags = techniques_of(((BUILTIN[p.id].get("ready") or {}).get("fact") or {}).get("patterns") or [])
-        return {"level": p.level, "tags": [TECHNIQUES[tid][1] for tid in tags], "verified": "all", "verified_name": VERIFIED_WORDS["all"]}
+        return {"level": p.level, "tags": [technique_name(tid, language) for tid in tags], "verified": "all", "verified_name": VERIFIED_WORDS["all"]}
     if p.sample:
         return {"tags": [], "verified": "", "verified_name": ""}
     fact = (marks if marks is not None else t.store.labels()).get(p.id) or {}
     check = getattr(p, "check", None) or {}
     verified = check.get("verified") or ""
     return {"level": p.level or fact.get("level") or 0, "level_by": "user" if p.level else "analysis" if fact.get("level") else "",
-            "tags": [TECHNIQUES[tid][1] for tid in fact.get("tags") or [] if tid in TECHNIQUES], "verified": verified, "verified_name": VERIFIED_WORDS.get(verified, ""),
+            "tags": [technique_name(tid, language) for tid in fact.get("tags") or [] if tid in TECHNIQUES], "verified": verified, "verified_name": VERIFIED_WORDS.get(verified, ""),
             "check": {key: check[key] for key in ("hidden", "efficiency", "tiers", "calls", "why", "doubts") if key in check}}
 
 
@@ -725,9 +725,10 @@ def problem_rows(t) -> list[dict]:
         # 붙인 주제가 이긴다. 계획의 알고리즘이 15개 밖이면 주제 칩을 빼낸다
         shown = p.theme_name or (theme_name(guessed[p.id]) if not p.sample and guessed.get(p.id) else "")
         # 등급: 통과 2회마다 한 등급, 8회 이상 5등급
-        rows.append({"id": p.id, "title": p.title, "language": chosen.get(p.id) if chosen.get(p.id) in check_judge().LANGUAGES else p.language, "sample": p.sample, "builtin": p.builtin,
+        language = chosen.get(p.id) if chosen.get(p.id) in check_judge().LANGUAGES else p.language
+        rows.append({"id": p.id, "title": p.title, "language": language, "sample": p.sample, "builtin": p.builtin,
                      "theme": p.theme, "theme_name": shown, "level": p.level, "passed": passed, "submitted": total, "solved": passed > 0, "unaided": p.id in alone,
-                     "touched": p.id in mine, "grade": min(5, 1 + min(passed, 10) // 2), **labels_of(t, p, marks)})
+                     "touched": p.id in mine, "grade": min(5, 1 + min(passed, 10) // 2), **labels_of(t, p, language, marks)})
     return rows
 
 
@@ -1985,7 +1986,7 @@ def state_body(t, p, body: dict) -> dict:
     mine = {} if p.sample else {"own_cases": [{"input": case["input"], "expected": case["expected"], "hidden": case.get("kind", "example") != "example"} for case in p.cases if not case.get("made")],
                                 **{key: getattr(p, key, False) is True for key in ANSWER_FLAGS}}
     return {"problem": {"id": pid, "title": p.title, "language": ctx.language, "text": p.text, "sample": p.sample, "builtin": p.builtin, "mode": p.mode,
-                        "theme": p.theme, "theme_name": p.theme_name or (theme_name(planned) if planned else ""), "level": p.level, **labels_of(t, p),
+                        "theme": p.theme, "theme_name": p.theme_name or (theme_name(planned) if planned else ""), "level": p.level, **labels_of(t, p, ctx.language),
                         "languages": row["languages"] if row else list(check_judge().LANGUAGES), "starter": row["starters"].get(ctx.language, "") if row else own_starter(p, ctx.language),
                         "examples": examples, "cases": {kind: kinds.get(kind, 0) for kind in KINDS},
                         "study": {"hints_seen": hints_now(study, hint_rows(t, pid)), "hints_total": len(hint_rows(t, pid)), "solution_seen": bool(study["solution_at"]),
@@ -2193,14 +2194,14 @@ def readiness(unaided: dict, started: set, fresh: dict) -> dict:
                       f"실전 연습 단계: 필수 주제를 모두 실전 익힘, 자주 나오는 주제({', '.join(theme_name(key) for key in FREQUENT)})를 모두 기초 익힘."]}
 
 
-def repeated_pitfalls(store) -> list[dict]:
+def repeated_pitfalls(store, language: str) -> list[dict]:
     """두 번 이상 밟은 함정과, 그 함정이 나온 문제. 한 번만 나온 것은 되풀이가 아니라서 뺀다."""
     where: dict[str, list[str]] = {}
     for row in store.conn.execute("SELECT DISTINCT problem_id, pitfall FROM pitfall_hit ORDER BY rowid").fetchall():
         ids = where.setdefault(PITFALL_GROUPS.get(row["pitfall"], row["pitfall"]), [])
         if row["problem_id"] in PROBLEMS and row["problem_id"] not in ids:
             ids.append(row["problem_id"])
-    return [{"name": PITFALLS[pid][1] if pid in PITFALLS else pid, "count": count,
+    return [{"name": pitfall_text(pid, language)[0] if pid in PITFALLS else pid, "count": count,
              "problems": [{"id": x, "title": PROBLEMS[x].title} for x in where.get(pid, [])]}
             for pid, count in store._frequent_pitfalls(5) if count >= 2]
 
@@ -2342,7 +2343,7 @@ def learning_report(t) -> dict:
         "strengths": [{"key": row["key"], "name": row["name"], "why": row["why"]} for row in strong],
         "weaknesses": [{"key": row["key"], "name": row["name"], "why": row["why"], "next": {"id": (row["review"] or row["next"])["id"], "title": (row["review"] or row["next"])["title"]}
                         if row["review"] or row["next"] else None} for row in weak],
-        "pitfalls": repeated_pitfalls(t.store),
+        "pitfalls": repeated_pitfalls(t.store, last_language()),
         "recent": [{"id": sub["problem_id"], "title": PROBLEMS[sub["problem_id"]].title, "ok": sub["ok"], "status": sub["status"], "language": sub["language"], "at": sub["at"]}
                    for sub in reversed(subs) if sub["problem_id"] in PROBLEMS][:10],
         "signals": signals, "feedbacks": feedbacks, "next": todo_rows, "attendance": attendance(),

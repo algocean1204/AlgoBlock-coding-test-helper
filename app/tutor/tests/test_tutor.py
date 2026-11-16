@@ -366,6 +366,33 @@ class TutorTest(unittest.TestCase):
         finally:
             tutor.close()
 
+    def test_debug_candidates_follow_the_language(self):
+        """진단 후보 목록에 파이썬에만 있는 실수(콜론 빠짐)가 다른 언어로 풀 때 들어가지 않는다. 파이썬에는 그대로 들어간다."""
+        tutor, fake = self.tutor({"debug.locate": [self.FOUND, self.FOUND]})
+        try:
+            tutor.store.put_problem("pj", "java", fakes.PROBLEM, title="자바 문제")
+            tutor.store.put_fact("pj", "문자열 배열 둘, 남는 원소 하나", [])
+            tutor.debug("p1", self.BUGGY, self.FAILED)
+            python = fakes.prompt(fake, "debug.locate")
+            fake.calls.clear()
+            tutor.debug("pj", self.BUGGY, self.FAILED)
+            java = fakes.prompt(fake, "debug.locate")
+            self.assertIn("missing_colon: 콜론(:) 빠짐", python)
+            self.assertIn("no_return: 돌려주지 않음(None)", python)
+            self.assertNotIn("missing_colon", java)
+            self.assertNotIn("indent:", java)
+            self.assertIn("no_return: 돌려주지 않음 —", java)
+            self.assertNotIn("None", java)
+        finally:
+            tutor.close()
+
+    def test_weak_pitfalls_follow_the_language(self):
+        """다른 언어로 바꾼 사용자에게 파이썬에만 있는 실수 이름('콜론 빠짐')을 되풀이한 실수로 보여 주지 않는다."""
+        from ..common.talk_prompts import weak_pitfalls
+        for language, want in (("python", ["콜론(:) 빠짐(3번)", "돌려주지 않음(None)(2번)"]), ("java", ["돌려주지 않음(2번)"])):
+            ctx = fakes.context(language=language, frequent_pitfalls=[("missing_colon", 3), ("no_return", 2)])
+            self.assertEqual(weak_pitfalls(ctx), want, language)
+
     def test_debug_first_question_uses_clue_and_refuses_answer(self):
         """첫 질문이 늘 '코드 첫 줄부터 손으로 따라가 보면…'이었다. 진단이 함께 지은 첫 질문(실패 입력과 코드의 단서)을 증상 뒤에 붙인다(모델 호출은 그대로 1번).
         '그냥 답 알려줘요'에는 거절 없이 다음 질문으로 넘어갔다: 거절과 대안(볼 곳을 좁힌다)을 분명히 말한다."""

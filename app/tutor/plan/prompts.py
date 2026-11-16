@@ -16,10 +16,10 @@ KIND_TEXT = "\n".join(
     [
         "종류는 블록의 가장 바깥 구조로 정한다.",
         "- var_from_problem: 문제에서 바로 나오는 값을 변수에 담는다(입력의 길이, 입력에서 바로 읽는 값, 문제 글에 적힌 상수)",
-        "- var_during: 풀이 중에 만들어 쓰는 변수(빈 딕셔너리·스택·덱·힙·표, 누적 값, 답을 담을 변수). return만 있는 블록도 풀이 중에 만든 값을 돌려주면 이것",
+        "- var_during: 풀이 중에 만들어 쓰는 변수(빈 키-값 표·스택·덱·힙·표, 누적 값, 답을 담을 변수). return만 있는 블록도 풀이 중에 만든 값을 돌려주면 이것",
         "- loop: for/while로 시작하는 블록",
         "- condition: 조건을 따져 고르는 일(if 한 덩어리)",
-        "- branch: 경우를 나눠 서로 다른 일을 한다(if/elif/else, 일찍 돌려주기와 그 밖)",
+        "- branch: 경우를 나눠 서로 다른 일을 한다(if와 else로 여러 갈래로 나누기, 일찍 돌려주기와 그 밖)",
         "- 도우미 함수 정의 블록은 그 함수가 주로 하는 일의 종류",
     ]
 )
@@ -36,12 +36,25 @@ STRATEGY_TEXT = {
 _EXAMPLE_HINTS = ('"hints":["꽂히는 순서를 맞추려면 대출 기록을 어떤 순서로 하나씩 봐야 할까요?",'
                   '"\'loans의 길이는 1 이상 100,000 이하입니다\'를 보면 기록을 몇 번이나 훑는 방법이어야 할까요?",'
                   '"tide, tide가 차례로 들어오면 첫 번째와 두 번째 tide를 볼 때 그 제목의 횟수는 각각 얼마가 되어야 할까요?"]}\n'
-                  '나쁜 답의 힌트: "좋아요! count 딕셔너리를 만들어 보세요."(칭찬, 코드 이름, 질문이 아님)')
-EXAMPLE = (
-    '좋은 답의 블록 하나: {"id":"b2","kind":"loop","name":"대출 횟수 세기","goal":"대출 기록을 일어난 순서대로 한 번만 훑으며 그 제목의 횟수를 1 올린다",'
-    '"reference":"for title in loans:\\n    count[title] = count.get(title, 0) + 1","checks":["대출 기록을 처음부터 끝까지 한 권씩 차례로 훑는다","처음 보는 제목은 0에서 시작해 횟수를 1 올린다"],'
-    + _EXAMPLE_HINTS
-)
+                  '나쁜 답의 힌트: "좋아요! count 표를 만들어 보세요."(칭찬, 코드 이름, 질문이 아님)')
+# 예의 reference는 언어마다 실제로 컴파일·실행되는 것을 확인한 같은 뜻의 코드다. 없는 언어에는 reference 예를 넣지 않는다
+_EXAMPLE_REFERENCE = {
+    "python": "for title in loans:\n    count[title] = count.get(title, 0) + 1",
+    "java": "for (String title : loans) {\n    count.put(title, count.getOrDefault(title, 0) + 1);\n}",
+    "javascript": "for (const title of loans) {\n    count[title] = (count[title] ?? 0) + 1;\n}",
+    "cpp": "for (const string& title : loans) {\n    count[title] += 1;\n}",
+    "rust": "for title in &loans {\n    *count.entry(title).or_insert(0) += 1;\n}",
+}
+
+
+def example(language: str) -> str:
+    code = _EXAMPLE_REFERENCE.get(language)
+    return (
+        '좋은 답의 블록 하나: {"id":"b2","kind":"loop","name":"대출 횟수 세기","goal":"대출 기록을 일어난 순서대로 한 번만 훑으며 그 제목의 횟수를 1 올린다",'
+        + (f'"reference":{json.dumps(code)},' if code else "")
+        + '"checks":["대출 기록을 처음부터 끝까지 한 권씩 차례로 훑는다","처음 보는 제목은 0에서 시작해 횟수를 1 올린다"],'
+        + _EXAMPLE_HINTS
+    )
 
 
 EXAMPLE_LINES = (
@@ -122,7 +135,7 @@ def solve_messages(state: MainState, retry: str = "", given: str = "") -> list[d
     ]
     labeled = solved_schema(state, given) is LabeledSolved
     if labeled:  # 글보다 먼저 정하면 문제 글의 분류 표시에 끌렸다: 쓴 코드가 실제로 하는 일로 정한다
-        lines += ["tags: 아래 기법 목록에서 위 code가 실제로 쓰는 방법의 id 2~4개. code에 없는 방법은 쓰지 않는다(목록에 없는 낱말도 쓰지 않는다).", technique_list(),
+        lines += ["tags: 아래 기법 목록에서 위 code가 실제로 쓰는 방법의 id 2~4개. code에 없는 방법은 쓰지 않는다(목록에 없는 낱말도 쓰지 않는다).", technique_list(ctx.language),
                   LEVEL_TEXT + " 위 code가 쓰는 방법으로 정한다."]
     lines.append('JSON {"clues": ["..."], "approach", "steps": ["..."], "code"'
                  + (', "tags": [id], "level"}' if labeled else ', "followed": true 또는 false}' if strategy == "follow" else "}"))
@@ -173,10 +186,10 @@ def abstract_text(problem_text: str) -> list[dict]:
         pattern_list(),
         "size: 제한사항에 적힌 입력 크기 가운데 가장 큰 값을 정수로(배열 길이, 문자열 길이 등. 없으면 0).",
         "skills: 아래 목록에서 이 문제를 코드로 옮길 때 꼭 필요한 구현 기술의 id 1~3개(없으면 빈 배열).",
-        skill_list(),
+        skill_list(""),  # 뼈대는 언어와 상관없이 문제마다 하나라 중립 말
         LEVEL_TEXT,
         "tags: 아래 기법 목록에서 이 문제의 풀이에 쓰는 방법의 id 2~4개(목록에 없는 낱말은 쓰지 않는다).",
-        technique_list(),
+        technique_list(""),
         'JSON {"spec", "patterns": [id], "size", "skills": [id], "level", "tags": [id]}',
     ]
     return [{"role": "system", "content": ABSTRACT_SYSTEM}, cached_user(lines, 1)]
@@ -320,7 +333,7 @@ def draft_messages(state: MainState) -> list[dict]:
             f"reference는 그 블록만의 짧은 {ctx.language} 참고 코드다.",
             'JSON {"algorithm", "out_of_scope", "blocks": [{"id", "kind", "name", "goal", "reference", "checks", "hints"}]'
             + (', "followed": true 또는 false}' if strategy == "follow" else "}"),
-            EXAMPLE,
+            example(ctx.language),
         ]
     return [{"role": "system", "content": system}, {"role": "user", "content": "\n".join(lines)}]
 

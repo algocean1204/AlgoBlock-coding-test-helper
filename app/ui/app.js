@@ -584,7 +584,7 @@ const caseCells = (row) => [...row.querySelectorAll(".case-val"), row.querySelec
 /** 푸는 방식에 맞춘 케이스 안내. 방식을 바꾸면 적던 값은 그대로 새 꼴의 줄로 옮긴다. */
 function caseHelp() {
   const stdin = $("new-mode").value === "program";
-  $("case-help").textContent = stdin ? "입력은 프로그램의 표준 입력에 그대로 넣어요." : "넣을 값은 인자 목록 전체를 대괄호로 감싸 적어요. 인자가 둘이면 [1, 2], 리스트 하나가 인자면 [[1, 2, 3]]처럼 한 번 더 감싸요.";
+  $("case-help").textContent = stdin ? "입력은 프로그램의 표준 입력에 그대로 넣어요." : "넣을 값은 인자 목록 전체를 대괄호로 감싸 적어요. 인자가 둘이면 [1, 2], 배열 하나가 인자면 [[1, 2, 3]]처럼 한 번 더 감싸요.";
   $("case-fill-ask").textContent = stdin ? "지금 적힌 케이스를 예제의 것으로 바꿀까요?" : "지금 적힌 케이스를 표의 것으로 바꿀까요?";
 }
 
@@ -609,7 +609,7 @@ function setCaseMode() {
 /** 케이스 줄의 '넣을 값'이 풀이 함수에 어떻게 넘어가는지 그 아래에 보여 준다(JSON 목록으로 읽힐 때만). */
 /* case-pure:start 넣을 값의 인자 수 안내(node로도 시험한다). expected: 시작 코드의 인자 수(모르면 null) */
 const argNote = (count, expected) => (expected === null || count === expected ? ""
-  : `인자가 ${expected}개인데 ${count}개로 읽혀요. ${expected === 1 ? "리스트 하나를 인자로 넘기려면 [[1, 2]]처럼 인자 목록 전체를 대괄호로 한 번 더 감싸요." : "인자 목록 전체를 대괄호로 한 번만 감싸 [1, 2]처럼 적어요."}`);
+  : `인자가 ${expected}개인데 ${count}개로 읽혀요. ${expected === 1 ? "배열 하나를 인자로 넘기려면 [[1, 2]]처럼 인자 목록 전체를 대괄호로 한 번 더 감싸요." : "인자 목록 전체를 대괄호로 한 번만 감싸 [1, 2]처럼 적어요."}`);
 /* case-pure:end */
 /** 이 줄이 기대하는 인자 수: 표 머리·직접 적은 인자 이름이 있으면 그 수, 없으면 첫 줄의 수(줄마다 다르면 알린다). */
 function expectedArgs(row) {
