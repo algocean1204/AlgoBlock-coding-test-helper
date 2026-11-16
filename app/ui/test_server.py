@@ -257,10 +257,13 @@ def builtin(fake) -> None:
     assert "시간이 모자라요" in debug["message"] and "틀린 줄" not in debug["message"]
     deep = ("def solution(loans, k):\n    count = {}\n    shelf = []\n    def go(i):\n        if i == len(loans):\n            return\n        count[loans[i]] = count.get(loans[i], 0) + 1\n"
             "        if count[loans[i]] == k:\n            shelf.append(loans[i])\n        go(i + 1)\n    go(0)\n    return shelf\n")
-    got = call("/api/debug", id=PID, code=deep)[1]  # 답은 맞지만 큰 입력에서 재귀가 너무 깊다(제출로 남기지 않는 채점): 시간이 모자란 것이 아니다
-    crashed, said = got["judged"], got["message"]
+    sent = []  # 답은 맞지만 큰 입력에서 재귀가 너무 깊다(제출로 남기지 않는 채점): 시간 이야기가 아니라 틀린 곳 찾기로 그 케이스를 넘긴다
+    with patch.object(server.Tutor, "debug", lambda self, pid, code, report, text=None: sent.append(report) or SimpleNamespace(status=200, body={"messages": []})):
+        got = call("/api/debug", id=PID, code=deep)[1]
+    crashed = got["judged"]
     assert crashed["score"]["accuracy"][0] == crashed["score"]["accuracy"][1] and any(c["kind"] == "efficiency" and c["status"] == "runtime_error" for c in crashed["cases"]), crashed
-    assert "실행 중 오류" in said and "재귀가 너무 깊어요" in said and "시간이 모자라요" not in said, said
+    assert "efficiency_only" not in got and sent[0]["status"] == "runtime_error", sent
+    assert any(c["kind"] == "efficiency" and c["status"] == "runtime_error" and c["input"] == "(아주 큰 입력)" for c in sent[0]["cases"]), sent  # 큰 입력은 싣지 않는다
 
     toc = [{"block": 1, "kind": "loop", "seen": 0, "total": 3}, {"block": 2, "kind": "condition", "seen": 0, "total": 3}]  # 힌트 목차: 이름은 그 블록의 힌트를 다 본 뒤에만
     assert call("/api/hint", id=PID, peek=True)[1] == {"seen": 0, "total": 6, "done": False, "shown": [], "blocks": toc}  # 들여다보기만 하면 새 힌트가 열리지 않는다
@@ -1071,11 +1074,11 @@ def result_guides() -> None:
     """채점 결과와 방식 화면의 안내(화면 코드 확인): 큰 입력의 실행 오류는 시간 부족이라 하지 않고, 효율성만 실패하면 ‘틀린 곳 같이 찾기’가 없는 까닭을 말하며,
     튜터 방식 전환 단추는 무엇이 바뀌는지 말하고, 튜터의 질문으로에서 코드 칸으로 가는 길이 보인다. 브라우저 동작은 화면 확인으로 본다."""
     js = (HERE / "app.js").read_text(encoding="utf-8")
-    assert 'const effCrash = (r) => r.cases.find((c) => c.kind === "efficiency" && c.status === "runtime_error");' in js and "답은 맞지만 큰 입력에서 오류가 나요" in js
-    assert "아주 큰 입력에서 실행 중 오류가 났어요: " in js and "답이 맞아서 ‘틀린 곳 같이 찾기’는 열지 않아요." in js
+    assert 'c.kind === "efficiency" && (c.status === "timeout" || c.status === "skipped")' in js and "const slowOnly = slowOnlyOf(r);" in js  # 시간 초과만 '느려요'
+    assert "아주 큰 입력에서 실행 중 오류가 났어요: " in js and "아주 큰 입력에서 답이 달라요" in js and "답이 맞아서 ‘틀린 곳 같이 찾기’는 열지 않아요." in js
     assert "혼자 풀기로 바뀌어요" not in js and "오른쪽 칸이 해설로 바뀌어요" in js and "오른쪽 칸이 힌트로 바뀌어요" in js
     assert 'S.talk === "chair" && !s.blocks.some((b, i) => blockState(b, i) === "found")' in js and 'data-tab="direct">코드 전체 칸 열기' in js
-    assert "efficiency_message(report)" in (HERE / "server.py").read_text(encoding="utf-8")
+    assert '"message": SLOW_MESSAGE' in (HERE / "server.py").read_text(encoding="utf-8")
 
 
 def language_memory() -> None:
@@ -1167,6 +1170,19 @@ def results() -> None:
     assert skipped["status"] == "skipped" and "error" not in skipped and timed["status"] == "timeout" and body["score"] == {"accuracy": [0, 4], "efficiency": [1, 2]}
     assert (near["near"], near["limit"]) == (True, 4) and "near" not in eff
     assert [case["status"] for case in server.tutor_view(fake)["cases"]][2:4] == ["timeout", "timeout"]  # 엔진은 돌리지 않음을 모른다
+    big = {**fake, "cases": [{**case, "id": "1", "kind": "example", "status": "passed"}, {**case, "id": "2", "kind": "efficiency", "status": "timeout"},
+                             {**case, "id": "3", "kind": "efficiency", "status": "failed", "expected": "9" * 300, "got": "8" * 300}]}
+    long = server.tutor_view(big)["cases"][2]  # 큰 입력의 값은 줄여 싣고, 함정을 견줄 꼴은 줄이기 전의 값으로
+    assert (long["input"], len(long["expected"]), len(long["got"]), long["out"]) == ("(아주 큰 입력)", server.BIG_SHOWN + 1, server.BIG_SHOWN + 1, server.out_key("8" * 300)), long
+    assert not server.slow_only(big) and server.slow_only({**big, "cases": big["cases"][:2] + [{**case, "id": "3", "kind": "efficiency", "status": "skipped"}]})  # 큰 입력에서 틀린 답은 시간 문제가 아니다
+    assert not server.slow_only({**big, "cases": big["cases"][:2] + [{**case, "id": "3", "kind": "efficiency", "status": "runtime_error"}]})
+    sent, server.grade = [], lambda *args, **kwargs: big
+    try:  # 작은 입력이 다 맞으면 큰 입력의 틀린 답으로 틀린 곳을 찾는다. 같이 난 시간 초과는 빼서 시간 이야기로 새지 않는다
+        with patch.object(server.Tutor, "debug", lambda self, pid, code, report, text=None: sent.append(report) or SimpleNamespace(status=200, body={"messages": []})):
+            call("/api/debug", id=pid, code="class Big {}")
+    finally:
+        server.grade = grade
+    assert sent[0]["status"] == "failed" and [c["id"] for c in sent[0]["cases"]] == ["1", "3"], sent
     assert [case["kind"] for case in server.tutor_view(fake)["cases"]] == ["example", "accuracy", "accuracy", "accuracy", "efficiency", "efficiency"]  # 엔진이 공개 예시를 가른다
     assert (server.tutor_view(fake)["cases"][0]["line"], server.tutor_view({**fake, "status": "compile_error", "compile_line": 6})["compile_line"]) == (3, 6)  # 오류의 줄을 엔진이 안다(내 블록의 줄인지 가른다)
     assert (body["repeat"], again["repeat"], other["repeat"], changed["repeat"]) == (False, True, False, False)
