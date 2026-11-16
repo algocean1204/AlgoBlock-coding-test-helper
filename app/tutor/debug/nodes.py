@@ -98,7 +98,9 @@ def check_reply(state: MainState) -> dict:
            or not quotes_ok(without_code(text), state["ctx"].problem_text, said, double=True)
            or unsaid_credit(text, req.text or "")  # 하지 않은 판단을 인정했다
            # 첫 질문이 원인 줄이나 고친 줄의 조각을 알려 주면 사다리가 무너진다('4줄에서…', '네 번째 줄', 'count.get(name, 0) + 1로')
-           or (first and (rules.names_line(text) or rules.leaks_piece(text, draft["fixed_line"], req.code or ""))))
+           or (first and (rules.names_line(text) or rules.leaks_piece(text, draft["fixed_line"], req.code or "")))
+           # 줄 번호를 말하는 말은 고칠 것(고친 줄의 조각)을 함께 말하지 않는다
+           or (rules.names_line(text) and rules.leaks_piece(text, draft["fixed_line"], req.code or "")))
     if first:
         report = req.report or {}
         text = rules.symptom_question(report) if bad else f"{rules.symptom(report)} {text}"

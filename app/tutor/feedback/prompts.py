@@ -8,12 +8,13 @@ from ..common.talk_rules import ANSWER_LEAD, BACK_LEAD, BANNED, CHECKED, RETRY_L
 from ..knowledge.ontology import PITFALLS, PREREQUISITE
 from ..state import MainState
 
+# advice는 원인과 '어디를 볼지'까지만 준다. 고치는 순서·지울 줄·새로 짜는 차례는 주지 않는다(스스로 찾을 거리를 남긴다)
 ADVICE = {
-    "keep_flow": "순서 유지: 그 순서를 지킨 채 고칠 곳",
-    "canonical": "정석으로: 정석 블록 순서로 바꾸라는 문장과 바꿀 첫 블록",
-    "fresh": "새로 짜기: 흐름을 먼저 떠올리라는 문장",
+    "keep_flow": "순서 유지: 그 순서를 지킨 채 고칠 곳이 어디인지(어디를 볼지만)",
+    "canonical": "정석으로: 정석 블록 순서와 달라지는 첫 곳이 어디인지(어디를 볼지만)",
+    "fresh": "새로 짜기: 흐름을 먼저 떠올려 보라는 문장",
 }
-SOLO_ADVICE = {**ADVICE, "canonical": "정석으로: 정석 풀이 순서로 바꾸라는 문장과 먼저 바꿀 곳"}
+SOLO_ADVICE = {**ADVICE, "canonical": "정석으로: 정석 풀이 순서와 달라지는 첫 곳이 어디인지(어디를 볼지만)"}
 # 블록 순서를 짜는 일은 '튜터와 차례로'에만 있다. '튜터의 질문으로'는 튜터가 정한 블록을 말로 찾는 방식이라 '정석 블록 순서로 다시 짜고 바꿀 첫 블록은 블록 1'이 맞지 않았다
 WAY_TEXT = {
     "chair": "이 사용자는 '튜터의 질문으로' 풀었다: 튜터의 질문에 답하며 튜터가 정한 블록을 하나씩 찾았다. 블록 순서를 짜거나 바꾼 일이 없으니 "
@@ -44,6 +45,7 @@ def system(blocks: bool) -> str:
         "5. 수를 말할 때는 문제 글의 제한에서 계산한 값만 말하고, 계산하지 않았으면 수를 말하지 않는다.",
         f"3. 생각을 닫는 말({', '.join(BANNED)})을 쓰지 않는다.",
         "힌트와 조언에 코드와 코드 블록을 쓰지 않는다. 사용자 코드를 고쳐 쓰지 않는다.",
+        "analysis와 advice는 원인과 어디를 볼지까지만 말한다. 고치는 순서, 지울 줄, 어떤 줄부터 새로 짜라는 말은 하지 않는다.",
         BLOCK_WORD if blocks else SOLO_WORD,
     )
 

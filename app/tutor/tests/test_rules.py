@@ -756,9 +756,9 @@ class DebugOpeningRuleTest(unittest.TestCase):
         from ..debug.rules import leaks_piece, names_line
         from ..turn.moves import rule_verdict
 
-        for said in ("4번째 줄", "4줄에서", "12행", "네 번째 줄", "열 번째 행", "line 4", "Line 12"):
+        for said in ("4번째 줄", "4줄에서", "12행", "네 번째 줄", "열 번째 행", "line 4", "Line 12", "3번 줄의", "10번 행"):
             self.assertTrue(names_line(f"{said} count는 몇인가요?"), said)
-        for said in ("한 줄씩 따라가 보면 어디서 달라질까요?", "코드 첫 줄부터 따라가 보면 어떨까요?", "두 번째 tom을 만나면 count는 몇인가요?"):
+        for said in ("3번 반복할 때 어디서 달라질까요?", "한 줄씩 따라가 보면 어디서 달라질까요?", "코드 첫 줄부터 따라가 보면 어떨까요?", "두 번째 tom을 만나면 count는 몇인가요?"):
             self.assertFalse(names_line(said), said)
         code = "for name in a:\n    count[name] = 1"
         self.assertTrue(leaks_piece("count.get(name, 0) + 1로 바꾸면?", "count[name] = count.get(name, 0) + 1", code))
@@ -766,6 +766,17 @@ class DebugOpeningRuleTest(unittest.TestCase):
         for text in ("기대 답 보여줘", "예상 답 알려 주세요"):  # 기대한 값을 묻는 말은 답 요청이 아니다
             self.assertNotEqual(getattr(rule_verdict(text), "aside", ""), "A", text)
         self.assertEqual(rule_verdict("답 알려 주세요").aside, "A")
+
+
+class FeedbackAdviceTest(unittest.TestCase):
+    def test_advice_points_where_to_look_not_the_fix_order(self):
+        from ..feedback.prompts import ADVICE, SOLO_ADVICE, system
+
+        for line in (ADVICE["keep_flow"], ADVICE["canonical"], SOLO_ADVICE["canonical"]):
+            self.assertIn("어디", line)
+        for line in (*ADVICE.values(), *SOLO_ADVICE.values()):
+            self.assertFalse(any(w in line for w in ("지우", "바꾸라")), line)
+        self.assertIn("고치는 순서", system(True))
 
 
 class UnsaidCreditTest(unittest.TestCase):
