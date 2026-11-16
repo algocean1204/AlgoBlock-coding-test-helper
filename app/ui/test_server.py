@@ -513,9 +513,17 @@ def readiness() -> None:
         assert history(*[fail(pid, "entry_missing", {"accuracy": [0, 0]}, "java") for pid in three])["patterns"][0]["line"].startswith("Java 코드로 낸 3문제(")
     # 강·약 규칙: 튜터와 함께 첫 제출에 푼 3문제는 강점이 아니다. 한 문제에서 시간 초과 5번 뒤 통과는 약점이 아니다
     hashed = lambda body: next(row for row in body["themes"] if row["key"] == "hash")  # noqa: E731
-    assert hashed(history(*[solve(pid, talk=EARLY) for pid in hash5[:3]]))["state"] == "progress"
+    assert hashed(history(*[solve(pid, talk=EARLY) for pid in hash5[:3]]))["state"] == "weak"  # 강점이 아니고, 도움에만 기댄 통과라 약한 주제
     assert hashed(history(*[solve(pid) for pid in hash5[:3]]))["state"] == "strong"
     assert hashed(history(*[solve(pid, fails=5 if n == 0 else 0) for n, pid in enumerate(hash5)]))["state"] != "weak"
+    # 도움에 기대 통과한 주제는 약한 주제다: 서로 다른 두 문제를 모두 도움을 받아 통과 → 약함, 도움 없이 푼 문제가 하나라도 있으면 아님, 한 문제만이면 판정하지 않는다
+    assert hashed(history(*[solve(pid, helped=EARLY) for pid in hash5[:2]]))["state"] == "weak"
+    assert hashed(history(*[solve(pid, hints_seen=1, helped=EARLY) for pid in hash5[:4]]))["state"] == "weak"
+    assert hashed(history(solve(hash5[0]), solve(hash5[1], helped=EARLY)))["state"] == "progress"
+    assert hashed(history(*[solve(pid) for pid in hash5[:2]]))["state"] == "progress"
+    assert hashed(history(solve(hash5[0], helped=EARLY)))["state"] == "progress"
+    weakened = history(*[solve(pid, helped=EARLY) for pid in hash5[:2]])
+    assert any(row["key"] == "hash" and "도움 없이 푼 문제가 아직 없어요" in row["why"] for row in weakened["weaknesses"])
     # '새 주제 시작'은 학습 지도 순서다(스택·큐 → BFS·DFS가 힙·DP보다 먼저)
     fresh = [row["theme_name"] for row in history()["next"] if row["why"] == "새 주제 시작"]
     assert fresh == [server.theme_name(key) for key in server.PREREQS][:len(fresh)], fresh
