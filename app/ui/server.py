@@ -2100,18 +2100,27 @@ def left(key: str, level: int, levels: list, fresh: list, after: list) -> dict:
     return {"key": key, "name": theme_name(key), "level": level, "solved": len(levels), "top": top, "more": more, "todo": todo, "after": after}
 
 
+def mastered(unaided: dict, key: str, level: int) -> bool:
+    """주제를 익혔는가: 도움 없이 MASTER_COUNT문제 이상 풀었고 그중 가장 높은 단계가 level 이상."""
+    return len(unaided.get(key, [])) >= MASTER_COUNT and max(unaided[key]) >= level
+
+
+def prereq_root(key: str, basic: dict) -> str:
+    """key의 선수 주제 가운데 기초를 못 익힌 것이 있으면 그쪽으로 거슬러 올라간 첫 주제(없으면 key). 준비도 칸과 추천 큐가 같이 쓴다."""
+    while any(not basic[p] for p in PREREQS[key]):
+        key = next(p for p in PREREQS[key] if not basic[p])
+    return key
+
+
 def readiness(unaided: dict, started: set, fresh: dict) -> dict:
     """준비도와 다음 단계까지 남은 주제(학습 지도 순서). unaided: 주제 → 도움 없이 푼 기본 문제의 단계들, fresh: 주제 → 아직 통과하지 않은 기본 문제의 단계들."""
-    def mastered(key: str, level: int) -> bool:
-        return len(unaided.get(key, [])) >= MASTER_COUNT and max(unaided[key]) >= level
-
-    basic = {key: mastered(key, BASIC_LEVEL) for key in PREREQS}
+    basic = {key: mastered(unaided, key, BASIC_LEVEL) for key in PREREQS}
     solved = sum(len(levels) for levels in unaided.values())
     need = {key: BASIC_LEVEL for key in ESSENTIAL if not basic[key]}
     if need:
         stage = "hold" if solved < READY_MIN else "building"
     else:
-        need = {key: REAL_LEVEL for key in ESSENTIAL if not mastered(key, REAL_LEVEL)} | {key: BASIC_LEVEL for key in FREQUENT if not basic[key]}
+        need = {key: REAL_LEVEL for key in ESSENTIAL if not mastered(unaided, key, REAL_LEVEL)} | {key: BASIC_LEVEL for key in FREQUENT if not basic[key]}
         stage = "easy" if need else "practice"
     line = {"hold": f"아직 판단하기에 기록이 적어요. 도움 없이 {READY_MIN}문제를 풀면 알려 드릴게요(지금 {solved}문제).",
             "building": f"도움 없이 {solved}문제를 풀었어요. 쉬운 코딩테스트 도전까지 필수 주제 {len(need)}개가 남았어요.",
@@ -2122,8 +2131,7 @@ def readiness(unaided: dict, started: set, fresh: dict) -> dict:
     # 다음에 배울 주제: 남은 것 가운데 먼저 익힐 주제를 모두 익힌 것(필수 → 자주, 시작한 주제, 지도 순서). 없으면 첫 주제의 못 익힌 선수 주제로 거슬러 간다
     order = sorted(need, key=lambda key: (key not in ESSENTIAL, key not in started, MAP_ORDER[key]))
     focus = next((key for key in order if all(basic[p] for p in PREREQS[key])), order[0] if order else None)
-    while focus and any(not basic[p] for p in PREREQS[focus]):
-        focus = next(p for p in PREREQS[focus] if not basic[p])
+    focus = prereq_root(focus, basic) if focus else None
     return {"stage": stage, "label": STAGES[stage], "line": line, "solved": solved, "focus": focus,
             "goal": STAGES["practice" if stage == "easy" else "easy"] if need else None,  # 남은 것이 향하는 단계
             "remaining": [left(key, need[key], unaided.get(key, []), fresh.get(key, []), [theme_name(p) for p in PREREQS[key] if not basic[p]])
@@ -2244,17 +2252,22 @@ def learning_report(t) -> dict:
     last = {pid: max(str(stamps.get(pid) or ""), by_problem[pid][-1]["at"] if pid in by_problem else "") for pid in PROBLEMS}
     writing = sorted((pid for pid in PROBLEMS if pid not in solved and (pid in by_problem or pid in mine_code or pid in stamps)), key=lambda pid: last[pid], reverse=True)
     queue = [({"id": pid, "title": PROBLEMS[pid].title, "level": PROBLEMS[pid].level}, PROBLEMS[pid].theme_name or (theme_name(theme_of[pid]) if theme_of.get(pid) else ""),
-              "쓰던 문제예요.") for pid in writing[:1]]
+              "쓰던 문제예요.", None) for pid in writing[:1]]  # 키가 None이면 선수 주제를 보지 않는다(쓰던 문제·해설을 먼저 본 문제는 그대로)
     for row in weak:
-        queue += [(row["review"], row["name"], "해설을 먼저 본 문제예요. 힌트 없이 다시 풀어 보세요.")] if row["review"] else []
-        queue += [(row["next"], row["name"], "약한 주제예요: " + row["why"])]
+        queue += [(row["review"], row["name"], "해설을 먼저 본 문제예요. 힌트 없이 다시 풀어 보세요.", None)] if row["review"] else []
+        queue += [(row["next"], row["name"], "약한 주제예요: " + row["why"], row["key"])]
     # 까닭에는 주제·단계를 다시 적지 않는다(화면이 '해시 3단계 · '를 앞에 붙인다)
-    queue += [(row["next"], row["name"], "이어서 풀기") for row in theme_rows_ if row["state"] == "progress" and row["next"] and row["key"] in started]
-    queue += [(row["next"], row["name"], "새 주제 시작") for row in sorted(theme_rows_, key=lambda row: MAP_ORDER[row["key"]])  # 학습 지도 순서
+    queue += [(row["next"], row["name"], "이어서 풀기", row["key"]) for row in theme_rows_ if row["state"] == "progress" and row["next"] and row["key"] in started]
+    queue += [(row["next"], row["name"], "새 주제 시작", row["key"]) for row in sorted(theme_rows_, key=lambda row: MAP_ORDER[row["key"]])  # 학습 지도 순서
               if row["state"] == "new" or (row["state"] == "progress" and row["key"] not in started)]
-    queue += [(row["next"], row["name"], "한 단계 더") for row in theme_rows_ if row["state"] == "strong" and row["next"]]
+    queue += [(row["next"], row["name"], "한 단계 더", row["key"]) for row in theme_rows_ if row["state"] == "strong" and row["next"]]
+    basic = {key: mastered(unaided, key, BASIC_LEVEL) for key in PREREQS}
     todo_rows, picked = [], set()
-    for target, name, why in queue:
+    for target, name, why, key in queue:
+        # 선수 주제를 못 익힌 주제의 문제는 준비도 칸과 같은 규칙으로 선수 주제의 다음 문제로 바꾼다
+        if key and (root := prereq_root(key, basic)) != key:
+            row = next((row for row in theme_rows_ if row["key"] == root), {})
+            target, name, why = row.get("next"), row.get("name", ""), f"먼저 익힐 주제예요({theme_name(key)}의 선수 주제)"
         if target and target["id"] not in picked and len(todo_rows) < 5:
             picked.add(target["id"])
             todo_rows.append({"id": target["id"], "title": target["title"], "theme_name": name, "level": target["level"], "why": why})

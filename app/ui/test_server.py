@@ -489,6 +489,19 @@ def readiness() -> None:
     rest = stage(*[solve(pid) for pid in ids([k for k in ess if k not in ("bfs", "dfs")], (1, 2))])
     assert {row["key"] for row in rest["remaining"]} == {"bfs", "dfs"} and rest["focus"]["key"] == "stack_queue"
     assert next(row for row in rest["remaining"] if row["key"] == "bfs")["after"] == [server.theme_name("stack_queue")]
+    # 추천 큐도 같은 선수 규칙: DFS만 푼 기록이면 이어서 풀기가 DFS 2단계가 아니라 선수 주제(스택·큐)의 첫 문제다. 준비도 칸의 다음 주제와 같다
+    def stuck_ahead(body):  # 추천(쓰던 문제 말고)이 선수 주제가 모자란 주제의 문제인가: 준비도 칸의 '먼저 익힐 주제'와 견준다
+        blocked = {row["name"] for row in body["readiness"]["remaining"] if row["after"]}
+        return [row for row in body["next"] if row["why"] != "쓰던 문제예요." and row["theme_name"] in blocked]
+    sole = history(solve(levels[("dfs", 1)]))
+    assert not stuck_ahead(sole) and any(row["id"] == levels[("stack_queue", 1)] and row["why"].startswith("먼저 익힐 주제예요") for row in sole["next"])
+    assert not any(row["id"] == levels[("dfs", 2)] for row in sole["next"])
+    # 선수 주제를 익혔으면 그대로 이어서 풀기(바뀌지 않는다). 선수가 없는 주제(해시)와 기록이 아주 적은 때도 그대로
+    ready = history(*[solve(pid) for pid in ids(["stack_queue", "brute_force"], (1, 2))], solve(levels[("dfs", 1)]))
+    assert not stuck_ahead(ready)
+    assert next(row for row in ready["next"] if row["why"] == "이어서 풀기" and row["theme_name"] == server.theme_name("dfs"))["id"] == levels[("dfs", 2)]
+    assert any(row["id"] == levels[("hash", 2)] and row["why"] == "이어서 풀기" for row in history(solve(levels[("hash", 1)]))["next"])
+    assert any(row["why"] == "새 주제 시작" for row in history()["next"])
     # 등록한 문제만 푼 기록은 준비도에 들지 않는다
     own = {f"own-{n}": SimpleNamespace(id=f"own-{n}", title="내 문제", sample=False, builtin=False, theme=ess[n % 2], theme_name="", level=0, mode="function") for n in range(6)}
     with patch.dict(server.PROBLEMS, own):
@@ -524,9 +537,9 @@ def readiness() -> None:
     assert hashed(history(solve(hash5[0], helped=EARLY)))["state"] == "progress"
     weakened = history(*[solve(pid, helped=EARLY) for pid in hash5[:2]])
     assert any(row["key"] == "hash" and "도움 없이 푼 문제가 아직 없어요" in row["why"] for row in weakened["weaknesses"])
-    # '새 주제 시작'은 학습 지도 순서다(스택·큐 → BFS·DFS가 힙·DP보다 먼저)
+    # '새 주제 시작'은 학습 지도 순서이고, 선수 주제가 있는 주제는 선수 주제를 익힌 뒤에야 나온다(기록이 없으면 선수 없는 주제만)
     fresh = [row["theme_name"] for row in history()["next"] if row["why"] == "새 주제 시작"]
-    assert fresh == [server.theme_name(key) for key in server.PREREQS][:len(fresh)], fresh
+    assert fresh == [server.theme_name(key) for key in server.PREREQS if not server.PREREQS[key]][:len(fresh)], fresh
     # 주제를 '자동'으로 둔 등록 문제: 대조 검증이 all이면 풀이 계획의 유형으로 실패 수·약점 판정에 든다(기본 문제 칸·준비도에는 들지 않는다).
     # 고른 주제가 먼저이고, 계획의 유형과 다르면 둘을 나란히 보인다
     auto, auto2, partly, chosen = (server.register(GOOD)["id"] for _ in range(4))
