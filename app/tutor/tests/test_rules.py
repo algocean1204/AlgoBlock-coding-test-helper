@@ -768,6 +768,54 @@ class DebugOpeningRuleTest(unittest.TestCase):
         self.assertEqual(rule_verdict("답 알려 주세요").aside, "A")
 
 
+class UnsaidCreditTest(unittest.TestCase):
+    """'잘 모르겠어요'에 '재귀 깊이는 원인이 아니라는 점을 짚으셨는데, 그 판단은 맞는 방향입니다'라고 답했다. 한 말의 두 물음 가운데 하나만 받았다."""
+
+    def test_credit_for_unsaid_judgement_is_caught_and_dropped(self):
+        from ..common.talk_rules import asked_count, many_asks_line, repair, unsaid_credit
+
+        said = "재귀 깊이는 원인이 아니라는 점을 짚으셨는데, 그 판단은 맞는 방향입니다. 그럼 어느 값부터 따라가 볼까요?"
+        self.assertEqual(len(unsaid_credit(said, "잘 모르겠어요")), 1)
+        self.assertIn("말하지 않은 판단 인정", reply_problems(said, move="trace", problem="", user="잘 모르겠어요"))
+        self.assertEqual(repair(said, "", user="잘 모르겠어요"), "어느 값부터 따라가 볼까요?")
+        leaned = "짚으신 대로 재귀 깊이를 보면 어느 값부터 볼까요?"  # 생각 없는 말 뒤에 그 말에 기대는 질문
+        self.assertTrue(unsaid_credit(leaned, "모르겠어요") and not unsaid_credit(leaned, "재귀 깊이는 원인이 아닌 것 같아요"))
+        self.assertTrue(unsaid_credit("그 판단은 맞는 방향입니다. 다음은요?", "재귀 깊이는 원인이 아닌 것 같아요"))  # 말한 판단도 판정하지 않는다
+        for fine in ("그 방향이 맞는지 작은 예로 확인해 보세요. 어느 값부터 볼까요?", "그 생각이 맞는지 어떻게 확인할 수 있을까요?"):
+            self.assertEqual(unsaid_credit(fine, "모르겠어요"), [], fine)
+        self.assertEqual(asked_count("이름별로 세면 되나요? 그리고 k는 왜 필요한가요"), 2)
+        self.assertEqual(asked_count("이름별로 세면 될 것 같아요"), 0)
+        # 한 일을 묻는 질문은 생각 없는 말 뒤에도 걸리지 않는다(판단을 받는 동사만 본다)
+        for fine in ("그 입력을 손으로 따라가 보셨나요?", "실패한 입력을 첫 줄부터 직접 따라가 보셨나요?", "앞에서 찾으신 값은 어디에 쓰이나요?"):
+            self.assertEqual(unsaid_credit(fine, "잘 모르겠어요"), [], fine)
+        self.assertEqual(asked_count("`a > b ? a : b` 꼴은 뭔가요"), 1)  # 코드 속 '?'는 세지 않고, '뭔가요'는 센다
+        self.assertEqual(asked_count("이거 맞나\n변수가 뭐야"), 2)
+        self.assertEqual(asked_count("같은 이름이 또 나오니까 하나 더해요"), 0)
+        self.assertEqual(asked_count("끝까지 봐야 하니까"), 0)  # '~니까'는 물음 어미가 아니다
+        self.assertEqual(asked_count("x = a ? b : c 에서 ? 는 뭐죠?"), 1)  # 코드 모양 줄도 남기고, 공백 뒤의 '?'는 문장 끝이 아니다
+        self.assertEqual(many_asks_line("이름별로 세면 될 것 같아요. k는 왜 있나요?"), [])
+        self.assertTrue(many_asks_line("세면 되나요?\nk는 왜 있죠?")[0].startswith("사용자 말에 물음이 2개 있다."))
+
+    def test_rule_reaches_every_talking_prompt(self):
+        from ..common.talk_prompts import NOT_SAID
+        from ..chair.prompts import SYSTEM as CHAIR
+        from ..debug.prompts import SPEAK_SYSTEM
+        from ..followup.prompts import SYSTEM as FOLLOWUP
+        from ..guide.prompts import SYSTEM as GUIDE
+
+        for text in (CHAIR, GUIDE, FOLLOWUP, SPEAK_SYSTEM):
+            self.assertIn(NOT_SAID, text)
+
+    def test_debug_reply_with_unsaid_credit_falls_back(self):
+        from ..debug import nodes
+        from ..state import TutorRequest
+
+        draft = {"step_name": "trace", "recent": [], "hash": "h", "kind": "logic", "line": 7, "cause": "", "fixed_line": "", "step": 1}
+        state = {"request": TutorRequest(kind="debug", problem_id="p1", code="a = 1", text="잘 모르겠어요"), "ctx": fakes.context(),
+                 "draft": draft, "reply_draft": "재귀 깊이는 원인이 아니라는 점을 짚으셨는데, 그 판단은 맞는 방향입니다."}
+        self.assertEqual(nodes.check_reply(state)["result"]["reply"], nodes.rules.FALLBACK["trace"])  # 지우면 질문이 남지 않는다: 대체 질문
+
+
 class DebugSaidLineTest(unittest.TestCase):
     def test_line_named_in_reply_is_marked(self):
         """말로 '7번째 줄'을 짚었는데 결과의 line이 비어 편집기에 표시가 없었다."""

@@ -7,7 +7,7 @@ from ..llm import cached_user
 from ..common.progress_view import active_plan
 from ..common.scope import algorithm_line
 from ..common.talk_prompts import CONCEPT_FIRST, HARD_STEP, learner_lines
-from ..common.talk_rules import FALLBACK, kind_word, note_fallback, repair, reply_problems
+from ..common.talk_rules import FALLBACK, kind_word, many_asks_line, note_fallback, repair, reply_problems
 from ..knowledge.ontology import hidden_terms
 from ..request_check.nodes import mode_messages
 from ..state import MainState, MovePlan, TurnContext
@@ -34,6 +34,7 @@ def speak_messages(state: MainState, turn: TurnContext, move: MovePlan, system: 
     aside = "" if aside == "W" else aside  # 뜻을 묻는 말은 그 말을 받아 답한다(term)
     if turn.text and not aside:
         lines.append(f"사용자 말:{turn.text}")
+        lines += many_asks_line(turn.text)
     if aside:  # 그 말에는 답하지 않는다. 안내 문장은 엔진이 앞에 붙인다
         lines.append(f"사용자가 방금 {'답을 달라고 했다' if aside == 'A' else '문제와 무관한 말을 했다'}. 안내 문장은 앞에 따로 붙는다. "
                      "이 말이나 앞 대화의 부탁에 대해서는 아무 말도 하지 않고, 지금 블록을 겨눈 질문 한 문장만 쓴다.")
@@ -91,10 +92,10 @@ def checked_reply(state: MainState, move: MovePlan, text: str) -> tuple[str, lis
     replying = (state["request"].mode == "guide" and turn is not None and turn.event == "message" and bool(turn.text)
                 and not getattr(state.get("verdict"), "aside", ""))
     check = dict(move=move.move, problem=ctx.problem_text, reference=reference, later_names=[b.name for b in plan.blocks[move.target + 1 :]],
-                 said=said, language=ctx.language, loose_names=replying)
+                 said=said, language=ctx.language, loose_names=replying, user=turn_text(state))
     problems = reply_problems(text, **check)
     if not problems or not {"코드 펜스", "참고 코드", "뒤 블록 이름", "금지 표현", "동의로 시작", "3인칭 메모", "영어 지시문"} & set(problems):
-        text = repair(text, ctx.problem_text, said, move.move, reference, ctx.language)
+        text = repair(text, ctx.problem_text, said, move.move, reference, ctx.language, turn_text(state))
         problems = reply_problems(text, **check)
     if problems:
         LOG.info("대체 질문", extra={"move": move.move, "problems": problems})

@@ -262,6 +262,13 @@ class ChairTest(unittest.TestCase):
         done, fake = fakes.go(chair_state("그게 뭔지 몰라요"), {"chair.judge": ["[check]W"], "chair.ask": ["세다는 건 몇 번인지 헤아리는 거예요. 그럼 무엇을 세어 둘까요?"]})
         self.assertEqual((done["result"]["move"], fakes.tasks(fake)), ("term", ["chair.judge", "chair.ask"]))  # '모르겠어요'로 끊지 않고 판정한다
 
+    def test_two_asks_in_one_message_reach_the_prompt(self):
+        """한 말에 물음이 둘이면 하나에만 응했다. 질문 프롬프트에 물음 수와 받는 법을 넣는다."""
+        done, fake = fakes.go(chair_state("이름별로 세면 되나요? 그리고 k는 왜 필요한가요?"), {"chair.judge": ["[check]N1"], "chair.ask": ["k번째가 되는 때를 알려면 무엇을 세어 둘까요?"]})
+        self.assertIn("사용자 말에 물음이 2개 있다.", fakes.prompt(fake, "chair.ask"))
+        done, fake = fakes.go(chair_state("이름별로 세면 될 것 같아요"), {"chair.judge": ["[check]N1"], "chair.ask": ["같은 이름이 또 나오면요?"]})
+        self.assertNotIn("물음이", fakes.prompt(fake, "chair.ask").split("사용자 말:")[-1])
+
     def test_model_failure_is_error(self):
         done, _ = fakes.go(chair_state("한 번씩만 세면 될 것 같아요"), {"chair.judge": ["[check]N1"], "chair.ask": [LlmTimeout("늦음")]})
         self.assertEqual(done["error"].code, "llm_timeout")
