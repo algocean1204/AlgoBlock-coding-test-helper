@@ -42,12 +42,17 @@ now = time.monotonic  # 시험이 바꿔 끼우는 시계
 _MISSING = re.compile(r"NameError: name '(\w+)' is not defined|local variable '(\w+)'|symbol:\s+variable (\w+)|Unresolved reference:? '?(\w+)"
                       r"|[‘'](\w+)[’'] was not declared|undeclared identifier '(\w+)'|undefined: (\w+)|cannot find value `(\w+)`"
                       r"|ReferenceError: (\w+) is not defined|Cannot access '(\w+)' before initialization")
+# 없는 멤버·이름 오류의 원문(Java, C++, Rust, JavaScript)은 쉬운 말로 바꿔 알린다
+_NO_MEMBER = re.compile(r"^cannot find symbol: (\w+)$|no member named [‘'](\w+)[’']|has no member named [‘'](\w+)[’']"
+                        r"|no (?:method|field|function or associated item) named `(\w+)`|no field `(\w+)`|\.(\w+) is not a function")
+NO_MEMBER_END = "이름인지 확인해 보세요."
+NO_MEMBER = "`{name}`라는 이름을 찾지 못했어요. 철자가 맞는지, 그 값에서 쓸 수 있는 " + NO_MEMBER_END
 SHOWN = 80  # 말에 싣는 값의 최대 길이(오류 원문은 자르지 않는다)
 # 짝을 못 찾은 것을 '이 블록에서 만들어 주세요'(코드가 틀렸다는 말)로 말해, 그 말대로 하면 코드가 틀려지기도 했다. 짝을 못 찾았다는 사실과 할 수 있는 일을 말한다
-HOLD_NAME = ("튜터의 뒤 코드는 값을 {names} 이름으로 이어 써요. 내 코드에서 그 값이 어느 것인지 찾지 못해 이어 돌리지 못했어요. "
-             "그 이름으로 맞추거나, 맞다고 생각하면 '이대로 넘어가기'를 눌러요.")
+HOLD_NAME = ("다음 블록들은 이 값을 {names}라는 이름으로 써요. 내 코드에서 어느 변수가 그 값인지 찾지 못해 이어 돌리지 못했어요. "
+             "내 변수 이름을 그 이름으로 바꾸거나, 맞다고 생각하면 '이대로 넘어가기'를 눌러요.")
 # 이어 붙인 프로그램에 계획 코드로 이은 블록이 있으면 그 사실을 앞말로(내 코드가 틀렸다고 단정하지 않는다)
-LEADS = {"later": "뒤 블록을 튜터의 코드로 이어 돌리면", "earlier": "앞 블록을 튜터의 코드로 이어 돌리면", "both": "다른 블록을 튜터의 코드로 이어 돌리면"}
+LEADS = {"later": "뒤 블록은 튜터의 코드로 채워서 돌리면", "earlier": "앞 블록은 튜터의 코드로 채워서 돌리면", "both": "다른 블록은 튜터의 코드로 채워서 돌리면"}
 # 이어 돌린 실행이 끝까지 돌았는데 통과하지 못했다: 앱이 아는 것은 '튜터의 코드와 이어지지 않는다'뿐이다. 틀려서인지 다른 방식이어서인지는 모른다
 NOT_JOINED = ("아직 고칠 곳이 있거나, 튜터와 다른 방식으로 써서 튜터의 코드와 맞물리지 않는 거예요. "
               "고치거나 튜터의 차례에 맞춰 써 보고, 맞다고 생각하면 '이대로 넘어가기'를 눌러요.")
@@ -57,8 +62,8 @@ GUESSED_CUT = " 시간이 모자라 다른 짝은 다 돌려 보지 못해서 �
 # 'while'을 열고 증가를 다음 블록에 두려 하면 뒤 블록(계획 코드)에 증가가 없어 끝나지 않는다
 WHILE_NOTE = "반복을 끝내는 줄(값을 늘리거나 줄이는 줄)을 뒤 블록에 두려 했다면 이 블록에 적어 주세요."
 # 도우미 함수의 매개변수 차례를 바꾼 맞는 블록을 계획의 호출 차례가 만든 오류로 거부했다. 뒤 블록이 부르는 차례를 알린다
-HOLD_PARAMS = ("튜터의 뒤 코드는 이 블록의 함수를 매개변수 차례({names})로 불러요. 내 코드의 매개변수가 그 차례의 어느 값인지 찾지 못해 이어 돌리지 못했어요. "
-               "그 차례와 이름으로 맞추거나, 맞다고 생각하면 '이대로 넘어가기'를 눌러요.")
+HOLD_PARAMS = ("다음 블록들은 이 블록의 함수를 ({names}) 차례로 값을 넘겨 불러요. 내 함수의 매개변수가 그 차례의 어느 값인지 찾지 못해 이어 돌리지 못했어요. "
+               "내 매개변수를 그 차례와 이름으로 바꾸거나, 맞다고 생각하면 '이대로 넘어가기'를 눌러요.")
 # 반복 안에서 시작해 밖에서 끝나는 블록을 평평하게 적으면 바깥 줄도 반복 안에 놓였다(Python만)
 INDENT_NOTE = "이 블록은 앞 블록에서 연 반복이나 조건 안에서 시작해요. 그 밖에서 할 일이 있으면 그 줄을 첫 줄보다 덜 들여 써 주세요."
 KIND_WORD = {"compile_error": "컴파일 오류", "runtime_error": "실행 오류"}
@@ -198,6 +203,8 @@ def _error_row(text: str, first: bool = False, whole: bool = False) -> str:
         row = f"cannot find symbol: {symbol}" if symbol else row
     row = re.sub(r"\.? Did you mean: .*$", "", row)
     row = re.sub(r"[ ,]*(?:on |at )?\(?\bline \d+\)?", "", row)  # 이어 붙인 프로그램의 줄 번호는 사용자가 볼 수 없다(난 곳은 따로 말한다. 'deadline 5'는 낱말이다)
+    if found := _NO_MEMBER.search(row):
+        return NO_MEMBER.format(name=next(g for g in found.groups() if g))
     return " ".join(row.split()).replace("`", "'") if whole else _cut(row)
 
 
@@ -523,8 +530,18 @@ def _place(report: dict, spans: list[dict]) -> tuple[str, int, int, str] | None:
     span = next((s for s in spans if isinstance(line, int) and s["first"] <= line <= s["last"]), None)
     if span is None:
         return None
-    n = line - span["first"] + 1 + span["cut"]
+    gap = span.get("gap")  # 시작 코드의 가져오기 줄이 이 덩이 안에 들어갔다: 그 뒤의 줄은 넣은 수만큼 밀려 있다
+    if gap and line >= gap[0] - gap[1]:
+        if line < gap[0]:
+            return "tutor", span["block"], 0, ""
+        line -= gap[1]
+    idx = line - span["first"]
+    n = idx + 1 + span["cut"]
     rows = span["code"].rstrip().split("\n")
+    body = span.get("rows") or []
+    # 내 글의 그 줄과 실제로 난 줄의 글이 다르면 줄을 잘못 짚은 것이다: 블록의 줄 번호로 말하지 않고 다른 블록의 코드로 말한다
+    if span["whose"] != "tutor" and not (0 < n <= len(rows) and idx < len(body) and rows[n - 1].strip() == body[idx].strip()):
+        return "other", span["block"], 0, ""
     return span["whose"], span["block"], n, rows[n - 1].strip() if 0 < n <= len(rows) else ""
 
 
@@ -537,12 +554,15 @@ def failure_verdict(report: dict, spans: list[dict], program: bool, lead: str, a
     status = report.get("status")
     hint = False
     if status in KIND_WORD:
-        raw = f"`{_error_row(_raw_text(report), first=status == 'compile_error', whole=True)}`"
+        row = _error_row(_raw_text(report), first=status == "compile_error", whole=True)
+        raw = row if row.endswith(NO_MEMBER_END) else f"`{row}`"  # 쉬운 말로 바꾼 줄(NO_MEMBER)은 원문처럼 감싸지 않는다
         place, kind = _place(report, spans), KIND_WORD[status]
         if place is None:
             said = f"{kind}가 났는데 어느 줄에서 났는지는 알 수 없어요.\n{raw}"
         elif place[0] == "tutor":
             said = f"튜터의 코드({place[1] + 1}번 블록 자리)에서 {kind}가 났어요.\n{raw}"
+        elif place[0] == "other":
+            said = f"다른 블록의 코드에서 {kind}가 났어요.\n{raw}"
         else:
             whose = "내 블록" if place[0] == "this" else f"내 {place[1] + 1}번 블록"
             said = f"{whose} {place[2]}번째 줄(`{_tick(place[3])}`)에서 {kind}가 났어요.\n{raw}"
@@ -562,7 +582,7 @@ def failure_verdict(report: dict, spans: list[dict], program: bool, lead: str, a
 
 def _add(seen: str, note: str) -> str:
     """말 뒤에 문장을 잇는다. 글상자나 오류 원문 줄(`…`)로 끝난 말 뒤에는 줄을 바꿔서(원문이 어디서 끝나는지 보이게)."""
-    return f"{seen}{chr(10) if seen.endswith('`') else ' '}{note}"
+    return f"{seen}{chr(10) if seen.endswith(('`', NO_MEMBER_END)) else ' '}{note}"
 
 
 def _tick(text: str) -> str:

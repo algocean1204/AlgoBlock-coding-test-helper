@@ -1103,7 +1103,7 @@ def spliced_view(references: list[str], index: int, code: str, language: str, mi
     rows, spans = [], []
 
     def add(lines: list[str], block: int, whose: str, cut: int = 0, text: str = "") -> None:
-        spans.append({"first": len(rows) + 1, "last": len(rows) + len(lines), "block": block, "whose": whose, "cut": cut, "code": text})
+        spans.append({"first": len(rows) + 1, "last": len(rows) + len(lines), "block": block, "whose": whose, "cut": cut, "code": text, "rows": lines})
         rows.extend(lines)
 
     for i, ref in enumerate(references):
@@ -1118,7 +1118,9 @@ def spliced_view(references: list[str], index: int, code: str, language: str, mi
         else:
             add(swap_names(ref, tables[i] if tables else {}, language).split("\n"), i, "tutor")
     lead, at = starter_imports(rows, starter, language), import_end(rows, language)
-    for item in spans:  # 넣은 자리 뒤의 줄 번호만 밀린다
+    for item in spans:  # 넣은 자리 뒤의 줄 번호만 밀린다(자리가 한 덩이 안이면 그 덩이의 뒤쪽 줄만: gap = 밀리기 시작하는 줄, 밀린 수)
+        if item["first"] <= at < item["last"] and lead:
+            item["gap"] = (at + len(lead) + 1, len(lead))
         item["first"] += len(lead) if item["first"] > at else 0
         item["last"] += len(lead) if item["last"] > at else 0
     return "\n".join([*rows[:at], *lead, *rows[at:]]), spans
