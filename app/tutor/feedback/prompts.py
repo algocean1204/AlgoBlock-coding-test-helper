@@ -45,7 +45,7 @@ def used_blocks(ctx) -> bool:
     return bool(ctx.chair or ctx.guide or ctx.block_states)
 
 
-STILL = ("basis", "recap", "run", "close", "done", "write")  # 같은 블록에 남았어도 막힌 것이 아닌 말(근거 질문, 마지막 정리, 가이드에서 맞힌 빈칸을 코드로 적으라는 말)
+STILL = ("basis", "recap", "run", "close", "done", "write", "term")  # 같은 블록에 남았어도 막힌 것이 아닌 말(근거 질문, 마지막 정리, 가이드에서 맞힌 빈칸을 코드로 적으라는 말)
 # 제출 결과 종류를 화면(통계)이 쓰는 말로('runtime_error 1번, failed 1번'을 모델이 그대로 옮겼다)
 FAIL_WORD = {"failed": "오답", "wrong_answer": "오답", "runtime_error": "실행 오류", "timeout": "시간 초과", "compile_error": "컴파일·형식 오류",
              "memory_limit": "메모리 초과", "output_limit": "출력 초과"}

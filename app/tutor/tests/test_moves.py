@@ -99,6 +99,23 @@ class ChairMoveTest(unittest.TestCase):
         self.assertEqual((missed.move, missed.advance, missed.saved), ("done", False, RETRY_LEAD + fakes.HINTS1[1]))  # 확인 항목(답)을 인용하지 않는다
 
 
+class BeginnerMoveTest(unittest.TestCase):
+    """입문자가 '그게 뭐예요?'라고 물으면 되묻기만 했고, '너무 어려워요'에 같은 질문을 되풀이했다."""
+
+    def test_term_question_gets_meaning_then_returns(self):
+        for mode in ("chair", "guide"):
+            got = pick_move(mode, PLAN, turn(text="그게 뭐예요?", used=["open"]), Verdict(False, aside="W"))
+            self.assertEqual((got.move, got.advance, got.target, got.saved, got.lead), ("term", False, 0, None, ""), mode)  # 모델이 뜻과 예를 짓는다
+
+    def test_too_hard_gets_smaller_saved_hint(self):
+        from ..common.talk_rules import HARD_LEAD
+
+        got = pick_move("chair", PLAN, turn(text="너무 어려워요", used=["open"]), None)
+        self.assertEqual((got.lead, got.saved), (HARD_LEAD, fakes.HINTS1[1]))  # 다음 저장 힌트가 한 칸 더 작은 질문이다
+        plain = pick_move("chair", PLAN, turn(text="모르겠어요", used=["open"]), None)
+        self.assertEqual((plain.lead, plain.saved), ("", fakes.HINTS1[1]))  # 어렵다는 말이 없으면 앞말도 없다
+
+
 class GuideMoveTest(unittest.TestCase):
     def pick(self, verdict, **kwargs):
         return pick_move("guide", PLAN, turn(**kwargs), verdict)

@@ -2,7 +2,7 @@
 
 import re
 
-from ..common.talk_rules import (ALL_FILLED, ANSWER_LEAD, BACK_LEAD, FALLBACK, FILL_TIP, REPLAN_LEAD, RETRY_LEAD, STUCK_LEAD,
+from ..common.talk_rules import (ALL_FILLED, ANSWER_LEAD, BACK_LEAD, FALLBACK, FILL_TIP, HARD_LEAD, REPLAN_LEAD, RETRY_LEAD, STUCK_LEAD,
                                 open_lead, sentences)
 from ..common.solution import shown_kind
 from ..state import Block, BlockPlan, MovePlan, TurnContext, Verdict
@@ -10,7 +10,8 @@ from ..state import Block, BlockPlan, MovePlan, TurnContext, Verdict
 LADDER = {"chair": ("open", "clue", "trace"), "guide": ("blank", "tool", "shape")}
 LAST_MOVE = {"chair": "recap", "guide": "run"}
 CLAIM_CHARS = 10  # 공백을 뺀 사용자 말이 이만큼이면 가정을 짚을 만한 주장으로 본다
-CONFUSED = ("모르", "몰라", "감이 안", "헷갈", "막혔")  # 막힌 말은 반박(assume)이 아니라 사다리로 돕는다
+CONFUSED = ("모르", "몰라", "감이 안", "헷갈", "막혔", "어려", "어렵")  # 막힌 말은 반박(assume)이 아니라 사다리로 돕는다
+HARD = ("어려", "어렵", "이해가 안", "이해 안")  # 어렵다는 말: 같은 질문을 되풀이하지 않고 더 작게 나눈다
 OPENING = ("start", "next", "replan")  # 사용자 말 없이 블록의 첫 질문을 내는 사건
 FOLLOW_UNTIL = 1  # 둘째 블록까지만 사용자 방법으로 다시 짠다. 뒤에서는 지금 계획으로 이어 간다
 RUNG0 = ("replan",)  # 사다리 첫 칸으로 세는 다른 이름
@@ -23,6 +24,11 @@ FOUND_TIP = "블록 칸에 이 블록의 코드를 적어 보세요. "  # 의자
 WRITE_TIP = "그 생각을 이 블록의 코드 칸에 코드로 적고 '블록 코드 확인'을 눌러 보세요. 확인을 통과하면 다음 블록이 열려요."
 WRITE_TIP_LAST = "그 생각을 이 블록의 코드 칸에 코드로 적고 '블록 코드 확인'을 눌러 보세요. 마지막 블록이라, 확인을 통과하면 모은 코드로 풀이를 돌려 볼 수 있어요."
 _ASK_ANSWER = re.compile(r"답.{0,3}(알려|줘|주세요|보여)")
+
+
+def hard(text: str) -> bool:
+    """사용자가 어렵다고 했는가('너무 어려워요', '이해가 안 돼요')."""
+    return any(word in (text or "") for word in HARD)
 
 
 def signal_text(block: Block, miss: int | None) -> str:
@@ -97,6 +103,8 @@ def _pick_move(mode: str, plan: BlockPlan, turn: TurnContext, verdict: Verdict |
     if (mode == "chair" and turn.event == "message" and verdict is not None and verdict.other
             and allow_follow and index <= FOLLOW_UNTIL and not turn.followed_before):
         return MovePlan("replan", index, False)  # 말이 아니라 '사용자 방법으로 다시 짜기' 요청이다
+    if turn.event == "message" and verdict is not None and verdict.aside == "W":
+        return MovePlan("term", index, False)  # 낱말의 뜻을 물었다: 모델이 짧은 뜻과 예를 준 뒤 원래 질문으로 돌아간다. 사다리 칸을 쓰지 않는다
     if turn.event == "message" and verdict is not None and verdict.aside:
         return hinted(ANSWER_LEAD if verdict.aside == "A" else BACK_LEAD)  # 고정 앞말 뒤에 다음 저장 힌트
     if turn.event == "message" and index == len(blocks) - 1 and (LAST_MOVE[mode] in used or "done" in used):
@@ -104,7 +112,7 @@ def _pick_move(mode: str, plan: BlockPlan, turn: TurnContext, verdict: Verdict |
     if mode == "chair" and turn.event == "message" and used[-1:] == ["basis"]:
         return advance()  # 이미 찾은 블록의 근거 질문에 답했다. 답을 다시 판정하지 않는다
     if turn.event == "message" and empty_answer(turn.text):
-        return hinted()  # 내용 없는 답: 모델이 짓지 않는다
+        return hinted(HARD_LEAD if hard(turn.text) else "")  # 내용 없는 답: 모델이 짓지 않는다. 다음 저장 힌트가 한 칸 더 작은 질문이다
     ok = bool(verdict and verdict.ok)
     if turn.event == "block_filled":
         # 고정 앞말 뒤에 실행에서 본 것 한 줄, 그다음 저장 힌트(저장 힌트만으로는 그 코드의 문제와 상관없는 말이 많았다)

@@ -137,6 +137,8 @@ class VerdictTest(unittest.TestCase):
         self.assertEqual(parse_verdict("[check]Y e입니다").basis, "e")
         for bad in ("Y", "[check]", None):
             self.assertIsNone(parse_verdict(bad))
+        got = parse_verdict("[check]W")  # 낱말의 뜻을 묻는 말
+        self.assertEqual((got.ok, got.aside), (False, "W"))
 
 
 class TalkRuleTest(unittest.TestCase):
