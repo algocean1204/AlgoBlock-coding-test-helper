@@ -1035,6 +1035,66 @@ class GrammarRuleTest(unittest.TestCase):
         walrus = [row for row in made_statements("def solution(xs):\n    while n := len(xs):\n        xs.pop()\n    return 0\n", "python") if row[0] == "n"]
         self.assertTrue(walrus and walrus[0][3][1], walrus)  # Python의 괄호 없는 := 도 오른쪽 식을 잃지 않는다
 
+    def test_made_names_per_declaration_form(self):
+        """줄마다 새로 만드는 이름과 꼴이 정해져 있다(반복 머리·패턴·구조 분해·생성자 꼴 선언 포함)."""
+        from ..common.solution import made_statements
+
+        table = [
+            ("rust", "for i in 0..n {", [("i", "loop")]),
+            ("rust", "for (i, c) in s.chars().enumerate() {", [("i", "loop"), ("c", "loop")]),
+            ("rust", "while let Some(x) = stack.pop() {", [("x", "loop")]),
+            ("rust", "if let Some(v) = map.get(&k) {", [("v", "var")]),
+            ("rust", "let (a, b) = (1, 2);", [("a", "var"), ("b", "var")]),
+            ("rust", "let mut v = Vec::new();", [("v", "var")]),
+            ("cpp", "vector<int> v(n);", [("v", "var")]),
+            ("cpp", "vector<vector<int>> g(n, vector<int>());", [("g", "var")]),
+            ("cpp", "vector<int> a(n), b(m);", [("a", "var"), ("b", "var")]),
+            ("cpp", "auto [a, b] = p;", [("a", "var"), ("b", "var")]),
+            ("cpp", "for (auto& [k, v] : m) {", [("k", "loop"), ("v", "loop")]),
+            ("cpp", "const auto& [a, b] = p;", [("a", "var"), ("b", "var")]),
+            ("cpp", "for (const auto& [k, v] : m) {", [("k", "loop"), ("v", "loop")]),
+            ("cpp", "for (auto x : xs) {", [("x", "loop")]),
+            ("cpp", "int x = 0, y;", [("x", "var"), ("y", "var")]),
+            ("cpp", "sort(a.begin(), a.end());", []),
+            ("cpp", "cout << x(y);", []),
+            ("javascript", "const [a, b] = pair;", [("a", "var"), ("b", "var")]),
+            ("javascript", "const { x, y } = p;", [("x", "var"), ("y", "var")]),
+            ("javascript", "const { x: u, y = 2 } = p;", [("u", "var"), ("y", "var")]),
+            ("javascript", "for (const [k, v] of m) {", [("k", "loop"), ("v", "loop")]),
+            ("javascript", "for (const x of xs) {", [("x", "loop")]),
+            ("java", "for (int x : xs) {", [("x", "loop")]),
+            ("java", "int[] a = new int[n];", [("a", "var")]),
+        ]
+        for language, line, expected in table:
+            code = line + "\n" + ("}\n" if line.endswith("{") else "")
+            self.assertEqual([(n, kind) for n, kind, *_ in made_statements(code, language)], expected, f"{language}: {line}")
+        # 구조 분해의 이름마다 자리는 패턴 안의 실제 자리다(비운 자리와 '_'도 센다. 객체는 키, 중첩은 경로)
+        paths = lambda language, code: {row[0]: row[3][-1] for row in made_statements(code, language)}
+        self.assertEqual(paths("javascript", "const [, second, [x, y]] = t;\n"), {"second": "1", "x": "2.0", "y": "2.1"})
+        self.assertEqual(paths("javascript", "const { y: b, x: a, c: { d } } = p;\n"), {"b": "y", "a": "x", "d": "c.d"})
+        self.assertEqual(paths("rust", "while let Some(&(_, last)) = st.pop() {\n}\n"), {"last": "0.1"})
+        self.assertEqual(paths("rust", "let Point { x: px, y } = p;\n"), {"px": "x", "y": "y"})
+        self.assertEqual(made_statements("for _ in 0..n {\n}\n", "rust"), [])
+
+    def test_destructured_names_pair_by_real_position(self):
+        """비운 자리·'_'가 앞에 있어도 구조 분해 이름은 실제 같은 자리끼리 짝이 된다. 객체는 키로 짝이 된다."""
+        from ..turn.pairs import pair_block
+
+        cases = [
+            ("javascript", "for (const [, myLook] of people) {\n}\n", "for (const [name, look] of people) {\n}\n", {"myLook": "look"}),
+            ("rust", "while let Some(&(_, last_level)) = st.pop() {\n}\n", "while let Some(&(idx, lv)) = st.pop() {\n}\n", {"last_level": "lv"}),
+            ("javascript", "const [, second] = pair;\n", "const [a, b] = pair;\n", {"second": "b"}),
+            ("rust", "let (_, hi) = range;\n", "let (lo, top) = range;\n", {"hi": "top"}),
+            ("javascript", "const { y: b, x: a } = p;\n", "const { x, y } = p;\n", {"b": "y", "a": "x"}),
+            ("javascript", "const { a: { b } } = o;\n", "const { a: { c } } = o;\n", {"b": "c"}),
+            ("rust", "for _ in 0..n {\n}\n", "for k in 0..n {\n}\n", {}),
+            ("rust", "for (i, c) in s.chars().enumerate() {\n}\n", "for (j, ch) in s.chars().enumerate() {\n}\n", {"i": "j", "c": "ch"}),
+            ("rust", "let Point { x: px, y } = p;\n", "let Point { x: q, y: w } = p;\n", {"px": "q"}),
+        ]
+        for language, plan, mine, fixed in cases:
+            result = pair_block(plan, mine, {}, plan, set(), language)
+            self.assertEqual((result.fixed, result.groups), (fixed, []), f"{language}: {plan!r}")
+
     def test_entry_params_follow_each_grammar(self):
         from ..common.solution import entry_params
 
