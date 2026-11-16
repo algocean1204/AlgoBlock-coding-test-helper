@@ -141,6 +141,30 @@ def in_problem(phrase: str, problem: str) -> bool:
     return bool(pieces) and all(piece in _squash(problem) for piece in pieces)
 
 
+def _cut_in_word(piece: str, problem: str) -> bool:
+    """문제 글에서 이 조각이 나오는 자리가 모두 낱말 중간(앞 글자가 글자·숫자)이다. '번째로 빌려지는'('k번째로'에서 떼었다)."""
+    chars = _squash(piece)
+    if not chars:
+        return False
+    starts = [found.start() for found in re.finditer(r"\s*".join(map(re.escape, chars)), problem or "")]
+    return bool(starts) and all(at > 0 and (problem[at - 1].isalnum() or problem[at - 1] == "_") for at in starts)
+
+
+def broken_quotes(text: str, problem: str, cut: bool = False) -> list[str]:
+    """문제 글을 인용했는데 깨진 구절. 낱말 중간에서 떼어 시작했거나, cut이면 '…'로 줄인 것(저장 질문은 문장을 그대로 인용한다).
+    문제 글에 없는 인용은 quotes_ok가 본다."""
+    found = []
+    for match in _SINGLE.finditer(without_code(text or "")):
+        phrase = next(group for group in match.groups() if group is not None)
+        if not _HANGUL.search(phrase) or not in_problem(phrase, problem):
+            continue
+        whole = _squash(phrase) in _squash(problem)  # 문제 글 자체의 '…'(수열 줄임)는 줄인 인용이 아니다
+        pieces = [phrase] if whole else [piece for piece in re.split(r"\.{3}|…", phrase) if _squash(piece)]
+        if (cut and len(pieces) > 1) or any(_cut_in_word(piece, problem) for piece in pieces):
+            found.append(phrase)
+    return found
+
+
 def without_problem_quotes(text: str, problem: str) -> str:
     """문항 글을 그대로 인용한 따옴표 구간은 금지 표현 검사에서 뺀다."""
 
@@ -272,6 +296,8 @@ def reply_problems(
         found.append("뒤 블록 이름")
     if not quotes_ok(without_code(body), problem, "" if move == "clue" else said):
         found.append("문제 글에 없는 인용")
+    if broken_quotes(body, problem):
+        found.append("깨진 인용")
     plain = without_problem_quotes(body, f"{problem}\n{said}")
     if _NOTE.search(plain):
         found.append("3인칭 메모")  # '사용자는 …하게 하자' 같은 모델 메모가 샌 것
@@ -374,10 +400,33 @@ def note_fallback(where: str, problems: list[str], text: str) -> None:
     print(f"[{where}] 대체 질문: {', '.join(problems)} | {' '.join((text or '').split())[:160]}", file=sys.stderr)
 
 
-def hint_problems(hint: str, *, problem: str, reference: str, later_names: list[str], clue: bool) -> list[str]:
-    """계획에 저장할 의자 질문 검사. 3문장 제한은 보지 않는다(1–2문장으로 만들게 지시)."""
+_NAME = re.compile(r"(?<![A-Za-z0-9_])[A-Za-z_][A-Za-z0-9_]+(?![A-Za-z0-9_])")
+
+
+def code_names(text: str, code: str, problem: str) -> list[str]:
+    """말에 나온 코드 이름 가운데 문제 글에 없는 것('day일까지 점검이 몇 번인지': day는 참고 코드의 인자 이름이다). 코드 구간(백틱)은 보지 않는다."""
+    names = set(_NAME.findall(code or "")) - set(_NAME.findall(problem or ""))
+    return sorted(set(_NAME.findall(without_code(text or ""))) & names)
+
+
+SAME_HINT = 0.8  # 공백을 뺀 두 질문이 이만큼 같으면 같은 질문을 되풀이한 것이다
+
+
+def repeated_hints(hints: list[str]) -> bool:
+    """한 블록의 저장 질문 가운데 거의 같은 둘이 있다(첫 질문과 다음 힌트가 같은 문장이었다)."""
+    rows = [_squash(hint) for hint in hints if _squash(hint)]
+    return any(SequenceMatcher(None, a, b, autojunk=False).ratio() >= SAME_HINT for i, a in enumerate(rows) for b in rows[i + 1 :])
+
+
+def hint_problems(hint: str, *, problem: str, reference: str, later_names: list[str], clue: bool, code: str = "") -> list[str]:
+    """계획에 저장할 의자 질문 검사. 3문장 제한은 보지 않는다(1–2문장으로 만들게 지시).
+    code: 계획의 모든 참고 코드(문제 글에 없는 코드 이름을 거른다)."""
     found = reply_problems(hint, move="clue", problem=problem, reference="", later_names=later_names)  # 저장 질문의 인용은 모두 문항 글이어야 한다
     found = [item for item in found if item != "3문장 초과"]
     if reference.strip() and reference.strip() in hint:
         found.append("참고 코드")
+    if "깨진 인용" not in found and broken_quotes(hint, problem, cut=True):
+        found.append("깨진 인용")  # 줄인 인용('…')은 저장 질문에서만 막는다(대화는 줄인 인용을 받아 왔다)
+    if code_names(hint, code or reference, problem):
+        found.append("문제 글에 없는 코드 이름")
     return found
