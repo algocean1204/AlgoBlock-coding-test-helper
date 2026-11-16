@@ -63,6 +63,8 @@ _RUNTIME = tuple((re.compile(pattern), said + EASY_END) for pattern, said in (
     (r"Cannot read properties of (?:undefined|null)", "값이 없는(undefined, null) 걸 썼어요. 범위 밖 자리나 없는 키를 읽어 값이 없었는지 "),
     (r"sto\w+: out of range", "숫자가 너무 커서 그 형에 담지 못했어요. 바꾸는 글자의 크기를 "),
 ))
+_MISMATCH = re.compile(r"incompatible types|possible lossy conversion|cannot convert|no viable conversion|invalid conversion from|mismatched types")
+TYPE_MISMATCH = "값의 형이 맞지 않아요. 변수와 반환값의 형이 시작 코드와 같은지 " + EASY_END
 
 
 def _easy(row: str) -> str:
@@ -72,6 +74,12 @@ def _easy(row: str) -> str:
             name = next(g for g in found.groups() if g)
             return said.format(name=name, josa="이라는" if batchim(name) else "라는")
     return next((said for pattern, said in _RUNTIME if pattern.search(row)), "")
+
+
+def compile_easy(text: str) -> str:
+    """컴파일 오류 글의 첫 오류를 쉬운 말 한 줄로(없는 이름·멤버·클래스, 형이 맞지 않음). 흔하지 않은 오류는 빈 글."""
+    row = _error_row(text, first=True, whole=True, easy=False)
+    return _easy(row) or (TYPE_MISMATCH if _MISMATCH.search(row) else "")
 
 
 SHOWN = 80  # 말에 싣는 값의 최대 길이(오류 원문은 자르지 않는다)

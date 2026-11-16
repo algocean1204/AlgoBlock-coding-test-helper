@@ -1120,6 +1120,19 @@ def hint_by_block() -> None:
         assert t.store.study(pid)["hints_seen"] == 5 and t.store.study(pid)["help_first_at"]
 
 
+def compile_hints() -> None:
+    """컴파일 오류에는 실행 오류처럼 쉬운 설명 한 줄이 붙는다(흔한 것만: 없는 이름·멤버·클래스, 형이 맞지 않음). 흔하지 않은 오류는 원문만(되돌리면 실패)."""
+    java = "Solution.java:5: error: cannot find symbol\n    count.add(1);\n         ^\n  symbol:   method add(int)\n  location: variable count of type int\n1 error"
+    assert "`add`라는 이름을 찾지 못했어요" in server.compile_hint(java, "java"), server.compile_hint(java, "java")
+    assert "`foo`라는 이름을 찾지 못했어요" in server.compile_hint("Solution.java:3: error: cannot find symbol\n  symbol:   variable foo\n1 error", "java")
+    assert "값의 형이 맞지 않아요" in server.compile_hint("Solution.java:4: error: incompatible types: String cannot be converted to int\n1 error", "java")
+    assert "값의 형이 맞지 않아요" in server.compile_hint("error[E0308]: mismatched types\n --> main.rs:3:5", "rust")
+    assert "문법에 맞지 않는" in server.compile_hint("  File \"solution.py\", line 2\nSyntaxError: invalid syntax", "python")
+    assert server.compile_hint("Solution.java:2: error: ';' expected\n1 error", "java") == ""
+    body = server.result_body({"status": "compile_error", "reason": "", "compile": java, "cases": [], "language": "java"})
+    assert "`add`라는" in body["compile_hint"] and server.result_body({**{"status": "failed", "reason": "", "compile": "", "cases": [], "language": "java"}})["compile_hint"] == ""
+
+
 def no_tool() -> None:
     """언어 도구가 없어 채점하지 못한 것은 제출로 세지 않는다(새 제출도, 예전에 저장된 기록도)."""
     before = (next(row for row in call("/api/problems")[1]["problems"] if row["id"] == PID)["submitted"], call("/api/report")[1]["summary"]["submissions"])
@@ -3243,6 +3256,7 @@ def main() -> None:
         menu_and_title_note()
         hidden_cases()
         hint_by_block()
+        compile_hints()
         assert not fake.calls, fake.calls  # 고치기·지우기도 모델을 부르지 않는다
         checks()
         http()
