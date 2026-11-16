@@ -2206,6 +2206,11 @@ class BlockCheckTextTest(unittest.TestCase):
             said = failure_verdict(report, spans, False, "", False).seen
             self.assertIn("내 2번 블록의 마지막 줄", said)
             self.assertNotIn("튜터의 코드(3번 블록 자리)에서", said)
+            if language == "python":  # 채점기는 Python의 문법 오류를 실행 오류로, 처음 난 케이스의 줄과 함께 낸다
+                real = {"status": "runtime_error", "compile": "", "cases": [{"status": "runtime_error", "line": line, "error": "SyntaxError: invalid syntax"}]}
+                self.assertEqual(_place(real, spans)[0], "join")
+                late = {"status": "runtime_error", "compile": "", "cases": [{"status": "runtime_error", "line": line, "error": "NameError: name 'q' is not defined"}]}
+                self.assertNotEqual(_place(late, spans)[0], "join")  # 문법 오류가 아닌 실행 오류는 내 블록 탓으로 돌리지 않는다
 
     def test_other_code_wording(self):
         from ..turn.code_check import failure_verdict
