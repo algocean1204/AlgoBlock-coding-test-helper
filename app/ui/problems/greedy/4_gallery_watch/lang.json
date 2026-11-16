@@ -1,0 +1,26 @@
+{
+ "javascript": [
+  {
+   "file": "lang_1.js",
+   "trap": "javascript.sort_default",
+   "at": [
+    "helpers는 어떤 순서로든 주어질 수 있고"
+   ],
+   "fails": {
+    "2": "failed",
+    "18": "failed",
+    "23": "failed",
+    "24": "failed",
+    "25": "failed"
+   },
+   "outs": {
+    "2": "-1",
+    "18": "-1",
+    "23": "-1",
+    "24": "-1",
+    "25": "-1"
+   },
+   "source": 776987454
+  }
+ ]
+}

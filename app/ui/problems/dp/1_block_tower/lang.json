@@ -1,0 +1,121 @@
+{
+ "python": [
+  {
+   "file": "lang_1.py",
+   "trap": "python.negative_index",
+   "fails": {
+    "2": "failed",
+    "4": "failed"
+   },
+   "outs": {
+    "2": "3",
+    "4": "6"
+   },
+   "source": 2368212086
+  }
+ ],
+ "java": [
+  {
+   "file": "lang_1.java",
+   "trap": "java.int_overflow",
+   "at": [
+    "탑의 수는 2,147,483,647보다 클 수 있습니다"
+   ],
+   "fails": {
+    "22": "failed",
+    "23": "failed",
+    "24": "failed",
+    "25": "failed"
+   },
+   "outs": {
+    "22": "-463960867",
+    "23": "-736856391",
+    "24": "399884896",
+    "25": "86212607"
+   },
+   "source": 545628161
+  }
+ ],
+ "cpp": [
+  {
+   "file": "lang_1.cpp",
+   "trap": "cpp.int_overflow",
+   "at": [
+    "탑의 수는 2,147,483,647보다 클 수 있습니다"
+   ],
+   "fails": {
+    "22": "failed",
+    "23": "failed",
+    "24": "failed",
+    "25": "failed"
+   },
+   "outs": {
+    "22": "-463960867",
+    "23": "-736856391",
+    "24": "399884896",
+    "25": "86212607"
+   },
+   "source": 3690090308
+  },
+  {
+   "file": "lang_2.cpp",
+   "trap": "cpp.out_of_range",
+   "varies": true,
+   "source": 1457836150
+  }
+ ],
+ "rust": [
+  {
+   "file": "lang_1.rs",
+   "trap": "rust.i32_wrap",
+   "at": [
+    "탑의 수는 2,147,483,647보다 클 수 있습니다"
+   ],
+   "fails": {
+    "22": "failed",
+    "23": "failed",
+    "24": "failed",
+    "25": "failed"
+   },
+   "outs": {
+    "22": "-463960867",
+    "23": "-736856391",
+    "24": "399884896",
+    "25": "86212607"
+   },
+   "source": 1405758620
+  },
+  {
+   "file": "lang_2.rs",
+   "trap": "rust.usize_underflow",
+   "fails": {
+    "1": "runtime_error",
+    "2": "runtime_error",
+    "3": "runtime_error",
+    "4": "runtime_error",
+    "5": "runtime_error",
+    "6": "runtime_error",
+    "7": "runtime_error",
+    "8": "runtime_error",
+    "9": "runtime_error",
+    "10": "runtime_error",
+    "11": "runtime_error",
+    "12": "runtime_error",
+    "13": "runtime_error",
+    "14": "runtime_error",
+    "15": "runtime_error",
+    "16": "runtime_error",
+    "17": "runtime_error",
+    "18": "runtime_error",
+    "19": "runtime_error",
+    "20": "runtime_error",
+    "21": "runtime_error",
+    "22": "runtime_error",
+    "23": "runtime_error",
+    "24": "runtime_error",
+    "25": "runtime_error"
+   },
+   "source": 1780936251
+  }
+ ]
+}

@@ -1,0 +1,188 @@
+{
+ "python": [
+  {
+   "file": "lang_1.py",
+   "trap": "python.missing_key",
+   "fails": {
+    "1": "runtime_error",
+    "3": "runtime_error",
+    "4": "runtime_error",
+    "5": "runtime_error",
+    "6": "runtime_error",
+    "8": "runtime_error",
+    "10": "runtime_error",
+    "11": "runtime_error",
+    "12": "runtime_error",
+    "13": "runtime_error",
+    "14": "runtime_error",
+    "15": "runtime_error",
+    "16": "runtime_error",
+    "17": "runtime_error",
+    "18": "runtime_error",
+    "19": "runtime_error",
+    "20": "runtime_error",
+    "21": "runtime_error",
+    "22": "runtime_error",
+    "23": "runtime_error",
+    "24": "runtime_error",
+    "25": "runtime_error"
+   },
+   "source": 4136286672
+  }
+ ],
+ "java": [
+  {
+   "file": "lang_1.java",
+   "trap": "java.int_overflow",
+   "at": [
+    "모두 몇 개인지"
+   ],
+   "fails": {
+    "26": "failed"
+   },
+   "outs": {
+    "26": "705082704"
+   },
+   "source": 2308204890
+  },
+  {
+   "file": "lang_2.java",
+   "trap": "java.missing_key_null",
+   "fails": {
+    "1": "runtime_error",
+    "3": "runtime_error",
+    "5": "runtime_error",
+    "8": "runtime_error",
+    "10": "runtime_error",
+    "11": "runtime_error",
+    "12": "runtime_error",
+    "13": "runtime_error",
+    "14": "runtime_error",
+    "15": "runtime_error",
+    "16": "runtime_error",
+    "17": "runtime_error",
+    "18": "runtime_error",
+    "19": "runtime_error",
+    "20": "runtime_error",
+    "21": "runtime_error",
+    "22": "runtime_error",
+    "23": "runtime_error",
+    "24": "runtime_error",
+    "25": "runtime_error"
+   },
+   "source": 349679716
+  }
+ ],
+ "javascript": [
+  {
+   "file": "lang_1.js",
+   "trap": "javascript.missing_key_undefined",
+   "fails": {
+    "1": "failed",
+    "3": "failed",
+    "5": "failed",
+    "8": "failed",
+    "10": "failed",
+    "11": "failed",
+    "12": "failed",
+    "13": "failed",
+    "14": "failed",
+    "15": "failed",
+    "16": "failed",
+    "17": "failed",
+    "18": "failed",
+    "19": "failed",
+    "20": "failed",
+    "21": "failed",
+    "22": "failed",
+    "23": "failed",
+    "24": "failed",
+    "25": "failed"
+   },
+   "outs": {
+    "1": "null",
+    "3": "null",
+    "5": "null",
+    "8": "null",
+    "10": "null",
+    "11": "null",
+    "12": "null",
+    "13": "null",
+    "14": "null",
+    "15": "null",
+    "16": "null",
+    "17": "null",
+    "18": "null",
+    "19": "null",
+    "20": "null",
+    "21": "null",
+    "22": "null",
+    "23": "null",
+    "24": "null",
+    "25": "null"
+   },
+   "source": 4105753233
+  }
+ ],
+ "cpp": [
+  {
+   "file": "lang_1.cpp",
+   "trap": "cpp.int_overflow",
+   "at": [
+    "profits의 길이는 1 이상 100,000 이하"
+   ],
+   "fails": {
+    "26": "failed"
+   },
+   "outs": {
+    "26": "705082704"
+   },
+   "source": 4046263960
+  }
+ ],
+ "rust": [
+  {
+   "file": "lang_1.rs",
+   "trap": "rust.i32_wrap",
+   "at": [
+    "profits의 길이는 1 이상 100,000 이하"
+   ],
+   "fails": {
+    "26": "failed"
+   },
+   "outs": {
+    "26": "705082704"
+   },
+   "source": 1394766781
+  },
+  {
+   "file": "lang_2.rs",
+   "trap": "rust.unwrap_none",
+   "fails": {
+    "1": "runtime_error",
+    "3": "runtime_error",
+    "4": "runtime_error",
+    "5": "runtime_error",
+    "6": "runtime_error",
+    "8": "runtime_error",
+    "10": "runtime_error",
+    "11": "runtime_error",
+    "12": "runtime_error",
+    "13": "runtime_error",
+    "14": "runtime_error",
+    "15": "runtime_error",
+    "16": "runtime_error",
+    "17": "runtime_error",
+    "18": "runtime_error",
+    "19": "runtime_error",
+    "20": "runtime_error",
+    "21": "runtime_error",
+    "22": "runtime_error",
+    "23": "runtime_error",
+    "24": "runtime_error",
+    "25": "runtime_error"
+   },
+   "source": 20803909
+  }
+ ]
+}

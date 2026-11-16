@@ -1,0 +1,86 @@
+{
+ "python": [
+  {
+   "file": "lang_1.py",
+   "trap": "python.true_division",
+   "fails": {
+    "1": "runtime_error",
+    "2": "runtime_error",
+    "3": "runtime_error",
+    "4": "runtime_error",
+    "5": "runtime_error",
+    "6": "runtime_error",
+    "7": "runtime_error",
+    "8": "runtime_error",
+    "9": "runtime_error",
+    "10": "runtime_error",
+    "11": "runtime_error",
+    "12": "runtime_error",
+    "13": "runtime_error",
+    "14": "runtime_error",
+    "15": "runtime_error",
+    "16": "runtime_error",
+    "17": "runtime_error",
+    "18": "runtime_error",
+    "19": "runtime_error",
+    "20": "runtime_error",
+    "21": "runtime_error"
+   },
+   "source": 1806142720
+  }
+ ],
+ "javascript": [
+  {
+   "file": "lang_1.js",
+   "trap": "javascript.float_division",
+   "fails": {
+    "1": "failed",
+    "6": "failed",
+    "7": "failed",
+    "8": "failed",
+    "9": "failed",
+    "11": "failed",
+    "14": "failed",
+    "15": "failed",
+    "16": "failed",
+    "17": "failed",
+    "21": "failed"
+   },
+   "outs": {
+    "1": "[2,-1,-1]",
+    "6": "[-1,-1,-1]",
+    "7": "[-1,-1,-1,-1,-1]",
+    "8": "[-1,-1,2,-1,-1,-1]",
+    "9": "[-1,-1,-1]",
+    "11": "[-1,-1,19,-1,-1,-1]",
+    "14": "[-1,-1,-1,-1,-1,-1,-1]",
+    "15": "[-1,-1,-1,-1,-1]",
+    "16": "#7f817608986a",
+    "17": "[-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1]",
+    "21": "#15acff862a65"
+   },
+   "source": 1160528402
+  }
+ ],
+ "rust": [
+  {
+   "file": "lang_1.rs",
+   "trap": "rust.usize_underflow",
+   "at": [
+    "맨 왼쪽을 0번으로 셉니다"
+   ],
+   "fails": {
+    "2": "runtime_error",
+    "3": "runtime_error",
+    "5": "runtime_error",
+    "7": "runtime_error",
+    "8": "runtime_error",
+    "11": "runtime_error",
+    "13": "runtime_error",
+    "18": "runtime_error",
+    "20": "runtime_error"
+   },
+   "source": 3980551207
+  }
+ ]
+}

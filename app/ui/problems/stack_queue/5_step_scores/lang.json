@@ -1,0 +1,86 @@
+{
+ "java": [
+  {
+   "file": "lang_1.java",
+   "trap": "java.int_overflow",
+   "at": [
+    "밟은 돌의 점수를 모두 더한 값"
+   ],
+   "fails": {
+    "23": "failed",
+    "24": "failed"
+   },
+   "outs": {
+    "23": "2147403151",
+    "24": "-2147467296"
+   },
+   "source": 3124019718
+  }
+ ],
+ "cpp": [
+  {
+   "file": "lang_1.cpp",
+   "trap": "cpp.int_overflow",
+   "at": [
+    "scores의 길이 n은 1 이상 200,000 이하",
+    "scores의 원소는 -100,000 이상 100,000 이하"
+   ],
+   "fails": {
+    "23": "failed",
+    "24": "failed"
+   },
+   "outs": {
+    "23": "2147403151",
+    "24": "-2147467296"
+   },
+   "source": 2103898494
+  }
+ ],
+ "rust": [
+  {
+   "file": "lang_1.rs",
+   "trap": "rust.i32_wrap",
+   "at": [
+    "scores의 길이 n은 1 이상 200,000 이하",
+    "scores의 원소는 -100,000 이상 100,000 이하"
+   ],
+   "fails": {
+    "23": "failed",
+    "24": "failed"
+   },
+   "outs": {
+    "23": "2147403151",
+    "24": "-2147467296"
+   },
+   "source": 690975455
+  },
+  {
+   "file": "lang_2.rs",
+   "trap": "rust.usize_underflow",
+   "at": [
+    "1칸 이상 jump칸 이하 앞에 있는 돌"
+   ],
+   "fails": {
+    "1": "runtime_error",
+    "2": "runtime_error",
+    "3": "runtime_error",
+    "8": "runtime_error",
+    "9": "runtime_error",
+    "10": "runtime_error",
+    "11": "runtime_error",
+    "12": "runtime_error",
+    "13": "runtime_error",
+    "14": "runtime_error",
+    "15": "runtime_error",
+    "16": "runtime_error",
+    "18": "runtime_error",
+    "19": "runtime_error",
+    "22": "runtime_error",
+    "23": "runtime_error",
+    "24": "runtime_error",
+    "25": "runtime_error"
+   },
+   "source": 3894855723
+  }
+ ]
+}
