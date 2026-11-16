@@ -16,11 +16,11 @@ from pathlib import Path
 
 
 TIMEOUT_SECONDS = 10  # 실행 한 번(케이스 하나)의 제한
-COMPILE_TIMEOUT_SECONDS = 60  # 컴파일 한 번의 제한. kotlinc 첫 실행은 10초를 넘는다
+COMPILE_TIMEOUT_SECONDS = 60  # 컴파일 한 번의 제한
 OUTPUT_LIMIT = 4_000_000  # 표준 출력·표준 오류 저마다의 상한(바이트). 넘으면 끝낸다(무한 출력이 메모리를 채우지 않게). 기본 문제의 가장 큰 답은 1MB 안쪽으로 만든다
 MEMORY_LIMIT_MB = 2048  # 실행 중 메모리 상한. 넘으면 끝낸다(기기가 멈추지 않게)
 SECRET_WORDS = ("KEY", "TOKEN", "SECRET", "PASSWORD", "CREDENTIAL")  # 이름에 이것이 든 환경 변수는 제출 코드에 넘기지 않는다
-# JVM(Java·Kotlin 실행)의 표준 입출력을 UTF-8로. 관(pipe)으로 이어진 표준 출력은 OS 기본 인코딩을 써서 Windows(cp1252, cp949)에서 한글이 ?로 깨졌다.
+# JVM(Java 실행)의 표준 입출력을 UTF-8로. 관(pipe)으로 이어진 표준 출력은 OS 기본 인코딩을 써서 Windows(cp1252, cp949)에서 한글이 ?로 깨졌다.
 # JDK 17은 file.encoding을, 18은 sun.stdout.encoding을, 19부터는 stdout.encoding을 본다.
 # macOS·Linux에서는 C/POSIX 로케일이 아니면 바뀌지 않는다(그 로케일에서는 깨지던 한글이 바로 나온다)
 JAVA_UTF8 = ("-Dfile.encoding=UTF-8", "-Dsun.stdout.encoding=UTF-8", "-Dsun.stderr.encoding=UTF-8", "-Dstdout.encoding=UTF-8", "-Dstderr.encoding=UTF-8")
@@ -88,7 +88,7 @@ JOB_MEMORY_FACTOR = 2  # 작업의 커밋 상한 = memory_mb × 이것. 커밋�
 # 값의 근거: 정상 풀이는 주 프로세스 하나다. venv의 python.exe는 실제 인터프리터를 한 번 더 띄워 둘이고, 풀이가 subprocess·multiprocessing으로 몇 개를
 # 띄울 수 있다. 보통 기기의 multiprocessing.Pool(논리 CPU 수)도 들어가도록 넉넉히 64로 잡는다(채점에서 이만큼 쓰는 풀이는 없다).
 # 논리 CPU가 60개를 넘는 기기의 Pool()은 막힐 수 있다(그런 기기에서 이 한계에 걸리면 stderr에 한 줄이 붙는다).
-# 컴파일러(g++, go build가 자식을 많이 띄운다)에는 걸지 않는다(compile_command가 processes=None을 넘긴다)
+# 컴파일러(g++ 등이 자식을 많이 띄운다)에는 걸지 않는다(compile_command가 processes=None을 넘긴다)
 JOB_PROCESS_LIMIT = 64
 # SetErrorMode 플래그. 자식은 부모의 오류 모드를 물려받는다: 오류 창을 띄우는 대신 호출이 실패하고 프로세스가 바로 끝난다
 SEM_FAILCRITICALERRORS = 0x0001  # DLL을 찾지 못함(MinGW 런타임 등) 같은 '치명적 오류' 창
@@ -289,8 +289,8 @@ def _end_job(process, close=False):
 
 
 def _windows_program(command, cwd):
-    """Windows의 CreateProcess는 상대 경로(./app)를 cwd가 아니라 부모의 현재 폴더에서 찾고, .exe만 붙여 찾아 .bat(kotlinc)을 못 찾는다.
-    그래서 첫 낱말을 절대 경로로 바꾼다. ./app은 작업 폴더의 app.exe(g++)나 app(go·rustc가 이름 그대로 만든 것)이다."""
+    """Windows의 CreateProcess는 상대 경로(./app)를 cwd가 아니라 부모의 현재 폴더에서 찾고, .exe만 붙여 찾아 .bat을 못 찾는다.
+    그래서 첫 낱말을 절대 경로로 바꾼다. ./app은 작업 폴더의 app.exe(g++)나 app(rustc가 이름 그대로 만든 것)이다."""
     first = command[0]
     if first.startswith("./"):
         base = Path(cwd) / first[2:]
@@ -438,7 +438,7 @@ def _collect(process, stdin, timeout, memory_mb, started):
 
 def compile_command(command, cwd, timeout=COMPILE_TIMEOUT_SECONDS):
     """성공이면 None, 실패면 compile_error 또는 timeout 결과."""
-    result = run_command(command, cwd, timeout=timeout, memory_mb=None, processes=None)  # 컴파일러의 메모리와 프로세스 수는 보지 않는다(go build 등이 자식을 많이 띄운다)
+    result = run_command(command, cwd, timeout=timeout, memory_mb=None, processes=None)  # 컴파일러의 메모리와 프로세스 수는 보지 않는다(컴파일러가 자식을 많이 띄운다)
     if result["status"] == "passed":
         return None
     result["status"] = "timeout" if result["status"] == "timeout" else "compile_error"
@@ -446,7 +446,7 @@ def compile_command(command, cwd, timeout=COMPILE_TIMEOUT_SECONDS):
 
 
 HEAD_LINES = {}  # 언어 → runner가 사용자 코드 파일 앞에 붙이는 줄 수. 지금 runner는 모두 사용자 코드를 제 파일 첫 줄부터 놓는다(main 이름만 같은 줄에서 바꾼다)
-LINE_PATTERNS = {"python": r'File "(?:[^"]*[/\\])?{file}", line (\d+)'}  # 그 밖의 언어: Java·Kotlin 스택 (Main.java:3), 컴파일러 main.cpp:2:5, Go 스택 /…/main.go:3, Rust panicked at main.rs:3:5, Node main.js:3
+LINE_PATTERNS = {"python": r'File "(?:[^"]*[/\\])?{file}", line (\d+)'}  # 그 밖의 언어: Java 스택 (Main.java:3), 컴파일러 main.cpp:2:5, Rust panicked at main.rs:3:5, Node main.js:3
 LINE_LAST = {"python"}  # 가장 안쪽 프레임이 라이브러리(heapq 등)일 수 있어 사용자 파일의 마지막 프레임을 쓴다
 
 

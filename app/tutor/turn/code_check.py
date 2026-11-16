@@ -36,11 +36,11 @@ from ..common.verdict import FOUND_RULE, ask_verdict
 from ..state import BlockState, MainState, Verdict
 
 USER_FAULT = ("failed", "timeout", "runtime_error", "compile_error")  # 사용자 코드 탓으로 끝난 채점
-TRY_SECONDS = 6  # 첫 실행부터 이만큼 지나면 새 짝 시도를 시작하지 않는다(Python은 여러 번, Kotlin은 한두 번 돈다)
+TRY_SECONDS = 6  # 첫 실행부터 이만큼 지나면 새 짝 시도를 시작하지 않는다(Python은 여러 번, 컴파일이 느린 언어는 한두 번 돈다)
 now = time.monotonic  # 시험이 바꿔 끼우는 시계
-# 없는 이름 오류: Python(뒤에서 대입하는 이름은 UnboundLocalError), Java, Kotlin, C++(gcc·clang), Go, Rust, JavaScript
-_MISSING = re.compile(r"NameError: name '(\w+)' is not defined|local variable '(\w+)'|symbol:\s+variable (\w+)|Unresolved reference:? '?(\w+)"
-                      r"|[‘'](\w+)[’'] was not declared|undeclared identifier '(\w+)'|undefined: (\w+)|cannot find value `(\w+)`"
+# 없는 이름 오류: Python(뒤에서 대입하는 이름은 UnboundLocalError), Java, C++(gcc·clang), Rust, JavaScript
+_MISSING = re.compile(r"NameError: name '(\w+)' is not defined|local variable '(\w+)'|symbol:\s+variable (\w+)"
+                      r"|[‘'](\w+)[’'] was not declared|undeclared identifier '(\w+)'|cannot find value `(\w+)`"
                       r"|ReferenceError: (\w+) is not defined|Cannot access '(\w+)' before initialization")
 # 없는 멤버·이름·클래스 오류의 원문은 다섯 언어 모두 쉬운 말로 알린다(이름은 위 _MISSING을 재사용한다)
 _NO_MEMBER = re.compile(r"^cannot find symbol: (?!variable |class )\w+ (\w+)$|has no attribute '(\w+)'|no member named [‘'](\w+)[’']"

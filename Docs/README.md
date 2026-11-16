@@ -17,7 +17,7 @@ AlgoBlock의 문서가 어디에 있는지 읽는 사람별로 모았다. 코드
 | --- | --- |
 | [architecture/overview.md](architecture/overview.md) | 화면, 로컬 서버, 튜터 엔진, 채점기, 모델 연결이 어떻게 이어지나. 폴더와 책임 |
 | [architecture/tutor.md](architecture/tutor.md) | 튜터 엔진의 에이전트와 그래프, 블록 코드 확인이 지키는 것, 이름 짝 |
-| [architecture/judge.md](architecture/judge.md) | 7개 언어, 함수·프로그램 방식, 제한 시간을 정하는 식, 격리하지 않는다는 것 |
+| [architecture/judge.md](architecture/judge.md) | 5개 언어, 함수·프로그램 방식, 제한 시간을 정하는 식, 격리하지 않는다는 것 |
 | [architecture/ontology.md](architecture/ontology.md) | 주제 15개와 선수 관계, 기법 낱말, 실수 묶음과 그 쓰임 |
 | [architecture/data.md](architecture/data.md) | 데이터 폴더에 무엇이 저장되나, 저장 형식의 버전 |
 | [architecture/models-and-cost.md](architecture/models-and-cost.md) | 과정과 급, 최신 버전 고르기, 캐시, 호출 수 |

@@ -603,16 +603,14 @@ class OuterLineTest(unittest.TestCase):
 
 
 class LanguageRuleTest(unittest.TestCase):
-    """Go 새 이름, 문장인 한도 말, 탭 들여쓰기, 디버그 말의 큰따옴표 인용."""
+    """문장인 한도 말, 탭 들여쓰기, 디버그 말의 큰따옴표 인용."""
 
-    def test_go_names_and_tabs(self):
-        from ..common.solution import created_names, framed
+    def test_tab_indent(self):
+        from ..common.solution import framed
 
-        self.assertEqual(created_names("for i, p := range parent {\nvar ord []int\nkids := make([][]int, n)\nvar a, b int", "go"),
-                         [("i", "loop", ""), ("p", "loop", ""), ("ord", "var", "[]int"), ("kids", "var", ""), ("a", "var", "int"), ("b", "var", "int")])
-        ref = "\tchildren := make([][]int, n)\n\tfor f := 0; f < n; f++ {\n\t\tx := f\n\t}"
-        self.assertEqual(framed("\tkids := make([][]int, n)\n\tfor f := 0; f < n; f++ {\n\t\tx := f\n\t}", ref, "go"),
-                         "\tkids := make([][]int, n)\n\tfor f := 0; f < n; f++ {\n\t\tx := f\n\t}")  # 공백 1칸 + 탭이 섞이지 않는다
+        ref = "\tint children = 0;\n\tfor (int f = 0; f < n; f++) {\n\t\tint x = f;\n\t}"
+        mine = "\tint kids = 0;\n\tfor (int f = 0; f < n; f++) {\n\t\tint x = f;\n\t}"
+        self.assertEqual(framed(mine, ref, "cpp"), mine)  # 공백 1칸 + 탭이 섞이지 않는다
 
     def test_session_tells_checked_code(self):
         """통과한 블록의 코드를 화면에 실어, 칸 글을 고치면 '블록 코드 확인'을 다시 보이게 한다."""
@@ -941,15 +939,10 @@ class GrammarRuleTest(unittest.TestCase):
     def test_type_names_in_typed_declarations_are_not_written_names(self):
         """형을 적은 선언의 형 이름(Int, i32, int)을 쓴 이름으로 읽어 '그 이름으로 맞춰 주세요'에 형 이름이 섞였다."""
         from ..turn.pairs import writes
-        self.assertEqual(writes("var answer: Int = 0\nvar at: Int = 1", "kotlin"), ["answer", "at"])
         self.assertEqual(writes("let mut best: i32 = -1;\nlet n: usize = v.len();", "rust"), ["best", "n"])
-        self.assertEqual(writes("var count int = 0\ncount = 3", "go"), ["count"])
         self.assertEqual(writes("int total = 0;\ntotal += 2;", "java"), ["total"])  # 형이 앞에 오는 언어는 그대로
         # 선언 이름 뒤부터 '=' 앞까지는 모두 형이다(형 꼴을 하나씩 늘리지 않는다)
         self.assertEqual(writes('let label: &str = "x";', "rust"), ["label"])
-        self.assertEqual(writes("var cells [3]int = [3]int{}\nvar head *Item = nil\nvar seen map[string]int = map[string]int{}", "go"), ["cells", "head", "seen"])
-        self.assertEqual(writes("const limit int = 3", "go"), ["limit"])
-        self.assertEqual(writes("var lo, hi int = 0, 9", "go"), ["lo", "hi"])
 
     def test_swap_names_changes_only_name_positions(self):
         from ..common.solution import swap_names
@@ -964,8 +957,6 @@ class GrammarRuleTest(unittest.TestCase):
             ("python", 'a = f"{count=}" + f"{count:>{width}}" + f"{{count}}" + "{count}"', {"count": "c", "width": "w"},
              'a = f"{count=}" + f"{c:>{w}}" + f"{{count}}" + "{count}"'),  # '{x=}'는 식의 글자가 출력된다
             ("python", 's = """count"""\nt = count  # don\'t keep count', {"count": "c"}, 's = """count"""\nt = c  # don\'t keep c'),  # 주석은 돌지 않는다: 낱말을 맞춘다
-            ("kotlin", 'println("count=$count ${count + 1}")\nval p = Pair(first = a, second = first)', {"count": "c", "first": "f"},
-             'println("count=$c ${c + 1}")\nval p = Pair(first = a, second = f)'),
             ("javascript", 'console.log(`count: ${count}`, "count", count)', {"count": "c"}, 'console.log(`count: ${c}`, "count", c)'),
             ("javascript", "const r = /x[/]x\\/x/gi; if (/^x$/.test(x)) return /x/;", {"x": "Y"}, "const r = /x[/]x\\/x/gi; if (/^x$/.test(Y)) return /x/;"),  # 정규식 글자는 글자다
             ("javascript", "y = a[x] / x / 2 + (x) / x + i++ / x;", {"x": "Y"}, "y = a[Y] / Y / 2 + (Y) / Y + i++ / Y;"),  # 값 뒤의 '/'는 나눗셈이다
@@ -978,13 +969,11 @@ class GrammarRuleTest(unittest.TestCase):
             ("rust", "fn longest<'a>(x: &'a str, y: &'a str) -> &'a str { if x.len() > y.len() { x } else { y } }", {"x": "first", "y": "second"},
              "fn longest<'a>(first: &'a str, second: &'a str) -> &'a str { if first.len() > second.len() { first } else { second } }"),  # 수명 표기는 문자열이 아니다
             ("rust", "let c = 'x'; let q = '\\''; let n = x + 1;", {"x": "z"}, "let c = 'x'; let q = '\\''; let n = z + 1;"),
-            ("go", 'm[x] = len("x") + x', {"x": "key"}, 'm[key] = len("x") + key'),
             ("cpp", "char q = '\"'; int z = count; // count's", {"count": "c"}, "char q = '\"'; int z = c; // c's"),
             ("java", 'f(x = 5); String s = "x";', {"x": "y"}, 'f(y = 5); String s = "x";'),  # Java의 괄호 안 '='는 대입이다
             ("cpp", "node->x = x;", {"x": "y"}, "node->x = y;"),  # '->' 뒤는 멤버다
             ("cpp", "int c = std::count(v.begin(), v.end(), 1) + count;", {"count": "cnt"}, "int c = std::count(v.begin(), v.end(), 1) + cnt;"),  # '::' 뒤는 경로다
             ("rust", "let m = i32::max(x, 1) + Vec::count(&v);", {"x": "y", "count": "cnt"}, "let m = i32::max(y, 1) + Vec::count(&v);"),
-            ("kotlin", "val g = xs.map(Foo::x) + x", {"x": "y"}, "val g = xs.map(Foo::x) + y"),
             ("python", "r = a[::x] + a[x::2]", {"x": "y"}, "r = a[::y] + a[y::2]"),  # Python의 '::'는 조각의 간격이다(변수가 온다)
             ("java", "list.forEach(x->use(x));", {"x": "y"}, "list.forEach(y->use(y));"),  # Java의 '->'는 람다다
         ]
@@ -998,8 +987,6 @@ class GrammarRuleTest(unittest.TestCase):
         from ..common.solution import swap_names
 
         rows = [
-            ("kotlin", 'val a = "${f("x")} $x"\nval b = "${ if (x > 0) "x" else "y" }"', {"x": "Y"},
-             'val a = "${f("Y")} $Y"\nval b = "${ if (x > 0) "Y" else "y" }"'),  # ${} 안의 문자열
             ("rust", 'let a = r#"x "quoted" x"#;', {"x": "Y"}, 'let a = r#"x "quoted" Y"#;'),  # r#"…"#
             ("cpp", 'auto s = R"d(x)d";', {"x": "Y"}, 'auto s = R"d(Y)d";'),  # 구분자 있는 원시 문자열
             ("java", 'String t = """\n  \\"""x\\"""\n""";', {"x": "Y"}, 'String t = """\n  \\"""Y\\"""\n""";'),  # 텍스트 블록 안의 이스케이프
@@ -1007,7 +994,6 @@ class GrammarRuleTest(unittest.TestCase):
             ("cpp", "#include <x>\n", {"x": "Y"}, "#include <Y>\n"),
             ("rust", "'x: loop { break 'x; }", {"x": "Y"}, "'Y: loop { break 'Y; }"),  # 라벨
             ("python", "def h(x):\n    return x\ny = h(x=x)", {"x": "Y"}, "def h(Y):\n    return Y\ny = h(x=Y)"),  # 머리의 매개변수와 호출의 키워드 인자가 짝이 안 맞는다
-            ("kotlin", "fun h(x: Int) = x\nval y = h(x = x)", {"x": "Y"}, "fun h(Y: Int) = Y\nval y = h(x = Y)"),
             ("python", "sorted(a, key=lambda x=1: x)", {"x": "Y"}, "sorted(a, key=lambda x=1: Y)"),  # 람다의 기본값
         ]
         for language, code, names, want in rows:
@@ -1030,11 +1016,22 @@ class GrammarRuleTest(unittest.TestCase):
             self.assertNotEqual(_rows(mine), _rows(plan), mine)
         self.assertEqual(_rows("x = 1   \n\n\ny = 2\n"), _rows("x = 1\ny = 2"))
 
+    def test_plain_words_are_not_frame_or_keywords(self):
+        """JavaScript의 변수 이름 val과 '(' 뒤에 혼자 닫는 ')' 줄은 틀이나 예약어로 빠지지 않는다."""
+        from ..common.solution import body_lines, made_statements
+
+        js = "function solution(xs) {\n  let t = 0;\n  for (const val of xs) {\n    t += val;\n  }\n  return t;\n}\n"
+        self.assertIn("val", [row[0] for row in made_statements(js, "javascript")])
+        code = "function solution(a) {\n  const r = Math.max(\n    ...a\n  )\n  return r;\n}\n"
+        self.assertIn(")", body_lines(code, "javascript", False))
+        walrus = [row for row in made_statements("def solution(xs):\n    while n := len(xs):\n        xs.pop()\n    return 0\n", "python") if row[0] == "n"]
+        self.assertTrue(walrus and walrus[0][3][1], walrus)  # Python의 괄호 없는 := 도 오른쪽 식을 잃지 않는다
+
     def test_entry_params_follow_each_grammar(self):
         from ..common.solution import entry_params
 
-        rows = [("python", "def solution(loans, k):"), ("kotlin", "fun solution(loans: Array<String>, k: Int): Array<String> {"),
-                ("rust", "pub fn solution(mut loans: Vec<String>, k: i32) -> Vec<String> {"), ("go", "func solution(loans []string, k int) []string {"),
+        rows = [("python", "def solution(loans, k):"),
+                ("rust", "pub fn solution(mut loans: Vec<String>, k: i32) -> Vec<String> {"),
                 ("cpp", "vector<string> solution(vector<string> loans, int k) {"), ("java", "    public String[] solution(String[] loans, int k) {"),
                 ("javascript", "function solution(loans, k) {")]
         for language, head in rows:
@@ -1042,7 +1039,7 @@ class GrammarRuleTest(unittest.TestCase):
         self.assertIsNone(entry_params("const solution = (loans, k) => {", "javascript"))  # 알아보지 못한 머리는 같다고 하지 않는다
 
     def test_entry_params_read_the_last_word_of_a_declaration(self):
-        """C 계열(C·C++·Java)·Go의 선언에서 이름은 타입 다음의 마지막 낱말이다. '::'는 경로라 'name: Type'의 ':'가 아니고, 꺾쇠·괄호 안의 쉼표에서 끊지 않으며,
+        """C 계열(C·C++·Java)의 선언에서 이름은 타입 다음의 마지막 낱말이다. '::'는 경로라 'name: Type'의 ':'가 아니고, 꺾쇠·괄호 안의 쉼표에서 끊지 않으며,
         머리가 여러 줄이어도 괄호가 닫힐 때까지 읽는다. 닫히지 않으면 알아보지 못한 것이다."""
         from ..common.solution import entry_params
 
@@ -1052,12 +1049,9 @@ class GrammarRuleTest(unittest.TestCase):
                 ("cpp", "vector<int> solution(vector<vector<int>>& grid,\n                     int k,\n                     map<int, pair<int, int>> m) {", ["grid", "k", "m"]),
                 ("cpp", "int solution(int a, std::vector<std::pair<int,int>>& v) {", ["a", "v"]),
                 ("java", "public int[] solution(int[] arr, java.util.List<String> names, final int k) {", ["arr", "names", "k"]),
-                ("go", "func solution(a, b int, names []string) int {", ["a", "b", "names"]),
-                ("go", "func solution(a, b int,\n\tnames []string) int {", ["a", "b", "names"]),
-                ("kotlin", "fun solution(m: Map<Int, Int>, f: kotlin.collections.List<Int>): Int {", ["m", "f"]),
                 ("rust", "fn solution(m: std::collections::HashMap<i32, i32>, mut v: Vec<i32>) -> i32 {", ["m", "v"]),
                 ("python", "def solution(nums,\n             k):", ["nums", "k"]),
-                ("python", "def solution(nums,\n", None), ("kotlin", "fun solution(a: Int,", None)]
+                ("python", "def solution(nums,\n", None), ("rust", "fn solution(a: i32,", None)]
         for language, head, want in rows:
             with self.subTest(language=language, head=head):
                 self.assertEqual(entry_params(head + "\n", language), want)

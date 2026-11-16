@@ -77,7 +77,7 @@ cd app && uv run --no-project --python 3.12 --with langgraph --with pypdf --with
 | --- | --- |
 | `app/ui/` | 화면(HTML·JS·CSS), 로컬 서버, 창, 기본 문제와 케이스 도구 |
 | `app/tutor/` | LangGraph 튜터 엔진. 에이전트마다 폴더 하나 |
-| `app/judge/` | 채점기. 7개 언어 실행기와 형 모델 |
+| `app/judge/` | 채점기. 5개 언어 실행기와 형 모델 |
 | `app/llm/` | 모델 공급자 연결(Claude API 키, OpenAI API 키, ChatGPT 로그인)과 사용량 기록 |
 | `app/packaging/` | 설치 파일 만들기 |
 | `Docs/` | 공개 문서(guide, architecture, contributing) |

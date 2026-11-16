@@ -112,7 +112,7 @@ def registered() -> None:
     assert call("/api/debug", id=pid, code=right)[1]["passed"]  # 통과한 코드는 디버깅으로 가지 않는다(모델 0회)
     state = call("/api/state", id=pid, mode="chair")[1]["problem"]
     assert (state["passed"], state["submitted"], state["code"], state["language"]) == (1, 2, right, "python")  # run은 제출로 세지 않는다. 같은 코드는 한 번만 센다
-    assert len(state["languages"]) == 7 and state["starter"].startswith("def solution(a, b):") and state["cases"] == {"example": 2, "accuracy": 0, "efficiency": 0}
+    assert len(state["languages"]) == 5 and state["starter"].startswith("def solution(a, b):") and state["cases"] == {"example": 2, "accuracy": 0, "efficiency": 0}
 
     # 언어를 바꾸면 쓰던 코드는 그 언어 것으로 남고, 돌아오면 다시 나온다
     java = call("/api/language", id=pid, language="java")[1]["problem"]
@@ -293,7 +293,7 @@ def builtin(fake) -> None:
     # 언어를 바꾸면 그 언어의 시작 코드가 오고, 블록 계획은 지워진다(그 언어의 정답 풀이로 다시 짠다). 파이썬으로 돌아오면 미리 만든 계획이 다시 온다
     js = call("/api/language", id=PID, language="javascript")[1]
     assert js["problem"]["language"] == "javascript" and js["problem"]["starter"].startswith("function solution(loans, k)") and js["session"]["blocks"] == []
-    assert server.given(PID, "javascript")["code"] == JS and server.given(PID, "javascript")["approach"] and server.given(PID, "go") is None
+    assert server.given(PID, "javascript")["code"] == JS and server.given(PID, "javascript")["approach"] and server.given(PID, "cobol") is None
     if server.check_judge().judge("javascript", JS, [{"id": "1", "input": "[[\"a\"], 2]", "expected": "[]"}], mode="function")["status"] != "toolchain_missing":
         assert call("/api/submit", id=PID, code=JS)[1]["ok"]
         assert call("/api/solution", id=PID)[1]["language"] == "javascript"
@@ -1150,10 +1150,33 @@ def results() -> None:
     assert (ran["status"], ran["got"]) == ("ran", "7") and "reference" not in ran and "reference_note" not in ran
 
 
+def retired_languages() -> None:
+    """지원을 접은 언어(go·kotlin)로 저장된 자료: 문제를 열면 오류 없이 파이썬으로 열리고(그 언어의 코드는 지우지 않고 보관), 등록 문제의 언어·풀이·시작 코드 목록에서는 빠진다."""
+    own = server.register(GOOD)["id"]  # 등록 문제를 go로 저장해 둔 채(문제를 열기 전에) 목록·보고서부터 부른다
+    with server.tutor() as t:
+        t.store.put_problem(own, "go", server.PROBLEMS[own].text, direct_code="func solution() {}", title="t")
+        t.store.set_language(PID, "go")
+        t.store.update_code(PID, "func solution() {}")
+    assert server.starter_of(server.PROBLEMS[own], "go") == ""  # 지원 밖의 언어는 예외 없이 빈 시작 코드
+    server.retire_languages()  # 서버를 켤 때 한 번
+    with server.tutor() as t:
+        assert t.store.load(own).language == "python" and t.store.load(PID).language == "python"
+    assert server.read_json(server.CODES_FILE, {})[own]["go"] == "func solution() {}"
+    assert call("/api/problems")[1]["problems"] and call("/api/report")[1]["summary"]
+    server.LANG.pop(PID, None)
+    state = call("/api/state", id=PID)[1]["problem"]
+    assert state["language"] == "python" and "go" not in state["languages"] and "kotlin" not in state["languages"], state
+    assert server.read_json(server.CODES_FILE, {})[PID]["go"] == "func solution() {}"
+    assert next(row for row in call("/api/problems")[1]["problems"] if row["id"] == PID)["language"] == "python"
+    row = server.supported({"languages": ["python", "go", "kotlin", "rust"], "solutions": {"python": "a", "go": "b", "kotlin": "c"},
+                            "starters": {"go": "b", "rust": "d"}, "limits": {"kotlin": 1.0, "python": 1.0}})
+    assert row == {"languages": ["python", "rust"], "solutions": {"python": "a"}, "starters": {"rust": "d"}, "limits": {"python": 1.0}}, row
+
+
 def tools() -> None:
-    """이 기기의 언어 도구: 일곱 언어 모두 있음·없음이 오고, 서버를 돌리는 Python은 있다. 문제 상태에도 같은 모양으로 실린다."""
+    """이 기기의 언어 도구: 다섯 언어 모두 있음·없음이 오고, 서버를 돌리는 Python은 있다. 문제 상태에도 같은 모양으로 실린다."""
     got = call("/api/tools")[1]["tools"]
-    assert set(got) == set(server.check_judge().LANGUAGES) and len(got) == 7 and got["python"] is True
+    assert set(got) == set(server.check_judge().LANGUAGES) and len(got) == 5 and got["python"] is True
     assert call("/api/tools", refresh=True)[1]["tools"] == got
     state = call("/api/state", id=PID)[1]["problem"]
     assert state["tools"] == got and state["preparing"] is False  # 미리 만들기가 없으면 준비 중이 아니다
@@ -1930,7 +1953,6 @@ def error_lines() -> None:
         "/w/solution.js:2\n    return x();\n           ^\n\nTypeError: x is not a function\n    at solution (/w/solution.js:2:12)\n    at main (/w/run.js:5:1)\n\nNode.js v24.1.0": "TypeError: x is not a function",
         "Exception in thread \"main\" java.lang.ArrayIndexOutOfBoundsException: Index 5 out of bounds for length 3\n\tat Solution.solution(Solution.java:3)\n\tat FunctionRunner.main(FunctionRunner.java:9)":
             "Exception in thread \"main\" java.lang.ArrayIndexOutOfBoundsException: Index 5 out of bounds for length 3",
-        "panic: runtime error: index out of range [5] with length 3\n\ngoroutine 1 [running]:\nmain.solution(...)\n\t/w/main.go:4 +0x1d": "panic: runtime error: index out of range [5] with length 3",
         "thread 'main' panicked at src/main.rs:3:5:\nindex out of bounds: the len is 3 but the index is 5\nnote: run with `RUST_BACKTRACE=1`":
             "thread 'main' panicked at src/main.rs:3:5: index out of bounds: the len is 3 but the index is 5",  # Rust는 위치 줄 다음 줄이 이유다
         "libc++abi: terminating due to uncaught exception of type std::out_of_range: vector": "libc++abi: terminating due to uncaught exception of type std::out_of_range: vector",
@@ -1943,8 +1965,8 @@ def error_lines() -> None:
         assert server.error_line(text, "runtime_error") == line, (text, server.error_line(text, "runtime_error"))
     assert server.error_line("", "runtime_error").startswith("프로그램이 비정상적으로 끝났어요") and server.error_line("", "failed") == ""
     assert len(server.error_line("ValueError: " + "x" * 500)) == 300
-    # 채점기 안쪽 이름(임시 폴더, 호출 파일, Go 모듈 이름)은 가리고 내 코드 파일은 '내 코드'로
-    assert server.compile_head("# algoblockcheck\n/private/var/folders/x/algoblock-check-a1b2/solution.go:3:2: \"fmt\" imported and not used") == '내 코드:3:2: "fmt" imported and not used'
+    # 채점기 안쪽 이름(임시 폴더, 호출 파일)은 가리고 내 코드 파일은 '내 코드'로
+    assert server.compile_head("/private/var/folders/x/algoblock-check-a1b2/solution.cpp:3:2: error: x was not declared") == '내 코드:3:2: error: x was not declared'
     assert server.compile_head("FunctionRunner.java:12: error: incompatible types\nSolution.java:6: error: ';' expected\n2 errors") == "error: incompatible types\n내 코드:6: error: ';' expected\n2 errors"
     assert server.compile_head("error: no matching function for call to 'algoblockJson'\n   49 |  std::cout << algoblockJson(solution(a0)) << 1;\n") == server.CALL_FAILED  # 호출 코드의 이름은 화면에 나오지 않는다
     assert server.compile_head("error: literal out of range for `i32`\n  --> algoblock_main.rs:44:20\n   |") == "error: literal out of range for `i32`\n   |"
@@ -1958,9 +1980,8 @@ def error_lines() -> None:
                        ("libc++abi: terminating due to uncaught exception of type std::out_of_range: vector", "std::out_of_range"),
                        ("terminate called after throwing an instance of 'std::out_of_range'", "std::out_of_range")):
         assert server.exception_name(line) == name, line
-    for text, language, words in ((trace, "python", "딕셔너리에 없는 키"), ('Exception in thread "main" java.lang.NullPointerException', "kotlin", "null인 값"),
+    for text, language, words in ((trace, "python", "딕셔너리에 없는 키"), ('Exception in thread "main" java.lang.NullPointerException', "java", "null인 값"),
                                   ("TypeError: x is not a function\n    at solution (/w/solution.js:2:12)", "javascript", "함수가 아닌 것"),
-                                  ("panic: runtime error: index out of range [5] with length 3\n\ngoroutine 1 [running]:", "go", "슬라이스의 범위"),
                                   ("thread 'main' panicked at src/main.rs:3:5:\nattempt to subtract with overflow", "rust", "형의 범위를 넘었어요"),
                                   ("thread 'main' panicked at src/main.rs:3:5:\ncalled `Option::unwrap()` on a `None` value", "rust", "unwrap()"),
                                   ("thread 'main' panicked at src/main.rs:3:5:\nindex out of bounds: the len is 0 but the index is 9", "rust", "벡터의 범위"),
@@ -2383,9 +2404,9 @@ def settings_items() -> None:
     saved = server.read_json(server.PREFS_FILE, {})
     try:
         server.write_json(server.PREFS_FILE, {**saved, "stages": {"keep": "me"}, "scheme": "dark"})
-        assert call("/api/prefs", language="go")[1]["language"] == "go" and server.read_json(server.PREFS_FILE, {})["stages"] == {"keep": "me"}
-        assert server.read_json(server.PREFS_FILE, {})["scheme"] == "dark" and server.last_language() == "go"
-        assert "고를 수 없는 언어" in refuses("/api/prefs", language="cobol") and server.last_language() == "go"
+        assert call("/api/prefs", language="rust")[1]["language"] == "rust" and server.read_json(server.PREFS_FILE, {})["stages"] == {"keep": "me"}
+        assert server.read_json(server.PREFS_FILE, {})["scheme"] == "dark" and server.last_language() == "rust"
+        assert "고를 수 없는 언어" in refuses("/api/prefs", language="cobol") and server.last_language() == "rust"
         assert refuses("/api/prefs")  # 보낸 것이 없으면 거절
     finally:
         server.write_json(server.PREFS_FILE, saved)
@@ -2898,6 +2919,7 @@ def main() -> None:
         no_tool()
         results()
         tools()
+        retired_languages()
         edit_delete()
         checkpoints()
         prep_failed()

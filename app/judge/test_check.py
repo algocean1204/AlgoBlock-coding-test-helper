@@ -41,14 +41,6 @@ SOURCES = {
         "function": "#include <bits/stdc++.h>\nusing namespace std;\nvector<string> solution(vector<vector<int>> grid, string word) {\n    int total = 0;\n    for (auto& row : grid) for (int v : row) total += v;\n    return {word + to_string(total)};\n}\n",
         "program": "#include <iostream>\nint main() {\n    int n; std::cin >> n;\n    long long total = 0;\n    for (int i = 0; i < n; ++i) { int v; std::cin >> v; total += v; }\n    std::cout << total << \"\\n\";\n}\n",
     },
-    "kotlin": {
-        "function": "class Solution {\n    fun solution(grid: Array<IntArray>, word: String): Array<String> {\n        return arrayOf(word + grid.sumOf { it.sum() })\n    }\n}\n",
-        "program": "fun main() {\n    readln()\n    println(readln().split(\" \").sumOf { it.toInt() })\n}\n",
-    },
-    "go": {
-        "function": "package main\n\nimport \"strconv\"\n\nfunc solution(grid [][]int, word string) []string {\n\ttotal := 0\n\tfor _, row := range grid {\n\t\tfor _, v := range row {\n\t\t\ttotal += v\n\t\t}\n\t}\n\treturn []string{word + strconv.Itoa(total)}\n}\n",
-        "program": "package main\n\nimport \"fmt\"\n\nfunc main() {\n\tvar n int\n\tfmt.Scan(&n)\n\ttotal := 0\n\tfor i := 0; i < n; i++ {\n\t\tvar v int\n\t\tfmt.Scan(&v)\n\t\ttotal += v\n\t}\n\tfmt.Println(total)\n}\n",
-    },
     "rust": {
         "function": "fn solution(grid: Vec<Vec<i32>>, word: String) -> Vec<String> {\n    let total: i32 = grid.iter().map(|r| r.iter().sum::<i32>()).sum();\n    vec![format!(\"{}{}\", word, total)]\n}\n",
         "program": "use std::io::Read;\nfn main() {\n    let mut s = String::new();\n    std::io::stdin().read_to_string(&mut s).unwrap();\n    let nums: Vec<i64> = s.split_whitespace().skip(1).map(|x| x.parse().unwrap()).collect();\n    println!(\"{}\", nums.iter().sum::<i64>());\n}\n",
@@ -219,13 +211,13 @@ class FailureTest(unittest.TestCase):
 
     def test_no_cases_and_missing_toolchain(self):
         self.assertEqual(judge.judge("python", SOURCES["python"]["function"], [], mode="function")["status"], "no_cases")
-        go = judge.load_language("go")
-        saved = go.TOOLS
-        go.TOOLS = ("algoblock-no-such-tool",)
+        rust = judge.load_language("rust")
+        saved = rust.TOOLS
+        rust.TOOLS = ("algoblock-no-such-tool",)
         try:
-            self.assertEqual(judge.judge("go", "", FUNCTION_CASES, mode="function")["status"], "toolchain_missing")
+            self.assertEqual(judge.judge("rust", "", FUNCTION_CASES, mode="function")["status"], "toolchain_missing")
         finally:
-            go.TOOLS = saved
+            rust.TOOLS = saved
 
 
 class EdgeTest(unittest.TestCase):
@@ -242,20 +234,11 @@ class EdgeTest(unittest.TestCase):
         report = judge.judge("cpp", source, [{"id": "1", "input": "[[1, 2, 3], 10000000000]", "expected": "10000000006"}], mode="function")
         self.assertEqual(report["status"], "passed", report)
 
-    def test_go_nil_slice_is_empty_array(self):
-        if not available("go"):
-            self.skipTest("go 없음")
-        source = "package main\n\nfunc solution(a []int) []int {\n\tvar out []int\n\tfor _, v := range a {\n\t\tif v > 5 {\n\t\t\tout = append(out, v)\n\t\t}\n\t}\n\treturn out\n}\n"
-        report = judge.judge("go", source, [{"id": "1", "input": "[[1, 2]]", "expected": "[]"}, {"id": "2", "input": "[[9]]", "expected": "[9]"}], mode="function")
-        self.assertEqual(report["status"], "passed", report)
-
     def test_typed_returns_across_languages(self):
         """bool, double, long, 2차원 배열 반환."""
         sources = {
             "java": "class Solution { public double[][] solution(long n, boolean flag) { return new double[][]{{n / 2.0}, {flag ? 1.5 : 0}}; } }",
-            "kotlin": "class Solution { fun solution(n: Long, flag: Boolean): Array<DoubleArray> = arrayOf(doubleArrayOf(n / 2.0), doubleArrayOf(if (flag) 1.5 else 0.0)) }",
             "rust": "fn solution(n: i64, flag: bool) -> Vec<Vec<f64>> { vec![vec![n as f64 / 2.0], vec![if flag { 1.5 } else { 0.0 }]] }",
-            "go": "package main\n\nfunc solution(n int64, flag bool) [][]float64 {\n\tv := 0.0\n\tif flag {\n\t\tv = 1.5\n\t}\n\treturn [][]float64{{float64(n) / 2}, {v}}\n}\n",
             "cpp": "#include <vector>\nstd::vector<std::vector<double>> solution(long long n, bool flag) { return {{n / 2.0}, {flag ? 1.5 : 0.0}}; }",
             "javascript": "function solution(n, flag) { return [[n / 2], [flag ? 1.5 : 0]]; }",
             "python": "def solution(n, flag):\n    return [[n / 2], [1.5 if flag else 0]]\n",
@@ -326,8 +309,6 @@ class ReviewFindingTest(unittest.TestCase):
         sources = {
             "cpp": "#include <iostream>\nint solution(int a, int b) { return a + b; }\nint main() { std::cout << solution(1, 2); }\n",
             "rust": "fn solution(a: i32, b: i32) -> i32 { a + b }\nfn main() { println!(\"{}\", solution(1, 2)); }\n",
-            "go": "package main\n\nimport \"fmt\"\n\nfunc solution(a int, b int) int { return a + b }\n\nfunc main() { fmt.Println(solution(1, 2)) }\n",
-            "kotlin": "fun solution(a: Int, b: Int): Int = a + b\nfun main() { println(solution(1, 2)) }\n",
             "java": "class Solution { public int solution(int a, int b) { return a + b; } public static void main(String[] x) { } }",
             "python": "def solution(a, b):\n    return a + b\n\nprint(solution(1, 2))\n",
             "javascript": "function solution(a, b) { return a + b; }\nconsole.log(solution(1, 2));\n",
@@ -357,8 +338,6 @@ BIG_SOURCES = {
     "javascript": "function solution(nums, flags, grid, text, words) {\n  let t = 0;\n  for (const v of nums) t += v;\n  for (const f of flags) if (f) t += 1;\n  for (const r of grid) for (const v of r) t += v;\n  for (const w of words) t += w.length;\n  return t + text.length;\n}\n",
     "java": "class Solution {\n    public long solution(long[] nums, boolean[] flags, long[][] grid, String text, String[] words) {\n        long t = text.length();\n        for (long v : nums) t += v;\n        for (boolean f : flags) if (f) t++;\n        for (long[] r : grid) for (long v : r) t += v;\n        for (String w : words) t += w.length();\n        return t;\n    }\n}\n",
     "cpp": "#include <string>\n#include <vector>\nusing namespace std;\nlong long solution(vector<long long> nums, vector<bool> flags, vector<vector<long long>> grid, string text, vector<string> words) {\n    long long t = text.size();\n    for (long long v : nums) t += v;\n    for (bool f : flags) if (f) t++;\n    for (auto& r : grid) for (long long v : r) t += v;\n    for (auto& w : words) t += w.size();\n    return t;\n}\n",
-    "kotlin": "class Solution {\n    fun solution(nums: LongArray, flags: BooleanArray, grid: Array<LongArray>, text: String, words: Array<String>): Long {\n        var t = text.length.toLong()\n        for (v in nums) t += v\n        for (f in flags) if (f) t++\n        for (r in grid) for (v in r) t += v\n        for (w in words) t += w.length\n        return t\n    }\n}\n",
-    "go": "package main\n\nfunc solution(nums []int64, flags []bool, grid [][]int64, text string, words []string) int64 {\n\tt := int64(len(text))\n\tfor _, v := range nums {\n\t\tt += v\n\t}\n\tfor _, f := range flags {\n\t\tif f {\n\t\t\tt++\n\t\t}\n\t}\n\tfor _, r := range grid {\n\t\tfor _, v := range r {\n\t\t\tt += v\n\t\t}\n\t}\n\tfor _, w := range words {\n\t\tt += int64(len(w))\n\t}\n\treturn t\n}\n",
     "rust": "fn solution(nums: Vec<i64>, flags: Vec<bool>, grid: Vec<Vec<i64>>, text: &str, words: Vec<&str>) -> i64 {\n    let mut t = text.len() as i64;\n    for v in &nums { t += *v; }\n    for f in &flags { if *f { t += 1; } }\n    for r in &grid { for v in r { t += *v; } }\n    for w in &words { t += w.len() as i64; }\n    t\n}\n",
 }
 
@@ -369,8 +348,6 @@ BIG2_SOURCES = {
     "javascript": "function solution(pairs, marks) {\n  let t = 0;\n  for (const r of pairs) { t += r.length; for (const s of r) t += s.length; }\n  for (const r of marks) for (const m of r) if (m) t += 1;\n  return t;\n}\n",
     "java": "class Solution {\n    public long solution(String[][] pairs, boolean[][] marks) {\n        long t = 0;\n        for (String[] r : pairs) { t += r.length; for (String s : r) t += s.length(); }\n        for (boolean[] r : marks) for (boolean m : r) if (m) t++;\n        return t;\n    }\n}\n",
     "cpp": "#include <string>\n#include <vector>\nusing namespace std;\nlong long solution(vector<vector<string>> pairs, vector<vector<bool>> marks) {\n    long long t = 0;\n    for (auto& r : pairs) { t += r.size(); for (auto& s : r) t += s.size(); }\n    for (auto& r : marks) for (bool m : r) if (m) t++;\n    return t;\n}\n",
-    "kotlin": "class Solution {\n    fun solution(pairs: Array<Array<String>>, marks: Array<BooleanArray>): Long {\n        var t = 0L\n        for (r in pairs) { t += r.size; for (s in r) t += s.length }\n        for (r in marks) for (m in r) if (m) t++\n        return t\n    }\n}\n",
-    "go": "package main\n\nfunc solution(pairs [][]string, marks [][]bool) int64 {\n\tvar t int64\n\tfor _, r := range pairs {\n\t\tt += int64(len(r))\n\t\tfor _, s := range r {\n\t\t\tt += int64(len(s))\n\t\t}\n\t}\n\tfor _, r := range marks {\n\t\tfor _, m := range r {\n\t\t\tif m {\n\t\t\t\tt++\n\t\t\t}\n\t\t}\n\t}\n\treturn t\n}\n",
     "rust": "fn solution(pairs: Vec<Vec<String>>, marks: Vec<Vec<bool>>) -> i64 {\n    let mut t: i64 = 0;\n    for r in &pairs { t += r.len() as i64; for s in r { t += s.len() as i64; } }\n    for r in &marks { for m in r { if *m { t += 1; } } }\n    t\n}\n",
 }
 
@@ -554,7 +531,7 @@ class WindowsShapeTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             self.assertEqual(common._windows_program(["./app", "1"], folder), [str(Path(folder) / "app"), "1"])  # 없으면 이름 그대로(실행이 FileNotFoundError를 낸다)
             (Path(folder) / "app").write_bytes(b"")
-            self.assertEqual(common._windows_program(["./app"], folder), [str(Path(folder) / "app")])  # go·rustc는 이름 그대로 만든다
+            self.assertEqual(common._windows_program(["./app"], folder), [str(Path(folder) / "app")])  # rustc는 이름 그대로 만든다
             (Path(folder) / "app.exe").write_bytes(b"")
             self.assertEqual(common._windows_program(["./app", "1"], folder), [str(Path(folder) / "app.exe"), "1"])  # g++(MinGW)는 .exe를 붙인다
         self.assertEqual(common._windows_program([Path(sys.executable).name, "-c", "1"], ROOT)[1:], ["-c", "1"])
@@ -687,18 +664,14 @@ class EfficiencyTest(unittest.TestCase):
 CRASH_AT_3 = {
     "python": "def solution(a):\n    b = [a]\n    return b[5]\n",
     "java": "class Solution {\n    public int solution(int a) {\n        int[] b = new int[0]; return b[a];\n    }\n}\n",
-    "kotlin": "class Solution {\n    fun solution(a: Int): Int {\n        return IntArray(0)[a]\n    }\n}\n",
     "javascript": "function solution(a) {\n  const o = null;\n  return o.x;\n}\n",
-    "go": "package main\nfunc solution(a int) int {\n\treturn []int{}[a]\n}\n",
     "rust": "fn solution(a: i32) -> i32 {\n    let v: Vec<i32> = Vec::new();\n    v[a as usize]\n}\n",
 }
 BROKEN_AT_2 = {
     "python": "def solution(a):\n    return a +\n",
     "javascript": "function solution(a) {\n  return a +;\n}\n",
     "java": "class Solution {\n    public int solution(int a) { return a }\n}\n",
-    "kotlin": "fun solution(a: Int): Int {\n    return undefinedName\n}\n",
     "cpp": "int solution(int a) {\n    return a +;\n}\n",
-    "go": "package main\nfunc solution(a int) int { return a + }\n",
     "rust": "use std::collections::HashMap;\nfn solution(a: i32) -> i32 { undefined_name }\n",  # 앞 줄의 경고(쓰지 않는 use)를 오류로 읽지 않는다
 }
 

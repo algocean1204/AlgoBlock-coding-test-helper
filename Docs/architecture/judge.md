@@ -12,8 +12,6 @@
 | javascript | `node` | 함수 모드는 `vm` 컨텍스트에서 실행 |
 | java | `javac`, `java` | 함수 모드는 `FunctionRunner` 호출 |
 | cpp | `g++`, 없으면 `clang++` | C++17, `-O2` |
-| kotlin | `kotlinc`, `java` | jar로 묶어 실행 |
-| go | `go` | `go.mod`(`module algoblockcheck`, `go 1.21`) 작성 |
 | rust | `rustc` | edition 2021, `-O` |
 
 - 도구는 있는지만 본다(`shutil.which`). 버전은 확인하지 않는다. 없으면 그 언어는 `toolchain_missing`으로 끝나고 채점하지 않는다.
@@ -23,9 +21,7 @@
 
 ```text
 Java     javac -encoding UTF-8 Solution.java FunctionRunner.java → java -Xss256m <UTF-8 설정> FunctionRunner <번호>
-Kotlin   kotlinc <파일들> -include-runtime -d app.jar           → java -Xss256m <UTF-8 설정> -jar app.jar [번호]
 C++      <컴파일러> -std=c++17 -O2 -I. <파일> -o app            → ./app [번호]
-Go       go build -o app .                                      → ./app [번호]
 Rust     rustc --edition 2021 -O <파일> -o app                  → ./app [번호]
 Python   (빌드 없음)                                            → <python> algoblock_runner.py <번호>
 JS       (빌드 없음)                                            → node algoblock_runner.js <번호>
@@ -48,10 +44,10 @@ JS       (빌드 없음)                                            → node alg
 
 고른 방식의 진입점이 없고 다른 방식의 진입점과 케이스가 있으면, 다른 방식으로 한 번 다시 실행한다(`fallback_from`).
 
-함수 모드의 호출 코드는 언어마다 다르다. Java, Kotlin, C++, Go, Rust는 `solution`의 인자 형을 읽어 케이스마다 리터럴로 부르는 코드를 만든다. Python은 맨 위의 `solution`을 부르고, 없으면 `class Solution`의 메서드를 부른다.
+함수 모드의 호출 코드는 언어마다 다르다. Java, C++, Rust는 `solution`의 인자 형을 읽어 케이스마다 리터럴로 부르는 코드를 만든다. Python은 맨 위의 `solution`을 부르고, 없으면 `class Solution`의 메서드를 부른다.
 
 - 받는 인자 형은 int, long, double, bool, string과 그 1·2차원 배열이다. 그 밖의 형은 `unsupported_signature`다. 4,000자가 넘는 인자는 파일로 넘긴다.
-- C++, Kotlin, Go, Rust의 함수 모드에서는 제출 코드의 `main`을 이름을 바꿔 실행되지 않게 한다.
+- C++, Rust의 함수 모드에서는 제출 코드의 `main`을 이름을 바꿔 실행되지 않게 한다.
 
 ## 케이스와 결과 종류
 
@@ -83,7 +79,7 @@ JS       (빌드 없음)                                            → node alg
   - POSIX: `RLIMIT_CPU`로 exec 전에 건다. 이미 더 낮은 hard 한도가 있으면 그것을 쓴다.
   - Windows: 작업 객체(Job Object)의 프로세스별 사용자 모드 시간 상한(`PerProcessUserTimeLimit`)으로 건다. 커널 모드 시간은 세지 않는다.
 - Windows는 작업 객체에 커밋 메모리 상한도 건다. 작업 전체(제출 코드와 그 자식)에 4,096MB(메모리 상한의 2배)다. 넘는 할당은 거절된다. 그래서 프로그램이 실행 오류(`MemoryError`, `bad_alloc` 등)로 끝나면, 작업이 완료 포트로 보낸 '작업 메모리 상한' 알림을 보고 `memory_limit`로 판정한다(POSIX와 같은 이름). Windows는 이 알림의 전달을 보장하지 않으므로, 알림을 받지 못하면 실행 오류로 남는다. 컴파일러에는 이 상한을 걸지 않는다.
-- Windows는 작업 안의 동시 프로세스 수에도 상한(`ActiveProcessLimit`)을 건다. 64개다. 정상 풀이는 주 프로세스 하나(venv의 `python.exe`는 둘)이고 `subprocess`·`multiprocessing`으로 몇 개를 더 띄울 수 있어, 보통 기기의 `multiprocessing.Pool`(논리 CPU 수)도 들어가게 넉넉히 잡았다(논리 CPU가 60개를 넘는 기기의 `Pool()`은 막힐 수 있다). 끝없이 프로세스를 만드는 코드는 이 수에서 막혀 더는 만들지 못한다. 막혀서 끝난 실행은 작업의 알림(완료 포트)을 받으면 표준 오류에 `프로세스 수 상한(64)에 걸렸어요` 한 줄이 붙는다. 알림 전달은 보장되지 않는다. 컴파일러에는 걸지 않는다(`go build` 등이 자식을 많이 띄운다). POSIX에는 이 상한이 없다.
+- Windows는 작업 안의 동시 프로세스 수에도 상한(`ActiveProcessLimit`)을 건다. 64개다. 정상 풀이는 주 프로세스 하나(venv의 `python.exe`는 둘)이고 `subprocess`·`multiprocessing`으로 몇 개를 더 띄울 수 있어, 보통 기기의 `multiprocessing.Pool`(논리 CPU 수)도 들어가게 넉넉히 잡았다(논리 CPU가 60개를 넘는 기기의 `Pool()`은 막힐 수 있다). 끝없이 프로세스를 만드는 코드는 이 수에서 막혀 더는 만들지 못한다. 막혀서 끝난 실행은 작업의 알림(완료 포트)을 받으면 표준 오류에 `프로세스 수 상한(64)에 걸렸어요` 한 줄이 붙는다. 알림 전달은 보장되지 않는다. 컴파일러에는 걸지 않는다(컴파일러 등이 자식을 많이 띄운다). POSIX에는 이 상한이 없다.
 - Windows의 실행 시간(`time_ms`)은 프로세스를 작업에 넣고 재개한 뒤부터 잰다. 작업을 준비하는 시간은 넣지 않는다.
 
 효율성 케이스(케이스에 `timeout`이 있음)는 제한의 1.3배에서 끊는다. 제한을 넘었지만 1.3배 안에 스스로 끝났으면 한 번 더 돌려 짧은 쪽으로 판정한다. 1.3배에서 끊긴 것은 다시 돌리지 않는다. 시간 초과 결과의 표시 시간은 제한 시간이다. 통과했고 제한의 80% 이상 걸리면 `near: true`를 붙인다.
@@ -94,7 +90,7 @@ JS       (빌드 없음)                                            → node alg
 제한 = min(언어 상한, max(1.0, ceil(정답 풀이 시간 × 8 / 0.5) × 0.5))
 ```
 
-- 언어별 상한(초): python 10, javascript 4, java 4, kotlin 4, go 2, cpp 2, rust 2.
+- 언어별 상한(초): python 10, javascript 4, java 4, cpp 2, rust 2.
 - 바닥은 1.0초, 단위는 0.5초다. 계산 예: 정답 풀이 0.148초면 1.5초, 0.05초면 1.0초, Python 1.7초면 10.0초다.
 - 기본 문제는 정답 풀이로 효율성 케이스를 두 번 돌려 잰 시간으로 정해 `limits.json`에 쓴다. 다시 잰 값이 기존 값과 0.5초 이하로 다르고 기존 값으로도 여유가 맞으면 기존 값을 둔다. 여유 기준은 Python 정답 풀이가 제한의 1/3 안, 다른 언어는 1/2 안에 드는 것이다.
 - 사용자가 등록한 문제는 큰 입력을 언어 상한으로 한 번 돌려 잰 시간으로 제한을 정하고, 그 언어 하나로 문제에 저장한다.
@@ -108,7 +104,7 @@ JS       (빌드 없음)                                            → node alg
 - POSIX에서는 새 세션으로 띄우고, 끝나면 프로세스 그룹 전체를 `SIGKILL`로 끝낸다.
 - Windows에서는 프로세스를 멈춘 채로 만들어 새 작업 객체에 넣은 뒤 재개한다. 그래서 작업에 들기 전에 자식을 띄울 틈이 없다. 끝나면(정상 종료, 시간 초과, 상한 초과) 작업을 끝내 그 안의 모든 프로세스를 끝낸다. 작업은 `KILL_ON_JOB_CLOSE`라서 앱이 갑자기 죽어 핸들이 닫혀도 모두 끝난다. 처리되지 않은 예외로 죽는 프로그램은 오류 보고 창을 띄우지 않고 바로 끝난다. DLL을 찾지 못하는 것(MinGW 런타임 등) 같은 오류의 창도 뜨지 않는다. 프로세스를 만드는 동안만 앱의 오류 모드(`SetErrorMode`)에 `SEM_FAILCRITICALERRORS`, `SEM_NOGPFAULTERRORBOX`, `SEM_NOOPENFILEERRORBOX`를 더하고 끝나면 되돌린다. 자식이 부모의 오류 모드를 물려받기 때문이다. 콘솔 창은 띄우지 않는다.
 - Windows에서 작업 객체를 만들거나 프로세스를 넣지 못하면 작업 없이 실행한다. 이때 결과에 `warning`(까닭)과 `warning_kind`(`no_job`)를 붙인다. 앱은 채점 결과 아래에 실행 제한을 걸지 못하고 돌렸다는 한 줄을 보인다. 시간 제한과 0.25초마다 재는 메모리 상한은 그대로 걸린다. 멈춘 채 만든 프로세스를 재개하지 못하면 끝내고 실행 오류로 남기며 `warning_kind`는 `not_started`다. 앱은 이때 시작하지 못한 테스트가 있다고 알린다. 서버의 표준 오류에도 같은 까닭을 한 번 적는다(창 모드의 설치 파일에는 표준 오류가 없다). 정리는 시간 초과와 상한 초과 때의 `taskkill /F /T`뿐이다.
-- Windows에서 `./app` 같은 실행 파일은 작업 폴더의 절대 경로(`app.exe`가 있으면 그것)로 바꿔 부른다. 다른 명령은 PATH에서 찾은 경로로 부른다. `kotlinc.bat`처럼 `.exe`가 아닌 명령도 이렇게 찾는다.
+- Windows에서 `./app` 같은 실행 파일은 작업 폴더의 절대 경로(`app.exe`가 있으면 그것)로 바꿔 부른다. 다른 명령은 PATH에서 찾은 경로로 부른다. `.bat` 같은 `.exe`가 아닌 명령도 이렇게 찾는다.
 - 앱이 끝날 때 돌고 있는 채점 실행을 모두 끝낸다.
 
 ## 격리 없음

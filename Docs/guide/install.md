@@ -61,10 +61,8 @@ macOS 앱과 Windows 앱은 다음 순서로 바꾼다.
 |---|---|
 | Python | Python 3. macOS·Linux는 `python3` → `python`, Windows는 `python` → `py` → `python3` 순서로 찾는다 |
 | Java | JDK (`javac`, `java`) |
-| Kotlin | Kotlin 컴파일러 `kotlinc`와 `java` |
 | C++ | `g++` 또는 `clang++` 가운데 하나 (`-std=c++17 -O2`) |
 | JavaScript | Node.js (`node`) |
-| Go | Go (`go build`) |
 | Rust | Rust (`rustc --edition 2021 -O`) |
 
 도구는 있는지만 본다. 버전은 확인하지 않는다.
@@ -78,7 +76,7 @@ macOS 앱과 Windows 앱은 다음 순서로 바꾼다.
 
 묶은 macOS 앱은 기존 PATH 뒤에 다음 경로를 더해서 찾는다. Windows와 Linux에서는 PATH를 바꾸지 않는다.
 
-- `/opt/homebrew/bin`, `/usr/local/bin`, `~/.pyenv/shims`, `~/.local/bin`, `~/.cargo/bin`, `/usr/local/go/bin`, `~/go/bin`
+- `/opt/homebrew/bin`, `/usr/local/bin`, `~/.pyenv/shims`, `~/.local/bin`, `~/.cargo/bin`
 - Homebrew JDK `/opt/homebrew/opt/openjdk*/bin`과 nvm Node `~/.nvm/versions/node/*/bin`은 각각 이름 순으로 마지막 하나
 
 ## 기록이 남는 곳

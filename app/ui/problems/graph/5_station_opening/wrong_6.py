@@ -1,4 +1,4 @@
-# 틀린 까닭: INF를 int 최댓값(2,147,483,647)으로 두어 INF + INF가 넘쳐 음수가 된다(Java·C++·Go·Rust에서 생기는 일을 32비트 덧셈으로 흉내 냈다)
+# 틀린 까닭: INF를 int 최댓값(2,147,483,647)으로 두어 INF + INF가 넘쳐 음수가 된다(Java·C++·Rust에서 생기는 일을 32비트 덧셈으로 흉내 냈다)
 def solution(n, tracks, queries):
     INF = 2**31 - 1
     dist = [[INF] * (n + 1) for _ in range(n + 1)]

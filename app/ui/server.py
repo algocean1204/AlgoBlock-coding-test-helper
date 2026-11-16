@@ -80,7 +80,7 @@ TOUCHED_FILE = DATA / "touched.json"  # 문제를 마지막으로 손댄 시각 
 KINDS = ("example", "accuracy", "efficiency")  # 케이스 종류: 공개 예시, 숨긴 정확성, 숨긴 효율성(큰 입력)
 STATIC = {"/": ("index.html", "text/html"), "/index.html": ("index.html", "text/html"),
           "/app.css": ("app.css", "text/css"), "/app.js": ("app.js", "text/javascript"),
-          "/highlight.js": ("highlight.js", "text/javascript"),  # 코드 칸의 문법 색(채점 언어 7개)
+          "/highlight.js": ("highlight.js", "text/javascript"),  # 코드 칸의 문법 색(채점 언어 5개)
           "/icon.svg": ("icon.svg", "image/svg+xml"), "/favicon.svg": ("favicon.svg", "image/svg+xml"),  # 앱 아이콘과 탭 아이콘(같은 그림, 여백만 다르다)
           "/tour-demos.js": ("tour-demos.js", "text/javascript"), "/tour-demos.css": ("tour-demos.css", "text/css"),  # 처음 안내의 움직이는 데모(stageshow/에서 미리 빌드, 안내를 열 때만 불러온다)
           "/PretendardVariable.woff2": ("PretendardVariable.woff2", "font/woff2")}  # 맥 밖에서 쓰는 글꼴(OFL)
@@ -257,7 +257,17 @@ def first_line(text: str) -> str:
 
 # 기본 문제(make_builtin.py가 ui/problems에서 묶는다): 글, 케이스(공개 예시·숨긴 정확성·숨긴 효율성), 실전 신호, 언어별 정답 풀이·시작 코드,
 # 그리고 미리 만들어 둔 뼈대·풀이 가이드·블록 계획(ready. 없을 수 있다). 단계가 없는 예전 형식은 읽지 않는다
-BUILTIN = {row["id"]: row for row in read_json(Path(os.environ.get("ALGOBLOCK_UI_BUILTIN") or STATIC_DIR / "builtin.json"), []) if "level" in row}
+def supported(row: dict) -> dict:
+    """저장된 문제 자료에서 지원하지 않는 언어(예전에 있던 Go·Kotlin 등)의 칸을 거른다. 자료 파일은 고치지 않고 읽을 때만 거른다."""
+    ok = check_judge().LANGUAGES
+    row = {**row, "languages": [name for name in row.get("languages") or [] if name in ok]}
+    for key in ("solutions", "starters", "limits"):
+        if isinstance(row.get(key), dict):
+            row[key] = {name: value for name, value in row[key].items() if name in ok}
+    return row
+
+
+BUILTIN = {row["id"]: supported(row) for row in read_json(Path(os.environ.get("ALGOBLOCK_UI_BUILTIN") or STATIC_DIR / "builtin.json"), []) if "level" in row}
 THEME_ORDER = {key: n for n, key in enumerate(ALGORITHMS)}
 
 
@@ -276,6 +286,7 @@ def load_problems() -> dict:
         mode = "program" if raw.get("mode") == "program" else "function"  # 푸는 방식. 없는 예전 문항은 함수 방식
         made = [case for case in raw.get("made") or [] if isinstance(case, dict)]  # 대조로 만든 숨은·효율성 케이스(made: true). 사용자가 넣은 케이스(cases)와 따로 둔다
         level = raw.get("level") if raw.get("level") in range(1, 6) else 0  # 사용자가 고친 단계(없으면 분석이 붙인 것을 목록이 쓴다)
+        raw = {**raw, "language": raw["language"] if raw["language"] in check_judge().LANGUAGES else "python"}  # 지원을 접은 언어로 저장된 문항은 파이썬으로 연다
         out[raw["id"]] = SimpleNamespace(**{**raw, "theme": theme, "mode": mode, "cases": [*raw["cases"], *made], "level": level},
                                          sample=False, builtin=False, theme_name=theme_name(theme) if theme else "")
     for row in sorted(BUILTIN.values(), key=lambda row: (THEME_ORDER.get(row["theme"], 99), row["level"])):
@@ -638,6 +649,8 @@ def counts(t) -> dict:
 
 
 def starter_of(p, language: str) -> str:
+    if language not in check_judge().LANGUAGES:  # 지원하지 않는 언어(예전 기록)에는 시작 코드가 없다
+        return ""
     return BUILTIN[p.id]["starters"].get(language, "") if p.builtin else "" if p.sample else own_starter(p, language)
 
 
@@ -712,7 +725,7 @@ def problem_rows(t) -> list[dict]:
         # 붙인 주제가 이긴다. 계획의 알고리즘이 15개 밖이면 주제 칩을 빼낸다
         shown = p.theme_name or (theme_name(guessed[p.id]) if not p.sample and guessed.get(p.id) else "")
         # 등급: 통과 2회마다 한 등급, 8회 이상 5등급
-        rows.append({"id": p.id, "title": p.title, "language": chosen.get(p.id, p.language), "sample": p.sample, "builtin": p.builtin,
+        rows.append({"id": p.id, "title": p.title, "language": chosen.get(p.id) if chosen.get(p.id) in check_judge().LANGUAGES else p.language, "sample": p.sample, "builtin": p.builtin,
                      "theme": p.theme, "theme_name": shown, "level": p.level, "passed": passed, "submitted": total, "solved": passed > 0, "unaided": p.id in alone,
                      "touched": p.id in mine, "grade": min(5, 1 + min(passed, 10) // 2), **labels_of(t, p, marks)})
     return rows
@@ -971,7 +984,7 @@ def sample_cases(text: str) -> dict:
 
 
 ARG_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
-# 일곱 언어의 흔한 예약어와, 시작 코드·채점기가 쓰는 이름(answer, solution). 인자 이름이 이것과 같으면 뒤에 _를 붙인다
+# 여러 언어의 흔한 예약어와, 시작 코드·채점기가 쓰는 이름(answer, solution). 인자 이름이 이것과 같으면 뒤에 _를 붙인다
 RESERVED = set("""
 and as assert async await auto bool boolean break byte case catch chan char class const continue crate debugger def default defer del delete do double dyn
 elif else enum eval except explicit export extends extern false False fallthrough final finally float fn for friend fun func function go goto if impl
@@ -1388,7 +1401,7 @@ def edit(body: dict) -> dict:
                 t.index.delete(pid)
             if text_changed:  # 옛 글에 맞춰 남긴 코드다
                 write_json(CHECKPOINTS_FILE, {key: value for key, value in read_json(CHECKPOINTS_FILE, {}).items() if key != pid})
-            t.store.put_problem(pid, ctx.language if ctx else row["language"], text, direct_code=ctx.direct_code if ctx else "", title=title)
+            t.store.put_problem(pid, ctx.language if ctx else (row["language"] if row["language"] in check_judge().LANGUAGES else "python"), text, direct_code=ctx.direct_code if ctx else "", title=title)
         if files is not None:
             save_assets(pid, files)
     if text_changed or redo:
@@ -1426,7 +1439,7 @@ def score(report: dict) -> dict:
     return {"accuracy": part(("example", "accuracy")), "efficiency": part(("efficiency",))}
 
 
-ERROR_WORDS = ("Error", "Exception", "panic", "terminate called", "terminating due to")  # TypeError, Exception in thread "main" …, panic: …(Go), thread 'main' panicked at …(Rust), C++ 예외로 멈춤
+ERROR_WORDS = ("Error", "Exception", "panic", "terminate called", "terminating due to")  # TypeError, Exception in thread "main" …, thread 'main' panicked at …(Rust), C++ 예외로 멈춤
 TRACE_LINES = ("    at ", "\tat ", "Node.js v")  # JS·Java 호출 자취와 Node 버전 줄
 
 
@@ -1434,15 +1447,15 @@ ABNORMAL = "프로그램이 비정상적으로 끝났어요. 배열 범위를 �
 TEMP_DIR = re.compile(r"[^\s'\"(]*algoblock-check-[^/\\\s]+[/\\]")  # 채점기의 임시 폴더 경로(app/judge common.work_directory)
 HARNESS = re.compile(r"\b(?:algoblock_main|algoblock_runner|FunctionRunner)\.\w+")  # 채점기가 만든 호출 파일(app/judge의 언어별 runner.py)
 # 채점기가 내 코드를 적어 둔 파일: 함수 방식, 프로그램 방식(main. 임시 폴더 경로는 먼저 지우므로 경로 안의 main.rs 같은 남의 파일은 둔다)
-USER_FILE = re.compile(r"\b(?:solution\.(?:py|js|go|rs|cpp)|Solution\.(?:java|kt))\b|(?<![/\\])\b(?:main\.(?:py|js|go|rs|cpp)|Main\.(?:java|kt))\b")
+USER_FILE = re.compile(r"\b(?:solution\.(?:py|js|rs|cpp)|Solution\.java)\b|(?<![/\\])\b(?:main\.(?:py|js|rs|cpp)|Main\.java)\b")
 
 
 def clean(text: str) -> str:
-    """오류 글에서 채점기 안쪽 이름을 가린다: 임시 폴더 경로는 지우고, 호출 파일을 가리키는 자취 줄과 Go 모듈 이름 줄(# algoblockcheck)은 빼고,
+    """오류 글에서 채점기 안쪽 이름을 가린다: 임시 폴더 경로는 지우고, 호출 파일을 가리키는 자취 줄은 빼고,
     호출 파일의 위치 머리(FunctionRunner.java:12:)는 떼고, 내 코드를 적어 둔 파일 이름은 '내 코드'로 바꾼다."""
     rows = []
     for row in TEMP_DIR.sub("", text or "").splitlines():
-        if "algoblockcheck" in row or (HARNESS.search(row) and row.strip().startswith(("at ", "-->", "File "))):
+        if HARNESS.search(row) and row.strip().startswith(("at ", "-->", "File ")):
             continue
         rows.append(USER_FILE.sub("내 코드", re.sub(HARNESS.pattern + r"(?::\d+)*:?\s?", "", row)))
     return "\n".join(rows)
@@ -1475,7 +1488,6 @@ def exception_name(line: str) -> str:
     return words[-1].rsplit(".", 1)[-1].strip("'\"") if words else ""
 
 
-FAMILY = {"kotlin": "java"}  # 같은 예외 이름을 쓰는 언어
 HINTS = {  # 예외 이름 → 한 줄 풀이(무엇이 일어났나, 무엇을 볼까). 숨은 테스트에도 붙으니 입력을 드러내지 않는 일반적인 말이다
     "python": {
         "KeyError": "딕셔너리에 없는 키를 읽었어요. 처음 보는 값일 때를 따져 보세요.",
@@ -1516,10 +1528,7 @@ HINTS = {  # 예외 이름 → 한 줄 풀이(무엇이 일어났나, 무엇을 
         "SyntaxError": "자바스크립트 문법에 맞지 않는 줄이 있어요. 괄호와 따옴표 짝을 보세요.",
     },
 }
-PHRASE_HINTS = (  # 이름 없이 문구로 알리는 오류(Go 패닉, Rust 패닉): (언어, 오류 글에서 찾을 것, 풀이)
-    ("go", re.compile(r"index out of range"), "배열·슬라이스의 범위를 벗어난 자리를 읽었어요. 길이와 같은 번호일 수 있어요."),
-    ("go", re.compile(r"nil pointer dereference"), "nil인 값을 썼어요. 만들지 않은 맵이나 포인터를 쓴 곳을 보세요."),
-    ("go", re.compile(r"integer divide by zero"), "0으로 나눴어요. 나누는 값이 0이 되는 경우를 따져 보세요."),
+PHRASE_HINTS = (  # 이름 없이 문구로 알리는 오류(Rust 패닉): (언어, 오류 글에서 찾을 것, 풀이)
     ("rust", re.compile(r"index out of bounds"), "벡터의 범위를 벗어난 자리를 읽었어요. 빈 벡터이거나 len()과 같은 번호일 수 있어요."),
     ("rust", re.compile(r"attempt to .+ with overflow"), "계산한 값이 형의 범위를 넘었어요. i64를 쓰거나 빼기가 음수가 되는지 보세요."),
     ("rust", re.compile(r"called `?Option::unwrap\(\)`? on a `?None`? value"), "None인 값에 unwrap()을 불렀어요. 값이 없을 때를 먼저 따져 보세요."),
@@ -1539,7 +1548,7 @@ IMPORTED = {  # 가져와야(import) 쓸 수 있는 표준 모듈과 그 안의 
 def error_hint(text: str, language: str) -> str:
     """실행 오류 글에 붙일 한국어 한 줄 풀이. 모르는 오류면 빈 글. 가져오지 않은 표준 모듈 이름의 NameError는 import를 덧붙인다."""
     full, name = clean(text), exception_name(error_line(text, "runtime_error"))
-    known = HINTS.get(FAMILY.get(language, language), {}).get(name)
+    known = HINTS.get(language, {}).get(name)
     missing = re.search(r"name '(\w+)' is not defined", full) if language == "python" and name == "NameError" else None
     if known and missing and missing[1] in IMPORTED:
         name = missing[1]
@@ -1751,6 +1760,20 @@ def change_language(t, p, language: str, code: str | None) -> None:
     LANG[pid] = language
 
 
+def retire_languages() -> None:
+    """서버를 켤 때 한 번: 엔진 저장소에서 지원하지 않는 언어(예전에 있던 Go·Kotlin 등)로 저장된 문제를 모두 파이썬으로 옮긴다.
+    그 언어의 코드·계획은 change_language가 보관하고 지우지 않는다."""
+    with tutor() as t:
+        rows = t.store.conn.execute("SELECT id, language FROM problem").fetchall()
+        for row in rows:
+            if row["language"] not in check_judge().LANGUAGES:
+                try:
+                    with LOCKS[row["id"]]:
+                        change_language(t, SimpleNamespace(id=row["id"]), "python", None)
+                except Exception as e:  # 한 문제를 옮기지 못해도 앱은 뜬다(그 문제의 시작 코드는 starter_of가 빈 글로 받는다)
+                    print(f"[retire] {row['id']}: {e}", file=sys.stderr)
+
+
 SOLUTION_COLUMNS = ("approach", "steps_json", "code", "verified", "clues_json")
 SESSION_COLUMNS = ("plan_json", "explain_json", "solution_json")  # 대화 진행(open_count)은 보관하지 않는다(되살리면 첫 블록부터)
 
@@ -1902,6 +1925,8 @@ def own_starter(p, language: str) -> str:
     """등록한 문제의 시작 코드: 모든 케이스의 넣을 값과 기대 결과에서 형을 정해 함수 머리를 만든다. 정할 수 없으면 빈 글.
     인자 이름은 입출력 예 표 머리에서 가져온 것(names, 예약어면 뒤에 _), 없거나 수가 다르면 a, b, c …
     프로그램 방식은 표준 입력을 읽는 main 뼈대."""
+    if language not in check_judge().LANGUAGES:
+        return ""
     if p.mode == "program":
         return program_stub(language)
     types, returns = own_types(p) or ([None], None)
@@ -1990,7 +2015,7 @@ FAIL_KINDS = {"failed": "오답", "runtime_error": "실행 오류", "timeout": "
 FAIL_OF = {"output_limit": "runtime_error", "memory_limit": "runtime_error",  # 보고서에서는 실행 오류로 묶는다
            "entry_missing": "compile_error", "unsupported_signature": "compile_error",  # 코드 모양이 틀렸다
            "undecided": "failed"}
-LANG_NAMES = {"python": "Python", "java": "Java", "javascript": "JavaScript", "cpp": "C++", "go": "Go", "kotlin": "Kotlin", "rust": "Rust"}
+LANG_NAMES = {"python": "Python", "java": "Java", "javascript": "JavaScript", "cpp": "C++", "go": "Go", "kotlin": "Kotlin", "rust": "Rust"}  # 예전 제출 기록에 남은 Go·Kotlin 이름도 보여야 해서 둔다
 
 # 준비도(이 앱의 기본 문제 기준). 군과 문턱은 여기 한 곳에만 둔다. 심화(dijkstra, graph)는 단계 조건에 넣지 않는다
 ESSENTIAL = ("implementation", "simulation", "hash", "sort", "brute_force", "bfs", "dfs")  # 필수
@@ -2714,6 +2739,7 @@ def start() -> "ThreadingHTTPServer | str":
     except OSError as exc:  # 잠금은 잡았으니 다른 프로그램(또는 다른 데이터 폴더의 앱)이 이 포트를 쓰고 있다
         return f"{port}번 포트를 이미 다른 프로그램이 쓰고 있어요. 새로 띄우지 않았습니다: {exc}"
     load_keys()
+    retire_languages()
     updater.start()  # 켤 때(마지막 확인에서 24시간이 지났으면)와 24시간마다 새 버전을 뒤에서 본다(실패하면 1시간부터 늘려 다시)
     if threading.current_thread() is threading.main_thread():  # 창(window.py)에서 띄우면 스레드라 신호를 받을 수 없다
         signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))  # 끝내기 전에 atexit의 stop_grading이 돈다

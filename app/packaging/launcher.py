@@ -35,7 +35,7 @@ def prepare() -> None:
         # Finder에서 연 앱은 PATH가 짧다. 사용자가 설치한 파이썬·컴파일러(채점에 쓴다)를 찾게 흔한 자리를 더한다
         home = Path.home()
         extra = ["/opt/homebrew/bin", "/usr/local/bin", str(home / ".pyenv" / "shims"), str(home / ".local" / "bin"),
-                 str(home / ".cargo" / "bin"), "/usr/local/go/bin", str(home / "go" / "bin")]  # Rust(rustup), Go
+                 str(home / ".cargo" / "bin")]  # Rust(rustup)
         # Homebrew의 JDK는 /opt/homebrew/bin에 이어지지 않고, nvm의 Node는 버전 폴더 안에 있다(가장 높은 버전을 쓴다)
         newest = lambda path: [int(n) for n in re.findall(r"\d+", path.parent.name)]  # v9.11.2 < v22.1.0(글자 순서로는 v9가 뒤다)
         for found in (sorted(Path("/opt/homebrew/opt").glob("openjdk*/bin")), sorted((home / ".nvm" / "versions" / "node").glob("*/bin"), key=newest)):

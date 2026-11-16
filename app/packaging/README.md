@@ -118,7 +118,7 @@ macOS에서는 `PATH` 뒤에 다음을 더한다. Finder에서 연 앱은 PATH�
 
 - `/opt/homebrew/bin`, `/usr/local/bin`
 - `~/.pyenv/shims`, `~/.local/bin`
-- `~/.cargo/bin`(Rust), `/usr/local/go/bin`, `~/go/bin`(Go)
+- `~/.cargo/bin`(Rust)
 - `/opt/homebrew/opt/openjdk*/bin`(Homebrew JDK. 있으면 이름순 마지막 것 하나)
 - `~/.nvm/versions/node/*/bin`(nvm Node. 있으면 이름순 마지막 것 하나)
 

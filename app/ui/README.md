@@ -65,7 +65,7 @@ node ui/test_highlight.js         # 코드 칸 문법 색
 | `window.py` | 서버를 같이 띄우고 네이티브 창으로 연다 |
 | `updater.py` | 새 버전 확인(켤 때와 24시간마다, 실패하면 1시간부터 두 배씩 최대 6시간 간격으로 다시)과 업데이트(받기, SHA-256 확인, 묶인 macOS 앱(`swap.sh`)과 Windows exe(`swap.ps1`)의 바꿔 끼우기와 되돌리기). 앱의 버전(`VERSION`)과 Windows 릴리스 파일 이름(`WINDOWS_ASSET`)도 여기 있다 |
 | `index.html`, `app.css`, `app.js` | 화면. 상태를 바꾸고, 서버에 요청하고, 다시 그린다. 처음 안내는 `index.html`의 `<dialog id="tour">`와 `app.js`의 `TOUR`, `renderTour`, `openTour`다 |
-| `highlight.js` | 코드 칸(코드 전체, 블록 칸)의 문법 색. 채점 언어 7개를 언어마다 정규식 하나로 나눈다. 글상자의 글을 투명하게 두고 같은 자리에 색 글(`pre`, 줄마다 `div` 하나)을 겹친다. 입력하면 바뀐 줄만 다시 칠한다. 500줄 또는 30,000자를 넘으면 색을 끈다 |
+| `highlight.js` | 코드 칸(코드 전체, 블록 칸)의 문법 색. 채점 언어 5개를 언어마다 정규식 하나로 나눈다. 글상자의 글을 투명하게 두고 같은 자리에 색 글(`pre`, 줄마다 `div` 하나)을 겹친다. 입력하면 바뀐 줄만 다시 칠한다. 500줄 또는 30,000자를 넘으면 색을 끈다 |
 | `builtin.json` | 기본 문제 묶음(75문제). 빌드 결과물이라 손으로 고치지 않는다 |
 | `make_builtin.py` | `problems/`의 문제 폴더를 `builtin.json`으로 묶는다 |
 | `problemkit.py` | 문제 폴더 읽기, 케이스 만들기, 검사(`check`, `stub`, `try`) |
