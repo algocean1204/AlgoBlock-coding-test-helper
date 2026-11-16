@@ -268,12 +268,13 @@ def _params(inside: list[str], language: str) -> list[tuple[str, str, str]]:
     return out
 
 
-def _declared(toks: list[str]) -> list[tuple[str, str, str]]:
-    """중괄호 언어 한 줄의 선언 (이름, 꼴, 타입): 타입 꼴 뒤에 오고 그 뒤가 = ; , : 인 이름(초기값 없는 선언 포함), ':=' 왼쪽, for 머리의 반복 변수."""
+def _declared(toks: list[str], language: str = "") -> list[tuple[str, str, str]]:
+    """중괄호 언어 한 줄의 선언 (이름, 꼴, 타입): 타입 꼴 뒤에 오고 그 뒤가 = ; , : ( 인 이름(초기값 없는 선언 포함. '(' 는 C++ 생성자 꼴), ':=' 왼쪽, for 머리의 반복 변수."""
     out, depth, start, typed, loop, head = [], 0, 0, None, toks[:1] == ["for"], False
     word = next((w for w in ("in", "of") if w in toks), "")
-    if loop and toks[1:2] == ["("] and word:  # JavaScript 'for (x in xs)', 'for (const x of xs)', 'for ((i, v) in …)'
-        return [(t, "loop", "") for t in toks[2:toks.index(word)] if _NAME.fullmatch(t) and t not in _LOOSE]
+    if loop and word:  # JavaScript 'for (x in xs)', 'for (const x of xs)', 'for ((i, v) in …)', Rust 'for i in 0..n', 'for (i, &c) in …'
+        first = 2 if toks[1:2] == ["("] else 1
+        return [(t, "loop", "") for t in toks[first:toks.index(word)] if _NAME.fullmatch(t) and t not in _LOOSE and t != "ref"]
     for i, tok in enumerate(toks):
         if tok in ";{}":
             start, typed = i + 1, None
@@ -291,7 +292,7 @@ def _declared(toks: list[str]) -> list[tuple[str, str, str]]:
             continue
         after = toks[i + 1] if i + 1 < len(toks) else ";"
         kind = "loop" if head else "var"
-        if after not in ("=", ";", ",", ":", ")") or (after == ":" and toks[i + 2:i + 3] == [":"]):
+        if after not in ("=", ";", ",", ":", ")") + (("(",) if language == "cpp" and not head else ()) or (after == ":" and toks[i + 2:i + 3] == [":"]):
             continue
         before = toks[start:i]
         if typed is not None and toks[i - 1:i] == [","]:
@@ -329,6 +330,64 @@ def _rhs_after(toks: list[str], at: int) -> list[str]:
     return out
 
 
+def _group_end(toks: list[str], at: int) -> int:
+    """toks[at]의 여는 괄호에 짝이 되는 닫는 괄호 자리(없으면 끝)."""
+    depth = 0
+    for j in range(at, len(toks)):
+        depth += (toks[j] in "([{") - (toks[j] in ")]}")
+        if depth == 0:
+            return j
+    return len(toks)
+
+
+def _bracket_names(inside: list[str]) -> list[str]:
+    """구조 분해 괄호 안의 새 이름: 쉼표로 나눈 조각마다 '= 기본값'은 떼고, '키: 이름'은 이름만(JavaScript), 이름 아닌 낱말과 '_'는 뺀다."""
+    names = []
+    for part in _split_top(inside):
+        part = part[:part.index("=")] if "=" in part else part
+        part = part[len(part) - part[::-1].index(":"):] if ":" in part and "[" not in part[part.index(":"):] and "{" not in part[part.index(":"):] else part
+        names += [t for t in part if _NAME.fullmatch(t) and t not in _LOOSE and t != "_"]
+    return names
+
+
+def _destructured(toks: list[str], language: str) -> tuple[list[str], str, int] | None:
+    """구조 분해·패턴 선언 한 줄의 (새 이름들, 꼴, 오른쪽 식이 시작하는 자리). 아니면 None.
+    Rust 'let (a, b) = …', 'if let Some(v) = …', 'while let Some(x) = …'(while은 loop), JavaScript 'const [a, b] = …'·'const { x, y } = …',
+    C++ 'auto [a, b] = …', 'for (auto& [k, v] : m)', JavaScript 'for (const [k, v] of …)'(for는 loop)."""
+    loop = toks[:1] == ["for"]
+    if language == "rust":
+        if "let" not in toks:
+            return None
+        at = toks.index("let") + 1
+        while toks[at:at + 1] in (["mut"], ["ref"]):
+            at += 1
+        if not (toks[at:at + 1] in (["("], ["["], ["&"]) or toks[at:at + 1] and toks[at][:1].isupper()):
+            return None  # 'let x = …'처럼 이름 하나는 선언 읽기가 맡는다
+        end, depth = at, 0
+        while end < len(toks) and not (depth == 0 and (toks[end] == "=" or toks[end] == ":" and toks[end + 1:end + 2] != [":"] and toks[end - 1:end] != [":"])):
+            depth += (toks[end] in "([{") - (toks[end] in ")]}")
+            end += 1
+        names = [t for k, t in enumerate(toks[at:end], at) if _NAME.fullmatch(t) and t[0].islower() and t not in ("mut", "ref") and t != "_"
+                 and toks[k + 1:k + 2] not in (["("], [":"]) and toks[k - 1:k] != [":"]]
+        rhs = toks.index("=", end) + 1 if "=" in toks[end:] else len(toks)
+        return (names, "loop" if toks[:1] == ["while"] else "var", rhs) if names else None
+    for k, tok in enumerate(toks):
+        if tok not in ("const", "let", "var", "auto"):
+            continue
+        at = k + 1
+        while toks[at:at + 1] in (["&"], ["&&"], ["const"]):
+            at += 1
+        if toks[at:at + 1] not in (["["], ["{"]) or (toks[at] == "{" and language != "javascript"):
+            return None
+        end = _group_end(toks, at)
+        nxt = toks[end + 1:end + 2]
+        if nxt == ["="] or loop and nxt in ([":"], ["of"], ["in"]):
+            names = _bracket_names(toks[at + 1:end])
+            return (names, "loop" if loop else "var", end + 2) if names else None
+        return None
+    return None
+
+
 def made_statements(code: str, language: str, program: bool = False) -> list[tuple]:
     """코드(틀 줄은 뺀다)가 새로 만드는 이름 [(이름, 꼴, 타입 글, 만드는 문장), …](처음 나온 차례).
     만드는 문장: ('=', 오른쪽 식 낱말, 자리) / ('in'·':'·'range', 도는 대상, 자리) / ('for', 반복 머리) / ('type', 타입) / None(매개변수).
@@ -349,13 +408,19 @@ def made_statements(code: str, language: str, program: bool = False) -> list[tup
             out += [(*item, None) for item in _params(toks[at + 1:end], language)]
             continue
         if language != "python":
-            for name, kind, typ in _declared(toks):
+            if pattern := _destructured(toks, language):
+                names, kind, at = pattern
+                rhs = toks[at:]
+                shape = (":", tuple(rhs[:-2] if rhs[-2:] == [")", "{"] else rhs[:-1] if rhs[-1:] in ([")"], ["{"]) else rhs)) if kind == "loop" else ("=", tuple(_rhs_after(toks, at - 1)))
+                out += [(name, kind, "", (*shape, i)) for i, name in enumerate(names)]
+                continue
+            for name, kind, typ in _declared(toks, language):
                 i = toks.index(name)
                 after = toks[i + 1] if i + 1 < len(toks) else ";"
                 if after == "=":
                     shape = ("for", tuple(toks[1:])) if kind == "loop" else ("=", tuple(_rhs_after(toks, i + 1)))
                 elif after == ":" or kind == "loop":
-                    rhs = toks[i + 2:]
+                    rhs = toks[next((j for j in range(i + 1, len(toks)) if toks[j] in (":", "in", "of")), i) + 1:]  # 'for (i, c) in xs'처럼 이름이 여럿이면 쉼표 건너 도는 대상
                     shape = (":", tuple(rhs[:-2] if rhs[-2:] == [")", "{"] else rhs[:-1] if rhs[-1:] == [")"] else rhs))
                 elif after in ("in", "of"):
                     shape = ("in", tuple(toks[i + 2:]))

@@ -1027,6 +1027,41 @@ class GrammarRuleTest(unittest.TestCase):
         walrus = [row for row in made_statements("def solution(xs):\n    while n := len(xs):\n        xs.pop()\n    return 0\n", "python") if row[0] == "n"]
         self.assertTrue(walrus and walrus[0][3][1], walrus)  # Python의 괄호 없는 := 도 오른쪽 식을 잃지 않는다
 
+    def test_made_names_per_declaration_form(self):
+        """줄마다 새로 만드는 이름과 꼴이 정해져 있다(반복 머리·패턴·구조 분해·생성자 꼴 선언 포함)."""
+        from ..common.solution import made_statements
+
+        table = [
+            ("rust", "for i in 0..n {", [("i", "loop")]),
+            ("rust", "for (i, c) in s.chars().enumerate() {", [("i", "loop"), ("c", "loop")]),
+            ("rust", "while let Some(x) = stack.pop() {", [("x", "loop")]),
+            ("rust", "if let Some(v) = map.get(&k) {", [("v", "var")]),
+            ("rust", "let (a, b) = (1, 2);", [("a", "var"), ("b", "var")]),
+            ("rust", "let mut v = Vec::new();", [("v", "var")]),
+            ("cpp", "vector<int> v(n);", [("v", "var")]),
+            ("cpp", "vector<vector<int>> g(n, vector<int>());", [("g", "var")]),
+            ("cpp", "vector<int> a(n), b(m);", [("a", "var"), ("b", "var")]),
+            ("cpp", "auto [a, b] = p;", [("a", "var"), ("b", "var")]),
+            ("cpp", "for (auto& [k, v] : m) {", [("k", "loop"), ("v", "loop")]),
+            ("cpp", "for (auto x : xs) {", [("x", "loop")]),
+            ("cpp", "int x = 0, y;", [("x", "var"), ("y", "var")]),
+            ("cpp", "sort(a.begin(), a.end());", []),
+            ("cpp", "cout << x(y);", []),
+            ("javascript", "const [a, b] = pair;", [("a", "var"), ("b", "var")]),
+            ("javascript", "const { x, y } = p;", [("x", "var"), ("y", "var")]),
+            ("javascript", "const { x: u, y = 2 } = p;", [("u", "var"), ("y", "var")]),
+            ("javascript", "for (const [k, v] of m) {", [("k", "loop"), ("v", "loop")]),
+            ("javascript", "for (const x of xs) {", [("x", "loop")]),
+            ("java", "for (int x : xs) {", [("x", "loop")]),
+            ("java", "int[] a = new int[n];", [("a", "var")]),
+        ]
+        for language, line, expected in table:
+            code = line + "\n" + ("}\n" if line.endswith("{") else "")
+            self.assertEqual([(n, kind) for n, kind, *_ in made_statements(code, language)], expected, f"{language}: {line}")
+        # 구조 분해의 이름마다 자리가 다르다(같은 도는 대상에서 받아도 짝이 섞이지 않는다)
+        rows = made_statements("const [a, b] = pair;\n", "javascript")
+        self.assertNotEqual(rows[0][3], rows[1][3])
+
     def test_entry_params_follow_each_grammar(self):
         from ..common.solution import entry_params
 
