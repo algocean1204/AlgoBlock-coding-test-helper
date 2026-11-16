@@ -254,6 +254,13 @@ def builtin(fake) -> None:
     assert timed["status"] == "timeout" and timed["score"]["accuracy"][0] == timed["score"]["accuracy"][1] and timed["score"]["efficiency"][0] < 2
     debug = call("/api/debug", id=PID, code=slow)[1]
     assert debug["efficiency_only"] and not debug["passed"]  # 틀린 줄을 찾을 일이 아니다(모델 0회)
+    assert "시간이 모자라요" in debug["message"] and "틀린 줄" not in debug["message"]
+    deep = ("def solution(loans, k):\n    count = {}\n    shelf = []\n    def go(i):\n        if i == len(loans):\n            return\n        count[loans[i]] = count.get(loans[i], 0) + 1\n"
+            "        if count[loans[i]] == k:\n            shelf.append(loans[i])\n        go(i + 1)\n    go(0)\n    return shelf\n")
+    got = call("/api/debug", id=PID, code=deep)[1]  # 답은 맞지만 큰 입력에서 재귀가 너무 깊다(제출로 남기지 않는 채점): 시간이 모자란 것이 아니다
+    crashed, said = got["judged"], got["message"]
+    assert crashed["score"]["accuracy"][0] == crashed["score"]["accuracy"][1] and any(c["kind"] == "efficiency" and c["status"] == "runtime_error" for c in crashed["cases"]), crashed
+    assert "실행 중 오류" in said and "재귀가 너무 깊어요" in said and "시간이 모자라요" not in said, said
 
     toc = [{"block": 1, "kind": "loop", "seen": 0, "total": 3}, {"block": 2, "kind": "condition", "seen": 0, "total": 3}]  # 힌트 목차: 이름은 그 블록의 힌트를 다 본 뒤에만
     assert call("/api/hint", id=PID, peek=True)[1] == {"seen": 0, "total": 6, "done": False, "shown": [], "blocks": toc}  # 들여다보기만 하면 새 힌트가 열리지 않는다
@@ -967,6 +974,17 @@ def guide_spoken() -> None:
     assert body["open_count"] == 1 and body["messages"][-1]["text"] == WRITE_TIP and body["messages"][-1]["block_index"] == 0, body
     body = call("/api/turn", id=pid, mode="guide", event="block_filled", block_id="b1", code="\n".join(LINES[:5]))[1]
     assert body["open_count"] == 2, body
+
+
+def result_guides() -> None:
+    """채점 결과와 방식 화면의 안내(화면 코드 확인): 큰 입력의 실행 오류는 시간 부족이라 하지 않고, 효율성만 실패하면 ‘틀린 곳 같이 찾기’가 없는 까닭을 말하며,
+    튜터 방식 전환 단추는 무엇이 바뀌는지 말하고, 튜터의 질문으로에서 코드 칸으로 가는 길이 보인다. 브라우저 동작은 화면 확인으로 본다."""
+    js = (HERE / "app.js").read_text(encoding="utf-8")
+    assert 'const effCrash = (r) => r.cases.find((c) => c.kind === "efficiency" && c.status === "runtime_error");' in js and "답은 맞지만 큰 입력에서 오류가 나요" in js
+    assert "아주 큰 입력에서 실행 중 오류가 났어요(" in js and "답이 맞아서 ‘틀린 곳 같이 찾기’는 열지 않아요." in js
+    assert "혼자 풀기로 바뀌어요" not in js and "오른쪽 칸이 해설로 바뀌어요" in js and "오른쪽 칸이 힌트로 바뀌어요" in js
+    assert 'S.talk === "chair" && !s.blocks.some((b, i) => blockState(b, i) === "found")' in js and 'data-tab="direct">코드 전체 칸 열기' in js
+    assert "efficiency_message(report)" in (HERE / "server.py").read_text(encoding="utf-8")
 
 
 def language_memory() -> None:
@@ -2662,6 +2680,7 @@ def main() -> None:
         state_names_by_mode()
         chair_found()
         guide_spoken()
+        result_guides()
         language_memory()
         no_tool()
         results()
