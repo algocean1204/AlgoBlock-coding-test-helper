@@ -24,6 +24,7 @@ from dataclasses import replace
 import sys
 
 from ..common.solution import (_TOKEN, body_lines, defined_function, frame_line, frame_of, guide_checked, made_statements, name_tables, open_braces, pairs_of,
+                               unclosed_row,
                                scoped_names, solution_lines, solution_of, spliced, spliced_view, swap_names)
 from ..common.talk_rules import (ALONE_LEAD, ALONE_OK, CANNOT_RUN, EXAMPLES_ONLY, MALFORMED, MANY_ANSWERS, SKIPPED, UNCHECKED_IN, UNRUN, UNRUN_FIX,
                                 UNRUN_NO, UNVERIFIED, fence, unrun_why)
@@ -51,7 +52,7 @@ LEADS = {"later": "뒤 블록을 튜터의 코드로 이어 돌리면", "earlier
 NOT_JOINED = ("아직 고칠 곳이 있거나, 튜터와 다른 방식으로 써서 튜터의 코드와 맞물리지 않는 거예요. "
               "고치거나 튜터의 차례에 맞춰 써 보고, 맞다고 생각하면 '이대로 넘어가기'를 눌러요.")
 # 어림 짝을 쓴 실행: 어떻게 이었는지를 사실로 말한다. 시간이 모자라 다른 짝을 다 돌려 보지 못했으면 결론을 내지 못한 것이다(확인 전)
-GUESSED = "튜터의 코드와 이을 때 내 이름을 이렇게 알고 이어 돌렸어요(내 이름→튜터의 이름): {pairs}."
+GUESSED = "튜터의 코드와 이을 때 같은 값으로 보고 이어 돌린 이름이에요(내 이름 → 튜터의 이름): {pairs}."
 GUESSED_CUT = " 시간이 모자라 다른 짝은 다 돌려 보지 못해서 이어지지 않는 건지 확인하지 못했어요. 다르게 쓴 것이면 튜터의 이름으로 맞추거나 '이대로 넘어가기'를 눌러요."
 # 'while'을 열고 증가를 다음 블록에 두려 하면 뒤 블록(계획 코드)에 증가가 없어 끝나지 않는다
 WHILE_NOTE = "반복을 끝내는 줄(값을 늘리거나 줄이는 줄)을 뒤 블록에 두려 했다면 이 블록에 적어 주세요."
@@ -79,7 +80,7 @@ def hold_name(names: list[str], params: bool = False) -> str:
 def assumed(pairs: list[list[str]], cut: bool = False) -> str:
     """어림 짝 문장. pairs: [[내 이름, 계획 이름], …]. 같은 이름끼리의 짝은 말하지 않는다. cut: 다른 짝을 다 시도하지 못했다(짝 말이 비어도 그 사실은 말한다).
     둘 다 없으면 빈 글."""
-    shown = [f"`{m}`→`{p}`" for m, p in pairs if m != p]
+    shown = [f"`{m}` → `{p}`" for m, p in pairs if m != p]
     return ((GUESSED.format(pairs=", ".join(shown)) if shown else "") + (GUESSED_CUT if cut else "")).strip()
 
 
@@ -504,7 +505,8 @@ def run_verdict(state: MainState, plan, index: int, code: str, check) -> dict | 
         if loop(code, "while") and (timeout or (later and loop(refs[index], "for") and not loop(refs[index], "while"))):
             got.seen, got.hint = _add(got.seen, WHILE_NOTE), False
         # 괄호 수가 계획과 다르면 컴파일 오류에 그 사실을 덧붙인다(실행 전에 거부하면 진입 줄 꼴이 다른 맞는 코드를 막았다)
-        if status in KIND_WORD and (note := brace_note(code, plan.blocks[index], language, program)):  # 컴파일 오류, 그리고 문법 오류를 실행 오류로 알리는 언어(JavaScript)
+        earlier = [(mine[i], refs[i]) for i in sorted(mine) if i < index]  # 이 실행에 내 글로 들어간 앞 블록(괄호 수는 여기까지 이어서 센다)
+        if status in KIND_WORD and (note := brace_note(code, plan.blocks[index], language, program, earlier)):  # 컴파일 오류, 그리고 문법 오류를 실행 오류로 알리는 언어(JavaScript)
             got.seen, got.hint = _add(got.seen, note), False
     rows = [row for row in code.splitlines() if row.strip()]
     if (language == "python" and frame_of(refs[index], language, program)["outer"]
@@ -574,23 +576,33 @@ def _raw_text(report: dict) -> str:
     return (case or {}).get("error") or report.get("compile") or ""
 
 
-BRACE_OPEN = "튜터의 이 블록은 괄호(`{`)를 열어 둔 채로 끝나는데 내 블록은 닫았어요. 여기서 닫으면 뒤 블록이 그 괄호 밖으로 나가요."
-BRACE_CLOSE = "내 블록은 괄호(`{`)를 열어 둔 채로 끝나는데 튜터의 이 블록은 여기서 닫아요. 그대로 이어 붙이면 괄호가 하나 남아요."
+# 괄호 경계 안내. 어느 괄호인지(그 괄호를 연 줄)를 말한다: '내 블록은 닫았어요' 다음 블록에서 '내 블록은 열어 둔 채'라고 해 서로 반대로 들렸다
+BRACE_OPEN = ("튜터의 풀이는 {opener}를 이 블록이 끝날 때도 열어 두고 뒤 블록에서 닫아요. 내 코드는 이 블록이 끝날 때 그 괄호가 열려 있지 않아서, "
+              "이어 붙이면 뒤 블록의 `}}`가 남아요. 이 블록은 그 괄호를 열어 둔 채로 끝내 보세요.")
+BRACE_CLOSE = ("내 코드는 {opener}가 이 블록이 끝날 때도 열려 있는데, 튜터의 풀이는 그 괄호를 이 블록까지 닫아요. "
+               "이어 붙이면 닫히지 않은 괄호가 남아요. 이 블록 안에서 `}}`로 닫아 보세요.")
 
 
-def brace_note(code: str, block, language: str, program: bool) -> str:
-    """중괄호 언어에서 이 블록이 열어 두는 괄호 수가 계획과 다르면 그 고정 문구(실행이 실패한 뒤의 참고 글). Python은 들여쓰기를 틀 정보가 맞춘다.
+def _opener(row: str) -> str:
+    return f"이 블록에서 연 괄호(`{_tick(row)}`)" if row else "앞에서 연 괄호(`{`)"
+
+
+def brace_note(code: str, block, language: str, program: bool, earlier: list[tuple[str, str]] = ()) -> str:
+    """중괄호 언어에서 이 블록이 끝날 때 열려 있는 괄호 수가 계획과 다르면 그 안내(실행이 실패한 뒤의 참고 글). Python은 들여쓰기를 틀 정보가 맞춘다.
     계획은 반복을 다음 블록까지 열어 두는데 '}'로 닫아 적은 블록이 통과했고, 모은 코드에 '}'가 하나 더 붙어 컴파일 오류였다.
-    중괄호 없는 한 줄 for·if는 차가 같아(0) 여기서 걸리지 않는다. 앞 블록의 괄호를 닫는 블록처럼 그 밖의 어긋남은 실행이 가른다."""
+    earlier: 이 실행에 내 글로 들어간 앞 블록 [(내 글, 계획 코드)]. 괄호 수는 블록 하나가 아니라 여기까지 이어서 견준다
+    (앞 블록에서 이미 닫은 사람에게 다음 블록마다 반대 안내를 했다). 중괄호 없는 한 줄 for·if는 차가 같아(0) 여기서 걸리지 않는다."""
     if language == "python" or not block.reference.strip():
         return ""
     # 여는 괄호가 있는 틀 줄(진입 클래스·함수 머리)이 있으면 그 수는 진입 줄 꼴을 알아보는 규칙에 기댄다: 꼴이 다르면(화살표 함수, std:: 반환형) 틀린 안내였다
-    if any("{" in row and frame_line(row, language) for text in (block.reference, code) for row in text.splitlines()):
+    texts = [block.reference, code, *(mine for mine, _ in earlier)]
+    if any("{" in row and frame_line(row, language) for text in texts for row in text.splitlines()):
         return ""
-    plan, mine = open_braces(block.reference, language, program), open_braces(code, language, program)
-    if mine < plan and plan > 0:
-        return BRACE_OPEN
-    return BRACE_CLOSE if mine > plan and mine > 0 else ""
+    count = lambda text: open_braces(text, language, program)  # noqa: E731
+    gap = count(code) - count(block.reference) + sum(count(mine) - count(ref) for mine, ref in earlier)  # 이 블록 끝에서 내 쪽이 더 열어 둔 괄호 수
+    if gap < 0:
+        return BRACE_OPEN.format(opener=_opener(unclosed_row(block.reference, language, program)))
+    return BRACE_CLOSE.format(opener=_opener(unclosed_row(code, language, program))) if gap > 0 else ""
 
 
 def _rows(text: str) -> list[str]:

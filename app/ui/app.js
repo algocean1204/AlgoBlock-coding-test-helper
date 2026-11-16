@@ -521,7 +521,7 @@ async function showReport() {
   </li>`).join("")}</ul>`);
   const cards = [failAll ? `<section class="card side"><h2>통과하지 못한 제출</h2><ul class="bars">${fails.map(([kind, n]) => `<li><span>${FAIL_WORD[kind]}</span><span class="bar" aria-hidden="true"><i class="${kind}" style="width:${Math.round(100 * n / failMax)}%"></i></span><b>${n}</b></li>`).join("")}</ul>
       <p class="hint">${failTip(fails)}</p></section>` : "",
-    d.pitfalls.length ? `<section class="card side"><h2>되풀이한 실수</h2><ul class="points plain">${d.pitfalls.map((x) => `<li><strong>${esc(x.name)}</strong><span>${x.count}번</span>${x.problems.length ? `<span class="pit-from muted">${x.problems.map((p) => `<a href="#/p/${esc(p.id)}">${esc(p.title)}</a>`).join(" · ")}</span>` : ""}</li>`).join("")}</ul></section>` : ""].filter(Boolean);
+    `<section class="card side"><h2>되풀이한 실수</h2>${d.pitfalls.length ? "" : `<p class="hint">같은 실수를 두 번 이상 하면 여기에 모여요. ‘틀린 곳 같이 찾기’를 쓰면 쌓여요(제출이 틀린 것만으로는 쌓이지 않아요).</p>`}<ul class="points plain">${d.pitfalls.map((x) => `<li><strong>${esc(x.name)}</strong><span>${x.count}번</span>${x.problems.length ? `<span class="pit-from muted">${x.problems.map((p) => `<a href="#/p/${esc(p.id)}">${esc(p.title)}</a>`).join(" · ")}</span>` : ""}</li>`).join("")}</ul></section>`].filter(Boolean);
   if (cards.length) html += `<div class="sides">${cards.join("")}</div>`;
   if (d.signals.length) html += fold("실전 신호 모음", `${d.signals.reduce((n, g) => n + g.items.length, 0)}개`, `<p class="hint">통과한 문제에서 모았어요. 실전에서 이런 표현을 보면 이 방법을 떠올려요.</p>
     ${d.signals.map((g) => `<details class="signal-group"><summary>${ico("i-caret")}${esc(g.name)} <span class="muted">${g.items.length}개</span></summary><ul class="signals">${g.items.map((x) => `<li class="signal"><q>${esc(x.phrase)}</q><span>${esc(x.means)}</span><small>${esc(x.title)}</small></li>`).join("")}</ul></details>`).join("")}`);
@@ -2655,7 +2655,7 @@ const TOUR = [
   ["어떻게 풀지 골라요", "문제를 열면 오른쪽에서 푸는 방식을 골라요. ‘혼자 풀기’는 튜터 없이 풀고 막히면 힌트를 봐요. ‘튜터의 질문으로’는 답 대신 질문만 하고, ‘튜터와 차례로’는 풀이를 블록으로 나눠 하나씩 열어 줘요. 카드의 ⓘ를 누르면 자세한 설명이 나와요."],
   ["결과 바로 아래에 다음 할 일", "제출하면 결과 아래에 할 일이 하나 나와요. 틀리면 ‘틀린 곳 같이 찾기’나 ‘풀이 힌트 보기’, 통과하면 ‘다음 문제’예요. 통과한 문제는 실전 신호가 열려 비슷한 문제를 알아보는 눈을 길러요."],
   ["내 문제 넣기는 세 걸음", "글을 붙여 넣거나 사진·PDF를 넣고(1 글 넣기), 읽은 글과 자동으로 채운 예시를 확인한 뒤(2 확인하기), 등록해요(3 등록). 등록한 문제도 같은 방식으로 채점해요."],
-  ["학습 보고서로 약한 곳을 찾아요", "제출 기록에서 강한 주제와 더 공부할 주제, 자주 하는 실수를 모아 보여 주고, 더 공부할 문제를 바로 열어 줘요."],
+  ["학습 보고서로 약한 곳을 찾아요", "제출 기록에서 강한 주제와 더 공부할 주제를 모아 보여 주고, 더 공부할 문제를 바로 열어 줘요. ‘틀린 곳 같이 찾기’를 쓰면 되풀이한 실수도 모아 줘요."],
   ["AI 연결은 선택이에요", "튜터는 언어 모델로 움직여요. 쓰려면 오른쪽 위 ‘설정’의 ‘AI 연결’에서 Claude나 OpenAI 키를 넣거나 ChatGPT로 로그인해요. 키는 이 기기에만 저장해요."],
 ];
 let tourAt = 0;
@@ -3199,6 +3199,44 @@ document.addEventListener("keydown", (e) => {
 $("more").addEventListener("toggle", () => { if (!$("more").open) { $("reset-confirm").hidden = true; $("reset").hidden = false; } }); // 메뉴를 닫으면 처음부터의 물음도 접는다
 /** 더 보기: 키보드로 메뉴 밖으로 나가면(Tab) 닫는다. 열린 채 남은 메뉴가 그 아래 단추(방식 바꾸기 등)를 덮지 않게. */
 $("more").addEventListener("focusout", (e) => { if ($("more").open && e.relatedTarget && !$("more").contains(e.relatedTarget)) $("more").open = false; });
+/* ── 키보드 초점 ── */
+const focusable = (x) => !!x && !x.disabled && !x.closest("[hidden]") && !!x.offsetParent;
+/** 키보드로 누른 단추가 다시 그리며 사라지거나 새로 그려져 초점이 문서 맨 위(body)로 떨어지면, 같은 단추나 그 일이 이어지는 자리로 돌려 놓는다.
+    기다림(모델·채점)이 끝난 뒤에 한 번 본다. 그 사이 사용자가 초점을 옮겼으면 건드리지 않는다. */
+function focusAfter(el) {
+  const own = [...el.attributes].filter((a) => a.name.startsWith("data-") && a.name !== "data-model").map((a) => `[${a.name}="${CSS.escape(a.value)}"]`)[0];
+  const block = el.dataset.check || el.dataset.fill || el.dataset.skip || el.dataset.own;
+  const next = [el.id ? `#${el.id}` : own, el.id === "start" && "#say", block && `textarea[data-block="${CSS.escape(block)}"]`, "#p-title"].filter(Boolean); // 같은 단추 → 이어서 할 칸 → 문제 제목
+  const t0 = Date.now();
+  let waited = false;
+  const look = () => {
+    const now = document.activeElement, lost = !now || now === document.body || !now.isConnected;
+    if (!lost && now !== el) return; // 사용자(또는 그 일 자체)가 다른 곳으로 옮겼다
+    if (lost && !S.busy) { // 기다림 동안 잠겨 있던 단추가 풀린 뒤에 돌려 놓는다
+      const hit = next.map((q) => document.querySelector(`#view-code ${q}`)).find(focusable);
+      return void (hit && hit.focus());
+    }
+    waited = waited || !!S.busy;
+    if (S.busy ? Date.now() - t0 < 120000 : !waited && Date.now() - t0 < 1500) setTimeout(look, 100); // 기다림이 끝날 때까지(기다림이 없으면 1.5초만) 본다
+  };
+  setTimeout(look, 60);
+}
+document.addEventListener("click", (e) => {
+  const el = e.detail === 0 && e.target.closest("#view-code button");
+  if (el) focusAfter(el);
+}, true); // 앞서 받아 둔다(다른 처리기가 단추를 다시 그리면 이 단추는 문서에서 빠져 ‘어느 화면의 단추’인지 알 수 없다)
+/** 건너뛰기 링크: 주소(#main)를 바꾸면 화면이 홈으로 가므로, 주소는 두고 지금 화면의 본문 제목으로 초점을 옮긴다. */
+document.addEventListener("click", (e) => {
+  if (!e.target.closest("a.skip")) return;
+  e.preventDefault();
+  const head = [...$("main").querySelectorAll("h1[tabindex]")].find(focusable) || $("main");
+  head.focus();
+  head.scrollIntoView({ block: "start" });
+});
+/** 코드 칸에서 Tab은 들여쓰기라, 칸에 초점이 있는 동안 나가는 길(Esc 다음 Tab)을 눈에 보이게 알린다. */
+const codeCell = (t) => !!t && t.tagName === "TEXTAREA" && (t.id === "code" || t.dataset.block !== undefined);
+document.addEventListener("focusin", (e) => $("tab-hint").classList.toggle("on", codeCell(e.target)));
+
 document.addEventListener("click", (e) => {
   const summary = e.target.closest("details.case-fold > summary");
   if (summary) S.casesOpen = !summary.parentElement.open;

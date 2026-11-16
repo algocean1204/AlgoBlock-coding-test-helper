@@ -358,6 +358,7 @@ class Diagnosis:
     cause: str
     fixed_line: str
     pitfall: str = ""
+    opening: str = ""  # 사용자에게 보일 첫 질문(실패 입력과 코드의 단서를 짚는다). 비거나 검사에 걸리면 정해진 글
 
 
 @dataclass
