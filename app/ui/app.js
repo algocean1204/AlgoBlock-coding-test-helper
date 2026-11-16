@@ -1239,6 +1239,8 @@ function renderSteps(stage, el) {
 /** 답은 맞고 큰 입력에서만 걸렸다. */
 const slowOnlyOf = (r) => !r.ok && !r.run && r.cases.length > 0 && !!r.score && r.score.accuracy[0] === r.score.accuracy[1] && r.score.efficiency[1] > 0;
 /** '끝까지 내 방식으로 쓰기'가 지금 보이는 튜터 차례(가이드)에 켜져 있다. */
+/** 이번 풀이에서 이미 통과했다: 풀던 중의 실패 말과 '끝까지 쓰는 중' 안내를 지금 상태처럼 보이지 않는다. */
+const passedNow = () => !!(S.problem && S.problem.study.passed_now);
 const ownWayOn = () => !!S.ownWay && S.mode === "guide" && S.talk === "guide";
 /** 튜터 블록을 다 열고(의자는 다 찾고) 빈 칸이 없다: 모아서 실행할 때. */
 const blocksReady = () => S.session.blocks.length > 0 && (S.mode === "chair" ? allFound() : S.session.open_count >= S.session.blocks.length || passedAloneAt() >= 0) && !emptyBlocks().length;
@@ -1325,7 +1327,7 @@ function renderBlocks() {
       const empty = !saved.code.trim();
       const cell = !current || !empty || S.talk === "guide";
       const check = showCheck(b, state, current), st = empty ? "" : blockStatus(b, saved), line = saved.line || {};
-      const result = st && st !== "pass" && sameCode(b, saved) && line.text ? `<p class="block-result is-${line.ok === false ? "fail" : "wait"}">${inline(line.text)}${line.skipped ? "" : ' <span class="muted">자세한 말은 오른쪽 튜터의 말에 있어요.</span>'}</p>` : "";
+      const result = !passedNow() && st && st !== "pass" && sameCode(b, saved) && line.text ? `<p class="block-result is-${line.ok === false ? "fail" : "wait"}">${inline(line.text)}${line.skipped ? "" : ' <span class="muted">자세한 말은 오른쪽 튜터의 말에 있어요.</span>'}</p>` : "";
       const skip = current && S.talk === "guide" && (st === "fail" || st === "wait") && sameCode(b, saved) && !!line.text; // 마지막 확인이 통과가 아니면 갇히지 않게 넘어갈 길을 준다
       return `<li class="block is-${state}${st ? ` st-${st}` : ""}"${current ? ' aria-current="step"' : ""}>
         <span class="no" aria-hidden="true">${n}</span>
@@ -1349,7 +1351,7 @@ function renderBlocks() {
     if (opened.at === at && s.open_count > opened.n) { const now = list.querySelector('[aria-current="step"]') || list.querySelectorAll(".block:not(.is-locked)")[s.open_count - 1]; if (now) now.scrollIntoView({ block: "nearest" }); }
     list._opened = { at, n: s.open_count };
   }
-  const own = ownWayOn() ? `<div class="note" role="status">내 방식으로 끝까지 쓰는 중이에요. 블록마다 확인하지 않고, 다 쓴 뒤 ‘모아서 실행’으로 확인해요. <button type="button" class="btn quiet small" data-own-off>튜터 차례로 돌아가기</button></div>` : "";
+  const own = ownWayOn() && !passedNow() ? `<div class="note" role="status">내 방식으로 끝까지 쓰는 중이에요. 블록마다 확인하지 않고, 다 쓴 뒤 ‘모아서 실행’으로 확인해요. <button type="button" class="btn quiet small" data-own-off>튜터 차례로 돌아가기</button></div>` : "";
   $("blocks-note").innerHTML = (S.busy && S.busy.where === "blocks" ? `<div class="note">${waitLine("blocks")}</div>` : "") + own + noteHtml(S.note.blocks);
 }
 
@@ -1889,6 +1891,7 @@ async function judgeCode(run, input) {
   $("code")._seen = code;
   S.result = r.ok ? { ...r.data, run, own, looks: looksLike(code) } : { alert: errorNote(r.error) };
   S.casesOpen = null;
+  if (r.ok && r.data.ok && !run && !own && S.debug) { S.debug.passed = true; S.debug.line = null; } // 제출로 통과했다: 틀린 곳 찾기의 옛 질문과 짚은 줄을 걷는다
   say(!r.ok ? "" : own ? "직접 넣은 값으로 실행했어요." : run ? (r.data.ok ? "예시를 모두 맞혔어요." : r.data.many ? `${MANY_HEAD}.` : "예시에서 틀려요.") : r.data.ok ? "채점 결과: 통과" : `채점 결과: ${r.data.many ? MANY_HEAD : "아직 틀려요"}`);
   if (run) return render();
   await loadState();
@@ -2003,7 +2006,8 @@ function renderTutor() {
     }
   });
   const last = chat[chat.length - 1], gaps = last && last.role === "service" && /^블[록럭]을 모두 채웠어요/.test(last.text) ? emptyBlocks() : [];
-  if (gaps.length) html += `<p class="notice warn" role="status">${esc(gapText(gaps))}</p>`; // 엔진의 고정 안내 아래에 빈 칸을 알린다
+  if (passedNow()) html += '<p class="notice" role="status">이번 풀이는 통과했어요. 위 대화는 풀던 중의 기록이에요.</p>'; // 맨 아래 말이 옛 실패 말이어도 지금 상태로 읽히지 않게
+  else if (gaps.length) html += `<p class="notice warn" role="status">${esc(gapText(gaps))}</p>`; // 엔진의 고정 안내 아래에 빈 칸을 알린다
   if (S.busy && S.busy.where === "chat") html += (S.sending ? meMsg(S.sending.text, true) : "") + pending("chat");
   else if (allFound()) html += '<p class="notice" role="status">블록을 모두 찾았어요. 블록 칸을 채우고 ‘모아서 실행’을 눌러 보세요.</p>';
   html += noteHtml(S.note.chat);
@@ -2270,6 +2274,7 @@ function renderDebug() {
   $("debug-sheet").hidden = !open;
   if (!open) return;
   let html = d.messages.map((m) => (m.role === "service" ? tutorBubble(m.text) : m.role === "regrade" ? `<p class="regrade" role="separator">${esc(m.text)}</p>` : meMsg(m.text))).join("");
+  if (d.passed && html) html = `<details class="old-talk"><summary>풀던 대화 보기</summary>${html}</details>`; // 통과한 뒤에는 옛 질문이 맨 아래에 남지 않게 접는다
   if (S.busy && S.busy.where === "debug") html += (S.sending ? meMsg(S.sending.text, true) : "") + pending("debug");
   if (d.passed) html += '<div class="note ok" role="status">고친 코드가 모든 케이스를 통과했어요. 채점 결과 칸에서 피드백을 받아 보세요.</div>';
   html += noteHtml(d.note);
