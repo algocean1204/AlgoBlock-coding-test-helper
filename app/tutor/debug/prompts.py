@@ -1,7 +1,8 @@
 """디버그 프롬프트. 진단(보이지 않음), 원인 판정, 질문."""
 
 from ..common.scope import OUTSIDE_PROBLEMS
-from ..common.talk_rules import BANNED
+from ..common.talk_prompts import NOT_SAID
+from ..common.talk_rules import BANNED, many_asks_line
 from ..feedback.prompts import FAIL_WORD
 from ..knowledge.ontology import size_rule, skill_examples
 from ..common.solution import solution_lines
@@ -24,6 +25,7 @@ SPEAK_SYSTEM = "\n".join(
         f"- 생각을 닫는 말을 쓰지 않는다: {', '.join(BANNED)}.",
         f"- {OUTSIDE_PROBLEMS}",
         "- 사용자의 말을 되풀이하거나 요약하는 문장으로 시작하지 않는다. 첫 문장부터 가정·빠진 경우·근거를 겨눈다.",
+        f"- {NOT_SAID}",
         "- 사용자가 물은 것이 있으면 먼저 한 문장으로 받는다. 정답 코드를 달라고 하면 코드는 직접 써야 손에 남는다고 짧게 말하고, 지금 질문을 더 쉽게 바꿔 묻는다.",
         "쉬운 말로 한국어 1~3문장. 상대에게 직접 하는 말만 쓰고('사용자', '여러분'이라 부르지 않는다) 물음표로 끝나는 질문 하나로 끝낸다. 코드 블록을 쓰지 않는다.",
     ]
@@ -120,6 +122,7 @@ def speak_messages(state: MainState) -> list[dict]:
                      "그 말에 대해서는 아무 말도 하지 않고, 이번 질문 지시대로 질문만 쓴다.")
     elif state["request"].text:
         lines.append(f"사용자 말:{state['request'].text}")
+        lines += many_asks_line(state["request"].text)
     lines += [f"이번 질문 지시: {STEP_TEXT[draft['step_name']]}", "출력: 말풍선 글만. 따옴표, 머리말, JSON 없이."]
     # 같은 코드의 디버그 턴마다 코드·채점·진단까지는 같다(바뀌는 것은 대화부터). 캐시 경계를 그 뒤에 둔다
     return [{"role": "system", "content": SPEAK_SYSTEM}, cached_user(lines, len(stable))]

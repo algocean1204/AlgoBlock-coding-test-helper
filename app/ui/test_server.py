@@ -2300,6 +2300,24 @@ def early_solution_report() -> None:
     assert "학습 보고서에 ‘해설을 먼저 봄’으로 남아요" in js  # 알림 문구와 같은 이름으로 보인다
 
 
+def case_arg_count() -> None:
+    """내 문제 넣기의 케이스 입력: 인자 수가 시작 코드(표 머리·적은 인자 이름·첫 줄)와 다르면 그 줄 아래에서 알리고, 입력 안내가 인자 목록 전체를 대괄호로 감싼다고 예와 함께 말한다(화면 코드 확인, 분기는 node로)."""
+    import re
+    import shutil
+    js, html = (HERE / "app.js").read_text(encoding="utf-8"), (HERE / "index.html").read_text(encoding="utf-8")
+    assert "인자 목록 전체를 대괄호로 감싸 적어요. 인자가 둘이면 [1, 2], 리스트 하나가 인자면 [[1, 2, 3]]처럼 한 번 더 감싸요." in html and html.count("[[1, 2, 3]]") == 1
+    assert "showCalls();" in js and "argNote(args.length, expectedArgs(row))" in js and ".case-call.warn" in (HERE / "app.css").read_text(encoding="utf-8")
+    node = shutil.which("node")
+    if not node:
+        return print("node가 없어 인자 수 안내 시험은 건너뜀")
+    source = re.search(r"/\* case-pure:start.*?\*/(.*?)/\* case-pure:end \*/", js, re.S).group(1)
+    script = source + "console.log(JSON.stringify([argNote(2, 2), argNote(4, 2), argNote(3, 1), argNote(1, 2), argNote(5, null)]));"
+    same, many, wrap, few, unknown = json.loads(subprocess.run([node, "-e", script], capture_output=True, text=True, check=True).stdout)
+    assert same == "" and unknown == ""  # 맞거나 기준이 없으면 말하지 않는다
+    assert "인자가 2개인데 4개로 읽혀요." in many and "[1, 2]처럼" in many and "[[1, 2]]" not in many
+    assert "인자가 1개인데 3개로 읽혀요." in wrap and "[[1, 2]]처럼 인자 목록 전체를 대괄호로 한 번 더 감싸요." in wrap and "인자가 2개인데 1개로" in few
+
+
 def way_info() -> None:
     """푸는 방식 설명: 네 방식이 한 자료에서 나오고, ⓘ는 눌러 펴며(키보드·Esc), 잠긴 방식도 글이 읽히고 ⓘ가 열린다. 브라우저 동작은 화면 확인으로 본다."""
     import re
@@ -2315,6 +2333,29 @@ def way_info() -> None:
     assert 'aria-expanded=' in js and 'S.wayInfo = null' in js and '.way-card[aria-disabled="true"]' in css
     assert ".panes.railed .head-info { position: fixed" in css  # 접힌(150px) 칸에서는 머리의 설명을 칸 밖 겹침 상자로 띄운다
     assert "way-card:disabled" not in css and not re.search(r"\.way-card\[aria-disabled[^}]*opacity", css)  # 잠긴 카드의 글은 흐리지 않는다
+
+
+def keyboard_gaps() -> None:
+    """키보드와 AI 표시의 남은 빈틈(화면 코드 확인, 긴 입력 접기는 node로): Esc 뒤 Shift+Tab, 기다리는 중 단추가 초점을 잃지 않음, 사진 읽기의 AI 표시, 긴 실패 입력 접기."""
+    import re
+    import shutil
+    js, css = (HERE / "app.js").read_text(encoding="utf-8"), (HERE / "app.css").read_text(encoding="utf-8")
+    assert 'if (e.key === "Shift") return;' in js and js.index('if (e.key === "Shift") return;') < js.index('if (e.key === "Escape") return void (ta._tabOut = true);')  # Shift를 누르는 것이 Esc 표시를 지우지 않는다
+    busy = js[js.index("function applyBusy()"):js.index('$("timer").textContent')]
+    assert 'el.setAttribute("aria-disabled", "true")' in busy and "el.disabled = false" in busy and "el.disabled = !!S.busy" not in js  # 기다림은 disabled가 아니라 aria-disabled
+    assert 'el.getAttribute("aria-disabled") === "true") return e.preventDefault();' in js and '.btn[aria-disabled="true"]' in css
+    assert '$("read-files").toggleAttribute("data-ai", connected() && FILES.some((x) => x.image))' in js
+    assert 'f.longs.map' in js and "전체 입력 보기" in js and "foldLong(m.text)" in js
+    node = shutil.which("node")
+    if not node:
+        return print("node가 없어 긴 입력 접기 시험은 건너뜀")
+    source = re.search(r"/\* long-pure:start.*?\*/(.*?)/\* long-pure:end \*/", js, re.S).group(1)
+    pairs = ", ".join(f"[{i}, {i + 1}]" for i in range(160))
+    script = source + f"const big = `solution([{pairs}]) 에서 틀려요`; const a = foldLong(big), b = foldLong('입력 `[1, 2]`은 작아요'), c = foldLong('긴 글 `' + 'x'.repeat(100) + '` 끝');" + "console.log(JSON.stringify([a, b, c]));"
+    a, b, c = json.loads(subprocess.run([node, "-e", script], capture_output=True, text=True, check=True).stdout)
+    assert len(a["text"]) < 120 and a["longs"] and a["longs"][0].startswith("[[0, 1]") and a["text"].endswith("틀려요")  # 160쌍은 앞만 남기고 전체는 따로
+    assert b == {"text": "입력 `[1, 2]`은 작아요", "longs": []}  # 짧으면 그대로
+    assert c["longs"] == ["`" + "x" * 100 + "`"] and c["text"].startswith("긴 글 `xxxx") and c["text"].endswith("` 끝")
 
 
 def settings_items() -> None:
@@ -2793,6 +2834,13 @@ def neutral_notes() -> None:
     import problemkit
     found = [f"{row['id']}: {line}" for row in ROWS for line in problemkit.language_bound(row)]
     assert not found, found
+    for saved in sorted((HERE / "problems").glob("*/*/ready.json")):  # 풀이 가이드·블록 힌트도 같다(FIRST의 ready는 아래에서 손으로 바뀌므로 파일을 읽는다)
+        found += [f"{saved.parent.name}: {line}" for line in problemkit.ready_bound(json.loads(saved.read_text(encoding="utf-8"))["ready"])]
+    assert not found, found
+    for word in ("steps 딕셔너리에 담는다", "빈 리스트를 만든다", "mid // 2로 나눈다", "heapq에서 꺼낸다"):
+        assert problemkit.ready_bound({"solution": {"steps": [word], "code": "d = {}"}, "plan": {"blocks": [{"hints": [], "reference": "x // 2"}]}}), word
+        assert problemkit.ready_bound({"plan": {"blocks": [{"hints": [word]}]}}), word
+    assert not problemkit.ready_bound({"solution": {"code": "x = dict()  # 딕셔너리"}, "plan": {"blocks": [{"reference": "a // b"}]}})  # 코드 칸은 보지 않는다
     bad = {"learn": "x", "pattern": "x", "ladder": "x", "pitfalls": ["count[k] += 1에서 KeyError가 난다"], "signals": [{"means": "딕셔너리에 넣는다"}]}
     assert len(problemkit.language_bound(bad)) == 2  # 걸러야 할 글은 실제로 걸린다
     for word in ("KeyError가 난다", "heapq에서 꺼낸다", "dict로 센다", "int에 담는다", "IndexError가 난다", "long으로 더한다"):  # 한글 조사가 붙은 낱말도 걸린다
@@ -2855,8 +2903,10 @@ def main() -> None:
         home_screen()
         settings_screen()
         settings_items()
+        keyboard_gaps()
         way_info()
         early_solution_report()
+        case_arg_count()
         ai_marks()
         report_terms()
         new_draft()

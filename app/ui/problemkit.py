@@ -174,6 +174,24 @@ def language_bound(problem: dict) -> list[str]:
     return [f"{key}에 한 언어에만 있는 낱말 {hit.group(0)!r}: 언어와 상관없는 말로 쓴다" for key, rows in texts.items() for row in rows for hit in [LANGUAGE_BOUND.search(row)] if hit]
 
 
+def ready_bound(ready: dict) -> list[str]:
+    """풀이 가이드(단서·방향·단계)와 블록(이름·목표·확인·힌트)의 글에서 한 언어에만 묶인 낱말을 찾는다. 정답 코드·블록의 참고 코드·유형 id는 보지 않는다."""
+    skip = {"code", "reference", "id", "kind", "patterns", "skills", "algorithm"}
+
+    def texts(node, path):
+        if isinstance(node, dict):
+            for key, value in node.items():
+                if key not in skip:
+                    yield from texts(value, f"{path}.{key}")
+        elif isinstance(node, list):
+            for n, value in enumerate(node):
+                yield from texts(value, f"{path}[{n}]")
+        elif isinstance(node, str):
+            yield path, node
+
+    return [f"ready{path}에 한 언어에만 있는 낱말 {hit.group(0)!r}: 언어와 상관없는 말로 쓴다" for path, text in texts(ready, "") for hit in [LANGUAGE_BOUND.search(text)] if hit]
+
+
 def check(folder, langs: bool = False) -> list[str]:
     """문제 하나를 검사한다. 걸린 것의 목록(비면 통과)."""
     found: list[str] = []
@@ -203,6 +221,9 @@ def check(folder, langs: bool = False) -> list[str]:
         if signal.get("phrase", "") not in text or not signal.get("phrase") or not signal.get("means"):
             found.append(f"실전 신호의 표현이 문제 글·제한사항에 글자 그대로 없다: {signal.get('phrase')!r}")
     found += language_bound(problem)
+    saved = problem["dir"] / "ready.json"  # 풀이 가이드·블록(모델이 만들었거나 손으로 고친 것)도 같은 규칙을 지킨다
+    if saved.exists():
+        found += ready_bound(json.loads(saved.read_text(encoding="utf-8")).get("ready") or {})
     for name in ("solution.py", "brute.py", "gen.py"):
         if name not in files:
             found.append(f"{name}가 없다")

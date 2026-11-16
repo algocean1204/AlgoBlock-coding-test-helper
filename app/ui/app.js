@@ -169,7 +169,8 @@ setInterval(() => {
 }, 1000);
 
 function applyBusy() {
-  document.querySelectorAll("[data-model]").forEach((el) => { el.disabled = !!S.busy; });
+  // 기다리는 동안 단추를 disabled로 잠그면 초점이 문서 맨 위로 떨어진다. aria-disabled로 두어 초점을 지키고, 누름은 막는다(아래 click)
+  document.querySelectorAll("[data-model]").forEach((el) => { el.disabled = false; if (S.busy) el.setAttribute("aria-disabled", "true"); else el.removeAttribute("aria-disabled"); });
   if (S.view === "code" && noTool()) $("run").disabled = $("submit").disabled = $("run-own-go").disabled = true; // 이 기기에 언어 도구가 없으면 실행·제출을 못 한다
   $("timer").textContent = S.busy ? `${secs()}초` : "";
   document.querySelectorAll("[data-secs]").forEach((el) => { el.textContent = `${secs()}초`; });
@@ -302,6 +303,24 @@ function rich(text, headings, program) {
 
 const kindChip = (kind) => (kind ? `<span class="kind kind-${esc(kind)}">${KIND[kind] ? ico("k-" + kind) : ""}${esc((KIND[kind] || [kind])[0])}</span>` : ""); // 종류가 없으면(코드와 맞지 않아 서버가 비웠다) 꼬리표를 그리지 않는다
 const meMsg = (text, sending) => `<div class="msg me${sending ? " sending" : ""}"><span class="who">나</span><div class="bubble">${esc(text)}</div></div>`;
+/* long-pure:start 튜터 말 속의 긴 입력(대괄호 목록이나 `…` 안의 글)이 max자를 넘으면 앞부분만 남기고 전체는 따로 돌려준다(node로도 시험한다) */
+function foldLong(text, max = 80) {
+  const longs = [];
+  let out = "", i = 0;
+  while (i < text.length) {
+    const c = text[i];
+    if (c === "[" || c === "`") {
+      let end = -1;
+      if (c === "`") end = text.indexOf("`", i + 1);
+      else { let depth = 0; for (let k = i; k < text.length; k += 1) { if (text[k] === "[") depth += 1; else if (text[k] === "]" && (depth -= 1) === 0) { end = k; break; } } }
+      if (end > 0 && end + 1 - i > max) { longs.push(text.slice(i, end + 1)); out += `${text.slice(i, i + 40)}…${c === "`" ? "`" : "]"}`; i = end + 1; continue; }
+    }
+    out += c;
+    i += 1;
+  }
+  return { text: out, longs };
+}
+/* long-pure:end */
 const tutorBubble = (text) => `<div class="msg tutor"><span class="who">튜터</span><div class="bubble">${rich(text)}</div></div>`;
 
 /* ── 화면 이동 ── */
@@ -560,7 +579,7 @@ const caseCells = (row) => [...row.querySelectorAll(".case-val"), row.querySelec
 /** 푸는 방식에 맞춘 케이스 안내. 방식을 바꾸면 적던 값은 그대로 새 꼴의 줄로 옮긴다. */
 function caseHelp() {
   const stdin = $("new-mode").value === "program";
-  $("case-help").textContent = stdin ? "입력은 프로그램의 표준 입력에 그대로 넣어요." : "넣을 값은 solution에 넘길 값을 순서대로 대괄호 안에 적어요.";
+  $("case-help").textContent = stdin ? "입력은 프로그램의 표준 입력에 그대로 넣어요." : "넣을 값은 인자 목록 전체를 대괄호로 감싸 적어요. 인자가 둘이면 [1, 2], 리스트 하나가 인자면 [[1, 2, 3]]처럼 한 번 더 감싸요.";
   $("case-fill-ask").textContent = stdin ? "지금 적힌 케이스를 예제의 것으로 바꿀까요?" : "지금 적힌 케이스를 표의 것으로 바꿀까요?";
 }
 
@@ -583,13 +602,32 @@ function setCaseMode() {
 }
 
 /** 케이스 줄의 '넣을 값'이 풀이 함수에 어떻게 넘어가는지 그 아래에 보여 준다(JSON 목록으로 읽힐 때만). */
+/* case-pure:start 넣을 값의 인자 수 안내(node로도 시험한다). expected: 시작 코드의 인자 수(모르면 null) */
+const argNote = (count, expected) => (expected === null || count === expected ? ""
+  : `인자가 ${expected}개인데 ${count}개로 읽혀요. ${expected === 1 ? "리스트 하나를 인자로 넘기려면 [[1, 2]]처럼 인자 목록 전체를 대괄호로 한 번 더 감싸요." : "인자 목록 전체를 대괄호로 한 번만 감싸 [1, 2]처럼 적어요."}`);
+/* case-pure:end */
+/** 이 줄이 기대하는 인자 수: 표 머리·직접 적은 인자 이름이 있으면 그 수, 없으면 첫 줄의 수(줄마다 다르면 알린다). */
+function expectedArgs(row) {
+  const typed = $("case-names-field").hidden ? [] : $("case-names").value.split(",").map((x) => x.trim()).filter(Boolean);
+  if (NAMES) return NAMES.length;
+  if (typed.length) return typed.length;
+  for (const other of document.querySelectorAll("#case-rows .case-row")) { // 첫 줄로 읽히는 줄이 기준. 이 줄이 그 줄이면 견줄 것이 없다
+    try { const args = JSON.parse(other.querySelector(".case-val").value); if (Array.isArray(args)) return other === row ? null : args.length; } catch (e) { /* 읽히지 않는 줄은 건너뛴다 */ }
+  }
+  return null;
+}
 function showCall(input) {
   const row = input.closest(".case-row"), out = row.querySelector(".case-call");
   if (!out) return void row.querySelectorAll("textarea").forEach(grow); // 표준 입출력은 입력을 그대로 넣는다. 칸 높이만 글에 맞춘다
   let args = null;
   try { args = JSON.parse(input.value); } catch (e) { /* 아직 읽히지 않는다 */ }
+  const note = Array.isArray(args) ? argNote(args.length, expectedArgs(row)) : "";
   out.textContent = Array.isArray(args) ? `→ ${callText(input.value)}` : "";
+  out.classList.toggle("warn", !!note);
+  if (note) out.textContent += ` — ${note}`;
 }
+/** 모든 줄의 안내를 다시 맞춘다(인자 이름이나 다른 줄이 바뀌면 이 줄의 기대 수도 바뀐다). */
+const showCalls = () => document.querySelectorAll("#case-rows .case-row").forEach((r) => { const first = r.querySelector(".case-val"); if (first) showCall(first); });
 
 /* 입출력 예 표에서 케이스 채우기: 표 찾기는 서버가 규칙으로 한다(모델 0회). 글이 바뀌면 잠깐 멈췄을 때 다시 찾아 단추를 보이거나 숨긴다.
    NAMES: 표 머리의 인자 이름(채웠을 때만 등록·수정에 같이 보내 시작 코드의 인자 이름이 된다) */
@@ -624,6 +662,7 @@ function titleNote() {
 }
 function syncForm() {
   titleNote();
+  showCalls();
   const rows = formCases();
   $("case-float").hidden = $("new-mode").value === "program" || !rows.some((x) => hasFloat(x.input) || hasFloat(x.expected));
   $("case-names-field").hidden = $("new-mode").value === "program" || !!NAMES; // 표 머리에서 이름을 얻지 못한 함수 문제만: 글의 이름을 직접 적을 수 있다
@@ -825,6 +864,7 @@ function renderSummary() {
 
 function renderFiles() {
   $("file-list").hidden = !FILES.length;
+  $("read-files").toggleAttribute("data-ai", connected() && FILES.some((x) => x.image)); // 사진은 AI가 읽는다
   $("read-files").hidden = !FILES.length || filesRead; // 읽어 온 뒤에는 파일 목록이 바뀌기 전까지 숨긴다(같은 글이 또 붙지 않게)
   $("read-done").hidden = !FILES.length || !filesRead || !!S.busy;
   syncForm();
@@ -1225,7 +1265,7 @@ const PRIMARY = { run: "#run", submit: "#submit", compose: "#compose-run", start
   check: ".block.is-current [data-check]", debug: "#debug-send", find: "#debug-start", hint: "#result-hint", next: "#result-next", review: "#result-next", feedback: "#to-feedback" };
 function applyPrimary(stage) {
   document.querySelectorAll("#view-code .primary").forEach((el) => el.classList.remove("primary"));
-  const shown = (sel) => { const el = document.querySelector(`#view-code ${sel}`); return el && !el.closest("[hidden]") && !el.disabled ? el : null; };
+  const shown = (sel) => { const el = document.querySelector(`#view-code ${sel}`); return el && !el.closest("[hidden]") && !el.disabled && el.getAttribute("aria-disabled") !== "true" ? el : null; };
   const el = stage === "choose" ? null : shown(PRIMARY[stage]) || shown("#run") || shown("#submit"); // 방식을 고르기 전에는 어느 것도 고른 것처럼 칠하지 않는다
   if (el) el.classList.add("primary");
   return el;
@@ -2285,7 +2325,8 @@ function renderDebug() {
   const d = S.debug, open = !!(d && d.open);
   $("debug-sheet").hidden = !open;
   if (!open) return;
-  let html = d.messages.map((m) => (m.role === "service" ? tutorBubble(m.text) : m.role === "regrade" ? `<p class="regrade" role="separator">${esc(m.text)}</p>` : meMsg(m.text))).join("");
+  const said = (m) => { const f = foldLong(m.text); return tutorBubble(f.text) + (f.longs.length ? `<details class="old-talk long-in"><summary>전체 입력 보기</summary>${f.longs.map((x) => `<pre class="code"><code>${esc(x)}</code></pre>`).join("")}</details>` : ""); };
+  let html = d.messages.map((m) => (m.role === "service" ? said(m) : m.role === "regrade" ? `<p class="regrade" role="separator">${esc(m.text)}</p>` : meMsg(m.text))).join("");
   if (d.passed && html) html = `<details class="old-talk"><summary>풀던 대화 보기</summary>${html}</details>`; // 통과한 뒤에는 옛 질문이 맨 아래에 남지 않게 접는다
   if (S.busy && S.busy.where === "debug") html += (S.sending ? meMsg(S.sending.text, true) : "") + pending("debug");
   if (d.passed) html += '<div class="note ok" role="status">고친 코드가 모든 케이스를 통과했어요. 채점 결과 칸에서 피드백을 받아 보세요.</div>';
@@ -2823,6 +2864,7 @@ const indentUnit = (ta, line) => (/^\t/.test(line) || (!/^\s/.test(line) && /^\t
 function codeKeys(e) {
   const ta = e.target;
   if (e.isComposing || e.ctrlKey || e.metaKey || e.altKey || ta.readOnly) return;
+  if (e.key === "Shift") return; // Shift를 먼저 누르는 것만으로 Esc 표시가 지워져 Esc 뒤 Shift+Tab이 막혔다
   if (e.key === "Escape") return void (ta._tabOut = true); // Esc 다음 Tab은 다음 칸으로 간다(키보드로 빠져나가는 길)
   const at = ta.selectionStart, lineStart = ta.value.lastIndexOf("\n", at - 1) + 1;
   const line = ta.value.slice(lineStart, (ta.value.indexOf("\n", at) + 1 || ta.value.length + 1) - 1), unit = indentUnit(ta, line);
@@ -3004,6 +3046,7 @@ for (const name of PANE) new ResizeObserver(paneAria).observe($(`pane-${name}`))
 document.addEventListener("click", (e) => {
   const el = e.target.closest("button");
   if (!el || el.disabled) return;
+  if (el.getAttribute("aria-disabled") === "true") return e.preventDefault(); // 기다리는 중의 단추(초점은 그대로 둔다)
   if (el.dataset.langFilter !== undefined) { // 등록한 문제를 언어로 거른다(화면에서만)
     LIST_LANG = el.dataset.langFilter;
     document.querySelectorAll("#list-body [data-lang]").forEach((li) => { li.hidden = !!LIST_LANG && li.dataset.lang !== LIST_LANG; });

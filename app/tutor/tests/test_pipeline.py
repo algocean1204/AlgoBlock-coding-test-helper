@@ -14,6 +14,7 @@ OPEN_LEAD = open_lead("chair", "loop")  # 시험 계획의 둘째 블록은 반�
 from ..llm import LlmFailed, LlmTimeout
 from ..main import AGENTS, build
 from ..state import BlockState, DebugState, FilledBlock, Solution, Submission
+from ..feedback.prompts import WAY_TEXT
 from ..turn.code_check import BRACE_CLOSE, BRACE_OPEN, NOT_JOINED, brace_note, code_hash, unrun_note
 from ..turn.moves import FOUND_OK, FOUND_TIP, HINTS_DONE, HINTS_DONE_UNFOUND, WRITE_TIP
 
@@ -260,6 +261,13 @@ class ChairTest(unittest.TestCase):
         self.assertNotIn(HARD_STEP, fakes.prompt(fake, "chair.ask"))  # 어렵다는 말이 아니다
         done, fake = fakes.go(chair_state("그게 뭔지 몰라요"), {"chair.judge": ["[check]W"], "chair.ask": ["세다는 건 몇 번인지 헤아리는 거예요. 그럼 무엇을 세어 둘까요?"]})
         self.assertEqual((done["result"]["move"], fakes.tasks(fake)), ("term", ["chair.judge", "chair.ask"]))  # '모르겠어요'로 끊지 않고 판정한다
+
+    def test_two_asks_in_one_message_reach_the_prompt(self):
+        """한 말에 물음이 둘이면 하나에만 응했다. 질문 프롬프트에 물음 수와 받는 법을 넣는다."""
+        done, fake = fakes.go(chair_state("이름별로 세면 되나요? 그리고 k는 왜 필요한가요?"), {"chair.judge": ["[check]N1"], "chair.ask": ["k번째가 되는 때를 알려면 무엇을 세어 둘까요?"]})
+        self.assertIn("사용자 말에 물음이 2개 있다.", fakes.prompt(fake, "chair.ask"))
+        done, fake = fakes.go(chair_state("이름별로 세면 될 것 같아요"), {"chair.judge": ["[check]N1"], "chair.ask": ["같은 이름이 또 나오면요?"]})
+        self.assertNotIn("물음이", fakes.prompt(fake, "chair.ask").split("사용자 말:")[-1])
 
     def test_model_failure_is_error(self):
         done, _ = fakes.go(chair_state("한 번씩만 세면 될 것 같아요"), {"chair.judge": ["[check]N1"], "chair.ask": [LlmTimeout("늦음")]})
@@ -1128,7 +1136,7 @@ class BlockCheckInvariantTest(unittest.TestCase):
                             failed_submissions=["runtime_error", "failed", "timeout"])
         lines = record_lines(ctx, ctx.plan)
         self.assertFalse(any("맞히지 못한 말" in line for line in lines), lines)
-        self.assertIn("- 블록 1(입력받기) 블록 코드 확인에서 튜터의 코드와 이어지지 않은 횟수 1번(틀렸다는 뜻이 아니다)", lines)
+        self.assertIn("- 블록 1(입력받기) 블록 코드 확인에서 튜터의 코드와 이어지지 않은 횟수 1번(틀렸다는 뜻이 아니다)", lines)  # 통과 표시가 붙은 내 글이 없다: '그 뒤 통과했다'를 붙이지 않는다
         self.assertIn("- 통과하지 못한 제출: 실행 오류 1번, 오답 1번, 시간 초과 1번", lines)
         for quiet, rows in ((False, 1), (True, 0)):
             state = fakes.make_state("turn", fakes.context(plan=fakes.planned(fakes.two()), open_count=2), mode="guide", event="block_filled",
@@ -1602,8 +1610,13 @@ class OtherFeatureTest(unittest.TestCase):
         used = fakes.context(plan=plan, open_count=1, latest_submission=sub, chair=[fakes.service("q", 0, "m1")])  # 블록 방식으로 푼 사람에게는 블록 자료가 간다
         done, fake = fakes.go(fakes.make_state("feedback", used), {"feedback.assess": ["[check]49 Y"], "feedback.analyze": [analysis]})
         text = fakes.prompt(fake, "feedback.analyze")
-        for must in ("목표-NEXT_SECRET", "블록(정석 흐름 순서)", "정석 블록 순서", "'블록 n'"):
+        for must in ("목표-NEXT_SECRET", "블록(정석 흐름 순서)", "'블록 n'", WAY_TEXT["chair"], "정석 풀이 순서"):
             self.assertIn(must, text)
+        self.assertNotIn("정석 블록 순서", text)  # '튜터의 질문으로'는 블록 순서를 짜지 않았다: 블록 순서를 다시 짜라는 지시를 하지 않는다
+        guided = replace(used, chair=[], guide=[fakes.service("q", 0, "m1")])
+        done, fake = fakes.go(fakes.make_state("feedback", guided), {"feedback.assess": ["[check]49 Y"], "feedback.analyze": [analysis]})
+        text = fakes.prompt(fake, "feedback.analyze")
+        self.assertTrue("정석 블록 순서" in text and WAY_TEXT["guide"] in text and WAY_TEXT["chair"] not in text, text)  # 블록을 짠 방식에만
         empty = Submission("s2", "", True)
         done, fake = fakes.go(fakes.make_state("feedback", fakes.context(plan=plan, open_count=1, latest_submission=empty)), {"feedback.analyze": [analysis]})
         self.assertEqual((done["result"]["strategy"], fakes.tasks(fake)), (None, ["feedback.analyze"]))  # 코드가 없으면 채점하지 않는다(통과라 전략도 내보내지 않는다)
@@ -1675,6 +1688,35 @@ class OtherFeatureTest(unittest.TestCase):
         both = "- 통과하지 못한 제출: 실행 오류 1번, 오답 2번"
         self.assertEqual(mark_claims("[확실] 실행 오류가 2번, 오답이 1번 있었습니다.", both), "[추측] 실행 오류가 2번, 오답이 1번 있었습니다.")  # 수마다 맞아야 한다
         self.assertEqual(mark_claims("실행 오류가 1번, 오답이 2번 있었습니다.", both), "[확실] 실행 오류가 1번, 오답이 2번 있었습니다.")
+
+    def test_feedback_does_not_call_settled_blocks_stuck(self):
+        """'튜터의 질문으로'로 푼 뒤 피드백이 이미 찾고 통과한 블록을 '막힌 지점'으로 짚고, '통과'와 '원인을 짚지 못한 상태'를 한 문장에 [확실]로 붙였다."""
+        from ..common.talk_rules import CHECKED
+        from ..feedback.prompts import MISSED_TEXT, record_lines
+        from ..feedback.rules import mark_claims
+
+        plan = fakes.planned(fakes.two())
+        missed = [fakes.service("q", 0, "m0"), fakes.user("이름별로 세요", 0, "u0"), fakes.service("q2?", 0, "m1", "clue")]
+        here = record_lines(fakes.context(chair=missed, open_count=1), plan)
+        self.assertEqual(here, [f"- 블록 1(입력받기): {MISSED_TEXT['chair']}이 1번"])  # 아직 그 블록에 있다: 막힌 곳
+        # 말로 찾았다는 근거는 그 블록의 찾음 안내(found)다. '이 블록 채우기'로 연 블록도 열린 블록 수를 올려 찾은 것처럼 적혔다
+        said = [*missed, fakes.user("이름마다 세요", 0, "u1"), fakes.service("블록 칸에 적어 보세요.", 0, "m2", "found"), fakes.service("q3?", 1, "m3")]
+        found = record_lines(fakes.context(chair=said, open_count=2), plan)
+        self.assertEqual(found, [f"- 블록 1(입력받기): {MISSED_TEXT['chair']}이 1번(그 뒤 이 블록을 찾았다. 막힌 곳이 아니다)"])
+        filled = record_lines(fakes.context(chair=[*missed, fakes.service("q3?", 1, "m3")], open_count=2), plan)
+        self.assertEqual(filled, [f"- 블록 1(입력받기): {MISSED_TEXT['chair']}이 1번"])  # 채우기로 열었다: 찾았다고 하지 않는다
+        # 통과했다는 근거는 통과 표시가 붙은 내 블록 코드 확인 글이다. 채운 블록(남는 글 없음)의 통과 상태만으로는 붙이지 않는다
+        checked = [*missed, replace(fakes.user("x = 1", 0, "u2"), move=CHECKED + "Y"), fakes.service("통과예요.", 0, "m4", "done")]
+        states = {"b1": BlockState("b1", "x = 1", "h", "Y", None, 1)}
+        passed = record_lines(fakes.context(chair=checked, open_count=1, block_states=states), plan)
+        self.assertTrue(passed[0].endswith("(그 뒤 블록 코드 확인을 통과했다. 막힌 곳이 아니다)"), passed)
+        self.assertEqual(record_lines(fakes.context(chair=missed, open_count=1, block_states=states), plan), [f"- 블록 1(입력받기): {MISSED_TEXT['chair']}이 1번"])
+        debug = DebugState("h", "logic", 3, "1을 더하지 않는다.", "", 1, "")
+        for ok, said in ((True, "말로 짚기 전에 코드를 고쳤고, 그 뒤 제출이 통과했다"), (False, "아직 짚지 못했다")):
+            lines = "\n".join(record_lines(fakes.context(debug_state=debug, latest_submission=Submission("s1", "x", ok)), plan))
+            self.assertIn(said, lines)
+        self.assertEqual(mark_claims("[확실] 제출은 통과했지만 [확실] 반복이 끝나는 자리를 다시 볼 만합니다."),
+                         "[확실] 제출은 통과했지만 반복이 끝나는 자리를 다시 볼 만합니다.")  # 한 문장에 표시는 하나
 
     def test_unchecked_block_answers_are_not_stuck(self):
         """블록 코드 확인의 글에는 판정이 남고, '확인 전'으로 끝난 확인은 막힌 답으로 세지 않는다(표시 없는 옛 기록은 그대로 읽는다)."""
