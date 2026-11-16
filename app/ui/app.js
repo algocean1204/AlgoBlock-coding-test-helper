@@ -1826,7 +1826,7 @@ function judgeFail(r) {
   const other = ["entry_missing", "undecided"].includes(r.status) && r.looks && r.looks !== p.language ? r.looks : null;
   return `<p class="verdict fail"><span class="badge">${ico("i-x")}</span>${esc(title)}</p>${tool ? `<p class="hint">${esc(tool)}</p>` : ""}
     ${other ? `<p class="hint bad">고른 언어는 ${esc(LANG[p.language] || p.language)}인데 코드는 ${esc(LANG[other])}처럼 보여요. 언어를 바꾸거나 코드를 고쳐 주세요.</p>` : ""}
-    ${r.compile ? `<pre class="code"><code>${esc(r.compile)}</code></pre>` : ""}`;
+    ${r.compile ? `<pre class="code"><code>${esc(r.compile)}</code></pre>` : ""}${r.compile_hint ? `<p class="hint">${inline(r.compile_hint)}</p>` : ""}`;
 }
 
 /** 직접 넣은 값으로 한 번 실행한 결과: 넣은 값, 돌려준 값, 걸린 시간, 오류 한 줄. 맞았는지는 판정하지 않는다.

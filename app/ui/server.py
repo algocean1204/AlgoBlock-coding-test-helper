@@ -51,6 +51,7 @@ from tutor.common.scope import ALGORITHMS, algorithm_name  # noqa: E402
 from tutor.common.solution import composed_parts  # noqa: E402
 from tutor.common.talk_rules import MANY_ANSWERS  # noqa: E402
 from tutor.debug.rules import out_key  # noqa: E402
+from tutor.turn.code_check import compile_easy  # noqa: E402
 from tutor.save.respond import blocks_body, shown_count  # noqa: E402
 from tutor.ingest import IngestError, ocr_doubts, read_pages, reread  # noqa: E402
 from tutor.ingest.files import split_files  # noqa: E402
@@ -1571,6 +1572,11 @@ def error_hint(text: str, language: str) -> str:
     return next((hint for lang, found, hint in PHRASE_HINTS if lang == language and found.search(full)), "")
 
 
+def compile_hint(text: str, language: str) -> str:
+    """컴파일 오류 글에 붙일 한 줄 풀이: 파이썬·자바스크립트의 문법 오류는 실행 오류 표(HINTS)로, 컴파일하는 언어의 흔한 오류는 블록 확인과 같은 말로."""
+    return error_hint(text, language) or compile_easy(text)
+
+
 def error_fields(case: dict, language: str, hidden: bool) -> dict:
     """실행 오류 케이스의 {error, hint, line}. 숨은 테스트는 예외 이름만(줄 번호와 풀이는 입력을 드러내지 않는다)."""
     line = error_line(case["error"], "runtime_error")
@@ -1599,7 +1605,7 @@ def result_body(report: dict) -> dict:
     missed = [case for case in report["cases"] if case["status"] != "passed"]
     # many: 통과하지 못한 케이스가 모두 '답이 여럿일 수 있는 문제에서 값이 다름'이다(틀렸다고 단정하지 않는다. 화면 머리가 그렇게 말한다)
     return {"ok": report["status"] == "passed", "status": report["status"], "reason": report["reason"], "compile": compile_head(report["compile"]),
-            "compile_line": report.get("compile_line"), "score": score(report), "cases": cases, "repeat": report.get("repeat") is True,
+            "compile_hint": compile_hint(report["compile"], language) if report["status"] == "compile_error" else "", "compile_line": report.get("compile_line"), "score": score(report), "cases": cases, "repeat": report.get("repeat") is True,
             "many": bool(missed) and all(case.get("note") for case in missed), "notice": report.get("notice") or ""}
 
 
