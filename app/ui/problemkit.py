@@ -162,9 +162,10 @@ def batch(path: Path, inputs: list[list], timeout: int = 180) -> list | str:
 
 
 # 해설 글(단서의 뜻·익힌 것·흔한 실수·사다리)은 고른 언어와 상관없이 같은 글을 보인다. 한 언어에만 있는 낱말(예외 이름, 내장 함수·자료형 이름)을 쓰면 다른 언어로 푸는 사용자에게 틀린 설명이 된다.
+_L, _R = r"(?<![A-Za-z0-9_])", r"(?![A-Za-z0-9_])"  # \b는 한글 조사(KeyError가, heapq에서)를 낱말 글자로 봐서 쓰지 않는다
 LANGUAGE_BOUND = re.compile(
-    r"\b\w+(?:Error|Exception)\b|딕셔너리|리스트(?<!인접 리스트)|튜플|파이썬|Python|자바|코틀린|C\+\+|Rust|\b(?:dict|list|tuple|defaultdict|Counter|deque|heapq|heapify|heappush|heappop|bisect|lambda|lru_cache|sorted|setdefault|enumerate"
-    r"|PriorityQueue|HashMap|BinaryHeap|priority_queue)\b|\b(?:range|len|int|str|print|append|reverse)\s*[(=]|\.(?:append|get|items|keys|values|pop|sort)\(|sys\.|\+=|-=|//|\blong\b")
+    "딕셔너리|리스트(?<!인접 리스트)|튜플|파이썬|자바|코틀린|" + _L + r"(?:[A-Za-z]+(?:Error|Exception)|Python|C\+\+|Rust|dict|list|tuple|defaultdict|Counter|deque|heapq|heapify|heappush|heappop|bisect|lambda|lru_cache|sorted|setdefault|enumerate"
+    r"|PriorityQueue|HashMap|BinaryHeap|priority_queue|long|int|float|double|(?:range|len|str|print|append|reverse)(?=\s*[(=]))" + _R + r"|\.(?:append|get|items|keys|values|pop|sort)\(|sys\.|\+=|-=|//")
 
 
 def language_bound(problem: dict) -> list[str]:
