@@ -444,13 +444,13 @@ class RunCheckTest(unittest.TestCase):
                 ([case("example", "passed"), case("accuracy", "failed", got="3")], False, "예시는 맞지만 숨은 테스트에서 틀렸어요."),
                 ([case(None, "failed", got="3")], False, "예시는 맞지만 숨은 테스트에서 틀렸어요."),
                 ([case("example", "timeout")], False, "끝나지 않거나 너무 오래 걸렸어요."),
-                ([case("example", "runtime_error", error=error)], False, "`NameError: name 'weights' is not defined`가 났어요."),
+                ([case("example", "runtime_error", error=error)], False, "`weights`라는 이름을 찾지 못했어요. 만들기 전에 썼거나 철자가 다른지 확인해 보세요."),
                 ([case("accuracy", "runtime_error", error=error)], False, "숨은 테스트에서 `NameError`가 났어요."),
                 ([case("example", "failed", got="x" * 100)], False, f"예시 `solution([3, 8, 6, 5], 11)`의 기대한 값은 2인데 {'x' * 80}…가 나왔어요.")]
         for cases, program, want in rows:
             self.assertEqual(seen_line({"status": "failed", "cases": cases}, program), want)
         self.assertEqual(seen_line({"status": "compile_error", "cases": [], "compile": "/tmp/a/Main.java:5: error: cannot find symbol\n  symbol: variable x"}, True),
-                         "`x`라는 이름을 찾지 못했어요. 철자가 맞는지, 그 값에서 쓸 수 있는 이름인지 확인해 보세요.")  # 모은 파일의 줄 번호는 사용자가 볼 수 없다
+                         "`x`라는 이름을 찾지 못했어요. 만들기 전에 썼거나 철자가 다른지 확인해 보세요.")  # 모은 파일의 줄 번호는 사용자가 볼 수 없다
 
     def test_name_error_finds_my_name_without_model(self):
         """'items.sort()'가 뒤 블록의 'order'와 어긋나 NameError → 모델이 거부했다. 뒤 블록의 'order'를 'items'로 바꿔 돌리면 통과한다."""
@@ -617,9 +617,9 @@ class BlockCheckResultTest(unittest.TestCase):
         self.assertEqual(_error_row("solution.cpp:21:23: error: reference to overloaded function could not be resolved", True),
                          "reference to overloaded function could not be resolved")
         self.assertEqual(_error_row("Traceback (most recent call last):\nAttributeError: 'list' object has no attribute 'sorted'. Did you mean: 'sort'?"),
-                         "AttributeError: 'list' object has no attribute 'sorted'")
-        long = "UnboundLocalError: cannot access local variable 'boxes' where it is not associated with a value at all here"
-        self.assertEqual(_error_row(long), "UnboundLocalError: cannot access local variable 'boxes' where it is not…")  # 낱말 경계에서 자른다
+                         "`sorted`라는 이름을 찾지 못했어요. 철자가 맞는지, 그 값에서 쓸 수 있는 이름인지 확인해 보세요.")
+        long = "ValueError: cannot convert the value 'boxes' where it is not associated with a value at all here"
+        self.assertEqual(_error_row(long), "ValueError: cannot convert the value 'boxes' where it is not associated with a…")  # 낱말 경계에서 자른다
 
     def test_fill_uses_my_names(self):
         """내 이름(conveyor)으로 통과한 뒤 채운 블록에 계획 이름(belt)이 들어왔다."""
@@ -725,7 +725,7 @@ class BlockCheckPairingTest(unittest.TestCase):
         # start의 짝은 굳지 않았지만 첫 후보(s)로 이어 돌렸다 — 그 결과와 쓰인 가정을 말한다
         self.assertEqual((done["verdict"].seen, done["block_check"].verdict),  # 어림 짝을 다 돌려 보아 이어지지 않아요이고, 그 짝을 사실로 말한다
                          ("뒤 블록은 튜터의 코드로 채워서 돌리면 예시 `solution([1, 2])`의 기대한 값은 12인데 3이 나와요. " + assumed([["s", "start"]]) + " " + NOT_JOINED, "N"))
-        self.assertEqual(need_name(["high", "start"]), "다음 블록들은 이 값을 `high`, `start`라는 이름으로 써요. 내 코드에서 어느 변수가 그 값인지 찾지 못해 이어 돌리지 못했어요. "
+        self.assertEqual(need_name(["high", "start"]), "튜터가 채운 다음 블록 코드는 이 값을 `high`, `start`라는 이름으로 써요. 내 코드에서 어느 변수가 그 값인지 찾지 못해 이어 돌리지 못했어요. "
                          "내 변수 이름을 그 이름으로 바꾸거나, 맞다고 생각하면 '이대로 넘어가기'를 눌러요.")
         done, _ = self.turn(blocks, {}, "b1", "s = q[0] * 10\nhi = q[1]", cases)
         self.assertEqual((done["block_check"].verdict, done["block_check"].renames), ("Y", [["s", "start"], ["hi", "high"]]))
@@ -1046,7 +1046,7 @@ class BlockCheckInvariantTest(unittest.TestCase):
         self.assertIn("    for i in range(1, n + 1):\n        acc += i", seen[0])  # 뒤 블록은 저장된 글 그대로
         self.assertEqual((done["block_check"].verdict, done["block_check"].tries, done["open_count"]), ("?", states["b1"].tries, 3))
         self.assertTrue(done["verdict"].seen.startswith("내 코드만으로 돌렸더니 내 2번 블록 2번째 줄(`acc += i`)에서 실행 오류가 났어요."), done["verdict"].seen)  # 뒤 블록이 모두 내 글: 오류는 그 블록의 줄에서 난다
-        self.assertIn("`UnboundLocalError", done["verdict"].seen)
+        self.assertIn("`acc`라는 이름을 찾지 못했어요.", done["verdict"].seen)
         self.assertEqual(sorted((f.block_id, f.verdict, f.code) for f in done["block_fixes"]),
                          [("b2", "?", states["b2"].code), ("b3", "?", states["b3"].code)])
 
@@ -1835,7 +1835,7 @@ class ThreeWayVerdictTest(unittest.TestCase):
     def test_error_in_my_line_is_no(self):
         done, _ = self.turn(SORT_BLOCKS, "order = sorted(itemz)", check=sort_check([]))
         self.assertEqual((done["block_check"].verdict, done["verdict"].unsure, done["block_check"].tries - 0), ("N", False, 1))
-        self.assertTrue(done["verdict"].seen.startswith("내 블록 1번째 줄(`order = sorted(itemz)`)에서 실행 오류가 났어요.\n`NameError: name 'itemz' is not defined`"), done["verdict"].seen)
+        self.assertTrue(done["verdict"].seen.startswith("내 블록 1번째 줄(`order = sorted(itemz)`)에서 실행 오류가 났어요.\n`itemz`라는 이름을 찾지 못했어요. 만들기 전에 썼거나 철자가 다른지 확인해 보세요."), done["verdict"].seen)
 
     def test_wrong_value_without_tutor_code_is_plain_no(self):
         """튜터의 코드가 없는 프로그램(내 블록이 모두 있다)에서 값이 다르면 겹칠 수 있다는 말이 없다."""
@@ -2191,19 +2191,28 @@ class BlockCheckTextTest(unittest.TestCase):
         span = {"first": 1, "last": 2, "block": 0, "whose": "this", "cut": 0, "code": "a = 1\nb = 2", "rows": ["x", "y"]}
         report = {"status": "runtime_error", "compile": "", "cases": [{"status": "runtime_error", "line": 2, "error": "NameError: name 'dfs' is not defined"}]}
         said = failure_verdict(report, [span], False, "", False).seen
-        self.assertTrue(said.startswith("다른 블록의 코드에서 실행 오류가 났어요.\n`NameError: name 'dfs' is not defined`") and "번째 줄" not in said, said)
+        self.assertTrue(said.startswith("다른 블록의 코드에서 실행 오류가 났어요.\n`dfs`라는 이름을 찾지 못했어요. 만들기 전에 썼거나 철자가 다른지 확인해 보세요.") and "번째 줄" not in said, said)
 
-    def test_missing_member_is_said_in_easy_words(self):
-        from ..turn.code_check import NO_MEMBER, _error_row, failure_verdict
+    def test_missing_member_and_name_are_said_in_easy_words(self):
+        """같은 실수는 다섯 언어가 같은 쉬운 말을 받는다(이 맥의 python3·javac·clang++·rustc·node가 낸 글)."""
+        from ..turn.code_check import NO_CLASS, NO_MEMBER, NO_NAME, _error_row, failure_verdict
 
-        for raw in ("Main.java:3: error: cannot find symbol\n        int n = piles.size();\n  symbol:   method size()\n  location: variable piles of type int[]",
-                    "solution.cpp:4:20: error: 'class std::vector<int>' has no member named 'size'",
-                    "error[E0599]: no method named `size` found for struct `Vec<i32>` in the current scope",
-                    "TypeError: piles.size is not a function"):
-            self.assertEqual(_error_row(raw, first=True, whole=True), NO_MEMBER.format(name="size"), raw)
+        jv = "Main.java:1: error: cannot find symbol\n  int {x}\n  symbol:   {kind} {name}\n  location: class Main"
+        for name, said, raws in (
+                ("size", NO_MEMBER, ("AttributeError: 'list' object has no attribute 'size'", jv.format(x="n = p.size();", kind="method", name="size()"),
+                                     "d.cpp:2:43: error: no member named 'size' in 'std::vector<int>'", "error[E0599]: no method named `size` found for struct `Vec<i32>` in the current scope",
+                                     "TypeError: p.size is not a function")),
+                ("total2", NO_NAME, ("NameError: name 'total2' is not defined", jv.format(x="q = total2;", kind="variable", name="total2"),
+                                     "c.cpp:1:25: error: use of undeclared identifier 'total2'; did you mean 'total'?", "error[E0425]: cannot find value `total2` in this scope",
+                                     "ReferenceError: total2 is not defined")),
+                ("Scanner", NO_CLASS, (jv.format(x="Scanner s = null;", kind="class", name="Scanner"),))):
+            for raw in raws:
+                self.assertEqual(_error_row(raw, first=True, whole=True), said.format(name=name, josa="라는"), raw)
+        self.assertEqual(_error_row("solve is not a function".join(["TypeError: ", ""]), whole=True), NO_MEMBER.format(name="solve", josa="라는"))  # 점 없는 호출
+        self.assertEqual(_error_row("error[E0609]: no field `len` on type `(i32, i32)`", whole=True), NO_MEMBER.format(name="len", josa="이라는"))  # 받침 있는 이름의 조사
         report = {"status": "compile_error", "cases": [], "compile_line": 1,
                   "compile": "Main.java:1: error: cannot find symbol\n  int n = piles.size();\n  symbol:   method size()"}
         span = {"first": 1, "last": 1, "block": 0, "whose": "this", "cut": 0, "code": "int n = piles.size();", "rows": ["int n = piles.size();"]}
         said = failure_verdict(report, [span], False, "", True).seen
-        self.assertIn("내 블록 1번째 줄(`int n = piles.size();`)에서 컴파일 오류가 났어요.\n`size`라는 이름을 찾지 못했어요.", said)
+        self.assertIn("내 블록 1번째 줄(`int n = piles.size();`)에서 컴파일 오류가 났어요.\n`size`라는 이름을 찾지 못했어요. 철자가 맞는지, 그 값에서 쓸 수 있는 이름인지 확인해 보세요.", said)
         self.assertNotIn("cannot find symbol", said)

@@ -1098,7 +1098,8 @@ def spliced_view(references: list[str], index: int, code: str, language: str, mi
     """블록 코드 확인의 실행 프로그램과, 그 프로그램의 줄이 누구의 것인지: index 블록은 사용자가 방금 적은 코드, mine에 있는 블록은 사용자가 적어 둔 코드,
     나머지는 풀이 가이드의 블록 reference에 그 자리의 이름 바꾸기 표(tables[i]: {계획 이름: 사용자 이름})를 적용한 것(앞 블록에서 내 이름을 쓰면 NameError였다).
     own_only면 나머지 블록은 틀(머리·꼬리)만 두고 알맹이를 뺀다(내 블록만 이은 프로그램). program: 문항이 표준 입출력 방식이다(서버가 아는 문항의 방식).
-    spans: [{"first", "last"(프로그램의 1부터 센 줄), "block", "whose": this|mine|tutor, "cut"(내 글 앞에서 떼어 낸 줄 수), "code"(내 글)}]. 틀과 가져오기 줄은 tutor 쪽이다."""
+    spans: [{"first", "last"(프로그램의 1부터 센 줄), "block", "whose": this|mine|tutor, "cut"(내 글 앞에서 떼어 낸 줄 수), "code"(내 글),
+    "rows"(프로그램에 놓인 그 덩이의 줄), "gap"(가져오기 줄이 덩이 안에 들어갔을 때만: (밀리기 시작하는 줄, 밀린 수))}]. 틀과 가져오기 줄은 tutor 쪽이다."""
     mine, unit = {**(mine or {}), index: code}, plan_unit(references, language)
     rows, spans = [], []
 
