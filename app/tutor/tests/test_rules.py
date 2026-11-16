@@ -785,6 +785,12 @@ class UnsaidCreditTest(unittest.TestCase):
             self.assertEqual(unsaid_credit(fine, "모르겠어요"), [], fine)
         self.assertEqual(asked_count("이름별로 세면 되나요? 그리고 k는 왜 필요한가요"), 2)
         self.assertEqual(asked_count("이름별로 세면 될 것 같아요"), 0)
+        # 한 일을 묻는 질문은 생각 없는 말 뒤에도 걸리지 않는다(판단을 받는 동사만 본다)
+        for fine in ("그 입력을 손으로 따라가 보셨나요?", "실패한 입력을 첫 줄부터 직접 따라가 보셨나요?", "앞에서 찾으신 값은 어디에 쓰이나요?"):
+            self.assertEqual(unsaid_credit(fine, "잘 모르겠어요"), [], fine)
+        self.assertEqual(asked_count("`a > b ? a : b` 꼴은 뭔가요"), 1)  # 코드 속 '?'는 세지 않고, '뭔가요'는 센다
+        self.assertEqual(asked_count("이거 맞나\n변수가 뭐야"), 2)
+        self.assertEqual(asked_count("같은 이름이 또 나오니까 하나 더해요"), 0)
         self.assertEqual(many_asks_line("이름별로 세면 될 것 같아요. k는 왜 있나요?"), [])
         self.assertTrue(many_asks_line("세면 되나요?\nk는 왜 있죠?")[0].startswith("사용자 말에 물음이 2개 있다."))
 

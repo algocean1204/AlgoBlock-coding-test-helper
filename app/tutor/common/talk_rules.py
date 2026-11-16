@@ -35,7 +35,8 @@ def agree_opening(text: str, problem: str = "") -> bool:
 # 판단을 맞다고 하는 평서문은 늘 판정이다(원칙 1). 사용자 말에 생각이 담기지 않았으면 그 말에 기대는 문장('짚으셨는데', '말씀하신 대로')도 없는 판단을 지어낸 것이다
 _VERDICT = re.compile(r"(?:판단|생각|방향|짐작|추측|짚은\s*것)[은는이가]?\s*(?:맞|옳|정확)(?!는지|은지|을지|는가|을까)"
                       r"|(?:맞는|옳은|정확한)\s*(?:방향|판단|생각|짐작)|제대로\s*짚|잘\s*짚")
-_CREDIT = re.compile(r"(?:짚|말씀하|말하|생각하|판단하|짐작하|찾|보)(?:으)?(?:셨|신)|짚었|하신\s*(?:대로|것처럼|말)")
+# 판단을 받는 동사만 본다: '따라가 보셨나요?', '앞에서 찾으신 값은…?'은 한 일을 묻는 말이지 판단을 인정하는 말이 아니다
+_CREDIT = re.compile(r"(?:짚|말씀하|말하|판단하|짐작하|생각하)(?:으)?(?:셨|신)|짚었")
 _NO_CLAIM = re.compile(r"모르|몰라|글쎄|헷갈|감이\s*안|막혔")
 NO_CLAIM_CHARS = 15  # 공백을 뺀 사용자 말이 이보다 짧고 막힌 말이면 인정할 판단이 없다
 
@@ -48,12 +49,13 @@ def unsaid_credit(text: str, user: str = "") -> list[str]:
             if (_VERDICT.search(part) and not part.rstrip().endswith(("?", "？"))) or (empty and _CREDIT.search(part))]
 
 
-_ASKED = re.compile(r"(?:[?？]|나요|까요?|(?:인|는|건|은|한)가요|죠)\s*$")
+# 물음 어미: 물음표, '~나요', '~까(요)', '~(인·는·건·은·한·뭔)가요', '~죠', 뜻 묻기('뭐예요', '뭐야', '뭔데'), 반말 '~나'('맞나'. '하나'·'그러나'는 빼고)
+_ASKED = re.compile(r"(?:[?？]|나요|까요?|(?:인|는|건|은|한|뭔)가요|죠|뭐예요|뭐에요|뭐야|뭔데|(?<!하)(?<!그러)나)\s*$")
 
 
 def asked_count(text: str) -> int:
     """사용자 말 속 물음의 수(문장·줄마다 물음표나 물음 어미로 끝나는가)."""
-    parts = [part.strip() for part in re.split(r"(?<=[.?!？])\s+|\n", text or "") if part.strip()]
+    parts = [part.strip() for part in re.split(r"(?<=[.?!？])\s+|\n", without_code(text or "")) if part.strip()]  # 코드 속 '?'(삼항 연산 등)는 세지 않는다
     return sum(bool(_ASKED.search(part)) for part in parts)
 
 
