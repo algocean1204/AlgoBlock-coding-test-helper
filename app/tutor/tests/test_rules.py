@@ -795,6 +795,9 @@ class LangTrapFilterTest(unittest.TestCase):
         self.assertEqual(trap_candidates([trap], self.report(("2", "failed", "[1, 2]")), "int n = map.getOrDefault(key, 0) + 1;"), [])  # 실수한 이름이 없다
         self.assertTrue(out_key(json.dumps(list(range(50)))).startswith("#"))  # 길면 지문
         self.assertEqual(out_key('{"b": 1, "a": 2}'), out_key('{"a":2,"b":1}'))  # 키 순서와 공백은 맞춘다
+        long = json.dumps(list(range(50)))  # 큰 입력: 내 결과는 줄여 받고 견줄 꼴(out)은 줄이기 전의 값으로 받는다
+        cut = {"status": "failed", "cases": [{"id": "2", "status": "failed", "got": long[:20] + "…", "out": out_key(long)}]}
+        self.assertEqual(trap_candidates([{**trap, "outs": {"2": out_key(long)}}], cut, code), [{**trap, "outs": {"2": out_key(long)}}])
 
     def test_runtime_error_and_timeout_need_only_the_status(self):
         from ..debug.rules import trap_candidates
