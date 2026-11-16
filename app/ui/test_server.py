@@ -935,6 +935,17 @@ def state_names_by_mode() -> None:
     call("/api/reset", id=PID)
 
 
+def keyboard_focus() -> None:
+    """키보드 초점(화면 코드 확인): 키보드로 누른 단추가 사라지면 초점을 이어 갈 자리로 돌려 놓고, 건너뛰기 링크는 주소를 바꾸지 않고 본문 제목으로 옮기며,
+    코드 칸에 초점이 있는 동안 Esc 다음 Tab 안내가 보인다. 사용법 창은 처음부터 showModal로 연다. 브라우저 동작은 화면 확인으로 본다."""
+    js, css, html = (HERE / "app.js").read_text(encoding="utf-8"), (HERE / "app.css").read_text(encoding="utf-8"), (HERE / "index.html").read_text(encoding="utf-8")
+    assert "function focusAfter(el)" in js and 'e.detail === 0 && e.target.closest("#view-code button")' in js and "}, true);" in js  # 다시 그리기 전에(잡기 단계에서) 받는다
+    assert '"#say"' in js[js.index("function focusAfter(el)"):js.index("document.addEventListener(\"focusin\"")] and 'textarea[data-block=' in js  # 첫 질문 → 입력 칸, 블록 확인 → 그 블록 칸
+    assert 'e.target.closest("a.skip")' in js and "e.preventDefault();" in js[js.index('a.skip'):js.index("codeCell")] and '<main id="main" tabindex="-1">' in html  # 주소를 바꾸면 화면이 홈으로 갔다
+    assert 'id="tab-hint"' in html and "Esc를 누른 뒤 Tab" in html and ".tab-hint.on { visibility: visible; }" in css and '$("tab-hint").classList.toggle("on", codeCell(e.target))' in js
+    assert "tour.showModal" in js  # 사용법 창은 모달: Tab이 창 안에서 돈다
+
+
 def chair_found() -> None:
     """의자에서 찾은 블록의 블록 코드 확인(모델 0회): 맞다고만 하고 진행은 그대로, 그 말은 그 블록을 겨눈다. 가이드는 지금 블록만.
     계획 코드와 글자 그대로 같으면 실행 없이, 틀 줄을 빼고 적으면 실행해 본다(그 문제의 예시만 있는 등록 문제라 그렇다고 말한다)."""
@@ -2660,6 +2671,7 @@ def main() -> None:
         debug_pass()
         own_way_flow()
         state_names_by_mode()
+        keyboard_focus()
         chair_found()
         guide_spoken()
         language_memory()
