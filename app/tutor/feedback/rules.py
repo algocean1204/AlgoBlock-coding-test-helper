@@ -78,15 +78,19 @@ def mark_claims(analysis: str, record: str = "") -> str:
     return " ".join(out)
 
 
-_BLOCK_REF = re.compile(r"블록\s*(\d+(?:\s*[·,~-]\s*\d+)*)|블록")
+_NUMS = r"\d+(?:\s*(?:[·,~-]|와|과|및)\s*\d+)*"
+_BLOCK_REF = re.compile(rf"블록\s*({_NUMS})|({_NUMS})\s*번\s*블록")
+_CODE_BLOCK = re.compile(r"(?:for|if|while|else|코드|try)\s*블록")  # 코드 구조 말('for 블록 안에서')은 블록 방식과 무관하다
 UNOPENED_FALLBACK = "제출한 코드를 처음부터 따라가 보면 어떤 입력에서 달라질까요?"
 
 
 def drop_unopened(text: str, opened: int) -> str:
-    """열지 않은 블록 번호를 말한 문장을 지운다(opened: 사용자가 연 블록 수. 0이면 블록 방식을 쓰지 않았으니 '블록'을 말한 문장 모두).
-    블록 번호는 기록과 열린 수로 가릴 수 있어 모델에게 다시 쓰라 하지 않고 문장째 뺀다."""
+    """열지 않은 블록 번호를 말한 문장을 지운다(opened: 사용자가 연 블록 수. 0이면 블록 방식을 쓰지 않았으니 번호 있는 블록 말 모두).
+    블록 번호는 기록과 열린 수로 가릴 수 있어 모델에게 다시 쓰라 하지 않고 문장째 뺀다. 번호 없는 '블록'은 블록 방식이 아닐 때만 지운다."""
     def unopened(part: str) -> bool:
-        return any(hit.group(1) is None or opened == 0 or any(int(n) > opened for n in re.findall(r"\d+", hit.group(1))) for hit in _BLOCK_REF.finditer(part))
+        part = _CODE_BLOCK.sub("", part)
+        nums = [int(n) for hit in _BLOCK_REF.finditer(part) for n in re.findall(r"\d+", hit.group(1) or hit.group(2))]
+        return any(n > opened for n in nums) or (opened == 0 and "블록" in part)
     return " ".join(part for part in sentences(text) if not unopened(part))
 
 
