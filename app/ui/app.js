@@ -490,18 +490,18 @@ async function showReport() {
     <div class="tile"><span class="tile-label">통과한 기본 문제</span><strong>${sum.solved}<small> / ${sum.total}</small></strong><span class="bar" aria-hidden="true"><i style="width:${sum.total ? Math.round(100 * sum.solved / sum.total) : 0}%"></i></span><span class="tile-sub">도움 없이 ${d.readiness.solved} · 그 밖의 통과 ${sum.solved - d.readiness.solved}</span>${sum.own.total ? `<span class="tile-sub">등록한 문제 ${sum.own.solved} / ${sum.own.total}</span>` : ""}</div>
     <div class="tile"><span class="tile-label">제출</span><strong>${sum.submissions}<small>번</small></strong><span class="tile-sub">${esc(langs || "아직 없어요")}</span></div>
     <div class="tile"><span class="tile-label">첫 제출에 통과</span><strong>${Math.round(100 * sum.first_try_rate)}<small>%</small></strong><span class="tile-sub">제출한 문제 가운데 첫 제출에 통과한 비율</span></div>
-    <div class="tile"><span class="tile-label">출석</span><strong>${att.days}<small>일</small></strong>
+    <div class="tile"><span class="tile-label">출석</span><strong>${att.days}<small>일</small></strong><span class="tile-sub">앱을 연 날을 세요. 아래 점은 최근 14일이에요.</span>
       <span class="days" role="img" aria-label="최근 14일 가운데 ${came}일 출석">${att.recent.map((on) => `<i${on ? ' class="on"' : ""}></i>`).join("")}</span></div>
   </section>`;
   // 준비도(도움 없이 푼 기본 문제로만)와 다음 단계까지 남은 주제(학습 지도 순서), 여러 주제에서 되풀이된 실패. 빈 카드는 보이지 않는다
   const rd = d.readiness, focus = rd.focus, SHOWN = 5; // 남은 주제는 앞의 다섯 줄만 펼쳐 두고 나머지는 접는다
   const lefts = (rows) => `<ul class="points plain">${rows.map((x) => `<li><strong>${esc(x.name)}</strong>
       <span>${esc(x.todo)}${x.after.length ? ` · 먼저 ${esc(x.after.join(", "))}` : ""}</span></li>`).join("")}</ul>`;
-  html += `<div class="sides${d.patterns.length ? "" : " full"}"><section class="card side"><h2>준비도 <span class="muted">${esc(rd.label)}</span></h2><p>${esc(rd.line)}</p>
-    ${focus ? `<p class="hint">다음에 배울 주제: <strong>${esc(focus.name)}</strong>${focus.next ? ` · <a class="link" href="#/p/${esc(focus.next.id)}">${esc(focus.next.title)}</a>` : ""}</p>` : ""}
+  html += `<div class="sides${d.patterns.length ? "" : " full"}"><section class="card side"><h2>준비도 <span class="muted">${esc(rd.label)}</span></h2><p class="hint">도움(튜터·힌트·해설) 없이 푼 기본 문제가 얼마나 쌓였는지 보는 단계예요.</p><p>${esc(rd.line)}</p>
+    ${focus ? `<p class="hint">다음에 배울 주제: <strong>${esc(focus.name)}</strong>${focus.next ? (target && focus.next.id === target.id ? " · 첫 문제는 위의 ‘이어서 풀기’예요" : ` · <a class="link" href="#/p/${esc(focus.next.id)}">${esc(focus.next.title)}</a>`) : ""}</p>` : ""}
     ${rd.remaining.length ? `<p class="hint">${esc(rd.goal)}까지 남은 주제</p>${lefts(rd.remaining.slice(0, SHOWN))}` : ""}
     ${rd.remaining.length > SHOWN ? `<details class="signal-group"><summary>나머지 ${rd.remaining.length - SHOWN}개 주제 보기</summary>${lefts(rd.remaining.slice(SHOWN))}</details>` : ""}
-    <details class="signal-group"><summary>기준 보기</summary><ul class="plain-list">${rd.rules.map((x) => `<li>${esc(x)}</li>`).join("")}</ul></details>
+    <details class="signal-group"><summary>준비도 기준 보기(어떤 통과를 도움 없이 푼 것으로 세는지)</summary><ul class="plain-list">${rd.rules.map((x) => `<li>${esc(x)}</li>`).join("")}</ul></details>
     <p class="hint">${esc(rd.basis)}</p></section>
     ${d.patterns.length ? `<section class="card side"><h2>여러 주제에서 되풀이된 실패</h2><ul class="points">${d.patterns.map((x) => `<li>${esc(x.line)}</li>`).join("")}</ul></section>` : ""}</div>`;
   const side = (title, rows, cls) => `<section class="card side ${cls}"><h2>${title}</h2><ul class="points">${rows.map((x) => `<li><strong>${esc(x.name)}</strong><span>${esc(x.why)}</span>
@@ -509,7 +509,7 @@ async function showReport() {
   const sides = [d.weaknesses.length ? side("더 공부할 주제", d.weaknesses, "weak") : "", d.strengths.length ? side("강한 주제", d.strengths, "strong") : ""].filter(Boolean); // 빈 카드는 보이지 않는다
   if (sides.length) html += `<div class="sides">${sides.join("")}</div>`;
   const nexts = d.next; // 첫 줄이 홈의 ‘이어서 풀기’와 결과·피드백의 ‘다음 문제’다
-  if (nexts.length) html += `<h2 class="list-label">다음에 풀 문제</h2><ul class="rows">${nexts.map((n) => `<li><a class="row" href="#/p/${esc(n.id)}"><span><span class="row-title">${esc(n.title)}</span>
+  if (nexts.length) html += `<h2 class="list-label">다음에 풀 문제</h2><p class="hint">첫 줄이 위의 ‘이어서 풀기’와 같아요. 나머지는 그다음 후보예요.</p><ul class="rows">${nexts.map((n) => `<li><a class="row" href="#/p/${esc(n.id)}"><span><span class="row-title">${esc(n.title)}</span>
     <span class="badges">${lvBadge(n.level)}${n.theme_name ? `<span class="theme-chip">${esc(n.theme_name)}</span>` : ""}</span><span class="row-meta">${esc(n.why)}</span></span><span></span>${ico("i-caret")}<span class="sr-only">열기</span></a></li>`).join("")}</ul>`;
   const fold = (title, count, body) => `<details class="fold card"><summary>${ico("i-caret")}<span>${title}</span> <span class="muted">${count}</span></summary>${body}</details>`;
   html += fold("주제별 진행", `${d.themes.length}개 주제 · 통과 ${sum.solved}`, `${LEGEND}<ul class="ladders report">${d.themes.map((t) => `<li class="ladder-row">
@@ -523,7 +523,7 @@ async function showReport() {
       <p class="hint">${failTip(fails)}</p></section>` : "",
     `<section class="card side"><h2>되풀이한 실수</h2>${d.pitfalls.length ? "" : `<p class="hint">같은 실수를 두 번 이상 하면 여기에 모여요. ‘틀린 곳 같이 찾기’를 쓰면 쌓여요(제출이 틀린 것만으로는 쌓이지 않아요).</p>`}<ul class="points plain">${d.pitfalls.map((x) => `<li><strong>${esc(x.name)}</strong><span>${x.count}번</span>${x.problems.length ? `<span class="pit-from muted">${x.problems.map((p) => `<a href="#/p/${esc(p.id)}">${esc(p.title)}</a>`).join(" · ")}</span>` : ""}</li>`).join("")}</ul></section>`].filter(Boolean);
   if (cards.length) html += `<div class="sides">${cards.join("")}</div>`;
-  if (d.signals.length) html += fold("실전 신호 모음", `${d.signals.reduce((n, g) => n + g.items.length, 0)}개`, `<p class="hint">통과한 문제에서 모았어요. 실전에서 이런 표현을 보면 이 방법을 떠올려요.</p>
+  if (d.signals.length) html += fold("실전 신호 모음", `${d.signals.reduce((n, g) => n + g.items.length, 0)}개`, `<p class="hint">실전 신호는 문제 글에서 어떤 방법을 쓸지 알려 주는 표현이에요. 통과한 문제에서 모았어요. 실전에서 이런 표현을 보면 이 방법을 떠올려요.</p>
     ${d.signals.map((g) => `<details class="signal-group"><summary>${ico("i-caret")}${esc(g.name)} <span class="muted">${g.items.length}개</span></summary><ul class="signals">${g.items.map((x) => `<li class="signal"><q>${esc(x.phrase)}</q><span>${esc(x.means)}</span><small>${esc(x.title)}</small></li>`).join("")}</ul></details>`).join("")}`);
   if (d.feedbacks.length) html += `<h2 class="list-label">받은 AI 피드백</h2><ul class="rows">${d.feedbacks.map((f) => `<li><a class="row" href="#/p/${esc(f.id)}/feedback"><span><span class="row-title">${esc(f.title)}</span>
     <span class="row-meta">${esc(when(f.at))}${f.summary ? ` · ${esc(f.summary.length > 90 ? `${f.summary.slice(0, 90).replace(/\s*\S*$/, "")}…` : f.summary)}` : ""}</span></span><span></span>${ico("i-caret")}<span class="sr-only">피드백 열기</span></a></li>`).join("")}</ul>`;
