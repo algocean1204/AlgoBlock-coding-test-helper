@@ -61,6 +61,7 @@ def mark_claims(analysis: str, record: str = "") -> str:
     for part in [p.strip() for p in re.split(r"(?<=[.?!？])\s+", (analysis or "").strip()) if p.strip()]:
         found = _MARK.match(part)
         body = part[found.end():] if found else part
+        body = re.sub(r"\s*\[(?:확실|가능성 높음|추측)\]\s*", " ", body).strip()  # 문장 안의 표시(한 문장에 어긋나는 [확실] 둘)는 지우고 하나만 붙인다
         if not body.strip():  # 표시만 있고 문장이 없다
             continue
         if body.rstrip().endswith(("?", "？")):

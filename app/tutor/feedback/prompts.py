@@ -14,6 +14,12 @@ ADVICE = {
     "fresh": "새로 짜기: 흐름을 먼저 떠올리라는 문장",
 }
 SOLO_ADVICE = {**ADVICE, "canonical": "정석으로: 정석 풀이 순서로 바꾸라는 문장과 먼저 바꿀 곳"}
+# 블록 순서를 짜는 일은 '튜터와 차례로'에만 있다. '튜터의 질문으로'는 튜터가 정한 블록을 말로 찾는 방식이라 '정석 블록 순서로 다시 짜고 바꿀 첫 블록은 블록 1'이 맞지 않았다
+WAY_TEXT = {
+    "chair": "이 사용자는 '튜터의 질문으로' 풀었다: 튜터의 질문에 답하며 튜터가 정한 블록을 하나씩 찾았다. 블록 순서를 짜거나 바꾼 일이 없으니 "
+             "블록 순서를 다시 짜라거나 블록을 바꾸라고 하지 않는다. 고칠 곳은 제출 코드의 흐름으로 말한다.",
+    "guide": "이 사용자는 '튜터와 차례로' 풀었다: 튜터가 정한 블록 순서대로 블록마다 코드를 적었다.",
+}
 # 통과한 제출: 풀이 가이드와 다른 곳을 고칠 곳으로 고르지 않는다(통과한 코드에 가이드의 읽기·출력 방식을 권했다)
 # 차례를 못 박는다: 통과해도 틀릴 입력이 먼저, 가이드와의 차이는 그 밖의 것만 '다른 방식'으로
 PASSED_RULE = ("제출이 통과했다. 통과했어도 틀릴 입력(빈 입력·경계·큰 값·시간)이 코드에서 보이면 그것을 먼저 짚는다. "
@@ -32,12 +38,19 @@ def system(blocks: bool) -> str:
         "1. analysis의 첫 문장은 칭찬이나 판정이 아니라, 제출 코드가 기대는 가정이나 놓친 경우를 짚는 질문이다.",
         "2. analysis의 주장 문장마다 맨 앞에 확신 표시를 붙인다. 제출 결과나 코드 줄에서 바로 보이면 [확실], 코드 흐름에서 강하게 추론하면 [가능성 높음], 실행 없이 짐작하면 [추측]. "
         "이번 풀이의 기록에 있는 사실(센 수, 짚은 줄)을 말하는 문장은 [확실]이다. 질문 문장에는 붙이지 않는다.",
-        "4. 막힌 지점은 '이번 풀이의 기록'에 있는 것만 적는다. 기록에 없으면 막힌 지점이 없었다고 적는다.",
+        "4. 막힌 지점은 '이번 풀이의 기록'에 있는 것만 적는다. 기록에 없으면 막힌 지점이 없었다고 적는다. "
+        "기록에 '그 뒤 찾았다'·'그 뒤 통과했다'가 붙은 블록은 막힌 곳이라 하지 않고, 찾거나 통과하기까지 걸린 곳으로만 말한다.",
+        "6. 한 문장에는 확신 표시를 하나만 붙인다. 서로 어긋나는 사실(통과했다와 아직 못 했다)을 한 문장에 함께 쓰지 않는다.",
         "5. 수를 말할 때는 문제 글의 제한에서 계산한 값만 말하고, 계산하지 않았으면 수를 말하지 않는다.",
         f"3. 생각을 닫는 말({', '.join(BANNED)})을 쓰지 않는다.",
         "힌트와 조언에 코드와 코드 블록을 쓰지 않는다. 사용자 코드를 고쳐 쓰지 않는다.",
         BLOCK_WORD if blocks else SOLO_WORD,
     )
+
+
+def ways(ctx) -> list[str]:
+    """이 풀이에서 쓴 블록 방식(화면의 방식 이름 차례). 블록 코드만 있고 대화가 없으면 비어 있다."""
+    return [way for way, said in (("chair", ctx.chair), ("guide", ctx.guide)) if said]
 
 
 def used_blocks(ctx) -> bool:
@@ -62,6 +75,16 @@ def record_lines(ctx, plan) -> list[str]:
     blocks = plan.blocks if plan else []
     name = lambda i: f"블록 {i + 1}({blocks[i].name})" if i is not None and 0 <= i < len(blocks) else "블록"
     lines = []
+
+    def settled(mode: str, i) -> str:
+        """그 블록이 뒤에 어떻게 되었는가. 찾았거나 통과한 블록을 '막힌 지점'으로 짚었다."""
+        passed = i is not None and 0 <= i < len(blocks) and getattr(ctx.block_states.get(blocks[i].id), "verdict", None) == "Y"
+        if passed:
+            return "(그 뒤 블록 코드 확인을 통과했다. 막힌 곳이 아니다)"
+        if mode == "chair" and i is not None and i < ctx.open_count - 1:  # 다음 블록이 열렸다: 말로 찾았다
+            return "(그 뒤 이 블록을 찾았다. 막힌 곳이 아니다)"
+        return ""
+
     for mode, said in (("chair", ctx.chair), ("guide", ctx.guide)):  # '가이드 블록 1'로 옮겨 썼다. 화면의 방식 이름으로
         # 다시 짜기(replan) 앞의 말은 다른 계획의 블록 번호다(블록 이름이 화면과 달랐다). 턴 준비(turn/context.py)처럼 그 뒤만 본다
         cut = max((i for i, m in enumerate(said) if m.role == "service" and m.move == "replan"), default=-1)
@@ -74,7 +97,7 @@ def record_lines(ctx, plan) -> list[str]:
                         if user.role == "user" and not (user.move or "").startswith(CHECKED)
                         and reply.role == "service" and reply.block_index == user.block_index and reply.move in MISSED
                         and not reply.text.startswith((ANSWER_LEAD, BACK_LEAD, RETRY_LEAD)))
-        lines += [f"- {name(i)}: {MISSED_TEXT[mode]}이 {n}번" for i, n in sorted(stuck.items(), key=lambda kv: kv[0] or 0)]
+        lines += [f"- {name(i)}: {MISSED_TEXT[mode]}이 {n}번{settled(mode, i)}" for i, n in sorted(stuck.items(), key=lambda kv: kv[0] or 0)]
     for i, block in enumerate(blocks):
         state = ctx.block_states.get(block.id)
         wrong = 0 if state is None else state.tries - (state.verdict in ("Y", "?"))  # '?': 통과했다가 앞 블록이 바뀌어 확인 전으로 돌아갔다
@@ -85,7 +108,8 @@ def record_lines(ctx, plan) -> list[str]:
                        and same_code(user.text, state.code, ctx.language) for chat in (ctx.chair, ctx.guide) for user, reply in zip(chat, chat[1:]))
             wrong = max(0, wrong - same)
         if wrong > 0:
-            lines.append(f"- {name(i)} 블록 코드 확인에서 튜터의 코드와 이어지지 않은 횟수 {wrong}번(틀렸다는 뜻이 아니다)" + (f". 아직 통과하지 못한 코드:\n{state.code}" if state.verdict == "N" else ""))
+            lines.append(f"- {name(i)} 블록 코드 확인에서 튜터의 코드와 이어지지 않은 횟수 {wrong}번(틀렸다는 뜻이 아니다)"
+                         + (f". 아직 통과하지 못한 코드:\n{state.code}" if state.verdict == "N" else "(그 뒤 통과했다. 막힌 곳이 아니다)" if state.verdict == "Y" else ""))
     if any(m.role == "service" and m.text.startswith(SKIPPED) for m in ctx.guide):  # '이대로 넘어가기'로 넘어간 블록은 맞았다고도 틀렸다고도 말하지 않는다
         # 확인을 눌러 이어지지 않은 뒤에 넘긴 블록은 '확인 없이'가 아니다. 그 뒤의 제출이 통과했으면 그 코드는 제출로 확인되었다(실행해 보지 않았다고 말했다)
         passed = bool(ctx.latest_submission and ctx.latest_submission.ok)
@@ -98,7 +122,10 @@ def record_lines(ctx, plan) -> list[str]:
     if debug is not None:
         found = any(m.role == "service" and m.move == "fix" for m in ctx.debug)
         pitfall = f" 함정: {PITFALLS[debug.pitfall][1]}." if debug.pitfall in PITFALLS else ""
-        lines.append(f"- 디버그: 틀린 곳은 {debug.line}번째 줄. {debug.cause}{pitfall} 사용자가 원인을 {'짚었다' if found else '아직 짚지 못했다'}.")
+        # 원인을 말로 짚기 전에 코드를 고쳐 통과했는데 '아직 짚지 못했다'와 '통과했다'를 한 문장에 [확실]로 함께 썼다
+        passed = bool(ctx.latest_submission and ctx.latest_submission.ok)
+        state = "짚었다" if found else "말로 짚기 전에 코드를 고쳤고, 그 뒤 제출이 통과했다" if passed else "아직 짚지 못했다"
+        lines.append(f"- 디버그(그때의 코드): 틀린 곳은 {debug.line}번째 줄. {debug.cause}{pitfall} 사용자가 원인을 {state}.")
     if ctx.failed_submissions:
         lines.append("- 통과하지 못한 제출: " + ", ".join(f"{FAIL_WORD.get(kind, kind)} {n}번" for kind, n in Counter(ctx.failed_submissions).items()))
     if ctx.hints_seen:
@@ -117,6 +144,7 @@ def analyze_messages(state: MainState) -> list[dict]:
     algorithm = algorithm_line(key)
     if algorithm:
         lines.append(algorithm)
+    lines += [WAY_TEXT[way] for way in ways(state["ctx"])]
     if plan and blocks:
         lines.append("블록(정석 흐름 순서):")
         lines += [f"블록 {n}: {b.name} ({kind_word(b.kind)}) — {b.goal}" for n, b in enumerate(plan.blocks, 1)]
@@ -138,7 +166,7 @@ def analyze_messages(state: MainState) -> list[dict]:
         f"analysis: 제출 코드가 {'블록 순서' if blocks else '풀이 흐름'} 중 어디까지 맞게 갔고, 이번 풀이에서 어디서 막혔는지(위 기록)."
         + (f" {PASSED_RULE}" if passed else ""),
         f'similar_hint: "{algorithm_name(key) or "유형 이름"}: …"으로 시작하는, 다음 비슷한 문제에 쓸 흐름 한 줄. {OUTSIDE_PROBLEMS}',
-        f"advice: {PASSED_ADVICE if passed else (ADVICE if blocks else SOLO_ADVICE)[strategy]}",
+        f"advice: {PASSED_ADVICE if passed else (ADVICE if 'guide' in ways(ctx) else SOLO_ADVICE)[strategy]}",  # 블록 순서를 바꾸라는 말은 블록을 짠 방식에만
         '출력: JSON {"analysis", "similar_hint", "advice"}',
     ]
     # 캐시 표시를 하지 않는다: 제출마다 한 번 부르는 호출이라 앞부분이 다시 읽히지 않고, 표시하면 쓰기 할증(1.25배)만 붙는다
