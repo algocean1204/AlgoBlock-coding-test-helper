@@ -130,5 +130,11 @@ class GuideMoveTest(unittest.TestCase):
         self.assertEqual((said.move, said.saved), ("write", WRITE_TIP))
         traced = self.pick(Verdict(False), text="owl이 2가 돼요", used=["blank", "verify"])  # 확인 질문에 답했다: 처음 생각이 맞았으니 코드로 적게 한다
         self.assertEqual((traced.move, traced.saved), ("write", WRITE_TIP))
+        for text in ("이름마다 세어 가요", "같은 이름이 또 나오니까 1을 더해요", "다 세고 나면 돌려줘요"):  # 물음 어미가 아닌 평서문
+            self.assertEqual(self.pick(Verdict(True), text=text, used=["blank"]).move, "write", text)
+        for text in ("이름별로 세는 건가요", "1부터 시작하는가요", "range로 돌려도 될까"):
+            self.assertEqual(self.pick(Verdict(True), text=text, used=["blank"]).move, "verify", text)
+        twice = self.pick(Verdict(True), text="그럼 1을 더하면 되나요?", used=["blank", "verify", "blank"])  # 확인 질문은 블록에 한 번만
+        self.assertEqual((twice.move, twice.saved), ("write", WRITE_TIP))
         again = self.pick(Verdict(False), text="모르겠어요", used=["blank", "verify"])
         self.assertEqual(again.saved, fakes.HINTS1[1])  # 내용 없는 답은 전과 같이 저장 힌트

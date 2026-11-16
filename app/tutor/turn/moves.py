@@ -23,7 +23,8 @@ FOUND_TIP = "블록 칸에 이 블록의 코드를 적어 보세요. "  # 의자
 WRITE_TIP = "그 생각을 이 블록의 코드 칸에 코드로 적고 '블록 코드 확인'을 눌러 보세요. 확인을 통과하면 다음 블록이 열려요."
 WRITE_TIP_LAST = "그 생각을 이 블록의 코드 칸에 코드로 적고 '블록 코드 확인'을 눌러 보세요. 마지막 블록이라, 확인을 통과하면 모은 코드로 풀이를 돌려 볼 수 있어요."
 _ASK_ANSWER = re.compile(r"답.{0,3}(알려|줘|주세요|보여)")
-_ASKS = re.compile(r"(?:[?？]|나요|가요|까요?|죠|는지요)[\s.!~]*$")  # 튜터에게 묻는 말의 끝(물음표, '~하나요', '~할까', '~죠')
+# 튜터에게 묻는 말의 끝(물음표, '~하나요', '~인가요', '~할까요', '~죠'). 물음 어미만 본다: '세어 가요', '하니까'는 평서문이다
+_ASKS = re.compile(r"(?:[?？]|나요|(?:인|는|건|은|던)가요|(?<!니)까요?|죠|는지요)[\s.!~]*$")
 
 
 def asks(text: str) -> bool:
@@ -132,9 +133,10 @@ def _pick_move(mode: str, plan: BlockPlan, turn: TurnContext, verdict: Verdict |
             return MovePlan(LADDER[mode][min(turn.hints_seen, 2)], index, False, saved=lead.strip())
         # 저장 힌트가 없으면 못 해낸 첫 신호를 겨눠 짓는다(빠진 것과 다른 것을 물었다)
         return advance() if ok else hinted(lead, signal_text(blocks[index], verdict.miss if verdict else None))
-    if ok and mode == "guide" and turn.event == "message" and asks(turn.text):
+    if ok and mode == "guide" and turn.event == "message" and asks(turn.text) and "verify" not in used:
         # 맞는 생각을 물음으로 냈다('range로 돌려야 하나요?'). 코드로 적으라는 고정 말은 물음에 답하지 않아 되풀이로 들렸다.
-        # 맞다고 말하지 않고(답을 먼저 말하지 않는다) 그 생각을 스스로 확인할 질문을 모델이 짓는다. 말로 맞힌 생각에는 그대로 WRITE_TIP
+        # 맞다고 말하지 않고(답을 먼저 말하지 않는다) 그 생각을 스스로 확인할 질문을 모델이 짓는다. 말로 맞힌 생각에는 그대로 WRITE_TIP.
+        # 확인 질문은 블록에 한 번만: 다시 물으면 코드로 적게 한다(확인 질문이 끝없이 이어졌다)
         return MovePlan("verify", index, False)
     if ok and mode == "guide":
         return write()
