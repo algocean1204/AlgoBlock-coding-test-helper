@@ -1243,3 +1243,39 @@ class PlainWordsTest(unittest.TestCase):
             self.assertNotIn("번째", said)
             self.assertIn("의심되는 줄" if "{line}" in FALLBACK[name] else FALLBACK[name][:6], said)
         self.assertIn("3번째 줄", fallback("cause", 3))
+
+
+class LanguageNeutralTextTest(unittest.TestCase):
+    """실전 신호·익힐 것·풀이 단계는 한 언어에서만 맞는 말을 조건 없이 쓰지 않는다."""
+
+    # 이 말이 나오는 문장에는 언어의 성질로 단 조건이 함께 있어야 한다.
+    RULES = (("64비트 정수", "넘칠 수 있는 언어"), ("재귀 대신", "깊이 한도가 낮은 언어"), ("힙 부호를 뒤집", "언어"))
+
+    def test_conditions(self):
+        import re
+        from pathlib import Path
+        root = Path(__file__).resolve().parents[2] / "ui" / "problems"
+        texts = []
+
+        def walk(node, where):
+            if isinstance(node, dict):
+                for key, val in node.items():
+                    if key not in ("code", "reference", "phrase", "statement", "spec"):
+                        walk(val, where)
+            elif isinstance(node, list):
+                for val in node:
+                    walk(val, where)
+            elif isinstance(node, str):
+                texts.append((where, node))
+
+        for path in root.glob("*/*/problem.json"):
+            data = json.loads(path.read_text(encoding="utf-8"))
+            for key in ("signals", "learn", "ladder"):
+                walk(data.get(key), path)
+        for path in root.glob("*/*/ready.json"):
+            walk(json.loads(path.read_text(encoding="utf-8")).get("ready"), path)
+        for where, text in texts:
+            for sentence in re.split(r"(?<=[.다요])\s+", text):
+                for word, cond in self.RULES:
+                    if all(w in sentence for w in word.split()):
+                        self.assertIn(cond, sentence, f"{where.parent.name}: {sentence}")
