@@ -630,7 +630,7 @@ class LanguageRuleTest(unittest.TestCase):
 
         case = {"id": "1", "kind": "example", "input": "[[1]]", "expected": "1", "got": "", "status": "runtime_error", "error": "메모리를 너무 많이 써서 멈췄어요"}
         self.assertEqual(seen_line({"cases": [case]}, False), "메모리를 너무 많이 써서 멈췄어요.")  # 한도 말도 '~어요'
-        self.assertEqual(seen_line({"cases": [case]}, False, "뒤 블록을 튜터의 코드로 이어 돌리면"), "뒤 블록을 튜터의 코드로 이어 돌리면 메모리를 너무 많이 써서 멈췄어요.")
+        self.assertEqual(seen_line({"cases": [case]}, False, "뒤 블록은 튜터의 코드로 채워서 돌리면"), "뒤 블록은 튜터의 코드로 채워서 돌리면 메모리를 너무 많이 써서 멈췄어요.")
 
     def test_debug_double_quote_is_checked(self):
         from ..common.talk_rules import quotes_ok
