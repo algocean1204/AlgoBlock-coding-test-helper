@@ -61,7 +61,7 @@ uv run --no-project --python 3.12 --with langgraph --with pypdf python ui/make_b
 
 - 기본은 다른 언어 정답 풀이(`solution.java` 등)도 검사해 싣는다. 그 언어의 도구가 기기에 있어야 한다. 이 기능을 끄는 `--no-langs`는 기존 문제의 다른 언어 풀이를 묶음에서 빼므로, 올릴 묶음에는 쓰지 않는다.
 - `--only <주제>/<폴더>`: 그 문제만 검사하고 묶는다. 다른 문제의 행은 지금 `builtin.json`의 것을 그대로 둔다. 문제 하나를 더할 때 쓴다.
-- `--no-model`: `ready.json`이 지금 글·정답 풀이와 맞으면 가이드와 블록을 싣고, 아니면 가이드 없이 싣는다. 모델 키 없이 만든 문제에는 `ready.json`이 없으므로 가이드·블록·힌트가 실리지 않는다.
+- `--no-model`: `ready.json`이 지금 글·정답 풀이와 맞으면 가이드와 블록을 싣는다. 모델 키 없이 만든 문제에는 `ready.json`이 없으므로 가이드·블록·힌트 없이 싣고 알림만 한다. `ready.json`의 출처 값이 지금과 다르면(이미 있던 가이드가 낡았으면) 그 문제와 까닭을 알리고 실패로 끝난다.
 - `--no-model`이 없으면 `ready.json`이 없거나 낡은 문제(글, 제한사항, `solution.py`가 바뀐 문제)의 가이드와 블록을 모델로 만든다. 키가 있어야 한다. 세 번까지 만들어 보고, 안 되면 가이드 없이 싣는다.
 - `--redo <ID> …`는 그 문제들의 가이드와 블록을 다시 만든다.
 - `--no-check`는 검사를 다시 돌리지 않고 `cases.json`과 `lang.json`을 믿는다. 개발과 시험용이며 실을 때는 쓰지 않는다.
@@ -70,7 +70,7 @@ uv run --no-project --python 3.12 --with langgraph --with pypdf python ui/make_b
 
 ## ready.json
 
-`ready.json`은 `source`와 `ready`로 이루어진다. `source`는 문제 글, 제한사항, `solution.py`에서 계산한 값이다. 이 값이 지금과 다르면 `--no-model` 빌드는 가이드 없이 싣고, 모델을 부르는 빌드는 이 파일을 새로 써서 손으로 고친 것이 사라진다. `--redo`로 고른 문제도 새로 쓴다.
+`ready.json`은 `source`와 `ready`로 이루어진다. `source`는 문제 글, 제한사항, `solution.py`에서 계산한 값이다. 이 값이 지금과 다르면 `--no-model` 빌드는 실패로 끝나고(가이드와 상관없는 수정이면 `app/ui/problems/README.md`대로 출처 값을 맞춘다), 모델을 부르는 빌드는 이 파일을 새로 써서 손으로 고친 것이 사라진다. `--redo`로 고른 문제도 새로 쓴다.
 
 | 손으로 고쳐도 되는 것 | 고치면 안 되는 것 |
 | --- | --- |

@@ -2975,6 +2975,9 @@ def build_only() -> None:
     stale = subprocess.run([sys.executable, "-c", f"import sys; sys.path.insert(0, {str(HERE)!r}); import make_builtin as m; from pathlib import Path; m.ROOT = Path({str(root)!r}); "
                             f"sys.exit(m.build(['--no-model', '--no-check', '--no-langs', '--only', 'hash/1_popular_shelf', '--out', {str(TMP / 'stale.json')!r}]))"], capture_output=True, text=True)
     assert stale.returncode == 1 and "hash/1_popular_shelf" in stale.stderr and "출처 값" in stale.stderr, (stale.returncode, stale.stderr)
+    (folder / "ready.json").unlink()  # 키 없이 넣은 새 문제처럼 ready.json이 아예 없으면 알리기만 하고 실패로 끝나지 않는다
+    fresh = subprocess.run(stale.args, capture_output=True, text=True)
+    assert fresh.returncode == 0 and "알림 hash/1_popular_shelf" in fresh.stderr and "실패" not in fresh.stderr, (fresh.returncode, fresh.stderr)
 
 
 def neutral_notes() -> None:
