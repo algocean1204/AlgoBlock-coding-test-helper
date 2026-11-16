@@ -12,12 +12,12 @@
   const DQ = String.raw`"(?:\\.|[^"\\\n])*"?`, SQ = String.raw`'(?:\\.|[^'\\\n])*'?`;
   const CH = String.raw`'(?:\\[^\n][^'\n]{0,9}|[^'\\\n])'`; // 글자 하나('a', '\n', '\''). 닫는 따옴표가 없으면 문자열이 아니다(Rust의 수명 'a)
   // 삼중 따옴표 문자열. esc면 \" 같은 이스케이프를 건너뛴다(Python·Java)
-  const TRIPLE = (q, esc) => `${q}${q}${q}${esc ? "(?:\\\\[\\s\\S]|[^\\\\])" : "[\\s\\S]"}*?(?:${q}${q}${q}|${END})`;
+  const TRIPLE = (q) => `${q}${q}${q}(?:\\\\[\\s\\S]|[^\\\\])*?(?:${q}${q}${q}|${END})`;
   const NUM = String.raw`\b(?:0[xX][\da-fA-F_]+|0[bB][01_]+|0[oO][0-7_]+|\d[\d_]*(?:\.\d[\d_]*)?(?:[eE][+-]?\d+)?)\w*|\B\.\d[\d_]*(?:[eE][+-]?\d+)?\w*`;
   const L = {
     python: {
       c: "#[^\\n]*",
-      s: String.raw`(?:\b[rRbBfFuU]{1,2})?(?:${TRIPLE('"', true)}|${TRIPLE("'", true)}|${DQ}|${SQ})`,
+      s: String.raw`(?:\b[rRbBfFuU]{1,2})?(?:${TRIPLE('"')}|${TRIPLE("'")}|${DQ}|${SQ})`,
       k: W("and as assert async await break class continue def del elif else except finally for from global if import in is lambda nonlocal not or pass raise return try while with yield"),
       v: W("True False None"),
       b: W("print len range enumerate zip map filter sorted reversed sum min max abs any all int float str bool list dict set tuple frozenset input open isinstance iter next divmod pow round ord chr type super"),
@@ -33,7 +33,7 @@
     },
     java: {
       c: C_COMMENT,
-      s: `${TRIPLE('"', true)}|${DQ}|${CH}`,
+      s: `${TRIPLE('"')}|${DQ}|${CH}`,
       k: W("abstract assert break case catch class const continue default do else enum extends final finally for goto if implements import instanceof interface native new package private protected public record return static strictfp super switch synchronized this throw throws transient try var volatile while yield"),
       t: W("boolean byte char double float int long short void"),
       v: W("true false null"),
@@ -82,7 +82,7 @@
     if (d.b && d.b.has(w)) return "b";
     if (w.endsWith("!")) return "b";
     const cap = /^[A-Z]/.test(w);
-    if ((named || call) && (d.capCall || !cap)) return "f";
+    if ((named || call) && !cap) return "f";
     if (/^[A-Z][A-Z0-9_]*$/.test(w)) return "v"; // 대문자·숫자·밑줄만(N, INF, MAX_N): 상수 이름
     return cap ? "t" : "";
   }

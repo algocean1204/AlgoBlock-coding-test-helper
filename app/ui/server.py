@@ -649,6 +649,8 @@ def counts(t) -> dict:
 
 
 def starter_of(p, language: str) -> str:
+    if language not in check_judge().LANGUAGES:  # 지원하지 않는 언어(예전 기록)에는 시작 코드가 없다
+        return ""
     return BUILTIN[p.id]["starters"].get(language, "") if p.builtin else "" if p.sample else own_starter(p, language)
 
 
@@ -1758,6 +1760,17 @@ def change_language(t, p, language: str, code: str | None) -> None:
     LANG[pid] = language
 
 
+def retire_languages() -> None:
+    """서버를 켤 때 한 번: 엔진 저장소에서 지원하지 않는 언어(예전에 있던 Go·Kotlin 등)로 저장된 문제를 모두 파이썬으로 옮긴다.
+    그 언어의 코드·계획은 change_language가 보관하고 지우지 않는다."""
+    with tutor() as t:
+        rows = t.store.conn.execute("SELECT id, language FROM problem").fetchall()
+        for row in rows:
+            if row["language"] not in check_judge().LANGUAGES:
+                with LOCKS[row["id"]]:
+                    change_language(t, SimpleNamespace(id=row["id"]), "python", None)
+
+
 SOLUTION_COLUMNS = ("approach", "steps_json", "code", "verified", "clues_json")
 SESSION_COLUMNS = ("plan_json", "explain_json", "solution_json")  # 대화 진행(open_count)은 보관하지 않는다(되살리면 첫 블록부터)
 
@@ -1909,6 +1922,8 @@ def own_starter(p, language: str) -> str:
     """등록한 문제의 시작 코드: 모든 케이스의 넣을 값과 기대 결과에서 형을 정해 함수 머리를 만든다. 정할 수 없으면 빈 글.
     인자 이름은 입출력 예 표 머리에서 가져온 것(names, 예약어면 뒤에 _), 없거나 수가 다르면 a, b, c …
     프로그램 방식은 표준 입력을 읽는 main 뼈대."""
+    if language not in check_judge().LANGUAGES:
+        return ""
     if p.mode == "program":
         return program_stub(language)
     types, returns = own_types(p) or ([None], None)
@@ -2461,8 +2476,6 @@ def handle(path: str, body: dict) -> tuple[int, dict]:
     with tutor() as t:
         if t.store.load(pid) is None:  # 기본 문제는 처음 열 때 엔진 저장소에 넣는다(마지막으로 고른 언어로)
             t.store.put_problem(pid, first_language(p), p.text, title=p.title)
-        if t.store.load(pid).language not in check_judge().LANGUAGES:  # 지원을 접은 언어로 저장된 문제: 그 언어의 코드·계획은 보관하고 파이썬으로 연다
-            change_language(t, p, "python", None)
         language = LANG[pid] = t.store.load(pid).language
         row = BUILTIN.get(pid)
         if path in ("/api/code", "/api/blocks") and "language" in body and body["language"] != language:  # 언어를 바꾸는 사이에 온 옛 언어의 코드는 새 언어 칸에 넣지 않는다
@@ -2723,6 +2736,7 @@ def start() -> "ThreadingHTTPServer | str":
     except OSError as exc:  # 잠금은 잡았으니 다른 프로그램(또는 다른 데이터 폴더의 앱)이 이 포트를 쓰고 있다
         return f"{port}번 포트를 이미 다른 프로그램이 쓰고 있어요. 새로 띄우지 않았습니다: {exc}"
     load_keys()
+    retire_languages()
     updater.start()  # 켤 때(마지막 확인에서 24시간이 지났으면)와 24시간마다 새 버전을 뒤에서 본다(실패하면 1시간부터 늘려 다시)
     if threading.current_thread() is threading.main_thread():  # 창(window.py)에서 띄우면 스레드라 신호를 받을 수 없다
         signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))  # 끝내기 전에 atexit의 stop_grading이 돈다

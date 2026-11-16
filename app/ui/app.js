@@ -16,7 +16,8 @@ const KIND = {
 };
 const KIND_BY_LABEL = Object.fromEntries(Object.entries(KIND).map(([key, [label]]) => [label, key]));
 const NEXT_BLOCK = /^다음은 '([^']+)' 블[록럭]이에요\./; // 새 블록의 첫 말은 종류를 알리며 시작한다
-const LANG = { python: "Python", java: "Java", javascript: "JavaScript", cpp: "C++", rust: "Rust", go: "Go", kotlin: "Kotlin" }; // go·kotlin은 지원을 접었다. 예전 제출 기록의 언어 이름을 보이려고만 둔다
+const LANG = { python: "Python", java: "Java", javascript: "JavaScript", cpp: "C++", rust: "Rust", go: "Go", kotlin: "Kotlin" }; // 이름 표시용. go·kotlin은 지원을 접어 예전 제출 기록의 이름을 보이려고만 둔다(고르는 목록은 CHOICES)
+const CHOICES = ["python", "java", "javascript", "cpp", "rust"]; // 고를 수 있는 풀이 언어
 const TOOL = { python: "Python 3", java: "JDK(javac와 java)", javascript: "Node.js", cpp: "g++ 또는 clang++", rust: "Rust(rustc)" };
 // 푸는 방식 넷의 설명 한 곳. 방식 카드, ⓘ로 펴는 설명, 튜터 시작 칸이 모두 여기서 읽는다.
 // 엔진의 이름은 solo·guide(가이드)·chair(생각하는 의자). explain은 튜터의 해설(혼자 풀기의 해설 칸에서 간다)
@@ -696,7 +697,7 @@ function restoreDraft() {
     $("new-text").value = d.text || "";
     $("new-theme").value = d.theme || "";
     $("new-level").value = d.level || "";
-    if (d.lang) $("new-lang").value = d.lang;
+    if (d.lang) $("new-lang").value = CHOICES.includes(d.lang) ? d.lang : "python";
     $("new-mode").value = d.mode === "program" ? "program" : "function";
     $("new-float").checked = !!d.float;
     $("new-many").checked = !!d.many;
@@ -995,7 +996,7 @@ function formMode(editing) {
 /** 등록 화면의 언어 고르기. 처음(또는 등록·수정 뒤 비운 뒤)에는 마지막으로 고른 풀이 언어, 그다음에는 고르던 값을 둔다. */
 function fillLangs() {
   const pick = $("new-lang"), was = pick._filled ? pick.value : (ACCOUNTS && ACCOUNTS.language) || "python";
-  pick.innerHTML = langOptions(Object.keys(LANG));
+  pick.innerHTML = langOptions(CHOICES);
   pick.value = was;
   pick._filled = true;
   const topic = $("new-theme"); // 주제: 정하지 않음 + 서버의 주제 15개(한 번만 채운다)
@@ -2546,7 +2547,7 @@ let schemePicked = null; // 방금 고른 값. 늦게 온 /api/accounts 응답�
 /** 설정의 기본 언어: 처음 여는 문제의 언어. 고르면 바로 저장한다. */
 function renderDefaultLang() {
   const pick = $("set-lang");
-  if (!pick._filled) { pick.innerHTML = Object.entries(LANG).map(([key, name]) => `<option value="${key}">${name}</option>`).join(""); pick._filled = true; }
+  if (!pick._filled) { pick.innerHTML = CHOICES.map((key) => `<option value="${key}">${LANG[key]}</option>`).join(""); pick._filled = true; }
   pick.value = (ACCOUNTS && ACCOUNTS.language) || "python";
 }
 function renderScheme() {

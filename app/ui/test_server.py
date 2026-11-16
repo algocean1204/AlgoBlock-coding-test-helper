@@ -1152,9 +1152,17 @@ def results() -> None:
 
 def retired_languages() -> None:
     """지원을 접은 언어(go·kotlin)로 저장된 자료: 문제를 열면 오류 없이 파이썬으로 열리고(그 언어의 코드는 지우지 않고 보관), 등록 문제의 언어·풀이·시작 코드 목록에서는 빠진다."""
+    own = server.register(GOOD)["id"]  # 등록 문제를 go로 저장해 둔 채(문제를 열기 전에) 목록·보고서부터 부른다
     with server.tutor() as t:
+        t.store.put_problem(own, "go", server.PROBLEMS[own].text, direct_code="func solution() {}", title="t")
         t.store.set_language(PID, "go")
         t.store.update_code(PID, "func solution() {}")
+    assert server.starter_of(server.PROBLEMS[own], "go") == ""  # 지원 밖의 언어는 예외 없이 빈 시작 코드
+    server.retire_languages()  # 서버를 켤 때 한 번
+    with server.tutor() as t:
+        assert t.store.load(own).language == "python" and t.store.load(PID).language == "python"
+    assert server.read_json(server.CODES_FILE, {})[own]["go"] == "func solution() {}"
+    assert call("/api/problems")[1]["problems"] and call("/api/report")[1]["summary"]
     server.LANG.pop(PID, None)
     state = call("/api/state", id=PID)[1]["problem"]
     assert state["language"] == "python" and "go" not in state["languages"] and "kotlin" not in state["languages"], state

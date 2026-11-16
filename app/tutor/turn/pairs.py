@@ -48,9 +48,9 @@ def writes(code: str, language: str, program: bool = False) -> list[str]:
 
 
 def _typed(toks: list[str]) -> tuple[list[int], range] | None:
-    """'val|var|let|const [mut] 이름[, 이름…] … =' 선언 줄이면 (선언한 이름의 자리, 이름 뒤부터 '=' 앞까지 = 형의 자리). 아니면 None.
+    """'var|let|const [mut] 이름[, 이름…] … =' 선언 줄이면 (선언한 이름의 자리, 이름 뒤부터 '=' 앞까지 = 형의 자리). 아니면 None.
     Rust·Swift의 '이름: 형 ='이 같은 문법이다('&str', 'Vec<i32>'). 이름이 없으면('let [a, b] =') 선언으로 보지 않는다."""
-    if toks[:1] not in (["val"], ["var"], ["let"], ["const"]) or "=" not in toks:
+    if toks[:1] not in (["var"], ["let"], ["const"]) or "=" not in toks:
         return None
     start = at = 1 + (toks[1:2] == ["mut"])
     while at < len(toks) and _NAME.fullmatch(toks[at]):

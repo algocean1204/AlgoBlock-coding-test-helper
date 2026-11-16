@@ -958,6 +958,15 @@ class GrammarRuleTest(unittest.TestCase):
             self.assertNotEqual(_rows(mine), _rows(plan), mine)
         self.assertEqual(_rows("x = 1   \n\n\ny = 2\n"), _rows("x = 1\ny = 2"))
 
+    def test_plain_words_are_not_frame_or_keywords(self):
+        """JavaScript의 변수 이름 val과 '(' 뒤에 혼자 닫는 ')' 줄은 틀이나 예약어로 빠지지 않는다."""
+        from ..common.solution import body_lines, made_statements
+
+        js = "function solution(xs) {\n  let t = 0;\n  for (const val of xs) {\n    t += val;\n  }\n  return t;\n}\n"
+        self.assertIn("val", [row[0] for row in made_statements(js, "javascript")])
+        code = "function solution(a) {\n  const r = Math.max(\n    ...a\n  )\n  return r;\n}\n"
+        self.assertIn(")", body_lines(code, "javascript", False))
+
     def test_entry_params_follow_each_grammar(self):
         from ..common.solution import entry_params
 

@@ -37,7 +37,7 @@ def solution_lines(state, code: bool = False) -> list[str]:
 _FRAME_PY = re.compile(r"def (?:solution|main)\b.*:|class Solution\b.*:|import \S.*|from \S+ import .+|\w+ = sys\.stdin(?:\.buffer)?\.read(?:line)?"
                        r"|if __name__ == .+:|main\(\)")
 _FRAME = re.compile(
-    r"import\b.*|#include\b.*|using\s.+;|use\s.+;|package\s.+|\"[\w./-]+\"|\)"  # 머리말
+    r"import\b.*|#include\b.*|using\s.+;|use\s.+;|package\s.+"  # 머리말
     r"|(public\s+)?class (?:Solution|Main)\b.*\{|[\w<>\[\],:&*\s]*\b(?:solution|main)\s*\([^;]*\)[^;=]*\{|\}\s*;?"  # 머리의 반환형은 'std::vector<int>&'처럼 적어도 된다
     r"|(?:const|let|var)\s+(?:solution|main)\s*=\s*(?:function(?:\s+[A-Za-z_$][\w$]*)?\s*\([^;]*\)|\([^;]*\)\s*=>|[A-Za-z_$][\w$]*\s*=>)\s*\{"  # js의 함수 식·화살표 함수로 적은 진입 함수 머리(async는 뜻이 달라 뺀다)
     r"|(?:const|let|var) .+ = require\([\"']fs[\"']\)(?:\.readFileSync\(.*)?;?"  # js의 표준 입력 전체 읽기
@@ -90,7 +90,7 @@ def frame_flags(rows: list[str], language: str, program: bool) -> list[bool]:
                 if not skip[i]:
                     break
     # 머리말은 맨 앞에서 마지막 틀 줄까지다(그 사이 주석 포함). 꼬리는 맨 뒤 첫 틀 줄부터(그 뒤 주석 포함).
-    # 주석 뒤의 진입 함수 줄('def solution(…)', 'func solution(…) {')을 알맹이로 봐 사용자가 블록 1을 적으면 그 줄이 사라졌다
+    # 주석 뒤의 진입 함수 줄('def solution(…)', 'int solution(…) {')을 알맹이로 봐 사용자가 블록 1을 적으면 그 줄이 사라졌다
     note = [bool(row.strip()) and not _plain(row, language) for row in rows]
     lead = 0
     while lead < len(rows) and (skip[lead] or note[lead]):
@@ -201,8 +201,8 @@ _NAME = re.compile(r"[A-Za-z_]\w*")
 # 후보에서 빼는 낱말: 파이썬은 예약어·내장 이름, 중괄호 언어는 예약어·기본 타입(Java의 'sum' 같은 변수는 후보다)
 _WORDS = {"python": set(keyword.kwlist) | set(dir(builtins)), "other": set(
     "int long double float char boolean bool byte short void var let const auto new return if else for while do break continue class "
-    "public private static final true false null nullptr this struct using namespace std func fn mut val fun string range in of self "
-    "unsigned size_t vector cin cout endl fmt".split())}
+    "public private static final true false null nullptr this struct using namespace std fn mut string range in of self "
+    "unsigned size_t vector cin cout endl".split())}
 
 
 def name_candidates(code: str, reference: str, language: str, missing: str, plan_words: set[str], program: bool = False) -> list[str]:
@@ -236,13 +236,13 @@ def first_bound(code: str, language: str, program: bool = False) -> list[str]:
 # 이름 앞에 오면 선언이 아닌 낱말(return x; / else x; / new X …)과 타입을 적지 않는 선언 낱말
 _NOT_TYPE = set("return new throw else case delete goto typedef sizeof instanceof throws import package using namespace class struct interface "
                 "enum extends implements break continue yield await in of is as do".split())
-_LOOSE = {"auto", "var", "val", "let", "const", "mut", "lateinit"}
+_LOOSE = {"auto", "var", "let", "const", "mut"}
 _TYPE_TOKEN = re.compile(r"[A-Za-z_]\w*|[<>\[\]*&?.,]|::")
 
 
 def _type_text(toks: list[str]) -> str:
     """선언에 적힌 타입을 공백 없이(const·final·static·&는 뺀다). auto·var·val·let은 빈 글."""
-    kept = [t for t in toks if t not in ("const", "final", "static", "mut", "&", "&&", "lateinit")]
+    kept = [t for t in toks if t not in ("const", "final", "static", "mut", "&", "&&")]
     text = "".join(kept)
     return "" if not text or text in _LOOSE else text
 
@@ -291,9 +291,6 @@ def _declared(toks: list[str]) -> list[tuple[str, str, str]]:
             continue
         after = toks[i + 1] if i + 1 < len(toks) else ";"
         kind = "loop" if head else "var"
-        if after == ":=":
-            out.append((tok, kind, ""))
-            continue
         if after not in ("=", ";", ",", ":", ")") or (after == ":" and toks[i + 2:i + 3] == [":"]):
             continue
         before = toks[start:i]
@@ -355,7 +352,7 @@ def made_statements(code: str, language: str, program: bool = False) -> list[tup
             for name, kind, typ in _declared(toks):
                 i = toks.index(name)
                 after = toks[i + 1] if i + 1 < len(toks) else ";"
-                if after in ("=", ":="):
+                if after == "=":
                     shape = ("for", tuple(toks[1:])) if kind == "loop" else ("=", tuple(_rhs_after(toks, i + 1)))
                 elif after == ":" or kind == "loop":
                     rhs = toks[i + 2:]
@@ -381,7 +378,7 @@ def made_statements(code: str, language: str, program: bool = False) -> list[tup
             depth, at = 0, None
             for i, tok in enumerate(toks):  # 'a = b = 0'은 마지막 '=' 뒤가 식이다
                 depth += (tok in "([{") - (tok in ")]}")
-                if depth == 0 and tok in ("=", ":="):
+                if depth == 0 and tok == "=":
                     at = i
             lhs = [t for t in toks[:at] if _NAME.fullmatch(t)] if at is not None else names
             rhs = toks[at + 1:] if at is not None else []

@@ -1415,8 +1415,8 @@ class HonestCheckTest(unittest.TestCase):
         from ..llm import FakeLlm, use_llm
         from ..plan.nodes import solve
 
-        starter = "fun solution(heights: IntArray, limit: Int): Int {\n    var answer = 0\n    return answer\n}"
-        other = "fun solution(h: IntArray, k: Int): Int {\n    return h.count { it > k }\n}"
+        starter = "int solution(vector<int> heights, int limit) {\n    int answer = 0;\n    return answer;\n}"
+        other = "int solution(vector<int> h, int k) {\n    return count_if(h.begin(), h.end(), [&](int v) { return v > k; });\n}"
         solved = lambda code: {"clues": [], "approach": "센다.", "steps": ["센다"], "code": code}  # noqa: E731
         ctx = fakes.context(problem_text=fakes.CPP_PROBLEM, language="cpp", starter=starter)
         for scripts, want, runs in (([solved(other), solved(CPP_CODE)], (CPP_CODE, True), 1), ([solved(other)] * 3, (other, False), 0)):
@@ -1919,8 +1919,8 @@ class StarterFrameTest(unittest.TestCase):
         first = next(s for s in spans if s["whose"] == "this")
         self.assertEqual(text.splitlines()[first["first"] - 1].strip(), "int total = new ArrayList<Integer>().size();")  # 줄 번호는 더한 줄만큼 밀린다
         self.assertEqual(spliced(refs, 0, "int total = 0;", "java", {}, None, False, starter).count("import java.util.*;"), 1)
-        for language in ("rust", "javascript"):  # 쓰지 않은 가져오기·같은 이름의 두 번 선언이 오류가 되는 언어는 더하지 않는다
-            self.assertNotIn("fmt", spliced(["func solution() int {\n    x := 1", "    return x\n}"], 0, "x := 1", language, {}, None, False, 'import "fmt"'))
+        # 쓰지 않은 가져오기·같은 이름의 두 번 선언이 오류가 되는 언어는 더하지 않는다(JavaScript: 프로그램이 쓰지 않는 require)
+        self.assertNotIn("fmt", spliced(["function solution() {\n    let x = 1;", "    return x;\n}"], 0, "let x = 1;", "javascript", {}, None, False, 'const fmt = require("fmt");'))
         blocks = [fakes.block(1, "준비", refs[0]), fakes.block(2, "끝", refs[1])]
         parts = composed_parts(blocks, {"b1": {"code": "int total = 0;"}, "b2": {"code": "return total;"}}, "java", starter=starter)
         self.assertTrue(parts[0][1].startswith("import java.util.ArrayDeque;\nimport java.util.*;"), parts[0][1])
