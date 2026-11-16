@@ -20,6 +20,7 @@ app에서:
 import importlib.util
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -160,6 +161,18 @@ def batch(path: Path, inputs: list[list], timeout: int = 180) -> list | str:
     return [json.loads(line) for line in done.stdout.strip().splitlines()]
 
 
+# 해설 글(단서의 뜻·익힌 것·흔한 실수·사다리)은 고른 언어와 상관없이 같은 글을 보인다. 한 언어에만 있는 낱말(예외 이름, 내장 함수·자료형 이름)을 쓰면 다른 언어로 푸는 사용자에게 틀린 설명이 된다.
+LANGUAGE_BOUND = re.compile(
+    r"\b\w+(?:Error|Exception)\b|딕셔너리|리스트(?<!인접 리스트)|튜플|파이썬|Python|자바|코틀린|C\+\+|Rust|\b(?:dict|list|tuple|defaultdict|Counter|deque|heapq|heapify|heappush|heappop|bisect|lambda|lru_cache|sorted|setdefault|enumerate"
+    r"|PriorityQueue|HashMap|BinaryHeap|priority_queue)\b|\b(?:range|len|int|str|print|append|reverse)\s*[(=]|\.(?:append|get|items|keys|values|pop|sort)\(|sys\.|\+=|-=|//|\blong\b")
+
+
+def language_bound(problem: dict) -> list[str]:
+    """해설 글에서 한 언어에만 묶인 낱말을 찾는다. 걸린 글의 목록(비면 통과). 문제 글을 따온 signals.phrase는 보지 않는다."""
+    texts = {"learn": [problem["learn"]], "pattern": [problem["pattern"]], "ladder": [problem["ladder"]], "pitfalls": problem["pitfalls"], "signals.means": [s.get("means", "") for s in problem["signals"]]}
+    return [f"{key}에 한 언어에만 있는 낱말 {hit.group(0)!r}: 언어와 상관없는 말로 쓴다" for key, rows in texts.items() for row in rows for hit in [LANGUAGE_BOUND.search(row)] if hit]
+
+
 def check(folder, langs: bool = False) -> list[str]:
     """문제 하나를 검사한다. 걸린 것의 목록(비면 통과)."""
     found: list[str] = []
@@ -188,6 +201,7 @@ def check(folder, langs: bool = False) -> list[str]:
     for signal in problem["signals"]:
         if signal.get("phrase", "") not in text or not signal.get("phrase") or not signal.get("means"):
             found.append(f"실전 신호의 표현이 문제 글·제한사항에 글자 그대로 없다: {signal.get('phrase')!r}")
+    found += language_bound(problem)
     for name in ("solution.py", "brute.py", "gen.py"):
         if name not in files:
             found.append(f"{name}가 없다")
