@@ -2177,11 +2177,13 @@ def ai_marks() -> None:
     import re
     js, css, html = (HERE / "app.js").read_text(encoding="utf-8"), (HERE / "app.css").read_text(encoding="utf-8"), (HERE / "index.html").read_text(encoding="utf-8")
     assert '[data-ai]::after { content: "AI";' in css
-    for name in ("start", "to-feedback", "debug-start", "result-tutor-hint", "to-explain", "fb-get"):  # 화면 코드가 그리는 단추
+    for name in ("to-feedback", "debug-start", "to-explain", "fb-get"):  # 화면 코드가 그리는 단추. 첫 질문·블록 힌트는 저장 힌트로 답해 모델을 부르지 않는다
         assert re.search(rf'id="{name}" class="[^"]*" data-model data-ai', js), name
     for name in ("send", "fq-send", "debug-send", "fb-again"):
         assert re.search(rf'id="{name}" class="[^"]*" data-model data-ai', html), name
     assert "data-ai" not in re.search(r'<button[^>]*id="submit"[^>]*>', html).group(0) and "data-ai" not in re.search(r'<button[^>]*id="run"[^>]*>', html).group(0)  # 채점·실행은 AI가 아니다
+    assert "data-ai" not in re.search(r'id="start"[^>]*>', js).group(0) and "data-ai" not in re.search(r'id="result-tutor-hint"[^>]*>', js).group(0)
+    assert "보내면 AI가 읽어요" in html
     assert '$("new-submit").toggleAttribute("data-ai", !EDIT && connected())' in js  # 새로 등록하며 AI가 연결됐을 때만
     readme = (HERE.parent.parent / "README.md").read_text(encoding="utf-8")
     note = re.search(r'<p id="cost-note"[^>]*>(.*?)</p>', html, re.S).group(1)

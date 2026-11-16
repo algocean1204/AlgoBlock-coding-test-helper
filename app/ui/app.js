@@ -1828,7 +1828,7 @@ function renderResult() {
   } else if (!r.ok && total) {
     const finds = ai && !slowOnly && (!r.run || tutorSide); // 튜터 방식이면 예시 실행에서 틀렸을 때도 틀린 곳 같이 찾기가 먼저다
     if (finds) acts += '<button type="button" id="debug-start" class="btn" data-model data-ai>틀린 곳 같이 찾기</button>';
-    if (talked) acts += `<button type="button" id="result-tutor-hint" class="btn quiet" data-model data-ai title="튜터가 지금 블록의 다음 힌트를 말해요">${ico("i-bulb")}이 블록 힌트 받기</button>`;
+    if (talked) acts += `<button type="button" id="result-tutor-hint" class="btn quiet" data-model title="튜터가 지금 블록의 다음 힌트를 말해요">${ico("i-bulb")}이 블록 힌트 받기</button>`;
     else if (S.solo && S.solo.total) acts += `<button type="button" id="result-hint" class="btn${finds ? " quiet" : ""}" title="${tutorWay(S.mode) ? "푸는 방식이 혼자 풀기로 바뀌고, 풀이를 처음부터 하나씩 짚는 힌트를 열어요" : "풀이를 처음부터 하나씩 짚는 힌트예요"}">${ico("i-bulb")}풀이 힌트 보기${tutorWay(S.mode) ? " · 혼자 풀기로 바뀌어요" : ""}</button>`;
     if (!r.run && ai) acts += '<button type="button" id="to-feedback" class="btn quiet" data-model data-ai>피드백 받기</button>';
   }
@@ -1957,7 +1957,7 @@ function renderTutor() {
     const preparing = !connected() ? "" : S.problem.preparing ? `<div class="note" role="status">${DOTS}<span>튜터가 이 문제의 풀이 순서를 준비하고 있어요. <span class="secs" data-since="${S.prepAt}">${since(S.prepAt)}초</span> · <span data-late="30초쯤 걸려요">${late(since(S.prepAt), "30초쯤 걸려요")}</span></span></div>`
       : S.problem.prepare_failed && !S.note.start ? noteHtml(PREP_FAILED) : ""; // 뒤에서 준비하다 실패했다: 다시 준비(미리 만들기를 다시 탄다)
     $("start-box").innerHTML = `<h3>${title}</h3><p>${text}</p>
-      <button type="button" id="start" class="btn" data-model data-ai>${button}</button>${aidNote()}
+      <button type="button" id="start" class="btn" data-model>${button}</button>${aidNote()}
       ${S.busy && S.busy.where === "start" ? `<div class="note">${waitLine("start").replace("보통 5~25초 걸려요", `<span data-late="처음은 30초쯤 걸려요">${late(secs(), "처음은 30초쯤 걸려요")}</span>`)}</div>` : preparing}${noteHtml(S.note.start)}`;
     return;
   }
