@@ -2240,6 +2240,26 @@ def aid_note() -> None:
     assert not server.unaided_open(SimpleNamespace(builtin=True), [], study, "2026-01-01T00:00:00+00:00", False)  # 튜터와 말했다
 
 
+def ai_marks() -> None:
+    """AI를 부르는 단추의 작은 표시와 비용 안내(화면 코드 확인): 표시는 data-ai로 한 곳(CSS)에서 그리고, 설정의 금액은 README의 실측 값과 같다. 사진 단계에 AI 사용을 알린다."""
+    import re
+    js, css, html = (HERE / "app.js").read_text(encoding="utf-8"), (HERE / "app.css").read_text(encoding="utf-8"), (HERE / "index.html").read_text(encoding="utf-8")
+    assert '[data-ai]::after { content: "AI";' in css
+    for name in ("to-feedback", "debug-start", "to-explain", "fb-get"):  # 화면 코드가 그리는 단추. 첫 질문·블록 힌트는 저장 힌트로 답해 모델을 부르지 않는다
+        assert re.search(rf'id="{name}" class="[^"]*" data-model data-ai', js), name
+    for name in ("send", "fq-send", "debug-send", "fb-again"):
+        assert re.search(rf'id="{name}" class="[^"]*" data-model data-ai', html), name
+    assert "data-ai" not in re.search(r'<button[^>]*id="submit"[^>]*>', html).group(0) and "data-ai" not in re.search(r'<button[^>]*id="run"[^>]*>', html).group(0)  # 채점·실행은 AI가 아니다
+    assert "data-ai" not in re.search(r'id="start"[^>]*>', js).group(0) and "data-ai" not in re.search(r'id="result-tutor-hint"[^>]*>', js).group(0)
+    assert "보내면 AI가 읽어요" in html
+    assert '$("new-submit").toggleAttribute("data-ai", !EDIT && connected())' in js  # 새로 등록하며 AI가 연결됐을 때만
+    readme = (HERE.parent.parent / "README.md").read_text(encoding="utf-8")
+    note = re.search(r'<p id="cost-note"[^>]*>(.*?)</p>', html, re.S).group(1)
+    for amount in ("0.01달러", "0.014달러", "2026년 11월 16일"):
+        assert amount in note and amount in readme, amount  # README와 같은 실측 값
+    assert "사진은 ‘다음’을 누르면 글로 읽어 와요. AI가 연결돼 있으면 AI가 읽고(사용량이 들어요)" in html and "PDF와 글 파일은 AI를 쓰지 않아요" in html
+
+
 def report_terms() -> None:
     """학습 보고서의 낱말 풀이와 할 일 하나(화면 코드 확인): 준비도·기준·출석·실전 신호를 한 줄로 풀고, 다음에 배울 주제의 첫 문제가 ‘이어서 풀기’와 같으면 따로 링크하지 않는다."""
     js = (HERE / "app.js").read_text(encoding="utf-8")
@@ -2819,6 +2839,7 @@ def main() -> None:
         settings_screen()
         settings_items()
         way_info()
+        ai_marks()
         report_terms()
         new_draft()
         menu_and_title_note()

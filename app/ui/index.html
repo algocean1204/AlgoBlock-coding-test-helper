@@ -102,7 +102,7 @@
       <h2 id="wstep-title" class="wstep-title" tabindex="-1"></h2>
       <div class="field files" data-in="1">
         <button type="button" id="drop" class="drop" data-model aria-describedby="drop-note"><svg class="ico" aria-hidden="true"><use href="#i-plus"/></svg>파일에서 가져오기 <span class="muted">사진 · PDF · 글</span></button>
-        <small id="drop-note" class="hint">여기에 파일을 끌어다 놓아도 돼요. 사진은 ‘다음’을 누르면 글로 읽어 와요.</small>
+        <small id="drop-note" class="hint">여기에 파일을 끌어다 놓아도 돼요. 사진은 ‘다음’을 누르면 글로 읽어 와요. AI가 연결돼 있으면 AI가 읽고(사용량이 들어요), 아니면 이 기기의 글자 읽기로 읽어요. PDF와 글 파일은 AI를 쓰지 않아요.</small>
         <input type="file" id="new-files" multiple accept=".png,.jpg,.jpeg,.webp,.gif,.pdf,.md,.txt" hidden>
         <ol id="file-list" class="file-list" aria-label="올린 파일" hidden></ol>
         <div class="read-row"><button type="button" id="read-files" class="btn small" data-model hidden>글 읽어 오기</button><span id="read-wait" class="hint" role="status" hidden></span><span id="read-done" class="hint" hidden>읽어 왔어요</span></div>
@@ -321,8 +321,8 @@
             <label for="say">내 답</label>
             <textarea id="say" aria-label="내 답" rows="2" data-send="send" placeholder="생각나는 대로 적어 보세요. 몰라도 괜찮아요"></textarea>
             <div class="composer-row">
-              <span class="hint">Ctrl+Enter로 보내기</span>
-              <button type="submit" id="send" class="btn" data-model aria-label="내 답 보내기">보내기</button>
+              <span class="hint">Ctrl+Enter로 보내기 · 보내면 AI가 읽어요</span>
+              <button type="submit" id="send" class="btn" data-model data-ai aria-label="내 답 보내기">보내기</button>
             </div>
           </form>
 
@@ -335,7 +335,7 @@
             <textarea id="fq-text" aria-label="꼬리질문" rows="2" data-send="fq-send" placeholder="이 말에서 이해가 안 되는 부분을 물어보세요"></textarea>
             <div class="composer-row">
               <span class="hint">이 말에 대해서만 답해요</span>
-              <button type="submit" id="fq-send" class="btn" data-model>꼬리질문 보내기</button>
+              <button type="submit" id="fq-send" class="btn" data-model data-ai>꼬리질문 보내기</button>
             </div>
           </form>
 
@@ -350,7 +350,7 @@
               <textarea id="debug-say" aria-label="디버깅 답" rows="2" data-send="debug-send" placeholder="코드를 보고 생각한 것을 적어 보세요"></textarea>
               <div class="composer-row">
                 <span class="hint">코드를 고친 뒤 보내면 다시 채점해요</span>
-                <button type="submit" id="debug-send" class="btn" data-model>디버깅 답 보내기</button>
+                <button type="submit" id="debug-send" class="btn" data-model data-ai>디버깅 답 보내기</button>
               </div>
             </form>
           </div>
@@ -434,6 +434,7 @@
         <section id="set-models" class="set-part" hidden aria-labelledby="set-h-models">
           <h2 id="set-h-models" tabindex="-1">모델과 비용</h2>
           <p class="hint">튜터가 하는 일마다 어느 모델을 쓸지 정해요. 큰 모델일수록, 추론을 높일수록 정확하지만 느리고 AI를 많이 써요. 고르면 바로 저장돼요. 잘 모르겠으면 기본값 그대로 두세요.</p>
+          <p id="cost-note" class="hint">금액 감(2026년 11월 16일에 Claude API 키와 기본 모델 설정으로 잰 값): 기본 문제 깊은 1문제 학습은 약 0.01달러, 내 문제 넣기(글로 넣은 2단계 문제 하나)는 약 0.014달러예요. 모델을 올리거나 대화가 길어지면 더 들어요. ChatGPT 로그인은 재지 않았어요.</p>
           <div id="models-body" class="models-body"></div>
           <p class="hint">기본 문제를 Python으로 풀면 풀이 가이드가 이미 실려 있어 ‘문제를 넣을 때’의 사용이 없어요. 내 문제를 넣거나 다른 언어로 튜터를 처음 시작할 때 한 번 써요. 힌트와 기본 문제의 해설은 AI를 쓰지 않아요.</p>
           <p id="models-note" class="hint" role="status"></p>
@@ -494,7 +495,7 @@
     <p class="hint fb-legend">문장 끝의 꼬리표는 튜터가 그 말을 얼마나 확신하는지예요: <span class="sure s1">확실</span> <span class="sure s2">가능성 높음</span> <span class="sure s3">추측</span></p>
     <div id="fb-body"></div>
     <div class="page-actions">
-      <button type="button" id="fb-again" class="btn" data-model hidden>피드백 다시 받기</button>
+      <button type="button" id="fb-again" class="btn" data-model data-ai hidden>피드백 다시 받기</button>
     </div>
   </section>
 </main>

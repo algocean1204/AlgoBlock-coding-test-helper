@@ -808,6 +808,7 @@ function forward(n) {
 const editRedo = () => !!EDIT && (EDIT.text.split(/\s+/).join(" ") !== $("new-text").value.trim().split(/\s+/).join(" ") || EDIT.cases !== caseKey(formCases()) || EDIT.flags !== flagKey());
 /** 3 등록: 요약과 등록하면 생기는 일. */
 function renderSummary() {
+  $("new-submit").toggleAttribute("data-ai", !EDIT && connected()); // 새로 등록하면 AI가 풀이를 준비한다(연결했을 때). 고쳐 저장하는 것은 아니다
   const rows = formCases().filter((x) => x.input.trim() || x.expected.trim()), hidden = rows.filter((x) => x.hidden).length, ai = connected();
   const lang = $("new-lang").selectedOptions[0], mode = $("new-mode").selectedOptions[0];
   const flags = answerFlags(), many = !!flags.many_answers, marks = [flags.float_output && "실수 답", many && "답이 여럿일 수 있음"].filter(Boolean);
@@ -1816,7 +1817,7 @@ function failGuide(r, slowOnly) {
 function passActions(ai, learn) {
   const nx = S.nextUp, way = tutorWay(S.mode);
   return `<a id="result-next" class="btn" href="${nx ? `#/p/${esc(nx.id)}` : "#/list"}"${nx ? ` title="${esc(nx.title)}"` : ""}>${nx ? "다음 문제" : "문제 목록으로"}</a>${nx ? `<span class="hint next-title">${esc(nx.title)}</span>` : ""}
-      ${ai ? '<button type="button" id="to-feedback" class="btn quiet" data-model>피드백 받기</button>' : ""}${learn ? `<button type="button" id="result-learn" class="btn quiet"${way ? ' title="오른쪽 칸이 튜터 대화에서 해설로 바뀌어요. 튜터 대화는 그대로 남아요"' : ""}>실전 신호 보기${way ? " · 오른쪽 칸이 해설로 바뀌어요" : ""}</button>` : ""}`;
+      ${ai ? '<button type="button" id="to-feedback" class="btn quiet" data-model data-ai>피드백 받기</button>' : ""}${learn ? `<button type="button" id="result-learn" class="btn quiet"${way ? ' title="오른쪽 칸이 튜터 대화에서 해설로 바뀌어요. 튜터 대화는 그대로 남아요"' : ""}>실전 신호 보기${way ? " · 오른쪽 칸이 해설로 바뀌어요" : ""}</button>` : ""}`;
 }
 
 function renderResult() {
@@ -1849,10 +1850,10 @@ function renderResult() {
     acts = passActions(ai, learn);
   } else if (!r.ok && total) {
     const finds = ai && !slowOnly && (!r.run || tutorSide); // 튜터 방식이면 예시 실행에서 틀렸을 때도 틀린 곳 같이 찾기가 먼저다
-    if (finds) acts += '<button type="button" id="debug-start" class="btn" data-model>틀린 곳 같이 찾기</button>';
+    if (finds) acts += '<button type="button" id="debug-start" class="btn" data-model data-ai>틀린 곳 같이 찾기</button>';
     if (talked) acts += `<button type="button" id="result-tutor-hint" class="btn quiet" data-model title="튜터가 지금 블록의 다음 힌트를 말해요">${ico("i-bulb")}이 블록 힌트 받기</button>`;
     else if (S.solo && S.solo.total) acts += `<button type="button" id="result-hint" class="btn${finds ? " quiet" : ""}" title="${tutorWay(S.mode) ? "오른쪽 칸이 튜터 대화에서 힌트로 바뀌어요(풀이를 처음부터 하나씩 짚어요). 튜터 대화는 그대로 남아요" : "풀이를 처음부터 하나씩 짚는 힌트예요"}">${ico("i-bulb")}풀이 힌트 보기${tutorWay(S.mode) ? " · 오른쪽 칸이 힌트로 바뀌어요" : ""}</button>`;
-    if (!r.run && ai) acts += '<button type="button" id="to-feedback" class="btn quiet" data-model>피드백 받기</button>';
+    if (!r.run && ai) acts += '<button type="button" id="to-feedback" class="btn quiet" data-model data-ai>피드백 받기</button>';
   }
   if (acts) html += `<div class="result-actions">${acts}</div>${!r.ok && total && ai ? aidNote() : ""}`; // 틀린 곳 같이 찾기·힌트를 누르기 전에
   const right = !r.ok && ((S.debug && S.debug.open) || (S.mode === "solo" && S.soloOpen === "hint"));
@@ -2072,7 +2073,7 @@ function renderSolo() {
     return;
   }
   let sol = `<section class="solo-sec" aria-labelledby="solo-sol"><h3 id="solo-sol">${ico("i-check")}실전 신호와 해설</h3>`;
-  const tutorExplain = ai ? `<span class="btn-info"><button type="button" id="to-explain" class="btn quiet small" data-model>튜터의 해설 받기</button>${infoBtn("explain", "solo")}</span>${infoBox("explain", "solo")}` : ""; // 모델이 쓰는 해설(예전 '해설' 탭)
+  const tutorExplain = ai ? `<span class="btn-info"><button type="button" id="to-explain" class="btn quiet small" data-model data-ai>튜터의 해설 받기</button>${infoBtn("explain", "solo")}</span>${infoBox("explain", "solo")}` : ""; // 모델이 쓰는 해설(예전 '해설' 탭)
   if (!p.study.has_guide) sol += `<p class="hint">이 문제에는 미리 만든 해설이 없어요. ${ai ? "튜터가 써 줄 수 있어요." : "튜터를 연결하면 해설을 써 줘요."}</p>${tutorExplain}`;
   else if (o.sol) sol += solutionHtml(o.sol, p.passed > 0) + tutorExplain;
   else if (p.study.solution_open) sol += `${p.passed && !p.study.passed_now ? '<p class="hint">다시 푸는 중이에요. 지금 해설을 열면 이번 풀이는 도움을 받은 것으로 남아요.</p>' : ""}<button type="button" id="solo-open" class="btn">해설 보기</button>`; // '처음부터' 뒤에 이미 통과한 문제
@@ -2394,7 +2395,7 @@ function renderFeedback() {
     html += [["내 생각의 흐름 돌아보기", d.analysis], ["비슷한 문제를 만나면", d.similar_hint], [advice, d.advice]].filter(([, body]) => typeof body === "string" && body)
       .map(([title, body], i) => `<section class="card"><h2>${title}</h2><div class="prose">${(i ? rich : claims)(body)}</div></section>`).join("");
   } else if (!S.busy && !fb.loading) {
-    html += '<div class="card"><div class="prose"><p>아직 받은 피드백이 없어요. 코드를 한 번 제출한 뒤에 받을 수 있어요.</p></div><div class="page-actions"><button type="button" id="fb-get" class="btn" data-model>지금 피드백 받기</button></div></div>';
+    html += '<div class="card"><div class="prose"><p>아직 받은 피드백이 없어요. 코드를 한 번 제출한 뒤에 받을 수 있어요.</p></div><div class="page-actions"><button type="button" id="fb-get" class="btn" data-model data-ai>지금 피드백 받기</button></div></div>';
   }
   $("fb-body").innerHTML = html;
   $("fb-again").hidden = !d;
@@ -2427,7 +2428,7 @@ async function loadTools(refresh) {
 }
 
 /* ── 과정별 모델 ── */
-// 과정 여덟을 언제 불리는지로 묶고, 상대 사용량을 적는다. 금액은 재지 않았으므로 숫자를 쓰지 않는다
+// 과정 여덟을 언제 불리는지로 묶고, 상대 사용량을 적는다. 과정마다의 금액은 재지 않아 숫자를 쓰지 않는다(전체 흐름의 실측 값은 설정 화면의 글에 있다)
 const THEME_HELP = {
   read: ["사진·PDF에서 글을 읽어요. 글로 넣으면 쓰지 않아요.", "많음"],
   guide: ["문제의 뼈대와 정답 풀이를 만들어요. 뒤의 모든 대화가 이 결과를 따라요. 어려운 문제에서 풀이 확인이 자주 실패하면 급을 올려 보세요.", "많음"],
