@@ -13,7 +13,7 @@ SQLite 저장소다. 파일: `schema.py`(표, 버전), `codec.py`(계획·해설
 | 고아 줄 없음 | `problem(id)` 외래 키, `ON DELETE CASCADE`, 연결마다 `PRAGMA foreign_keys=ON`. 문항을 지우면 그 문항의 줄이 같이 지워진다 |
 | 요청 하나 = 트랜잭션 하나 | `save_success`가 한 트랜잭션으로 쓴다. 중간에 실패하면 모두 되돌린다. 오류로 끝난 요청은 아예 부르지 않는다 |
 | 계획이 바뀌면 블록 상태를 지움 | 새 계획을 저장하는 트랜잭션에서 그 문항의 `block_state`를 지운다. 블록 id는 계획마다 `b1`부터 다시 쓰기 때문이다 |
-| 스키마 버전 | `PRAGMA user_version`과 `MIGRATIONS` 목록. 지금 버전은 10이다. 앱이 열릴 때 남은 것만 차례로 돈다. 한 트랜잭션이고 쓰기 잠금(`BEGIN IMMEDIATE`)을 먼저 잡으므로, 두 연결이 새 파일을 동시에 열어도 한쪽만 옮긴다. 바꿀 때는 목록 뒤에 붙이고 앞의 것은 고치지 않는다 |
+| 스키마 버전 | `PRAGMA user_version`과 `MIGRATIONS` 목록. 지금 버전은 11이다. 앱이 열릴 때 남은 것만 차례로 돈다. 한 트랜잭션이고 쓰기 잠금(`BEGIN IMMEDIATE`)을 먼저 잡으므로, 두 연결이 새 파일을 동시에 열어도 한쪽만 옮긴다. 바꿀 때는 목록 뒤에 붙이고 앞의 것은 고치지 않는다 |
 
 버전마다 더한 것:
 
@@ -29,6 +29,7 @@ SQLite 저장소다. 파일: `schema.py`(표, 버전), `codec.py`(계획·해설
 | 8 | `block_state.verdict`에 `?`를 허용한다(SQLite는 CHECK를 바꾸지 못해 표를 새로 만들어 옮긴다) |
 | 9 | `problem_fact`의 `level`, `tags_json` 칸 |
 | 10 | `study`의 `help_first_at`, `help_after_reset_at`, `reset_at`, `hints_at_reset` 칸. 옛 행은 남은 대화·해설·힌트 기록으로 채운다 |
+| 11 | `debug_state.trap` 칸(디버그 진단이 고른 언어 함정) |
 
 ## 표
 
@@ -55,7 +56,7 @@ erDiagram
 | `submission` | `id`, 색인 `problem_id` | 제출 코드, 통과 여부, 언어, 결과 종류(`status`), 세부(`detail_json`) |
 | `feedback` | `problem_id` | 최근 제출의 피드백 |
 | `block_state` | (`problem_id`, `block_id`) | 사용자가 낸 블록 코드, `code_hash`, 판정 `verdict`(`Y`/`N`/`?`), 빠진 신호 `miss`, 낸 횟수 `tries`, 그 블록이 이름 바꾸기 표에 더한 짝 `renames_json`(`[[내 이름, 계획 이름], …]`) |
-| `debug_state` | `problem_id` | 디버그 진단(코드 해시, 종류, 줄, 원인, 고친 줄, 단계, 함정) |
+| `debug_state` | `problem_id` | 디버그 진단(코드 해시, 종류, 줄, 원인, 고친 줄, 단계, 함정, 언어 함정) |
 | `problem_fact` | `problem_id` | 문항 뼈대(명세, 패턴, 구현 기술, 입력 크기, 단계, 태그). 비슷한 문항 찾기와 등록한 문제 목록이 쓴다 |
 | `pitfall_hit` | (`problem_id`, `pitfall`, `code_hash`) | 제출에서 밟은 함정 |
 | `solution` | `problem_id` | 정석 풀이 가이드(방향, 단계, 정답 코드, 검증 여부, 단서) |

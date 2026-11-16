@@ -127,6 +127,7 @@ class DebugState:
     fixed_line: str
     step: int = 0
     pitfall: str = ""  # 온톨로지 함정 id(없으면 빈 글)
+    trap: str = ""  # 고른 언어 함정 id(묶음의 traps. 없으면 빈 글). 피드백이 이어 받는다
 
 
 @dataclass
@@ -182,6 +183,7 @@ class TutorContext:
     mode: str = "function"  # 문항의 푸는 방식(function·program). 서버가 아는 값을 받는다(shape)
     starter: str = ""  # 이 언어의 시작 코드(풀이 가이드의 진입 함수 머리를 이것과 같게 묶는다. 없으면 빈 글)
     many_answers: bool = False  # 등록할 때 '답이 여럿일 수 있음'을 켰다(값이 다르면 맞는지 가릴 수 없다). 서버가 아는 값을 받는다(shape)
+    traps: list[dict] = field(default_factory=list)  # 이 문제·언어에서 증명된 언어 함정 [{id, what, fix, code, right, fails 또는 varies}]. 기본 문제만. 서버가 아는 값을 받는다(shape)
 
 
 @dataclass
@@ -358,6 +360,7 @@ class Diagnosis:
     cause: str
     fixed_line: str
     pitfall: str = ""
+    trap: str = ""  # 내놓은 언어 함정 후보 가운데 고른 id(없으면 빈 글)
     opening: str = ""  # 사용자에게 보일 첫 질문(실패 입력과 코드의 단서를 짚는다). 비거나 검사에 걸리면 정해진 글
 
 

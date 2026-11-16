@@ -222,7 +222,7 @@ class Store:
         row = self.conn.execute("SELECT * FROM debug_state WHERE problem_id=?", (problem_id,)).fetchone()
         if row is None:
             return None
-        return DebugState(row["code_hash"], row["kind"], row["line"], row["cause"], row["fixed_line"], row["step"], row["pitfall"])
+        return DebugState(row["code_hash"], row["kind"], row["line"], row["cause"], row["fixed_line"], row["step"], row["pitfall"], row["trap"])
 
     def _facts(self, problem_id: str) -> dict:
         row = self.conn.execute("SELECT * FROM problem_fact WHERE problem_id=?", (problem_id,)).fetchone()
@@ -390,11 +390,11 @@ class Store:
             if debug_state is not None:
                 d = debug_state
                 self.conn.execute(
-                    "INSERT INTO debug_state(problem_id, code_hash, kind, line, cause, fixed_line, step, pitfall) "
-                    "VALUES(?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(problem_id) DO UPDATE SET code_hash=excluded.code_hash, "
+                    "INSERT INTO debug_state(problem_id, code_hash, kind, line, cause, fixed_line, step, pitfall, trap) "
+                    "VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(problem_id) DO UPDATE SET code_hash=excluded.code_hash, "
                     "kind=excluded.kind, line=excluded.line, cause=excluded.cause, fixed_line=excluded.fixed_line, "
-                    "step=excluded.step, pitfall=excluded.pitfall",
-                    (ctx.problem_id, d.code_hash, d.kind, d.line, d.cause, d.fixed_line, d.step, d.pitfall),
+                    "step=excluded.step, pitfall=excluded.pitfall, trap=excluded.trap",
+                    (ctx.problem_id, d.code_hash, d.kind, d.line, d.cause, d.fixed_line, d.step, d.pitfall, d.trap),
                 )
                 if d.pitfall:
                     self.conn.execute(
