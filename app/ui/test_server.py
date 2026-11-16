@@ -2876,11 +2876,17 @@ def neutral_notes() -> None:
     assert not found, found
     for saved in sorted((HERE / "problems").glob("*/*/ready.json")):  # 풀이 가이드·블록 힌트도 같다(FIRST의 ready는 아래에서 손으로 바뀌므로 파일을 읽는다)
         found += [f"{saved.parent.name}: {line}" for line in problemkit.ready_bound(json.loads(saved.read_text(encoding="utf-8"))["ready"])]
+        found += [f"{saved.parent.name}: {line}" for line in problemkit.guide_names(problemkit.load(saved.parent), json.loads(saved.read_text(encoding="utf-8"))["ready"])]
     assert not found, found
     for word in ("steps 딕셔너리에 담는다", "빈 리스트를 만든다", "mid // 2로 나눈다", "heapq에서 꺼낸다"):
         assert problemkit.ready_bound({"solution": {"steps": [word], "code": "d = {}"}, "plan": {"blocks": [{"hints": [], "reference": "x // 2"}]}}), word
         assert problemkit.ready_bound({"plan": {"blocks": [{"hints": [word]}]}}), word
     assert not problemkit.ready_bound({"solution": {"code": "x = dict()  # 딕셔너리"}, "plan": {"blocks": [{"reference": "a // b"}]}})  # 코드 칸은 보지 않는다
+    names = {"statement": "solution 함수. best_size를 구한다", "limits": [], "params": [{"name": "left_over"}], "files": {f"solution.{problemkit.EXT[lang]}": "best_size" for lang in problemkit.GUIDE_LANGS}}
+    assert not problemkit.guide_names(names, {"solution": {"steps": ["best_size와 left_over를 본다"]}})  # 다섯 언어에 다 있는 이름·문제 글의 이름은 통과
+    assert not problemkit.guide_names({**names, "files": {}}, {"solution": {"steps": ["left_over와 best_size를 본다"]}})  # 문제 글에 있으면 풀이가 없어도 통과
+    assert len(problemkit.guide_names({**names, "files": {**names["files"], "solution.java": "bestSize"}, "statement": "x"}, {"solution": {"clues": ["best_size를 쓴다"]}})) == 1  # 한 언어에 없으면 실패
+    assert len(problemkit.guide_names(names, {"solution": {"approach": "result가 None이면 True로 둔다"}})) == 2  # 파이썬 전용 값
     bad = {"learn": "x", "pattern": "x", "ladder": "x", "pitfalls": ["count[k] += 1에서 KeyError가 난다"], "signals": [{"means": "딕셔너리에 넣는다"}]}
     assert len(problemkit.language_bound(bad)) == 2  # 걸러야 할 글은 실제로 걸린다
     for word in ("KeyError가 난다", "heapq에서 꺼낸다", "dict로 센다", "int에 담는다", "IndexError가 난다", "long으로 더한다"):  # 한글 조사가 붙은 낱말도 걸린다
