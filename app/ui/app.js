@@ -3288,7 +3288,7 @@ function focusAfter(el) {
       if (lost) put(next.slice(0, 1).map((q) => document.querySelector(`#view-code ${q}`)).find(focusable) || $("status"));
     } else {
       end = end || Date.now();
-      if (lost) put(next.map((q) => document.querySelector(`#view-code ${q}`)).find(focusable)); // 끝난 뒤: 결과를 이어 갈 자리로. 뒤따르는 다시 그리기가 또 떨어뜨리면 한 번 더
+      if (lost || (placed && placed === $("status") && now === placed)) put(next.map((q) => document.querySelector(`#view-code ${q}`)).find(focusable)); // 끝난 뒤: 결과를 이어 갈 자리로(기다리는 동안 상태 글에 두었다면 거기서 옮긴다). 뒤따르는 다시 그리기가 또 떨어뜨리면 한 번 더
     }
     if (S.busy ? Date.now() - t0 < 120000 : Date.now() - (waited ? end : t0) < 1500) setTimeout(look, 100); // 기다림이 끝날 때까지, 끝난 뒤(또는 기다림이 없으면) 1.5초
   };

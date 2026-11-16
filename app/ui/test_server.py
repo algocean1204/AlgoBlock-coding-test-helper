@@ -2345,7 +2345,7 @@ def keyboard_gaps() -> None:
     assert 'el.setAttribute("aria-disabled", "true")' in busy and "el.disabled = false" in busy and "el.disabled = !!S.busy" not in js  # 기다림은 disabled가 아니라 aria-disabled
     assert 'el.getAttribute("aria-disabled") === "true") return e.preventDefault();' in js and '.btn[aria-disabled="true"]' in css
     focus = js[js.index("function focusAfter(el)"):js.index("document.addEventListener(\"focusin\"")]
-    assert 'put(next.slice(0, 1)' in focus and '$("status")' in focus and "now !== placed" in focus and 'id="status"' in (HERE / "index.html").read_text(encoding="utf-8") and 'role="status" aria-live="polite" tabindex="-1"' in (HERE / "index.html").read_text(encoding="utf-8")  # 기다리는 동안은 다시 그려진 같은 단추나 상태 글에, 끝난 뒤 다시 그리기가 떨어뜨려도 한 번 더
+    assert 'put(next.slice(0, 1)' in focus and '$("status")' in focus and "now !== placed" in focus and 'placed === $("status") && now === placed' in focus and 'id="status"' in (HERE / "index.html").read_text(encoding="utf-8") and 'role="status" aria-live="polite" tabindex="-1"' in (HERE / "index.html").read_text(encoding="utf-8")  # 기다리는 동안은 다시 그려진 같은 단추나 상태 글에, 끝난 뒤 다시 그리기가 떨어뜨려도 한 번 더
     assert '[$("start"), $("say"), $("p-title")] : [$("code"), $("p-title")]).find(focusable)' in js  # 방식 카드를 고른 뒤: 보이는 요소로
     assert 'document.querySelector("dialog[open]")' in js and 'e.key === "Tab" && document.querySelector' in js  # 열린 창에서 Tab은 창 안에서만
     assert '"<span data-ai></span>"' in js[js.index("function renderWay()"):js.index("function renderWay()") + 900]  # 연결돼 있을 때 AI를 쓰는 카드에도 AI 표시
