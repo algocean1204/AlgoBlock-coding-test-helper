@@ -22,10 +22,6 @@ def _squash(text: str) -> str:
     return re.sub(r"\s+", "", text or "")
 
 
-def _counts(text: str) -> set[str]:
-    return {_squash(hit) for hit in _COUNTED.findall(text or "")}
-
-
 def _facts(line: str) -> list[tuple[str, str]]:
     """기록 줄의 센 사실 [(수, 수 앞의 낱말)]. 낱말은 마지막 구분(:, 쉼표, 따옴표, 괄호) 뒤의 마지막 세 낱말에서 끝 조사를 뗀 것('오답', '찾지 못한 답').
     줄 번호(…번째 줄)는 수가 곧 사실이라 낱말을 보지 않는다."""
@@ -39,12 +35,17 @@ def _facts(line: str) -> list[tuple[str, str]]:
 
 def recorded(body: str, record: str) -> bool | None:
     """문장이 기록의 사실을 옮겼는가. 센 수도 블록도 없으면 None.
-    센 수가 있으면 기록 줄 하나에 같은 수와 그 수 앞의 낱말이 함께 있어야 참이다('실행 오류가 2번'이 제출 기록의 '오답 2번' 덕에 [확실]이었다).
+    센 수가 있으면 문장의 수마다 기록 줄에 같은 수와 그 수 앞의 낱말이 함께 있어야 참이다('실행 오류가 2번'이 제출 기록의 '오답 2번' 덕에 [확실]이었다).
     문장이 블록을 짚으면 그 블록의 기록 줄만 본다. 수 없이 블록을 짚었으면 그 블록의 기록 줄과 SHARED자 넘게 이어서 같아야 참이다."""
-    counts, blocks, flat = _counts(body), set(_BLOCK.findall(body)), _squash(body)
+    blocks = set(_BLOCK.findall(body))
     lines = [line for line in (record or "").splitlines() if not blocks or blocks & set(_BLOCK.findall(line))]
-    if counts:
-        return any(hit in counts and key in flat for line in lines for hit, key in _facts(line))
+    hits = list(_COUNTED.finditer(body))
+    if hits:
+        facts = [fact for line in lines for fact in _facts(line)]
+        # 수마다 그 수 바로 앞의 말(앞 수 뒤부터)에 기록의 같은 수의 낱말이 있어야 한다. 하나만 맞아도 참이면 '실행 오류가 2번, 오답이 1번'이 [확실]이었다
+        starts = [0, *(hit.end() for hit in hits)]
+        return all(any(count == _squash(hit.group()) and key in _squash(body[start:hit.start()]) for count, key in facts)
+                   for hit, start in zip(hits, starts))
     if not blocks:
         return None
     rest = _squash(_BLOCK_NAME.sub("", body))

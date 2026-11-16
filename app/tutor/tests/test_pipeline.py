@@ -1616,6 +1616,9 @@ class OtherFeatureTest(unittest.TestCase):
             self.assertEqual(mark_claims(f"[확실] {wrong}", record), f"[추측] {wrong}", wrong)
         self.assertEqual(mark_claims("[확실] 블록 1에서 이 블록을 찾지 못한 답이 있었습니다.", record), "[확실] 블록 1에서 이 블록을 찾지 못한 답이 있었습니다.")  # 그 블록의 기록 줄과 같은 말
         self.assertEqual(mark_claims("[확실] 반복문이 끝까지 돕니다.", record), "[확실] 반복문이 끝까지 돕니다.")  # 수도 블록도 없는 코드 이야기는 모델의 표시를 둔다
+        both = "- 통과하지 못한 제출: 실행 오류 1번, 오답 2번"
+        self.assertEqual(mark_claims("[확실] 실행 오류가 2번, 오답이 1번 있었습니다.", both), "[추측] 실행 오류가 2번, 오답이 1번 있었습니다.")  # 수마다 맞아야 한다
+        self.assertEqual(mark_claims("실행 오류가 1번, 오답이 2번 있었습니다.", both), "[확실] 실행 오류가 1번, 오답이 2번 있었습니다.")
 
     def test_unchecked_block_answers_are_not_stuck(self):
         """블록 코드 확인의 글에는 판정이 남고, '확인 전'으로 끝난 확인은 막힌 답으로 세지 않는다(표시 없는 옛 기록은 그대로 읽는다)."""
