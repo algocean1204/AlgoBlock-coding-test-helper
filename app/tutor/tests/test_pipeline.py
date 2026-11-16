@@ -1129,7 +1129,7 @@ class BlockCheckInvariantTest(unittest.TestCase):
                             failed_submissions=["runtime_error", "failed", "timeout"])
         lines = record_lines(ctx, ctx.plan)
         self.assertFalse(any("맞히지 못한 말" in line for line in lines), lines)
-        self.assertIn("- 블록 1(입력받기) 블록 코드 확인에서 튜터의 코드와 이어지지 않은 횟수 1번(틀렸다는 뜻이 아니다)(그 뒤 통과했다. 막힌 곳이 아니다)", lines)
+        self.assertIn("- 블록 1(입력받기) 블록 코드 확인에서 튜터의 코드와 이어지지 않은 횟수 1번(틀렸다는 뜻이 아니다)", lines)  # 통과 표시가 붙은 내 글이 없다: '그 뒤 통과했다'를 붙이지 않는다
         self.assertIn("- 통과하지 못한 제출: 실행 오류 1번, 오답 1번, 시간 초과 1번", lines)
         for quiet, rows in ((False, 1), (True, 0)):
             state = fakes.make_state("turn", fakes.context(plan=fakes.planned(fakes.two()), open_count=2), mode="guide", event="block_filled",
@@ -1684,6 +1684,7 @@ class OtherFeatureTest(unittest.TestCase):
 
     def test_feedback_does_not_call_settled_blocks_stuck(self):
         """'튜터의 질문으로'로 푼 뒤 피드백이 이미 찾고 통과한 블록을 '막힌 지점'으로 짚고, '통과'와 '원인을 짚지 못한 상태'를 한 문장에 [확실]로 붙였다."""
+        from ..common.talk_rules import CHECKED
         from ..feedback.prompts import MISSED_TEXT, record_lines
         from ..feedback.rules import mark_claims
 
@@ -1691,10 +1692,18 @@ class OtherFeatureTest(unittest.TestCase):
         missed = [fakes.service("q", 0, "m0"), fakes.user("이름별로 세요", 0, "u0"), fakes.service("q2?", 0, "m1", "clue")]
         here = record_lines(fakes.context(chair=missed, open_count=1), plan)
         self.assertEqual(here, [f"- 블록 1(입력받기): {MISSED_TEXT['chair']}이 1번"])  # 아직 그 블록에 있다: 막힌 곳
-        found = record_lines(fakes.context(chair=missed, open_count=2), plan)
+        # 말로 찾았다는 근거는 그 블록의 찾음 안내(found)다. '이 블록 채우기'로 연 블록도 열린 블록 수를 올려 찾은 것처럼 적혔다
+        said = [*missed, fakes.user("이름마다 세요", 0, "u1"), fakes.service("블록 칸에 적어 보세요.", 0, "m2", "found"), fakes.service("q3?", 1, "m3")]
+        found = record_lines(fakes.context(chair=said, open_count=2), plan)
         self.assertEqual(found, [f"- 블록 1(입력받기): {MISSED_TEXT['chair']}이 1번(그 뒤 이 블록을 찾았다. 막힌 곳이 아니다)"])
-        passed = record_lines(fakes.context(chair=missed, open_count=1, block_states={"b1": BlockState("b1", "x = 1", "h", "Y", None, 1)}), plan)
+        filled = record_lines(fakes.context(chair=[*missed, fakes.service("q3?", 1, "m3")], open_count=2), plan)
+        self.assertEqual(filled, [f"- 블록 1(입력받기): {MISSED_TEXT['chair']}이 1번"])  # 채우기로 열었다: 찾았다고 하지 않는다
+        # 통과했다는 근거는 통과 표시가 붙은 내 블록 코드 확인 글이다. 채운 블록(남는 글 없음)의 통과 상태만으로는 붙이지 않는다
+        checked = [*missed, replace(fakes.user("x = 1", 0, "u2"), move=CHECKED + "Y"), fakes.service("통과예요.", 0, "m4", "done")]
+        states = {"b1": BlockState("b1", "x = 1", "h", "Y", None, 1)}
+        passed = record_lines(fakes.context(chair=checked, open_count=1, block_states=states), plan)
         self.assertTrue(passed[0].endswith("(그 뒤 블록 코드 확인을 통과했다. 막힌 곳이 아니다)"), passed)
+        self.assertEqual(record_lines(fakes.context(chair=missed, open_count=1, block_states=states), plan), [f"- 블록 1(입력받기): {MISSED_TEXT['chair']}이 1번"])
         debug = DebugState("h", "logic", 3, "1을 더하지 않는다.", "", 1, "")
         for ok, said in ((True, "말로 짚기 전에 코드를 고쳤고, 그 뒤 제출이 통과했다"), (False, "아직 짚지 못했다")):
             lines = "\n".join(record_lines(fakes.context(debug_state=debug, latest_submission=Submission("s1", "x", ok)), plan))

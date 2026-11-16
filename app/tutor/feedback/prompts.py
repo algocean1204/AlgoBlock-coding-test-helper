@@ -76,12 +76,17 @@ def record_lines(ctx, plan) -> list[str]:
     name = lambda i: f"블록 {i + 1}({blocks[i].name})" if i is not None and 0 <= i < len(blocks) else "블록"
     lines = []
 
+    def passed(i) -> bool:
+        """사용자가 그 블록의 코드 확인을 통과했다는 근거가 있다(통과 표시가 붙은 사용자 글, 그리고 지금도 통과). '이 블록 채우기'로 채운 블록은 남는 글이 없어 들지 않는다."""
+        return (i is not None and 0 <= i < len(blocks) and getattr(ctx.block_states.get(blocks[i].id), "verdict", None) == "Y"
+                and any(m.role == "user" and m.block_index == i and m.move == CHECKED + "Y" for m in (*ctx.chair, *ctx.guide)))
+
     def settled(mode: str, i) -> str:
-        """그 블록이 뒤에 어떻게 되었는가. 찾았거나 통과한 블록을 '막힌 지점'으로 짚었다."""
-        passed = i is not None and 0 <= i < len(blocks) and getattr(ctx.block_states.get(blocks[i].id), "verdict", None) == "Y"
-        if passed:
+        """그 블록이 뒤에 어떻게 되었는가(찾았거나 통과한 블록을 '막힌 지점'으로 짚었다). 근거가 남은 것만 쓴다.
+        열린 블록 수로 '찾았다'고 보면 '이 블록 채우기'로 연 블록까지 찾은 것이 되었다: 말로 찾았다는 근거는 그 블록의 찾음 안내(move found)다."""
+        if passed(i):
             return "(그 뒤 블록 코드 확인을 통과했다. 막힌 곳이 아니다)"
-        if mode == "chair" and i is not None and i < ctx.open_count - 1:  # 다음 블록이 열렸다: 말로 찾았다
+        if mode == "chair" and any(m.role == "service" and m.block_index == i and m.move == "found" for m in ctx.chair):
             return "(그 뒤 이 블록을 찾았다. 막힌 곳이 아니다)"
         return ""
 
@@ -109,7 +114,7 @@ def record_lines(ctx, plan) -> list[str]:
             wrong = max(0, wrong - same)
         if wrong > 0:
             lines.append(f"- {name(i)} 블록 코드 확인에서 튜터의 코드와 이어지지 않은 횟수 {wrong}번(틀렸다는 뜻이 아니다)"
-                         + (f". 아직 통과하지 못한 코드:\n{state.code}" if state.verdict == "N" else "(그 뒤 통과했다. 막힌 곳이 아니다)" if state.verdict == "Y" else ""))
+                         + (f". 아직 통과하지 못한 코드:\n{state.code}" if state.verdict == "N" else "(그 뒤 통과했다. 막힌 곳이 아니다)" if passed(i) else ""))
     if any(m.role == "service" and m.text.startswith(SKIPPED) for m in ctx.guide):  # '이대로 넘어가기'로 넘어간 블록은 맞았다고도 틀렸다고도 말하지 않는다
         # 확인을 눌러 이어지지 않은 뒤에 넘긴 블록은 '확인 없이'가 아니다. 그 뒤의 제출이 통과했으면 그 코드는 제출로 확인되었다(실행해 보지 않았다고 말했다)
         passed = bool(ctx.latest_submission and ctx.latest_submission.ok)
