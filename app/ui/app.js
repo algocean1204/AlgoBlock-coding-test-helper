@@ -17,8 +17,8 @@ const KIND = {
 const KIND_BY_LABEL = Object.fromEntries(Object.entries(KIND).map(([key, [label]]) => [label, key]));
 const NEXT_BLOCK = /^다음은 '([^']+)' 블[록럭]이에요\./; // 새 블록의 첫 말은 종류를 알리며 시작한다
 const LANG = { python: "Python", java: "Java", javascript: "JavaScript", cpp: "C++", rust: "Rust", go: "Go", kotlin: "Kotlin" }; // 이름 표시용. go·kotlin은 지원을 접어 예전 제출 기록의 이름을 보이려고만 둔다(고르는 목록은 CHOICES)
-const CHOICES = ["python", "java", "javascript", "cpp", "rust"]; // 고를 수 있는 풀이 언어
 const TOOL = { python: "Python 3", java: "JDK(javac와 java)", javascript: "Node.js", cpp: "g++ 또는 clang++", rust: "Rust(rustc)" };
+const CHOICES = Object.keys(TOOL); // 고를 수 있는 풀이 언어
 // 푸는 방식 넷의 설명 한 곳. 방식 카드, ⓘ로 펴는 설명, 튜터 시작 칸이 모두 여기서 읽는다.
 // 엔진의 이름은 solo·guide(가이드)·chair(생각하는 의자). explain은 튜터의 해설(혼자 풀기의 해설 칸에서 간다)
 const WAY_INFO = {

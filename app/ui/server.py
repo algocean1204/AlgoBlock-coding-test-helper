@@ -1401,7 +1401,7 @@ def edit(body: dict) -> dict:
                 t.index.delete(pid)
             if text_changed:  # 옛 글에 맞춰 남긴 코드다
                 write_json(CHECKPOINTS_FILE, {key: value for key, value in read_json(CHECKPOINTS_FILE, {}).items() if key != pid})
-            t.store.put_problem(pid, ctx.language if ctx else row["language"], text, direct_code=ctx.direct_code if ctx else "", title=title)
+            t.store.put_problem(pid, ctx.language if ctx else (row["language"] if row["language"] in check_judge().LANGUAGES else "python"), text, direct_code=ctx.direct_code if ctx else "", title=title)
         if files is not None:
             save_assets(pid, files)
     if text_changed or redo:
@@ -1767,8 +1767,11 @@ def retire_languages() -> None:
         rows = t.store.conn.execute("SELECT id, language FROM problem").fetchall()
         for row in rows:
             if row["language"] not in check_judge().LANGUAGES:
-                with LOCKS[row["id"]]:
-                    change_language(t, SimpleNamespace(id=row["id"]), "python", None)
+                try:
+                    with LOCKS[row["id"]]:
+                        change_language(t, SimpleNamespace(id=row["id"]), "python", None)
+                except Exception as e:  # 한 문제를 옮기지 못해도 앱은 뜬다(그 문제의 시작 코드는 starter_of가 빈 글로 받는다)
+                    print(f"[retire] {row['id']}: {e}", file=sys.stderr)
 
 
 SOLUTION_COLUMNS = ("approach", "steps_json", "code", "verified", "clues_json")

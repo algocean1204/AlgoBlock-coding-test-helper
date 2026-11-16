@@ -378,7 +378,7 @@ def made_statements(code: str, language: str, program: bool = False) -> list[tup
             depth, at = 0, None
             for i, tok in enumerate(toks):  # 'a = b = 0'은 마지막 '=' 뒤가 식이다
                 depth += (tok in "([{") - (tok in ")]}")
-                if depth == 0 and tok == "=":
+                if depth == 0 and tok in ("=", ":="):  # Python의 := 도 대입이다
                     at = i
             lhs = [t for t in toks[:at] if _NAME.fullmatch(t)] if at is not None else names
             rhs = toks[at + 1:] if at is not None else []

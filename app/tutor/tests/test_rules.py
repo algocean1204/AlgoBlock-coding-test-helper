@@ -966,6 +966,8 @@ class GrammarRuleTest(unittest.TestCase):
         self.assertIn("val", [row[0] for row in made_statements(js, "javascript")])
         code = "function solution(a) {\n  const r = Math.max(\n    ...a\n  )\n  return r;\n}\n"
         self.assertIn(")", body_lines(code, "javascript", False))
+        walrus = [row for row in made_statements("def solution(xs):\n    while n := len(xs):\n        xs.pop()\n    return 0\n", "python") if row[0] == "n"]
+        self.assertTrue(walrus and walrus[0][3][1], walrus)  # Python의 괄호 없는 := 도 오른쪽 식을 잃지 않는다
 
     def test_entry_params_follow_each_grammar(self):
         from ..common.solution import entry_params
