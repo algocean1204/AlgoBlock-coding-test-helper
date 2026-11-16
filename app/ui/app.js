@@ -169,7 +169,8 @@ setInterval(() => {
 }, 1000);
 
 function applyBusy() {
-  document.querySelectorAll("[data-model]").forEach((el) => { el.disabled = !!S.busy; });
+  // 기다리는 동안 단추를 disabled로 잠그면 초점이 문서 맨 위로 떨어진다. aria-disabled로 두어 초점을 지키고, 누름은 막는다(아래 click)
+  document.querySelectorAll("[data-model]").forEach((el) => { el.disabled = false; if (S.busy) el.setAttribute("aria-disabled", "true"); else el.removeAttribute("aria-disabled"); });
   if (S.view === "code" && noTool()) $("run").disabled = $("submit").disabled = $("run-own-go").disabled = true; // 이 기기에 언어 도구가 없으면 실행·제출을 못 한다
   $("timer").textContent = S.busy ? `${secs()}초` : "";
   document.querySelectorAll("[data-secs]").forEach((el) => { el.textContent = `${secs()}초`; });
@@ -302,6 +303,24 @@ function rich(text, headings, program) {
 
 const kindChip = (kind) => (kind ? `<span class="kind kind-${esc(kind)}">${KIND[kind] ? ico("k-" + kind) : ""}${esc((KIND[kind] || [kind])[0])}</span>` : ""); // 종류가 없으면(코드와 맞지 않아 서버가 비웠다) 꼬리표를 그리지 않는다
 const meMsg = (text, sending) => `<div class="msg me${sending ? " sending" : ""}"><span class="who">나</span><div class="bubble">${esc(text)}</div></div>`;
+/* long-pure:start 튜터 말 속의 긴 입력(대괄호 목록이나 `…` 안의 글)이 max자를 넘으면 앞부분만 남기고 전체는 따로 돌려준다(node로도 시험한다) */
+function foldLong(text, max = 80) {
+  const longs = [];
+  let out = "", i = 0;
+  while (i < text.length) {
+    const c = text[i];
+    if (c === "[" || c === "`") {
+      let end = -1;
+      if (c === "`") end = text.indexOf("`", i + 1);
+      else { let depth = 0; for (let k = i; k < text.length; k += 1) { if (text[k] === "[") depth += 1; else if (text[k] === "]" && (depth -= 1) === 0) { end = k; break; } } }
+      if (end > 0 && end + 1 - i > max) { longs.push(text.slice(i, end + 1)); out += `${text.slice(i, i + 40)}…${c === "`" ? "`" : "]"}`; i = end + 1; continue; }
+    }
+    out += c;
+    i += 1;
+  }
+  return { text: out, longs };
+}
+/* long-pure:end */
 const tutorBubble = (text) => `<div class="msg tutor"><span class="who">튜터</span><div class="bubble">${rich(text)}</div></div>`;
 
 /* ── 화면 이동 ── */
@@ -823,6 +842,7 @@ function renderSummary() {
 
 function renderFiles() {
   $("file-list").hidden = !FILES.length;
+  $("read-files").toggleAttribute("data-ai", connected() && FILES.some((x) => x.image)); // 사진은 AI가 읽는다
   $("read-files").hidden = !FILES.length || filesRead; // 읽어 온 뒤에는 파일 목록이 바뀌기 전까지 숨긴다(같은 글이 또 붙지 않게)
   $("read-done").hidden = !FILES.length || !filesRead || !!S.busy;
   syncForm();
@@ -1223,7 +1243,7 @@ const PRIMARY = { run: "#run", submit: "#submit", compose: "#compose-run", start
   check: ".block.is-current [data-check]", debug: "#debug-send", find: "#debug-start", hint: "#result-hint", next: "#result-next", review: "#result-next", feedback: "#to-feedback" };
 function applyPrimary(stage) {
   document.querySelectorAll("#view-code .primary").forEach((el) => el.classList.remove("primary"));
-  const shown = (sel) => { const el = document.querySelector(`#view-code ${sel}`); return el && !el.closest("[hidden]") && !el.disabled ? el : null; };
+  const shown = (sel) => { const el = document.querySelector(`#view-code ${sel}`); return el && !el.closest("[hidden]") && !el.disabled && el.getAttribute("aria-disabled") !== "true" ? el : null; };
   const el = stage === "choose" ? null : shown(PRIMARY[stage]) || shown("#run") || shown("#submit"); // 방식을 고르기 전에는 어느 것도 고른 것처럼 칠하지 않는다
   if (el) el.classList.add("primary");
   return el;
@@ -2283,7 +2303,8 @@ function renderDebug() {
   const d = S.debug, open = !!(d && d.open);
   $("debug-sheet").hidden = !open;
   if (!open) return;
-  let html = d.messages.map((m) => (m.role === "service" ? tutorBubble(m.text) : m.role === "regrade" ? `<p class="regrade" role="separator">${esc(m.text)}</p>` : meMsg(m.text))).join("");
+  const said = (m) => { const f = foldLong(m.text); return tutorBubble(f.text) + (f.longs.length ? `<details class="old-talk long-in"><summary>전체 입력 보기</summary>${f.longs.map((x) => `<pre class="code"><code>${esc(x)}</code></pre>`).join("")}</details>` : ""); };
+  let html = d.messages.map((m) => (m.role === "service" ? said(m) : m.role === "regrade" ? `<p class="regrade" role="separator">${esc(m.text)}</p>` : meMsg(m.text))).join("");
   if (d.passed && html) html = `<details class="old-talk"><summary>풀던 대화 보기</summary>${html}</details>`; // 통과한 뒤에는 옛 질문이 맨 아래에 남지 않게 접는다
   if (S.busy && S.busy.where === "debug") html += (S.sending ? meMsg(S.sending.text, true) : "") + pending("debug");
   if (d.passed) html += '<div class="note ok" role="status">고친 코드가 모든 케이스를 통과했어요. 채점 결과 칸에서 피드백을 받아 보세요.</div>';
@@ -2821,6 +2842,7 @@ const indentUnit = (ta, line) => (/^\t/.test(line) || (!/^\s/.test(line) && /^\t
 function codeKeys(e) {
   const ta = e.target;
   if (e.isComposing || e.ctrlKey || e.metaKey || e.altKey || ta.readOnly) return;
+  if (e.key === "Shift") return; // Shift를 먼저 누르는 것만으로 Esc 표시가 지워져 Esc 뒤 Shift+Tab이 막혔다
   if (e.key === "Escape") return void (ta._tabOut = true); // Esc 다음 Tab은 다음 칸으로 간다(키보드로 빠져나가는 길)
   const at = ta.selectionStart, lineStart = ta.value.lastIndexOf("\n", at - 1) + 1;
   const line = ta.value.slice(lineStart, (ta.value.indexOf("\n", at) + 1 || ta.value.length + 1) - 1), unit = indentUnit(ta, line);
@@ -3002,6 +3024,7 @@ for (const name of PANE) new ResizeObserver(paneAria).observe($(`pane-${name}`))
 document.addEventListener("click", (e) => {
   const el = e.target.closest("button");
   if (!el || el.disabled) return;
+  if (el.getAttribute("aria-disabled") === "true") return e.preventDefault(); // 기다리는 중의 단추(초점은 그대로 둔다)
   if (el.dataset.langFilter !== undefined) { // 등록한 문제를 언어로 거른다(화면에서만)
     LIST_LANG = el.dataset.langFilter;
     document.querySelectorAll("#list-body [data-lang]").forEach((li) => { li.hidden = !!LIST_LANG && li.dataset.lang !== LIST_LANG; });

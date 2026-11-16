@@ -2300,6 +2300,29 @@ def way_info() -> None:
     assert "way-card:disabled" not in css and not re.search(r"\.way-card\[aria-disabled[^}]*opacity", css)  # 잠긴 카드의 글은 흐리지 않는다
 
 
+def keyboard_gaps() -> None:
+    """키보드와 AI 표시의 남은 빈틈(화면 코드 확인, 긴 입력 접기는 node로): Esc 뒤 Shift+Tab, 기다리는 중 단추가 초점을 잃지 않음, 사진 읽기의 AI 표시, 긴 실패 입력 접기."""
+    import re
+    import shutil
+    js, css = (HERE / "app.js").read_text(encoding="utf-8"), (HERE / "app.css").read_text(encoding="utf-8")
+    assert 'if (e.key === "Shift") return;' in js and js.index('if (e.key === "Shift") return;') < js.index('if (e.key === "Escape") return void (ta._tabOut = true);')  # Shift를 누르는 것이 Esc 표시를 지우지 않는다
+    busy = js[js.index("function applyBusy()"):js.index('$("timer").textContent')]
+    assert 'el.setAttribute("aria-disabled", "true")' in busy and "el.disabled = false" in busy and "el.disabled = !!S.busy" not in js  # 기다림은 disabled가 아니라 aria-disabled
+    assert 'el.getAttribute("aria-disabled") === "true") return e.preventDefault();' in js and '.btn[aria-disabled="true"]' in css
+    assert '$("read-files").toggleAttribute("data-ai", connected() && FILES.some((x) => x.image))' in js
+    assert 'f.longs.map' in js and "전체 입력 보기" in js and "foldLong(m.text)" in js
+    node = shutil.which("node")
+    if not node:
+        return print("node가 없어 긴 입력 접기 시험은 건너뜀")
+    source = re.search(r"/\* long-pure:start.*?\*/(.*?)/\* long-pure:end \*/", js, re.S).group(1)
+    pairs = ", ".join(f"[{i}, {i + 1}]" for i in range(160))
+    script = source + f"const big = `solution([{pairs}]) 에서 틀려요`; const a = foldLong(big), b = foldLong('입력 `[1, 2]`은 작아요'), c = foldLong('긴 글 `' + 'x'.repeat(100) + '` 끝');" + "console.log(JSON.stringify([a, b, c]));"
+    a, b, c = json.loads(subprocess.run([node, "-e", script], capture_output=True, text=True, check=True).stdout)
+    assert len(a["text"]) < 120 and a["longs"] and a["longs"][0].startswith("[[0, 1]") and a["text"].endswith("틀려요")  # 160쌍은 앞만 남기고 전체는 따로
+    assert b == {"text": "입력 `[1, 2]`은 작아요", "longs": []}  # 짧으면 그대로
+    assert c["longs"] == ["`" + "x" * 100 + "`"] and c["text"].startswith("긴 글 `xxxx") and c["text"].endswith("` 끝")
+
+
 def settings_items() -> None:
     """설정의 기본 언어: /api/prefs가 language를 받아 적고(모르는 언어는 거절), 다른 설정을 지우지 않으며, 다음에 처음 여는 문제의 언어가 된다. 모델 설정은 세 묶음으로 보이고 사용량 글에 숫자가 없다."""
     import re
@@ -2845,6 +2868,7 @@ def main() -> None:
         home_screen()
         settings_screen()
         settings_items()
+        keyboard_gaps()
         way_info()
         ai_marks()
         report_terms()

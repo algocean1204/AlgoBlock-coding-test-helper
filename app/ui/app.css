@@ -184,6 +184,8 @@ svg.ico { width: 14px; height: 14px; flex: none; fill: none; stroke: currentColo
 .btn.quiet { background: transparent; color: var(--muted); }
 .btn.quiet:hover { background: var(--fill); color: var(--text); }
 .btn.danger { background: var(--danger-soft); color: var(--danger); }
+.btn[aria-disabled="true"], .btn[aria-disabled="true"]:hover, .drop[aria-disabled="true"] { background: var(--fill); color: var(--text); opacity: 0.45; cursor: not-allowed; transform: none; } /* 기다리는 중: 초점은 두고 흐리게만 */
+.btn.primary[aria-disabled="true"] { background: var(--fill); }
 .btn:disabled, .btn:disabled:hover { background: var(--fill); color: var(--text); opacity: 0.45; cursor: not-allowed; transform: none; } /* 종류(강조·위험)와 관계없이 같은 흐린 회색 */
 .select:disabled { opacity: 0.6; cursor: not-allowed; } /* 수정 화면의 푸는 방식(읽기 전용) */
 .link { color: var(--accent-text); text-underline-offset: 3px; }
