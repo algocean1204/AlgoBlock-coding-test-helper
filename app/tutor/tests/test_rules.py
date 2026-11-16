@@ -1043,6 +1043,8 @@ class GrammarRuleTest(unittest.TestCase):
             ("cpp", "vector<int> a(n), b(m);", [("a", "var"), ("b", "var")]),
             ("cpp", "auto [a, b] = p;", [("a", "var"), ("b", "var")]),
             ("cpp", "for (auto& [k, v] : m) {", [("k", "loop"), ("v", "loop")]),
+            ("cpp", "const auto& [a, b] = p;", [("a", "var"), ("b", "var")]),
+            ("cpp", "for (const auto& [k, v] : m) {", [("k", "loop"), ("v", "loop")]),
             ("cpp", "for (auto x : xs) {", [("x", "loop")]),
             ("cpp", "int x = 0, y;", [("x", "var"), ("y", "var")]),
             ("cpp", "sort(a.begin(), a.end());", []),

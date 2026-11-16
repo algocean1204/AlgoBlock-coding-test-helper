@@ -411,7 +411,7 @@ def _destructured(toks: list[str], language: str) -> tuple[list[tuple[str, str]]
         if tok not in ("const", "let", "var", "auto"):
             continue
         at = k + 1
-        while toks[at:at + 1] in (["&"], ["&&"], ["const"]):
+        while toks[at:at + 1] in (["&"], ["&&"], ["const"], ["auto"]):  # C++ 'const auto& [a, b]'
             at += 1
         if toks[at:at + 1] not in (["["], ["{"]) or (toks[at] == "{" and language != "javascript"):
             return None
