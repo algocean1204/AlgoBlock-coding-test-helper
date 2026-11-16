@@ -366,8 +366,8 @@ class TutorTest(unittest.TestCase):
         finally:
             tutor.close()
 
-    KEY_TRAP = {"id": "python.missing_key", "what": "없는 키를 읽으면 멈춰요.", "fix": "`get(키, 0)`으로 읽어요.", "code": [], "right": [".get("], "fails": {"1": "failed"}}
-    ROWS_TRAP = {"id": "python.shared_rows", "what": "모든 줄이 같은 목록이에요.", "fix": "줄마다 새 목록을 만들어요.", "code": [], "right": ["for _ in range"], "fails": {"9": "failed"}}
+    KEY_TRAP = {"id": "python.missing_key", "what": "없는 키를 읽으면 멈춰요.", "fix": "`get(키, 0)`으로 읽어요.", "code": [], "right": [".get("], "fails": {"1": "failed"}, "outs": {"1": "{'tom': 1}"}}
+    ROWS_TRAP = {"id": "python.shared_rows", "what": "모든 줄이 같은 목록이에요.", "fix": "줄마다 새 목록을 만들어요.", "code": [], "right": ["for _ in range"], "fails": {"9": "failed"}, "outs": {"9": "1"}}
 
     def test_debug_picks_lang_trap_and_feedback_follows(self):
         """증명된 언어 함정: 실패와 맞는 것만 후보로 내놓고(캐시 앞부분 밖), 모델이 고른 것을 원인 설명 단계에서 무슨 일이 일어나는지(what)만 말한다.
@@ -375,7 +375,7 @@ class TutorTest(unittest.TestCase):
         analysis = {"analysis": "같은 이름이 둘이면요?", "similar_hint": "센다", "advice": "센 값을 보세요."}
         fake = FakeLlm({**DRAFT, "debug.locate": [{**self.FOUND, "trap": "python.missing_key"}], "debug.judge": ["[check]N"] * 4,
                         "debug.ask": ["count는 어떻게 바뀌나요?", "그 줄은 무엇을 하나요?", "그 줄을 어떻게 바꿀까요?", "다시 볼까요?"],
-                        "feedback.assess": ["[check]30 Y"] * 3, "feedback.analyze": [analysis] * 3})
+                        "feedback.assess": ["[check]30 Y"] * 4, "feedback.analyze": [analysis] * 4})
         tutor = Tutor(self.path, client=fake, shape=lambda _pid, _language: {"traps": [self.KEY_TRAP, self.ROWS_TRAP]})
         try:
             tutor.store.put_problem("p1", "python", fakes.PROBLEM, title="추천 서가에 꽂히는 책")
@@ -397,7 +397,9 @@ class TutorTest(unittest.TestCase):
             self.assertEqual(tutor.feedback("p1").body["advice"], "센 값을 보세요.")
             tutor.store.add_submission("p1", CODE, True)
             self.assertEqual(tutor.feedback("p1").body["advice"], "센 값을 보세요. 없는 키를 읽으면 멈춰요. `get(키, 0)`으로 읽어요.")
-            self.assertEqual(fakes.tasks(fake).count("feedback.analyze"), 3)
+            tutor.store.add_submission("p1", CODE.replace("count.get(name, 0) + 1", "(count[name] if name in count else 0) + 1"), True)  # 그 꼴을 고친 흔적 없이 다른 방식으로 통과
+            self.assertEqual(tutor.feedback("p1").body["advice"], "센 값을 보세요.")
+            self.assertEqual(fakes.tasks(fake).count("feedback.analyze"), 4)
             self.assertNotIn("없는 키", fakes.prompt(fake, "feedback.analyze"))  # 글은 엔진이 붙인다
         finally:
             tutor.close()

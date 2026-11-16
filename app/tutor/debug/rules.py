@@ -171,9 +171,22 @@ def names_line(reply: str) -> bool:
 
 
 # 언어 함정: 이 문제·언어에서 실제로 틀리는 것이 증명된 실수(묶음의 traps). 모델에 내놓기 전에 규칙으로 거른다(맞을 수 없는 후보는 보이지 않는다)
+# 이 절은 표준 라이브러리만 쓴다: 기본 문제 검사(ui/problemkit.py)가 이 파일을 경로로 읽어 같은 판정으로 증명을 얼리고 확인한다
 TRAP_PICKS = 3  # 내놓는 후보 수
 # 튜터가 받는 채점 결과는 메모리·출력 초과를 실행 오류로 바꿔 둔다. 증명의 떨어진 상태도 같게 본다
 TRAP_STATUS = {"memory_limit": "runtime_error", "output_limit": "runtime_error"}
+OUT_CHARS = 40  # 증명이 틀린 답을 낸 케이스의 출력은 이 길이까지 그대로, 넘으면 지문으로 얼린다
+
+
+def out_key(got) -> str:
+    """돌려준 값(함수 방식: 출력의 마지막 줄)을 견줄 꼴로. JSON이면 공백·키 순서를 맞추고, 길면 지문(#sha1 앞 12자리)."""
+    lines = str(got or "").strip().splitlines()
+    text = lines[-1].strip() if lines else ""
+    try:
+        text = json.dumps(json.loads(text), ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+    except ValueError:
+        pass
+    return text if len(text) <= OUT_CHARS else "#" + hashlib.sha1(text.encode("utf-8")).hexdigest()[:12]
 
 
 def _term(term: str) -> re.Pattern:
@@ -201,29 +214,48 @@ def right_count(trap: dict, code: str) -> int:
     return sum(len(_term(term).findall(code)) for term in trap.get("right") or [])
 
 
+def shape_in(trap: dict, code: str) -> bool:
+    """함정 항목의 모양 식(shape, 정규식)이 코드(주석 밖)에 맞는가."""
+    return re.search(trap["shape"], without_comments(code, trap.get("id", "").split(".")[0])) is not None
+
+
 def trap_in_code(trap: dict, code: str) -> bool:
     """코드가 그 함정의 꼴인가. 주석은 보지 않는다(주석에 적은 'Reverse로 감싸면…'). 이름 목록은 묶을 때 흔한 낱말과 한 글자를 뺀 것이다.
+    - 모양 식(shape)이 있으면: 그 식이 맞는다(이름만으로는 앞으로 도는 size_t 반복과 거꾸로 도는 것을 가르지 못한다).
+    - 결과가 정해지지 않은 동작(varies)은 모양 식이 있어야 한다: 케이스 목록이 없어 이름 하나로는 다른 버그와 가를 수 없다.
     - code가 있으면: 실수한 코드에 나타나는 이름(code)이 있다.
     - code가 없는 함정(지우는 꼴의 실수): 고친 꼴의 이름(right)이 그 언어 정답 풀이보다 적게 나온다. 하나만 바꾼 실수(// 하나를 /로)도 잡고,
-      정답 풀이만큼 쓴 다른 실수 풀이는 거른다. 결과가 정해지지 않은 동작(varies)이나 정답 풀이의 수(right_base)가 없으면 하나도 없어야 한다."""
+      정답 풀이만큼 쓴 다른 실수 풀이는 거른다. 정답 풀이의 수(right_base)가 없으면 하나도 없어야 한다."""
+    if trap.get("shape"):
+        return shape_in(trap, code)
+    if trap.get("varies"):
+        return False
     if trap.get("code"):
         code = without_comments(code, trap.get("id", "").split(".")[0])
         return any(has_term(term, code) for term in trap["code"])
     if not trap.get("right"):
         return False
-    base = 1 if trap.get("varies") or not isinstance(trap.get("right_base"), int) else trap["right_base"]
+    base = trap["right_base"] if isinstance(trap.get("right_base"), int) else 1
     return right_count(trap, code) < base
 
 
 def trap_candidates(traps: list[dict], report: dict, code: str) -> list[dict]:
     """채점 결과와 코드로 고른 언어 함정 후보(TRAP_PICKS개까지). 통과했거나 자료가 없으면 빈 목록.
-    같은 케이스에서 같은 상태로 떨어졌고 코드가 그 함정의 꼴이어야 한다(trap_in_code).
+    같은 케이스에서 같은 상태로 떨어졌고 코드가 그 함정의 꼴이어야 한다(trap_in_code). 틀린 답(failed)은 돌려준 값까지 증명과 같아야 한다(outs):
+    상태만으로는 같은 케이스에서 틀리는 다른 버그와 가를 수 없다. 실행 오류·시간 초과는 상태만 본다.
     결과가 정해지지 않은 동작(varies)은 케이스 목록이 없어 통과하지 못했다는 것만 본다."""
-    failed = {str(case.get("id")): case.get("status") for case in report.get("cases") or [] if case.get("status") != "passed"}
+    failed = {str(case.get("id")): case for case in report.get("cases") or [] if case.get("status") != "passed"}
     if not failed or report.get("status") == "passed":
         return []
-    same = lambda trap: trap.get("varies") or any(failed.get(str(cid)) == TRAP_STATUS.get(want, want) for cid, want in (trap.get("fails") or {}).items())
-    return [trap for trap in traps if same(trap) and trap_in_code(trap, code)][:TRAP_PICKS]
+
+    def same(trap: dict, cid: str, want: str) -> bool:
+        case = failed.get(str(cid))
+        if case is None or case.get("status") != TRAP_STATUS.get(want, want):
+            return False
+        return want != "failed" or (trap.get("outs") or {}).get(str(cid)) == out_key(case.get("got"))
+
+    hit = lambda trap: trap.get("varies") or any(same(trap, cid, want) for cid, want in (trap.get("fails") or {}).items())
+    return [trap for trap in traps if hit(trap) and trap_in_code(trap, code)][:TRAP_PICKS]
 
 
 def trap_of(traps: list[dict], trap_id: str) -> dict | None:

@@ -29,9 +29,9 @@
   {"id": "cpp.int_overflow", "what": "`int`에 담기에 큰 값(약 21억 넘음)을 담으면 틀린 값이 되고, `int`끼리 셈이 넘치면 결과가 정해지지 않아요.", "fix": "합이나 개수가 커질 수 있으면 `long long`에 담아요.",
    "code": [], "right": ["long long"], "recipe": "정답 풀이에서 큰 값을 담는 `long long` 변수 하나를 `int`로 바꾼다"},
   {"id": "cpp.int_multiply", "what": "`int`끼리 곱이 넘치면 결과가 정해지지 않아요. `long long` 변수에 담아도 곱은 먼저 `int`로 셈해요.", "fix": "곱하기 전에 한쪽을 `(long long)`으로 바꿔요.",
-   "code": [], "right": ["(long long)", "1LL *"], "varies": true, "recipe": "정답 풀이의 곱에서 `(long long)`을 지운다"},
+   "code": [], "right": ["(long long)", "1LL *"], "varies": true, "shape": "(?s)\\bint\\s+(\\w+)\\b.*?\\bint\\s+(\\w+)\\b.*?\\blong\\s+long\\s+\\w+\\s*=\\s*(?:\\1\\s*\\*\\s*\\2|\\2\\s*\\*\\s*\\1)\\s*;", "recipe": "정답 풀이의 곱에서 `(long long)`을 지운다"},
   {"id": "cpp.unsigned_loop", "what": "`size_t`는 음수가 없어 거꾸로 돌 때 `i >= 0`이 늘 참이고, 범위 밖을 읽어 결과가 정해지지 않아요.", "fix": "거꾸로 도는 반복의 번호는 `int`로 둬요.",
-   "code": ["size_t"], "right": ["int"], "varies": true, "recipe": "정답 풀이에서 거꾸로 도는 반복의 번호를 `size_t i = v.size() - 1`로 바꾼다"}
+   "code": ["size_t"], "right": ["int"], "varies": true, "shape": "\\bsize_t\\s+(\\w+)\\s*=[^;]*;\\s*\\1\\s*>=\\s*0\\s*;", "recipe": "정답 풀이에서 거꾸로 도는 반복의 번호를 `size_t i = v.size() - 1`로 바꾼다"}
  ],
  "javascript": [
   {"id": "javascript.missing_key_undefined", "what": "`Map`의 `get`은 없는 키에 `undefined`를 돌려주고, 거기에 수를 더하면 `NaN`이 돼요.", "fix": "없을 수 있는 키는 `(map.get(key) ?? 0)`처럼 기본값을 붙여 읽어요.",

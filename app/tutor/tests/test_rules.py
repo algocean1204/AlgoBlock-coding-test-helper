@@ -1,5 +1,6 @@
 """규칙(모델 없음): 전략, 블록 검사, 힌트 다듬기, 해설 절, 나가는 글 검사, 열린 블록 수, 판정 읽기, 대화 원칙, 피드백 검사, 요청 거절."""
 
+import json
 import unittest
 from dataclasses import replace
 
@@ -775,71 +776,71 @@ class DebugOpeningRuleTest(unittest.TestCase):
 
 
 class LangTrapFilterTest(unittest.TestCase):
-    """언어 함정 후보는 모델 없이 거른다: 같은 케이스·같은 상태로 떨어졌고 코드가 그 함정의 꼴이어야 한다."""
+    """언어 함정 후보는 모델 없이 거른다: 같은 케이스에서 같은 상태(틀린 답이면 같은 값)로 떨어졌고 코드가 그 함정의 꼴이어야 한다."""
 
     @staticmethod
     def report(*cases, status="failed"):
-        return {"status": status, "cases": [{"id": cid, "status": state} for cid, state in cases]}
+        return {"status": status, "cases": [{"id": cid, "status": state, "got": got} for cid, state, got in cases]}
 
-    def test_same_case_and_status_with_code_name(self):
-        from ..debug.rules import trap_candidates
+    def test_wrong_answer_needs_the_same_output(self):
+        from ..debug.rules import out_key, trap_candidates
 
-        trap = {"id": "java.missing_key_null", "code": [".get("], "right": ["getOrDefault"], "fails": {"2": "runtime_error"}}
+        trap = {"id": "java.missing_key_null", "code": [".get("], "right": ["getOrDefault"], "fails": {"2": "failed"}, "outs": {"2": out_key("[1, 2]")}}
         code = "int n = map.get(key) + 1;"
-        self.assertEqual(trap_candidates([trap], self.report(("1", "passed"), ("2", "runtime_error")), code), [trap])
-        self.assertEqual(trap_candidates([trap], self.report(("2", "failed")), code), [])  # 같은 케이스, 다른 상태
-        self.assertEqual(trap_candidates([trap], self.report(("3", "runtime_error")), code), [])  # 다른 케이스
-        self.assertEqual(trap_candidates([trap], self.report(("2", "runtime_error")), "int n = map.getOrDefault(key, 0) + 1;"), [])  # 실수한 이름이 없다
-        self.assertEqual(trap_candidates([{**trap, "fails": {"2": "memory_limit"}}], self.report(("2", "runtime_error")), code), [{**trap, "fails": {"2": "memory_limit"}}])  # 튜터는 메모리 초과를 실행 오류로 받는다
+        self.assertEqual(trap_candidates([trap], self.report(("1", "passed", "3"), ("2", "failed", "[1,2]")), code), [trap])  # 공백이 달라도 같은 값
+        self.assertEqual(trap_candidates([trap], self.report(("2", "failed", "찍은 줄\n[1, 2]")), code), [trap])  # 함수 방식: 마지막 줄이 돌려준 값
+        self.assertEqual(trap_candidates([trap], self.report(("2", "failed", "[2, 1]")), code), [])  # 같은 케이스에서 다른 값으로 틀리는 다른 버그
+        self.assertEqual(trap_candidates([{**trap, "outs": {}}], self.report(("2", "failed", "[1, 2]")), code), [])  # 얼린 값이 없으면 견주지 못한다
+        self.assertEqual(trap_candidates([trap], self.report(("2", "runtime_error", "")), code), [])  # 같은 케이스, 다른 상태
+        self.assertEqual(trap_candidates([trap], self.report(("2", "failed", "[1, 2]")), "int n = map.getOrDefault(key, 0) + 1;"), [])  # 실수한 이름이 없다
+        self.assertTrue(out_key(json.dumps(list(range(50)))).startswith("#"))  # 길면 지문
+        self.assertEqual(out_key('{"b": 1, "a": 2}'), out_key('{"a":2,"b":1}'))  # 키 순서와 공백은 맞춘다
 
-    def test_varies_needs_only_a_failure_and_the_name(self):
+    def test_runtime_error_and_timeout_need_only_the_status(self):
         from ..debug.rules import trap_candidates
 
-        trap = {"id": "cpp.unsigned_loop", "code": ["size_t"], "right": [], "varies": True}
-        self.assertEqual(trap_candidates([trap], self.report(("7", "timeout")), "for (size_t i = n - 1; i >= 0; i--)"), [trap])
-        self.assertEqual(trap_candidates([trap], self.report(("7", "timeout")), "for (int i = n - 1; i >= 0; i--)"), [])
-        self.assertEqual(trap_candidates([trap], self.report(("7", "passed"), status="passed"), "size_t i"), [])  # 통과했으면 없다
+        trap = {"id": "java.missing_key_null", "code": [".get("], "right": ["getOrDefault"], "fails": {"2": "runtime_error", "3": "memory_limit"}}
+        code = "int n = map.get(key) + 1;"
+        self.assertEqual(trap_candidates([trap], self.report(("2", "runtime_error", "")), code), [trap])
+        self.assertEqual(trap_candidates([trap], self.report(("3", "runtime_error", "")), code), [trap])  # 튜터는 메모리 초과를 실행 오류로 받는다
+        self.assertEqual(trap_candidates([trap], self.report(("4", "runtime_error", "")), code), [])  # 다른 케이스
+
+    def test_varies_needs_a_shape(self):
+        from ..debug.rules import trap_candidates
+
+        shape = r"\bsize_t\s+(\w+)\s*=[^;]*;\s*\1\s*>=\s*0\s*;"
+        trap = {"id": "cpp.unsigned_loop", "code": ["size_t"], "right": [], "varies": True, "shape": shape}
+        failed = self.report(("7", "timeout", ""))
+        self.assertEqual(trap_candidates([trap], failed, "for (size_t i = v.size() - 1; i >= 0; i--)"), [trap])
+        self.assertEqual(trap_candidates([trap], failed, "for (size_t i = 0; i < v.size(); i++) { total += v[i] - 1; }"), [])  # 앞으로 도는 size_t와 다른 버그
+        self.assertEqual(trap_candidates([trap], failed, "// for (size_t i = n - 1; i >= 0; i--)\nfor (int i = n - 1; i >= 0; i--)"), [])  # 주석은 보지 않는다
+        self.assertEqual(trap_candidates([trap], self.report(("7", "passed", ""), status="passed"), "size_t i = n - 1; i >= 0;"), [])  # 통과했으면 없다
+        bare = {key: value for key, value in trap.items() if key != "shape"}  # 모양 식이 없는 varies 함정은 이름이 있어도 내놓지 않는다
+        self.assertEqual(trap_candidates([bare], failed, "for (size_t i = v.size() - 1; i >= 0; i--)"), [])
 
     def test_empty_code_counts_right_names_against_the_solution(self):
         from ..debug.rules import trap_candidates
 
         # code가 빈 함정: 고친 꼴의 이름(right)이 정답 풀이에서 센 수(right_base)보다 적게 나와야 한다. 주석은 세지 않는다
-        trap = {"id": "python.true_division", "code": [], "right": ["//"], "fails": {"1": "failed"}, "right_base": 2}
-        failed = self.report(("1", "failed"))
+        trap = {"id": "python.true_division", "code": [], "right": ["//"], "fails": {"1": "failed"}, "outs": {"1": "2.5"}, "right_base": 2}
+        failed = self.report(("1", "failed", "2.5"))
         self.assertEqual(trap_candidates([trap], failed, "mid = (lo + hi) / 2\nleft = n // k"), [trap])  # 하나만 /로 바꾼 실수
         self.assertEqual(trap_candidates([trap], failed, "mid = (lo + hi) // 2\nleft = n // k"), [])  # 정답 풀이만큼 쓴 다른 실수
         self.assertEqual(trap_candidates([trap], failed, "mid = (lo + hi) / 2  # // 로 나누기\nleft = n // k"), [trap])
-        self.assertEqual(trap_candidates([trap], self.report(("1", "runtime_error")), "mid = (lo + hi) / 2"), [])  # 상태가 다르면 아니다
         bare = {key: value for key, value in trap.items() if key != "right_base"}  # 정답 풀이의 수가 없으면 하나도 없어야 한다
         self.assertEqual((trap_candidates([bare], failed, "a / 2\nb // k"), trap_candidates([bare], failed, "a / 2")), ([], [bare]))
-        self.assertEqual(trap_candidates([{**trap, "varies": True}], failed, "a / 2\nb // k"), [])  # varies는 수를 보지 않는다
-
-    def test_varies_with_empty_code_needs_no_right_name(self):
-        from ..debug.rules import trap_candidates
-
-        trap = {"id": "python.missing_key", "code": [], "right": [".get(", "Counter"], "varies": True}
-        failed = self.report(("1", "runtime_error"))
-        self.assertEqual(trap_candidates([trap], failed, "count[name] += 1"), [trap])
-        self.assertEqual(trap_candidates([trap], failed, "count[name] = count.get(name, 0) + 1"), [])
-        self.assertEqual(trap_candidates([trap], failed, "count = Counter(a)"), [])
-        self.assertEqual(trap_candidates([trap], failed, "MyCounter = 1\ncount[name] += 1"), [trap])  # 다른 낱말의 일부는 세지 않는다
-        self.assertEqual(trap_candidates([{**trap, "right": []}], failed, "x"), [])  # 볼 이름이 없으면 내놓지 않는다
-        # 주석은 보지 않는다. 문자열 안의 #·//는 주석이 아니고, 따옴표가 든 이름(== ")은 그대로 찾는다
-        self.assertEqual(trap_candidates([trap], failed, "# Counter로 세면 쉽다\ncount[name] += 1"), [trap])
-        self.assertEqual(trap_candidates([trap], failed, 'wall = "#"; count = Counter(a)'), [])
-        cpp = {"id": "cpp.max_heap", "code": [], "right": ["greater"], "varies": True}
-        self.assertEqual(trap_candidates([cpp], failed, "// greater를 주면 최소 힙\npriority_queue<int> pq; /* greater */"), [cpp])
-        loop = {"id": "cpp.unsigned_loop", "code": ["size_t"], "right": [], "fails": {"1": "runtime_error"}}
-        self.assertEqual(trap_candidates([loop], failed, "// size_t를 쓰면 안 된다\nfor (int i = n - 1; i >= 0; i--)"), [])
-        java = {"id": "java.string_equals", "code": ['== "'], "right": [".equals("], "fails": {"1": "failed"}}
-        self.assertEqual(trap_candidates([java], self.report(("1", "failed")), 'if (s == "//") {}'), [java])
+        rows = {"id": "python.missing_key", "code": [], "right": [".get(", "Counter"], "fails": {"1": "failed"}, "outs": {"1": "2.5"}}
+        self.assertEqual(trap_candidates([rows], failed, "MyCounter = 1\ncount[name] += 1"), [rows])  # 다른 낱말의 일부는 세지 않는다
+        self.assertEqual(trap_candidates([rows], failed, 'wall = "#"; count = Counter(a)'), [])  # 문자열 안의 #는 주석이 아니다
+        java = {"id": "java.string_equals", "code": ['== "'], "right": [".equals("], "fails": {"1": "failed"}, "outs": {"1": "2.5"}}
+        self.assertEqual(trap_candidates([java], failed, 'if (s == "//") {}'), [java])  # 따옴표가 든 이름
 
     def test_at_most_three_and_off_without_data(self):
         from ..debug.rules import TRAP_PICKS, trap_candidates
 
-        traps = [{"id": f"python.t{n}", "code": [], "right": ["heapify"], "fails": {"1": "failed"}} for n in range(5)]
-        self.assertEqual((TRAP_PICKS, [t["id"] for t in trap_candidates(traps, self.report(("1", "failed")), "x = 1")]), (3, ["python.t0", "python.t1", "python.t2"]))
-        self.assertEqual(trap_candidates([], self.report(("1", "failed")), "x = 1"), [])
+        traps = [{"id": f"python.t{n}", "code": [], "right": ["heapify"], "fails": {"1": "failed"}, "outs": {"1": "1"}} for n in range(5)]
+        self.assertEqual((TRAP_PICKS, [t["id"] for t in trap_candidates(traps, self.report(("1", "failed", "1")), "x = 1")]), (3, ["python.t0", "python.t1", "python.t2"]))
+        self.assertEqual(trap_candidates([], self.report(("1", "failed", "1")), "x = 1"), [])
 
 
 class DebugLineWithFixTest(unittest.TestCase):

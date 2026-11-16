@@ -2950,12 +2950,15 @@ def lang_traps() -> None:
         # 튜터가 후보를 거르는 이름: 증명 검사와 같게 흔한 낱말과 한 글자는 뺀다
         assert all(trap[key] == [term for term in text[trap["id"]][key] if problemkit.anchor(term)] for trap in mine for key in ("code", "right")), row["id"]
         assert all(isinstance(trap["right_base"], int) and (trap["code"] or trap.get("varies") or trap["right_base"] > 0) for trap in mine), row["id"]  # 정답 풀이에 고친 꼴의 이름이 있다
+        assert [trap.get("outs") for trap in mine] == [trap.get("outs") for trap in frozen], row["id"]  # 틀린 답의 돌려준 값도 싣는다
         shipped += len(mine)
     assert shipped >= 5, shipped
     for language, rows in listed.items():  # 결과가 정해지지 않은 동작의 함정은 떨어진 케이스 목록을 얼리지 않는다
         for path in sorted((HERE / "problems").glob("*/*/lang.json")):
             for row in json.loads(path.read_text(encoding="utf-8")).get(language, []):
                 assert ("varies" in row) == bool(text[row["trap"]].get("varies")) and ("fails" in row) != ("varies" in row) and "skipped" not in (row.get("fails") or {}).values(), row
+                # 틀린 답(failed)의 케이스마다 돌려준 값을 얼린다(같은 케이스에서 다른 값으로 틀리는 다른 버그와 가른다)
+                assert set(row.get("outs") or {}) == {cid for cid, status in (row.get("fails") or {}).items() if status == "failed"}, row
 
     root = TMP / "trap-root"  # 본보기 문제의 사본에서 걸러야 할 것을 하나씩 넣어 본다
     copy = root / "hash" / "1_popular_shelf"
@@ -2997,6 +3000,24 @@ def lang_traps() -> None:
     shutil.copytree(HERE / "problems" / "dfs" / "3_folder_size", dfs)
     other = (dfs / "solution.py").read_text(encoding="utf-8").replace("        if size >= limit:\n            count += 1\n", "        count += 1\n")
     assert "표시가 없다" in check("# 언어 함정: python.negative_index\n" + other, "lang_2.py", dfs)
+    # 모양 식(shape): 증명 풀이에는 맞고 정답 풀이에는 맞지 않아야 한다(앞으로 도는 size_t 반복은 그 실수가 아니다)
+    shutil.copy(HERE / "problems" / "dfs" / "3_folder_size" / "lang_2.py", dfs / "lang_2.py")
+    unsigned = (dfs / "lang_1.cpp").read_text(encoding="utf-8")
+    assert check(unsigned, "lang_1.cpp", dfs) == ""
+    forward = unsigned.replace("for (size_t i = order.size() - 1; i >= 0; i--)", "for (size_t i = 0; i < order.size(); i++)")
+    assert forward != unsigned and "모양 식" in check(forward, "lang_1.cpp", dfs)
+    check(unsigned, "lang_1.cpp", dfs)
+    # 얼린 lang.json에 틀린 답의 돌려준 값이 빠지면 낡은 것이다
+    saved_lang = (dfs / "lang.json").read_text(encoding="utf-8")
+    assert problemkit.lang_frozen(problemkit.load(dfs)) == []
+    stale = json.loads(saved_lang)
+    stale["python"] = [{key: value for key, value in row.items() if key != "outs"} for row in stale["python"]]
+    (dfs / "lang.json").write_text(json.dumps(stale, ensure_ascii=False), encoding="utf-8")
+    assert problemkit.lang_frozen(problemkit.load(dfs))
+    (dfs / "lang.json").write_text(saved_lang, encoding="utf-8")
+    dfs_cases = problemkit.frozen_cases(problemkit.load(dfs))
+    ran = problemkit.lang_run(problemkit.load(dfs), dfs_cases, ["python"], problemkit.saved_limits(problemkit.load(dfs)), listed)[0]["python"]
+    assert [row.get("outs") for row in ran] == [row.get("outs") for row in json.loads(saved_lang)["python"]], ran  # 다시 돌려도 같은 값
 
     # 목록: 쓰는 증명 파일이 없는 항목, 글의 규칙, 흔한 낱말만 있는 닻, 객체가 아닌 항목, 상한
     row = dict(text["python.missing_key"])
@@ -3004,7 +3025,7 @@ def lang_traps() -> None:
     assert "증명하는 파일" in "\n".join(problemkit.trap_list_check({"python": [row, {**row, "id": "python.unused"}]}, root))
     for bad, words in (({"what": "백틱이 없는 글"}, "백틱"), ({"what": "`KeyError`가 나요. setdefault로"}, "고치는 이름"), ({"fix": "가" * 81}, "81자"),
                        ({"id": "java.missing_key"}, "id는"), ({"right": []}, "대안 이름 목록"), ({"code": "+= 1"}, "이름 목록"), ({"varies": False}, "varies"),
-                       ({"code": ["*", "/"], "right": ["for", "int", "get"]}, "닻으로 쓸 이름이 없다")):
+                       ({"code": ["*", "/"], "right": ["for", "int", "get"]}, "닻으로 쓸 이름이 없다"), ({"shape": "("}, "정규식이 아니다"), ({"shape": 3}, "정규식이 아니다")):
         assert words in "\n".join(problemkit.trap_list_check({"python": [{**row, **bad}]}, root)), bad
     assert "칸은" in "\n".join(problemkit.trap_list_check({"python": [row, "글 하나", 3]}, root))  # 객체가 아닌 항목에 죽지 않는다
     assert problemkit.trap_list_check([]) and "13개다" in "\n".join(problemkit.trap_list_check({"python": [row] + [{**row, "id": f"python.more_{n}"} for n in range(12)]}, root))
@@ -3035,6 +3056,41 @@ def lang_traps() -> None:
     (copy / "lang_1.java").unlink()
     problemkit.write_lang(problemkit.load(copy), fresh, ["python"], cases_text)
     assert "java" not in json.loads((copy / "lang.json").read_text(encoding="utf-8"))
+
+
+def lang_trap_counterexamples() -> None:
+    """실린 함정이 다른 버그를 그 함정으로 내놓지 않는다(채점기 없이). 증명 풀이는 그 함정으로 내놓는다.
+    size_t를 앞으로 도는 반복, long long끼리의 곱, 같은 케이스에서 다른 값으로 틀리는 Java 풀이."""
+    import problemkit
+    from make_builtin import traps_of
+    from tutor.debug.rules import trap_candidates, trap_in_code
+
+    def traps(folder: str) -> tuple[dict, dict]:
+        problem = problemkit.load(HERE / "problems" / folder)
+        files = problem["files"]
+        return files, traps_of(problem, {language: files[f"solution.{ext}"] for language, ext in problemkit.EXT.items() if f"solution.{ext}" in files})
+
+    def one(rows: list, trap_id: str) -> dict:
+        return next(row for row in rows if row["id"] == trap_id)
+
+    files, folder = traps("dfs/3_folder_size")
+    loop = one(folder["cpp"], "cpp.unsigned_loop")
+    failed = {"status": "failed", "cases": [{"id": "1", "status": "failed", "got": "0"}]}
+    assert trap_candidates([loop], failed, files["lang_1.cpp"]) == [loop]
+    forward = files["solution.cpp"].replace("int solution(", "int unused(vector<int> size) {\n    int total = 0;\n    for (size_t i = 0; i < size.size(); i++) total += size[i] - 1;\n    return total;\n}\n\nint solution(")
+    assert forward != files["solution.cpp"] and trap_candidates([loop], failed, forward) == [] and trap_candidates([loop], failed, files["solution.cpp"]) == []
+
+    files, charging = traps("binary_search/3_charging")
+    multiply = one(charging["cpp"], "cpp.int_multiply")
+    assert trap_in_code(multiply, files["lang_2.cpp"]) and not trap_in_code(multiply, files["solution.cpp"])
+    wide = files["solution.cpp"].replace("int fastest =", "long long fastest =").replace("(long long)fastest * n", "fastest * n")
+    assert wide != files["solution.cpp"] and not trap_in_code(multiply, wide)  # long long끼리의 곱은 넘치지 않는다
+    overflow = one(charging["java"], "java.int_overflow")
+    cid, out = next(iter(overflow["outs"].items()))
+    other = {"status": "failed", "cases": [{"id": cid, "status": "failed", "got": "12345"}]}  # 같은 케이스, 다른 값(다른 버그)
+    same = {"status": "failed", "cases": [{"id": cid, "status": "failed", "got": out}]}
+    plain = files["solution.java"].replace("long", "var")  # long을 쓰지 않은 풀이(var)
+    assert trap_candidates([overflow], other, plain) == [] and trap_candidates([overflow], same, plain) == [overflow]
 
 
 def solution_traps() -> None:
@@ -3087,6 +3143,7 @@ console.log(JSON.stringify(out));
 def main() -> None:
     neutral_notes()
     lang_traps()
+    lang_trap_counterexamples()
     build_only()
     error_lines()
     broken_files()

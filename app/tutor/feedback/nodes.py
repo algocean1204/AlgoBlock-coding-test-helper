@@ -44,10 +44,10 @@ def check_feedback(state: MainState) -> dict:
 
 def trap_note(ctx, sub) -> str:
     """디버그가 고른 언어 함정의 정해진 글(모델이 다시 쓰지 않는다). 저장된 제출에는 케이스별 결과가 없어 피드백이 스스로 고르지 않는다.
-    통과한 제출이면 무슨 일이 일어나는지(what)와 고치는 법(fix), 실패한 제출이면 그 코드가 아직 그 함정의 꼴일 때만 what. 고른 것이 없으면 빈 글."""
+    실패한 제출이면 그 코드가 아직 그 함정의 꼴일 때만 무슨 일이 일어나는지(what).
+    통과한 제출이면 그 꼴을 고친 흔적이 있을 때만(이제 함정의 꼴이 아니다) what과 고치는 법(fix): 고른 함정은 문제에 남아, 다른 방식으로 통과한 제출에도 붙을 수 있었다.
+    고른 것이 없으면 빈 글."""
     trap = trap_of(ctx.traps, ctx.debug_state.trap if ctx.debug_state is not None else "")
-    if trap is None or sub is None:
+    if trap is None or sub is None or sub.ok == trap_in_code(trap, sub.source):
         return ""
-    if sub.ok:
-        return f"{trap['what']} {trap['fix']}"
-    return trap["what"] if trap_in_code(trap, sub.source) else ""
+    return f"{trap['what']} {trap['fix']}" if sub.ok else trap["what"]
