@@ -10,8 +10,12 @@ from ..state import Block, BlockPlan, MovePlan, TurnContext, Verdict
 LADDER = {"chair": ("open", "clue", "trace"), "guide": ("blank", "tool", "shape")}
 LAST_MOVE = {"chair": "recap", "guide": "run"}
 CLAIM_CHARS = 10  # 공백을 뺀 사용자 말이 이만큼이면 가정을 짚을 만한 주장으로 본다
-CONFUSED = ("모르", "몰라", "감이 안", "헷갈", "막혔", "어려", "어렵")  # 막힌 말은 반박(assume)이 아니라 사다리로 돕는다
-HARD = ("어려", "어렵", "이해가 안", "이해 안")  # 어렵다는 말: 같은 질문을 되풀이하지 않고 더 작게 나눈다
+CONFUSED = ("모르", "몰라", "감이 안", "헷갈", "막혔")  # 막힌 말은 반박(assume)이 아니라 사다리로 돕는다
+# 어렵다는 말: 같은 질문을 되풀이하지 않고 더 작게 나눈다. '어려' 부분 일치는 '어려운 건 없고…'에도 걸렸다: 어렵다고 말한 꼴만 보고, 아니라는 말은 뺀다
+HARD = re.compile(r"어려워|어렵(?:네|다|습|고|어|더|기)|이해가?\s*안\s*(?:돼|되|가)")
+NOT_HARD = re.compile(r"어려운\s*(?:건|게|것은?|점은?)\s*없|안\s*어려|어렵지\s*않|어렵진\s*않")
+# 뜻을 묻는 말의 표지. '그게 뭔지 몰라요'가 '모르겠어요'로 끊겨 판정(W)에 가지 못했다
+TERM_ASK = re.compile(r"뭔지|뭐예요|뭐에요|뭐야|뭔가요|무슨\s*뜻|무슨\s*말")
 OPENING = ("start", "next", "replan")  # 사용자 말 없이 블록의 첫 질문을 내는 사건
 FOLLOW_UNTIL = 1  # 둘째 블록까지만 사용자 방법으로 다시 짠다. 뒤에서는 지금 계획으로 이어 간다
 RUNG0 = ("replan",)  # 사다리 첫 칸으로 세는 다른 이름
@@ -27,8 +31,8 @@ _ASK_ANSWER = re.compile(r"답.{0,3}(알려|줘|주세요|보여)")
 
 
 def hard(text: str) -> bool:
-    """사용자가 어렵다고 했는가('너무 어려워요', '이해가 안 돼요')."""
-    return any(word in (text or "") for word in HARD)
+    """사용자가 어렵다고 했는가('너무 어려워요', '이해가 안 돼요'). '어려운 건 없고', '어렵지 않아요'는 아니다."""
+    return bool(HARD.search(text or "")) and not NOT_HARD.search(text or "")
 
 
 def signal_text(block: Block, miss: int | None) -> str:
@@ -38,9 +42,13 @@ def signal_text(block: Block, miss: int | None) -> str:
 
 
 def empty_answer(text: str) -> bool:
-    """내용 없는 답: '모르겠어요', '잘 모르겠음', '글쎄요', '힌트 주세요', '...'처럼 짧고 생각이 담기지 않은 말."""
+    """내용 없는 답: '모르겠어요', '잘 모르겠음', '글쎄요', '힌트 주세요', '너무 어려워요', '...'처럼 짧고 생각이 담기지 않은 말.
+    뜻을 묻는 말('그게 뭔지 몰라요')은 내용 없는 답이 아니다(판정이 뜻 묻기로 가른다)."""
     plain = re.sub(r"\s+", "", text or "")
-    return 0 < len(plain) < CLAIM_CHARS and (any(word in plain for word in (*CONFUSED, "글쎄", "힌트")) or not re.search(r"[가-힣A-Za-z0-9]", plain))
+    if TERM_ASK.search(text or ""):
+        return False
+    return 0 < len(plain) < CLAIM_CHARS and (any(word in plain for word in (*CONFUSED, "글쎄", "힌트")) or hard(text)
+                                             or not re.search(r"[가-힣A-Za-z0-9]", plain))
 
 
 def rule_verdict(text: str) -> Verdict | None:
@@ -141,7 +149,7 @@ def _pick_move(mode: str, plan: BlockPlan, turn: TurnContext, verdict: Verdict |
         miss = verdict.miss
         if miss and miss >= 2:
             return MovePlan("edge", index, False, missing_signal=signal_text(blocks[index], miss))
-        claim = len(re.sub(r"\s+", "", turn.text)) >= CLAIM_CHARS and not any(word in turn.text for word in CONFUSED)
+        claim = len(re.sub(r"\s+", "", turn.text)) >= CLAIM_CHARS and not any(word in turn.text for word in CONFUSED) and not hard(turn.text)
         if claim and (used[-1] if used else None) not in ("assume", "edge"):
             return MovePlan("assume", index, False, missing_signal=signal_text(blocks[index], miss))
     return ladder()

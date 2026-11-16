@@ -256,6 +256,10 @@ class ChairTest(unittest.TestCase):
         self.assertIn(HARD_STEP, fakes.prompt(fake, "chair.ask"))
         done, fake = fakes.go(chair_state("한 번씩만 세면 될 것 같아요"), {"chair.judge": ["[check]N1"], "chair.ask": ["같은 이름이 또 나오면요?"]})
         self.assertNotIn(HARD_STEP, fakes.prompt(fake, "chair.ask"))
+        done, fake = fakes.go(chair_state("어려운 건 없고 이름별로 세면 될 것 같아요"), {"chair.judge": ["[check]N1"], "chair.ask": ["같은 이름이 또 나오면요?"]})
+        self.assertNotIn(HARD_STEP, fakes.prompt(fake, "chair.ask"))  # 어렵다는 말이 아니다
+        done, fake = fakes.go(chair_state("그게 뭔지 몰라요"), {"chair.judge": ["[check]W"], "chair.ask": ["세다는 건 몇 번인지 헤아리는 거예요. 그럼 무엇을 세어 둘까요?"]})
+        self.assertEqual((done["result"]["move"], fakes.tasks(fake)), ("term", ["chair.judge", "chair.ask"]))  # '모르겠어요'로 끊지 않고 판정한다
 
     def test_model_failure_is_error(self):
         done, _ = fakes.go(chair_state("한 번씩만 세면 될 것 같아요"), {"chair.judge": ["[check]N1"], "chair.ask": [LlmTimeout("늦음")]})

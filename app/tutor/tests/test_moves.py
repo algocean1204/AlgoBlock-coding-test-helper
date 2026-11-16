@@ -112,6 +112,14 @@ class BeginnerMoveTest(unittest.TestCase):
 
         got = pick_move("chair", PLAN, turn(text="너무 어려워요", used=["open"]), None)
         self.assertEqual((got.lead, got.saved), (HARD_LEAD, fakes.HINTS1[1]))  # 다음 저장 힌트가 한 칸 더 작은 질문이다
+        from ..turn.moves import empty_answer, hard, rule_verdict
+
+        for text in ("그게 뭔지 몰라요", "변수가 뭔지 몰라요", "변수가 뭐예요?", "무슨 뜻이에요?"):  # 뜻 묻기는 판정(W)으로 넘긴다
+            self.assertIsNone(rule_verdict(text), text)
+        for text in ("너무 어려워요", "어렵네요", "이해가 안 돼요"):
+            self.assertTrue(hard(text) and empty_answer(text), text)
+        for text in ("어려운 건 없고 이름별로 세면 될 것 같아요", "어렵지 않아요", "안 어려워요", "어려서부터 쓰던 말"):
+            self.assertFalse(hard(text), text)
         plain = pick_move("chair", PLAN, turn(text="모르겠어요", used=["open"]), None)
         self.assertEqual((plain.lead, plain.saved), ("", fakes.HINTS1[1]))  # 어렵다는 말이 없으면 앞말도 없다
 
