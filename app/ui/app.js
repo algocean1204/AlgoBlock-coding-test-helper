@@ -614,7 +614,14 @@ async function findTable() {
 
 /** 등록 화면의 작은 안내: 실수 허용 오차(함수 방식에서 케이스에 실수가 있을 때), '새로 쓰기'(적은 것이 있을 때. 수정 화면은 아니다). */
 const hasFloat = (t) => /\d\.\d|\d[eE][-+]?\d/.test(String(t).replace(/"(?:\\.|[^"\\])*"/g, "")); // 문자열 안은 보지 않는다
+/** 제목 칸 아래 안내: 정말 첫 줄에서 채웠을 때만 그렇게 말한다. 채우지 못했거나(첫 줄이 문장이면 제목으로 쓰지 않는다) 내가 적었으면 그에 맞게. */
+function titleNote() {
+  const title = $("new-title").value.trim();
+  $("new-title-note").textContent = !title ? "제목을 찾지 못했어요. 문제 이름을 직접 적어 주세요."
+    : autoTitle && title === autoTitle.trim() ? "글의 첫 줄에서 채웠어요. 고쳐도 돼요." : "문제 목록에 보이는 이름이에요.";
+}
 function syncForm() {
+  titleNote();
   const rows = formCases();
   $("case-float").hidden = $("new-mode").value === "program" || !rows.some((x) => hasFloat(x.input) || hasFloat(x.expected));
   $("case-names-field").hidden = $("new-mode").value === "program" || !!NAMES; // 표 머리에서 이름을 얻지 못한 함수 문제만: 글의 이름을 직접 적을 수 있다
@@ -773,6 +780,7 @@ function setStep(n, focus = true) {
   clearError();
   saveDraft();
   if (n === 3) renderSummary();
+  titleNote();
   if (focus) $("wstep-title").focus();
 }
 
@@ -3193,6 +3201,8 @@ document.addEventListener("keydown", (e) => {
 });
 
 $("more").addEventListener("toggle", () => { if (!$("more").open) { $("reset-confirm").hidden = true; $("reset").hidden = false; } }); // 메뉴를 닫으면 처음부터의 물음도 접는다
+/** 더 보기: 키보드로 메뉴 밖으로 나가면(Tab) 닫는다. 열린 채 남은 메뉴가 그 아래 단추(방식 바꾸기 등)를 덮지 않게. */
+$("more").addEventListener("focusout", (e) => { if ($("more").open && e.relatedTarget && !$("more").contains(e.relatedTarget)) $("more").open = false; });
 /* ── 키보드 초점 ── */
 const focusable = (x) => !!x && !x.disabled && !x.closest("[hidden]") && !!x.offsetParent;
 /** 키보드로 누른 단추가 다시 그리며 사라지거나 새로 그려져 초점이 문서 맨 위(body)로 떨어지면, 같은 단추나 그 일이 이어지는 자리로 돌려 놓는다.
