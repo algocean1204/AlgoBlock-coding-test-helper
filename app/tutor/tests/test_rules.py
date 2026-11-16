@@ -1297,3 +1297,14 @@ class LanguageNeutralTextTest(unittest.TestCase):
                 for rule, cond in self.RULES:
                     if re.search(rule, sentence):
                         self.assertRegex(text, cond, f"{where.parent.name}: {sentence}")
+
+
+class FeedbackClaimTest(unittest.TestCase):
+    def test_record_does_not_claim_an_unspoken_process(self):
+        from ..feedback.prompts import record_lines
+        from ..state import DebugState, Submission
+        # 틀린 곳 찾기를 열기만 했고 말한 적이 없으면 기록이 과정을 말하지 않는다
+        ctx = fakes.context(debug_state=DebugState("h", "logic", 3, "c", ""), latest_submission=Submission("s1", "x", True))
+        record = "\n".join(record_lines(ctx, None))
+        self.assertNotIn("말로 짚기 전에", record)
+        self.assertIn("대화를 하지 않았", record)
