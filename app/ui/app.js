@@ -479,6 +479,8 @@ const FAIL_WORD = { failed: "오답", runtime_error: "실행 오류", timeout: "
 const FAIL_TIP = { timeout: "제한사항의 입력 크기를 먼저 보고 방법을 고르세요.", failed: "제출 전에 ‘예시 실행’과 경계 입력(가장 작은 값, 같은 값)을 손으로 따져 보세요.",
   other: "빈 입력과 범위를 벗어나는 위치를 확인하세요." };
 function failTip(fails) {
+  const used = fails.filter(([, n]) => n > 0); // 비교할 종류가 둘 이상일 때만 ‘가장 많아요’라고 한다
+  if (used.length === 1) return `${used[0][1] === 1 ? "한 번뿐이라 어떤 실패가 많은지는 아직 몰라요." : `통과하지 못한 제출은 모두 ‘${FAIL_WORD[used[0][0]]}’ 한 가지예요.`} ${FAIL_TIP[used[0][0]] || FAIL_TIP.other}`;
   const max = Math.max(...fails.map(([, n]) => n)), top = fails.filter(([, n]) => n === max).map(([kind]) => kind);
   const tips = [...new Set(top.map((kind) => FAIL_TIP[kind] || FAIL_TIP.other))].join(" ");
   if (top.length > 1) return `가장 많은 것: ${top.map((kind) => FAIL_WORD[kind]).join(" · ")}(같은 수). ${tips}`;
@@ -489,6 +491,8 @@ const when = (at) => String(at || "").slice(0, 16).replace("T", " ");
 /* report-pure:start 보고서의 ‘첫 할 일은 하나’ 분기(node로도 시험한다). 맨 위 ‘이어서 풀기’(target)와 같은 문제만 가리키고, 다른 문제는 링크로 내지 않는다. */
 const focusTail = (focus, target) => (!focus.next ? "" : target && focus.next.id === target.id ? " · 첫 문제는 위의 ‘이어서 풀기’예요" : " — ‘이어서 풀기’를 끝낸 뒤");
 const sideNext = (x, target) => (x.next && !(target && x.next.id === target.id) ? `‘이어서 풀기’를 끝낸 뒤: ${x.next.title}` : "");
+/** ‘다음에 풀 문제’ 위의 설명: 첫 줄이 정말 ‘이어서 풀기’(쓰던 문제·풀던 주제)일 때만 위의 단추와 같다고 한다. 다시 풀기·새 주제 같은 첫 줄에는 그 말을 쓰지 않는다. */
+const nextNote = (nexts) => (nexts[0] && /^(쓰던 문제|이어서 풀기)/.test(nexts[0].why || "") ? "첫 줄이 위의 ‘이어서 풀기’와 같아요. 나머지는 그다음 후보예요." : "첫 줄이 위 단추로 여는 문제예요(왜 이 문제인지는 줄마다 적었어요). 나머지는 그다음 후보예요.");
 /* report-pure:end */
 async function showReport() {
   show("report");
@@ -532,7 +536,7 @@ async function showReport() {
   const sides = [d.weaknesses.length ? side("더 공부할 주제", d.weaknesses, "weak") : "", d.strengths.length ? side("강한 주제", d.strengths, "strong") : ""].filter(Boolean); // 빈 카드는 보이지 않는다
   if (sides.length) html += `<div class="sides">${sides.join("")}</div>`;
   const nexts = d.next; // 첫 줄이 홈의 ‘이어서 풀기’와 결과·피드백의 ‘다음 문제’다
-  if (nexts.length) html += `<h2 class="list-label">다음에 풀 문제</h2><p class="hint">첫 줄이 위의 ‘이어서 풀기’와 같아요. 나머지는 그다음 후보예요.</p><ul class="rows">${nexts.map((n) => `<li><a class="row" href="#/p/${esc(n.id)}"><span><span class="row-title">${esc(n.title)}</span>
+  if (nexts.length) html += `<h2 class="list-label">다음에 풀 문제</h2><p class="hint">${nextNote(nexts)}</p><ul class="rows">${nexts.map((n) => `<li><a class="row" href="#/p/${esc(n.id)}"><span><span class="row-title">${esc(n.title)}</span>
     <span class="badges">${lvBadge(n.level)}${n.theme_name ? `<span class="theme-chip">${esc(n.theme_name)}</span>` : ""}</span><span class="row-meta">${esc(n.why)}</span></span><span></span>${ico("i-caret")}<span class="sr-only">열기</span></a></li>`).join("")}</ul>`;
   const fold = (title, count, body) => `<details class="fold card"><summary>${ico("i-caret")}<span>${title}</span> <span class="muted">${count}</span></summary>${body}</details>`;
   html += fold("주제별 진행", `${d.themes.length}개 주제 · 통과 ${sum.solved}`, `${LEGEND}<ul class="ladders report">${d.themes.map((t) => `<li class="ladder-row">
@@ -544,7 +548,7 @@ async function showReport() {
   </li>`).join("")}</ul>`);
   const early = d.themes.flatMap((t) => t.early_problems || []); // 통과하기 전에 해설을 연 문제(해설을 열 때 확인 창이 ‘보고서에 남아요’라고 한 그 기록)
   const cards = [early.length ? `<section class="card side"><h2>해설을 먼저 본 문제</h2><p class="hint">통과하기 전에 해설을 열면 남아요. 약한 주제를 가릴 때 쓰고, 도움 없이 푼 것으로는 세지 않아요.</p>
-      <ul class="points plain">${early.map((x) => `<li><a class="link" href="#/p/${esc(x.id)}">${esc(x.title)}</a></li>`).join("")}</ul></section>` : "", failAll ? `<section class="card side"><h2>통과하지 못한 제출</h2><ul class="bars">${fails.map(([kind, n]) => `<li><span>${FAIL_WORD[kind]}</span><span class="bar" aria-hidden="true"><i class="${kind}" style="width:${Math.round(100 * n / failMax)}%"></i></span><b>${n}</b></li>`).join("")}</ul>
+      <ul class="points plain">${early.map((x) => `<li><a class="link" href="#/p/${esc(x.id)}">${esc(x.title)}</a></li>`).join("")}</ul></section>` : "", failAll ? `<section class="card side"><h2>통과하지 못한 제출</h2><p class="hint">모든 문제의 제출을 합친 수예요. 한 문제의 수가 아니에요.</p><ul class="bars">${fails.map(([kind, n]) => `<li><span>${FAIL_WORD[kind]}</span><span class="bar" aria-hidden="true"><i class="${kind}" style="width:${Math.round(100 * n / failMax)}%"></i></span><b>${n}</b></li>`).join("")}</ul>
       <p class="hint">${failTip(fails)}</p></section>` : "",
     `<section class="card side"><h2>되풀이한 실수</h2>${d.pitfalls.length ? "" : `<p class="hint">같은 실수를 두 번 이상 하면 여기에 모여요. ‘틀린 곳 같이 찾기’를 쓰면 쌓여요(제출이 틀린 것만으로는 쌓이지 않아요).</p>`}<ul class="points plain">${d.pitfalls.map((x) => `<li><strong>${esc(x.name)}</strong><span>${x.count}번</span>${x.problems.length ? `<span class="pit-from muted">${x.problems.map((p) => `<a href="#/p/${esc(p.id)}">${esc(p.title)}</a>`).join(" · ")}</span>` : ""}</li>`).join("")}</ul></section>`].filter(Boolean);
   if (cards.length) html += `<div class="sides">${cards.join("")}</div>`;
