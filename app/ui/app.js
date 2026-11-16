@@ -1985,7 +1985,7 @@ function renderWay() {
   const ai = connected();
   const card = (k) => { const w = WAY_INFO[k], locked = w.needsAi && !ai;
     return `<div class="wayrow"><button type="button" class="way-card${k === "solo" ? " main" : ""}" data-way="${k}"${locked ? ' aria-disabled="true"' : ""} aria-describedby="way-${k}">
-      <strong>${w.name}${S.mode === k ? '<em class="tag">지금 방식</em>' : ""}${w.needsAi ? (locked ? `<em class="tag lock">${ico("i-lock")}AI 연결 필요</em>` : "") : '<em class="tag">AI 없이</em>'}</strong><span id="way-${k}">${w.line}</span></button>${infoBtn(k, "card")}${infoBox(k, "card")}</div>`; };
+      <strong>${w.name}${S.mode === k ? '<em class="tag">지금 방식</em>' : ""}${w.needsAi ? (locked ? `<em class="tag lock">${ico("i-lock")}AI 연결 필요</em>` : "<span data-ai></span>") : '<em class="tag">AI 없이</em>'}</strong><span id="way-${k}">${w.line}</span></button>${infoBtn(k, "card")}${infoBox(k, "card")}</div>`; };
   $("way-box").innerHTML = `<div class="ways" role="group" aria-label="푸는 방식">${card("solo")}<p class="ways-gap">아래로 갈수록 튜터가 더 많이 도와줘요</p>${card("chair")}${card("guide")}</div>
     ${ai ? '<p class="hint">고른 방식은 이 문제에 기억해요. 고른 뒤에도 ‘방식 바꾸기’로 언제든 바꿔요.</p>' : '<div class="note"><span>튜터 방식 둘은 AI를 연결하면 쓸 수 있어요.</span><button type="button" class="btn small" id="note-conn">연결하기</button></div>'}`;
 }
@@ -3077,7 +3077,7 @@ document.addEventListener("click", (e) => {
   if (el.dataset.way && el.getAttribute("aria-disabled")) return void ($("note-conn") || el).focus(); // 잠긴 방식: 방식은 그대로, 초점은 연결하는 길로
   if (el.dataset.way) { // 어떻게 풀까요: 고르면 그 방식으로(튜터는 시작 단추에 초점)
     const way = el.dataset.way;
-    return void Promise.resolve(setMode(way, true)).then(() => (tutorWay(way) ? ($("start") && !$("start-box").hidden ? $("start") : $("say")) : $("code")).focus()); // 혼자 풀기는 편집기에, 튜터는 시작 단추에
+    return void Promise.resolve(setMode(way, true)).then(() => (tutorWay(way) ? [$("start"), $("say"), $("p-title")] : [$("code"), $("p-title")]).find(focusable).focus()); // 혼자 풀기는 편집기에, 튜터는 시작 단추에. 보이는 것이 없으면 문제 제목에(카드가 숨으며 초점이 안 보이는 곳에 남지 않게)
   }
   if (el.dataset.soloOpen || el.dataset.solo) { S.soloOpen = el.dataset.soloOpen || el.dataset.solo; render(); return void $(`solo-tab-${S.soloOpen}`).focus(); }
   if (el.dataset.tab) { S.keptNote = false; if (!setCodeTab(el.dataset.tab, "tab")) render(); return; }
@@ -3240,6 +3240,12 @@ document.addEventListener("input", (e) => {
 
 document.addEventListener("keydown", (e) => {
   const el = e.target;
+  const modal = e.key === "Tab" && document.querySelector("dialog[open]"); // 열린 창 안에서만 돈다(창 밖의 건너뛰기 링크 등으로 나가지 않게)
+  if (modal) {
+    const ins = [...modal.querySelectorAll("button, a[href], input, select, textarea, summary, [tabindex]")].filter((x) => x.tabIndex >= 0 && focusable(x));
+    if (ins.length && (!modal.contains(el) || (e.shiftKey ? el === ins[0] : el === ins[ins.length - 1]))) { e.preventDefault(); ins[e.shiftKey ? ins.length - 1 : 0].focus(); }
+    return;
+  }
   if (e.key === "Enter" && !e.isComposing && el.dataset && el.dataset.send && (el.tagName === "INPUT" || e.ctrlKey || e.metaKey)) { // 한 줄 칸은 Enter, 여러 줄 칸은 Ctrl/Cmd+Enter
     e.preventDefault();
     return $(el.dataset.send).click();
@@ -3272,16 +3278,19 @@ function focusAfter(el) {
   const block = el.dataset.check || el.dataset.fill || el.dataset.skip || el.dataset.own;
   const next = [el.id ? `#${el.id}` : own, el.id === "start" && "#say", block && `textarea[data-block="${CSS.escape(block)}"]`, "#p-title"].filter(Boolean); // 같은 단추 → 이어서 할 칸 → 문제 제목
   const t0 = Date.now();
-  let waited = false;
+  let waited = false, end = 0, placed = null;
+  const put = (x) => { if (x) { x.focus(); placed = x; } };
   const look = () => {
     const now = document.activeElement, lost = !now || now === document.body || !now.isConnected;
-    if (!lost && now !== el) return; // 사용자(또는 그 일 자체)가 다른 곳으로 옮겼다
-    if (lost && !S.busy) { // 기다림 동안 잠겨 있던 단추가 풀린 뒤에 돌려 놓는다
-      const hit = next.map((q) => document.querySelector(`#view-code ${q}`)).find(focusable);
-      return void (hit && hit.focus());
+    if (!lost && now !== el && now !== placed) return; // 사용자(또는 그 일 자체)가 다른 곳으로 옮겼다
+    if (S.busy) { // 기다림 동안: 다시 그려진 같은 단추나 상태 글에 둔다(잠긴 단추는 aria-disabled라 초점을 받는다)
+      waited = true;
+      if (lost) put(next.slice(0, 1).map((q) => document.querySelector(`#view-code ${q}`)).find(focusable) || $("status"));
+    } else {
+      end = end || Date.now();
+      if (lost) put(next.map((q) => document.querySelector(`#view-code ${q}`)).find(focusable)); // 끝난 뒤: 결과를 이어 갈 자리로. 뒤따르는 다시 그리기가 또 떨어뜨리면 한 번 더
     }
-    waited = waited || !!S.busy;
-    if (S.busy ? Date.now() - t0 < 120000 : !waited && Date.now() - t0 < 1500) setTimeout(look, 100); // 기다림이 끝날 때까지(기다림이 없으면 1.5초만) 본다
+    if (S.busy ? Date.now() - t0 < 120000 : Date.now() - (waited ? end : t0) < 1500) setTimeout(look, 100); // 기다림이 끝날 때까지, 끝난 뒤(또는 기다림이 없으면) 1.5초
   };
   setTimeout(look, 60);
 }
