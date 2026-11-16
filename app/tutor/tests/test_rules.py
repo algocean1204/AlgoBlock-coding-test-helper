@@ -900,6 +900,17 @@ class UnsaidCreditTest(unittest.TestCase):
         self.assertEqual(many_asks_line("이름별로 세면 될 것 같아요. k는 왜 있나요?"), [])
         self.assertTrue(many_asks_line("세면 되나요?\nk는 왜 있죠?")[0].startswith("사용자 말에 물음이 2개 있다."))
 
+    def test_agreeing_lead_on_a_restated_assumption_is_caught(self):
+        from ..common.talk_rules import unsaid_credit
+
+        said = "Map.get이 0을 돌려줄 것 같아요"
+        self.assertTrue(unsaid_credit("말씀하신 대로 처음에는 counts.get(title)이 0이라고 가정하셨네요. 값이 없을 때는 무엇을 돌려줄까요?", said))
+        self.assertTrue(unsaid_credit("그렇죠. 그럼 키가 없으면요?", said))
+        self.assertTrue(unsaid_credit("말씀처럼 get이 0을 돌려준다고 썼네요. 값이 없을 때는요?", said))
+        for fine in ("가정하신 대로라면 count가 0이어야 하는데, 실제로는 null이 나와요. 왜 그럴까요?", "생각하신 대로 하면 첫 값에서 오류가 나요. 첫 값은 무엇일까요?", "말씀하신 대로라면 0이어야 하는데 실제로는 null이에요.", "말씀하신 대로 하면 첫 값에서 오류가 나요."):
+            self.assertEqual(unsaid_credit(fine, said), [], fine)
+        self.assertEqual(unsaid_credit("처음에는 get이 0을 돌려준다고 보셨네요. 값이 없을 때는 무엇을 돌려줄까요?", said), [])
+
     def test_unanswered_ask_is_carried_to_the_next_turn(self):
         from ..common.talk_rules import many_asks_line
 
@@ -1243,3 +1254,43 @@ class PlainWordsTest(unittest.TestCase):
             self.assertNotIn("번째", said)
             self.assertIn("의심되는 줄" if "{line}" in FALLBACK[name] else FALLBACK[name][:6], said)
         self.assertIn("3번째 줄", fallback("cause", 3))
+
+
+class LanguageNeutralTextTest(unittest.TestCase):
+    """실전 신호·익힐 것·풀이 단계는 한 언어에서만 맞는 말을 조건 없이 쓰지 않는다."""
+
+    # 이 말이 나오는 문장이 있으면 같은 항목 안에 언어의 성질로 단 조건이 있어야 한다.
+    RULES = (
+        (r"64비트 정수", "넘칠 수 있는 언어"),
+        (r"재귀 대신|재귀 없이|재귀는[^.]*넘칠|재귀가[^.]*필요", "깊이 한도가 낮은 언어"),
+        (r"힙[^.]*부호를 뒤집|부호를 뒤집[^.]*힙", "최소 힙만 있는 언어|힙이 가장 작은 값만 꼭대기에 둔다면"),
+    )
+
+    def test_conditions(self):
+        import re
+        from pathlib import Path
+        root = Path(__file__).resolve().parents[2] / "ui" / "problems"
+        texts = []
+
+        def walk(node, where):
+            if isinstance(node, dict):
+                for key, val in node.items():
+                    if key not in ("code", "reference", "phrase", "statement", "spec"):
+                        walk(val, where)
+            elif isinstance(node, list):
+                for val in node:
+                    walk(val, where)
+            elif isinstance(node, str):
+                texts.append((where, node))
+
+        for path in root.glob("*/*/problem.json"):
+            data = json.loads(path.read_text(encoding="utf-8"))
+            for key in ("signals", "learn", "ladder", "pitfalls", "pattern"):
+                walk(data.get(key), path)
+        for path in root.glob("*/*/ready.json"):
+            walk(json.loads(path.read_text(encoding="utf-8")).get("ready"), path)
+        for where, text in texts:
+            for sentence in re.split(r"(?<=[.다요])\s+", text):
+                for rule, cond in self.RULES:
+                    if re.search(rule, sentence):
+                        self.assertRegex(text, cond, f"{where.parent.name}: {sentence}")

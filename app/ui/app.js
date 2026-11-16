@@ -2441,7 +2441,8 @@ async function showFeedback(pid) {
 
 function renderFeedback() {
   const fb = S.fb || {}, d = fb.data, p = S.problem;
-  $("fb-sub").textContent = p ? `${p.title} · ${LANG[p.language] || p.language}` : "";
+  const fbLang = (d && d.language) || (p && p.language); // 피드백이 본 제출의 언어(지금 고른 언어가 아니다)
+  $("fb-sub").textContent = p ? `${p.title} · ${LANG[fbLang] || fbLang}` : "";
   const advice = { keep_flow: "지금 흐름을 살려서 고칠 곳", canonical: "정석 순서로 다시 짜 보기" }[d && d.strategy] || "다음에는 이렇게 해 보세요";
   // 분석은 [확실]·[가능성 높음]·[추측]을 그 표시가 가리키는 주장 문장의 앞에 붙여 온다(질문 문장에는 없다).
   // 표시는 뒤따르는 한 문장에 붙이고, 표시 없는 문장(표시 앞의 글, 주장 뒤의 질문)은 표시 없이 한 줄로 그린다
