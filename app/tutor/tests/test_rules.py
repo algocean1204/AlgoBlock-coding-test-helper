@@ -825,6 +825,35 @@ class UnsaidCreditTest(unittest.TestCase):
         self.assertEqual(many_asks_line("이름별로 세면 될 것 같아요. k는 왜 있나요?"), [])
         self.assertTrue(many_asks_line("세면 되나요?\nk는 왜 있죠?")[0].startswith("사용자 말에 물음이 2개 있다."))
 
+    def test_unanswered_ask_is_carried_to_the_next_turn(self):
+        from ..common.talk_rules import many_asks_line
+
+        two = "사용자: 세면 되나요? 그리고 k는 왜 필요한가요?"
+        carried = many_asks_line("모르겠어요", [two, "튜터: k를 먼저 볼게요. 무엇일까요?"])
+        self.assertEqual(len(carried), 1)
+        self.assertIn("k는 왜 필요한가요", carried[0])
+        self.assertEqual(many_asks_line("모르겠어요", ["사용자: 세면 되나요?", "튜터: 네?"]), [])  # 지난 말의 물음이 하나면 돌아올 것이 없다
+        self.assertEqual(len(many_asks_line("a는 뭔가요? b는 뭔가요?", [two])), 2)
+        self.assertIn("답·고칠 곳은 말하지 않는다", many_asks_line("a는 뭔가요? b는 뭔가요?")[0])  # 답을 먼저 주지 않는 원칙은 그대로
+
+    def test_prompts_carry_the_previous_double_ask(self):
+        from ..debug.prompts import speak_messages as debug_speak
+        from ..state import MovePlan, TurnContext, TutorRequest
+        from ..turn.talk import speak_messages as turn_speak
+
+        two = "사용자: 세면 되나요? 그리고 k는 왜 필요한가요?"
+        plan = fakes.planned(fakes.hinted())
+        ctx = fakes.context(plan=plan, open_count=2)
+        state = fakes.make_state("turn", ctx, mode="guide", text="모르겠어요")
+        for recent, expect in (([two], True), (["사용자: 세면 되나요?"], False)):
+            turn = TurnContext(index=0, block=plan.blocks[0], last_question="없음", recent=recent, moves_used=["open"], event="message", text="모르겠어요")
+            got = turn_speak(state, turn, MovePlan("open", 0, False), "시스템", {"open": "지시", "reply": "지시"})[-1]["content"]
+            self.assertEqual("지난번 사용자 말에도" in got, expect)
+        draft = {"step_name": "trace", "recent": [two], "hash": "h", "kind": "logic", "line": 3, "cause": "c", "fixed_line": "f", "step": 1}
+        dstate = {"request": TutorRequest(kind="debug", problem_id="p1", code="a = 1", text="모르겠어요", report={}), "ctx": fakes.context(), "draft": draft}
+        self.assertIn("지난번 사용자 말에도", debug_speak(dstate)[-1]["content"])
+        self.assertNotIn("지난번 사용자 말에도", debug_speak({**dstate, "draft": {**draft, "recent": []}})[-1]["content"])
+
     def test_rule_reaches_every_talking_prompt(self):
         from ..common.talk_prompts import NOT_SAID
         from ..chair.prompts import SYSTEM as CHAIR
