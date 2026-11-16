@@ -5,7 +5,7 @@ from ..common.solution import same_code, solution_lines
 from ..common.scope import OUTSIDE_PROBLEMS, algorithm_line, algorithm_name, system_prompt
 from ..common.talk_prompts import weak_pitfalls
 from ..common.talk_rules import ANSWER_LEAD, BACK_LEAD, BANNED, CHECKED, RETRY_LEAD, SKIPPED, kind_word
-from ..knowledge.ontology import PITFALLS, PREREQUISITE
+from ..knowledge.ontology import PITFALLS, PREREQUISITE, pitfall_text
 from ..state import MainState
 
 # advice는 원인과 '어디를 볼지'까지만 준다. 고치는 순서·지울 줄·새로 짜는 차례는 주지 않는다(스스로 찾을 거리를 남긴다)
@@ -128,7 +128,7 @@ def record_lines(ctx, plan) -> list[str]:
     debug = ctx.debug_state
     if debug is not None:
         found = any(m.role == "service" and m.move == "fix" for m in ctx.debug)
-        pitfall = f" 함정: {PITFALLS[debug.pitfall][1]}." if debug.pitfall in PITFALLS else ""
+        pitfall = f" 함정: {pitfall_text(debug.pitfall, ctx.language)[0]}." if debug.pitfall in PITFALLS else ""
         # 원인을 말로 짚기 전에 코드를 고쳐 통과했는데 '아직 짚지 못했다'와 '통과했다'를 한 문장에 [확실]로 함께 썼다
         passed = bool(ctx.latest_submission and ctx.latest_submission.ok)
         state = "짚었다" if found else "말로 짚기 전에 코드를 고쳤고, 그 뒤 제출이 통과했다" if passed else "아직 짚지 못했다"

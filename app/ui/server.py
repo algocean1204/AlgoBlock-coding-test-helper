@@ -54,7 +54,7 @@ from tutor.save.respond import blocks_body, shown_count  # noqa: E402
 from tutor.ingest import IngestError, ocr_doubts, read_pages, reread  # noqa: E402
 from tutor.ingest.files import split_files  # noqa: E402
 from tutor.eval.scenarios import all_scenarios  # noqa: E402
-from tutor.knowledge.ontology import PITFALL_GROUPS, PITFALLS, TECHNIQUES, techniques_of  # noqa: E402
+from tutor.knowledge.ontology import PITFALL_GROUPS, PITFALLS, TECHNIQUES, pitfall_text, technique_name, techniques_of  # noqa: E402
 from tutor.llm import LlmNotConfigured, themes, use_llm  # noqa: E402
 from tutor.store.sqlite import now  # noqa: E402
 
@@ -694,14 +694,14 @@ def labels_of(t, p, marks: dict | None = None) -> dict:
     등록한 문제는 대조 결과(check)의 숨은·효율성 케이스 수와 확인이 필요한 곳(doubts), 까닭(why)도. marks: 미리 읽은 store.labels()(목록은 한 번만 읽는다)."""
     if p.builtin:
         tags = techniques_of(((BUILTIN[p.id].get("ready") or {}).get("fact") or {}).get("patterns") or [])
-        return {"level": p.level, "tags": [TECHNIQUES[tid][1] for tid in tags], "verified": "all", "verified_name": VERIFIED_WORDS["all"]}
+        return {"level": p.level, "tags": [technique_name(tid, p.language) for tid in tags], "verified": "all", "verified_name": VERIFIED_WORDS["all"]}
     if p.sample:
         return {"tags": [], "verified": "", "verified_name": ""}
     fact = (marks if marks is not None else t.store.labels()).get(p.id) or {}
     check = getattr(p, "check", None) or {}
     verified = check.get("verified") or ""
     return {"level": p.level or fact.get("level") or 0, "level_by": "user" if p.level else "analysis" if fact.get("level") else "",
-            "tags": [TECHNIQUES[tid][1] for tid in fact.get("tags") or [] if tid in TECHNIQUES], "verified": verified, "verified_name": VERIFIED_WORDS.get(verified, ""),
+            "tags": [technique_name(tid, p.language) for tid in fact.get("tags") or [] if tid in TECHNIQUES], "verified": verified, "verified_name": VERIFIED_WORDS.get(verified, ""),
             "check": {key: check[key] for key in ("hidden", "efficiency", "tiers", "calls", "why", "doubts") if key in check}}
 
 
@@ -2200,7 +2200,7 @@ def repeated_pitfalls(store) -> list[dict]:
         ids = where.setdefault(PITFALL_GROUPS.get(row["pitfall"], row["pitfall"]), [])
         if row["problem_id"] in PROBLEMS and row["problem_id"] not in ids:
             ids.append(row["problem_id"])
-    return [{"name": PITFALLS[pid][1] if pid in PITFALLS else pid, "count": count,
+    return [{"name": pitfall_text(pid)[0] if pid in PITFALLS else pid, "count": count,
              "problems": [{"id": x, "title": PROBLEMS[x].title} for x in where.get(pid, [])]}
             for pid, count in store._frequent_pitfalls(5) if count >= 2]
 

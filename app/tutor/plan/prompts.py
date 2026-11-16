@@ -135,7 +135,7 @@ def solve_messages(state: MainState, retry: str = "", given: str = "") -> list[d
     ]
     labeled = solved_schema(state, given) is LabeledSolved
     if labeled:  # 글보다 먼저 정하면 문제 글의 분류 표시에 끌렸다: 쓴 코드가 실제로 하는 일로 정한다
-        lines += ["tags: 아래 기법 목록에서 위 code가 실제로 쓰는 방법의 id 2~4개. code에 없는 방법은 쓰지 않는다(목록에 없는 낱말도 쓰지 않는다).", technique_list(),
+        lines += ["tags: 아래 기법 목록에서 위 code가 실제로 쓰는 방법의 id 2~4개. code에 없는 방법은 쓰지 않는다(목록에 없는 낱말도 쓰지 않는다).", technique_list(ctx.language),
                   LEVEL_TEXT + " 위 code가 쓰는 방법으로 정한다."]
     lines.append('JSON {"clues": ["..."], "approach", "steps": ["..."], "code"'
                  + (', "tags": [id], "level"}' if labeled else ', "followed": true 또는 false}' if strategy == "follow" else "}"))
@@ -186,10 +186,10 @@ def abstract_text(problem_text: str) -> list[dict]:
         pattern_list(),
         "size: 제한사항에 적힌 입력 크기 가운데 가장 큰 값을 정수로(배열 길이, 문자열 길이 등. 없으면 0).",
         "skills: 아래 목록에서 이 문제를 코드로 옮길 때 꼭 필요한 구현 기술의 id 1~3개(없으면 빈 배열).",
-        skill_list(),
+        skill_list(""),  # 뼈대는 언어와 상관없이 문제마다 하나라 중립 말
         LEVEL_TEXT,
         "tags: 아래 기법 목록에서 이 문제의 풀이에 쓰는 방법의 id 2~4개(목록에 없는 낱말은 쓰지 않는다).",
-        technique_list(),
+        technique_list(""),
         'JSON {"spec", "patterns": [id], "size", "skills": [id], "level", "tags": [id]}',
     ]
     return [{"role": "system", "content": ABSTRACT_SYSTEM}, cached_user(lines, 1)]

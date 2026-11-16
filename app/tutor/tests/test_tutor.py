@@ -158,7 +158,7 @@ class TutorTest(unittest.TestCase):
             ctx = tutor.store.load("p1")
             self.assertEqual((ctx.plan.strategy, ctx.open_count, ctx.size, ctx.skills, tutor.store.message_count("p1")), ("fresh", 1, 100000, ["dict_count"], 0))
             self.assertIn("이중 반복은 안 된다", fakes.prompt(fake, "plan.draft_blocks"))  # 입력 크기 경험칙(참고)
-            self.assertIn("키-값 표로 개수 세기", fakes.prompt(fake, "plan.draft_blocks"))  # 구현 기술(참고)
+            self.assertIn("딕셔너리로 개수 세기", fakes.prompt(fake, "plan.draft_blocks"))  # 구현 기술(참고)
             fake.calls.clear()
             self.assertEqual(tutor.prepare("p1").status, 200)  # 이미 있으면 아무것도 안 한다
             self.assertEqual(tutor.turn("p1", "chair", "start").body["messages"][0]["text"], fakes.HINTS1[0])
@@ -204,7 +204,7 @@ class TutorTest(unittest.TestCase):
             ctx = tutor.store.load("p1")
             self.assertEqual((ctx.spec, ctx.patterns), (abstract["spec"], ["dup_names"]))  # 온톨로지에 없는 id는 버린다
             first = fakes.prompt(fake, "plan.draft_blocks")
-            self.assertIn("개수 세기(키-값 표)", first)
+            self.assertIn("개수 세기(딕셔너리)", first)
             self.assertIn("있다·없다만으로는 여러 번 나온 것을 가릴 수 없어", first)
             self.assertNotIn("닮은 문제", first)
             tutor.debug("p1", self.BUGGY, self.FAILED)  # 함정 기록(wrong_init)
@@ -225,7 +225,7 @@ class TutorTest(unittest.TestCase):
             from ..plan.prompts import solve_messages
             from ..state import Abstract
             plain = tutor.store.load("p2")
-            known = {"ctx": replace(plain, patterns=["dup_names"], skills=["two_d_list"]), "strategy": "fresh", "recall": {"patterns": ["- 개수 세기(키-값 표)"], "weak": ["시작 값 잘못"]},
+            known = {"ctx": replace(plain, patterns=["dup_names"], skills=["two_d_list"]), "strategy": "fresh", "recall": {"patterns": ["- 개수 세기(딕셔너리)"], "weak": ["시작 값 잘못"]},
                      "abstract": Abstract(spec="x", patterns=["dup_names"], tags=["count_map", "bfs"], level=3)}
             self.assertEqual(solve_messages(known), solve_messages({"ctx": replace(plain, patterns=[], skills=[]), "strategy": "fresh"}))
             tutor.store.add_submission("p1", "def solution(a, b): ...", False)  # 이제 풀어 본 문항이다
@@ -365,6 +365,33 @@ class TutorTest(unittest.TestCase):
             self.assertEqual(tutor.store.load("p2").frequent_pitfalls, [("wrong_init", 1)])  # 제출 → 함정 엣지가 다른 문항에서 보인다
         finally:
             tutor.close()
+
+    def test_debug_candidates_follow_the_language(self):
+        """진단 후보 목록에 파이썬에만 있는 실수(콜론 빠짐)가 다른 언어로 풀 때 들어가지 않는다. 파이썬에는 그대로 들어간다."""
+        tutor, fake = self.tutor({"debug.locate": [self.FOUND, self.FOUND]})
+        try:
+            tutor.store.put_problem("pj", "java", fakes.PROBLEM, title="자바 문제")
+            tutor.store.put_fact("pj", "문자열 배열 둘, 남는 원소 하나", [])
+            tutor.debug("p1", self.BUGGY, self.FAILED)
+            python = fakes.prompt(fake, "debug.locate")
+            fake.calls.clear()
+            tutor.debug("pj", self.BUGGY, self.FAILED)
+            java = fakes.prompt(fake, "debug.locate")
+            self.assertIn("missing_colon: 콜론(:) 빠짐", python)
+            self.assertIn("no_return: 돌려주지 않음(None)", python)
+            self.assertNotIn("missing_colon", java)
+            self.assertNotIn("indent:", java)
+            self.assertIn("no_return: 돌려주지 않음 —", java)
+            self.assertNotIn("None", java)
+        finally:
+            tutor.close()
+
+    def test_weak_pitfalls_follow_the_language(self):
+        """다른 언어로 바꾼 사용자에게 파이썬에만 있는 실수 이름('콜론 빠짐')을 되풀이한 실수로 보여 주지 않는다."""
+        from ..common.talk_prompts import weak_pitfalls
+        for language, want in (("python", ["콜론(:) 빠짐(3번)", "돌려주지 않음(None)(2번)"]), ("java", ["돌려주지 않음(2번)"])):
+            ctx = fakes.context(language=language, frequent_pitfalls=[("missing_colon", 3), ("no_return", 2)])
+            self.assertEqual(weak_pitfalls(ctx), want, language)
 
     def test_debug_first_question_uses_clue_and_refuses_answer(self):
         """첫 질문이 늘 '코드 첫 줄부터 손으로 따라가 보면…'이었다. 진단이 함께 지은 첫 질문(실패 입력과 코드의 단서)을 증상 뒤에 붙인다(모델 호출은 그대로 1번).
