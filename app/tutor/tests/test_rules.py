@@ -1297,3 +1297,18 @@ class LanguageNeutralTextTest(unittest.TestCase):
                 for rule, cond in self.RULES:
                     if re.search(rule, sentence):
                         self.assertRegex(text, cond, f"{where.parent.name}: {sentence}")
+
+
+class FeedbackClaimTest(unittest.TestCase):
+    def test_process_claims_need_the_record(self):
+        from ..feedback.prompts import record_lines
+        from ..state import DebugState, Submission
+        claim = "이번 풀이에서는 원인을 찾기까지 시간이 걸렸고, 말로 설명하기 전에 코드부터 고쳤습니다."
+        fields, _ = check_feedback(f"입력이 비면 어떻게 될까요? {claim}", "센다", "b", "해시", "- 본 힌트: 1개")
+        self.assertNotIn("시간이 걸렸", fields["analysis"])
+        self.assertIn("입력이 비면", fields["analysis"])
+        # 틀린 곳 찾기를 열기만 했고 말한 적이 없으면 기록이 과정을 말하지 않는다
+        ctx = fakes.context(debug_state=DebugState("h", "logic", 3, "c", ""), latest_submission=Submission("s1", "x", True))
+        record = "\n".join(record_lines(ctx, None))
+        self.assertNotIn("말로 짚기 전에", record)
+        self.assertIn("대화를 하지 않았", record)

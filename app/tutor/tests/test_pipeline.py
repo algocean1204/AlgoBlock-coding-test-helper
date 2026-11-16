@@ -1725,7 +1725,7 @@ class OtherFeatureTest(unittest.TestCase):
         self.assertEqual(record_lines(fakes.context(chair=missed, open_count=1, block_states=states), plan), [f"- 블록 1(입력받기): {MISSED_TEXT['chair']}이 1번"])
         debug = DebugState("h", "logic", 3, "1을 더하지 않는다.", "", 1, "")
         for ok, said in ((True, "말로 짚기 전에 코드를 고쳤고, 그 뒤 제출이 통과했다"), (False, "아직 짚지 못했다")):
-            lines = "\n".join(record_lines(fakes.context(debug_state=debug, latest_submission=Submission("s1", "x", ok)), plan))
+            lines = "\n".join(record_lines(fakes.context(debug_state=debug, debug=[fakes.user("몰라요", 0)], latest_submission=Submission("s1", "x", ok)), plan))
             self.assertIn(said, lines)
         self.assertEqual(mark_claims("[확실] 제출은 통과했지만 [확실] 반복이 끝나는 자리를 다시 볼 만합니다."),
                          "[확실] 제출은 통과했지만 반복이 끝나는 자리를 다시 볼 만합니다.")  # 한 문장에 표시는 하나
