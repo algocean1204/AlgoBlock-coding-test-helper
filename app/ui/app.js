@@ -2105,7 +2105,7 @@ function solutionHtml(sol, passed) {
       ${sol.clues.length ? `<h4>문제 글에서 읽어낸 것</h4><ul class="plain-list">${sol.clues.map((x) => `<li>${inline(x)}</li>`).join("")}</ul>` : ""}
       ${sol.steps.length ? `<h4>푸는 순서</h4><ol class="plain-list numbered">${sol.steps.map((x) => `<li>${inline(x)}</li>`).join("")}</ol>` : ""}
       <h4>정답 풀이 <span class="tag">${esc(LANG[sol.language] || sol.language)}</span></h4>${guide ? "" : '<p class="hint">이 문제는 글로 된 해설이 아직 없어요. 정답 코드만 있어요.</p>'}
-      ${(sol.traps || []).length ? `<div class="traps"><h5>이 언어로 풀 때 조심할 것</h5><ul class="plain-list">${sol.traps.map((x) => `<li>${inline(x.what)} ${inline(x.fix)}${(x.at || []).length ? ` <small>문제 글: ${x.at.map((at) => `<q>${esc(at)}</q>`).join(", ")}</small>` : ""}</li>`).join("")}</ul></div>` : ""}
+      ${(sol.traps || []).length ? `<div class="traps"><h5>이 언어로 풀 때 조심할 것</h5><ul class="plain-list">${sol.traps.map((x) => `<li>${inline(x.what)} ${inline(x.fix)}${(x.at || []).length ? ` <small>이 문제에서 걸리는 곳: ${x.at.map((at) => `<q>${esc(at)}</q>`).join(" · ")}</small>` : ""}</li>`).join("")}</ul></div>` : ""}
       <pre class="code"><code>${esc(sol.code.replace(/\s+$/, ""))}</code></pre></details>${passed ? "" : next}`;
 }
 
