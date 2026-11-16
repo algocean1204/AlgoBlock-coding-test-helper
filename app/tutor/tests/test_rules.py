@@ -906,6 +906,9 @@ class UnsaidCreditTest(unittest.TestCase):
         said = "Map.get이 0을 돌려줄 것 같아요"
         self.assertTrue(unsaid_credit("말씀하신 대로 처음에는 counts.get(title)이 0이라고 가정하셨네요. 값이 없을 때는 무엇을 돌려줄까요?", said))
         self.assertTrue(unsaid_credit("그렇죠. 그럼 키가 없으면요?", said))
+        self.assertTrue(unsaid_credit("말씀처럼 get이 0을 돌려준다고 썼네요. 값이 없을 때는요?", said))
+        for fine in ("가정하신 대로라면 count가 0이어야 하는데, 실제로는 null이 나와요. 왜 그럴까요?", "생각하신 대로 하면 첫 값에서 오류가 나요. 첫 값은 무엇일까요?", "말씀하신 대로라면 0이어야 하는데 실제로는 null이에요.", "말씀하신 대로 하면 첫 값에서 오류가 나요."):
+            self.assertEqual(unsaid_credit(fine, said), [], fine)
         self.assertEqual(unsaid_credit("처음에는 get이 0을 돌려준다고 보셨네요. 값이 없을 때는 무엇을 돌려줄까요?", said), [])
 
     def test_unanswered_ask_is_carried_to_the_next_turn(self):
