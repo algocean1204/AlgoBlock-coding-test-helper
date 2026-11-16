@@ -760,6 +760,8 @@ details.solution > * + * { margin-top: 8px; }
 .turn::before, .turn::after { content: ""; flex: 1; height: 1px; background: var(--line); }
 .notice { align-self: center; max-width: 100%; padding: 8px 14px; border-radius: 999px; background: var(--success-soft); text-align: center; font-size: 13px; font-weight: 600; color: var(--success); }
 .notice.warn { border-radius: var(--r-md); background: var(--warning-soft); color: var(--warning); } /* 블록을 모두 채웠다는 안내 아래, 빈 블록 알림 */
+.old-talk summary { width: fit-content; padding: 2px 6px; border-radius: 6px; font-size: 13px; font-weight: 600; color: var(--muted); cursor: pointer; }
+.old-talk > :not(summary) { margin-top: 10px; }
 .chat-log .note { align-self: stretch; }
 .pending .bubble { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 13.5px; }
 .dots { display: inline-flex; gap: 4px; }

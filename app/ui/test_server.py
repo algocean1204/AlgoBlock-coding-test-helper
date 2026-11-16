@@ -901,6 +901,18 @@ def debug_pass() -> None:
     assert got["judged"]["unsaved"] and got["judged"]["ok"] and (state["submitted"], state["passed"]) == (1, 0), (state["submitted"], state["passed"])
 
 
+def passed_reopen() -> None:
+    """통과한 풀이를 다시 열면(화면 코드 확인): 풀던 중의 실패 말, '끝까지 쓰는 중' 안내, 틀린 곳 찾기의 옛 질문이 지금 상태처럼 남지 않는다. 브라우저 동작은 화면 확인으로 본다."""
+    js, css = (HERE / "app.js").read_text(encoding="utf-8"), (HERE / "app.css").read_text(encoding="utf-8")
+    assert "const passedNow = () => !!(S.problem && S.problem.study.passed_now);" in js
+    assert "ownWayOn() && !passedNow() ?" in js  # 통과한 뒤에는 '끝까지 내 방식으로 쓰는 중' 안내를 걷는다
+    assert "const result = !passedNow() && st && st !== \"pass\"" in js  # 블록 아래의 옛 실패 한 줄도
+    assert "if (passedNow()) html += '<p class=\"notice\" role=\"status\">이번 풀이는 통과했어요." in js  # 튜터 대화의 맨 아래가 옛 실패 말이어도 통과를 알린다
+    assert 'if (d.passed && html) html = `<details class="old-talk">' in js and ".old-talk summary" in css  # 통과한 뒤 틀린 곳 찾기의 옛 대화는 접는다
+    assert "S.debug.passed = true; S.debug.line = null;" in js  # 제출로 통과해도 옛 질문과 짚은 줄을 걷는다
+    assert call("/api/state", id=PID)[1]["problem"]["study"].get("passed_now") is not None  # 화면이 쓰는 값
+
+
 def own_way_flow() -> None:
     """'끝까지 내 방식으로 쓰기'(모델·실행 0회): 지금 블록은 넘어가기와 같게 확인 전, 남은 블록을 모두 열고 표시가 남는다(다시 열어도).
     통과(Y)를 새로 만들지 않는다. '튜터 차례로 돌아가기' 뒤에는 블록 코드 확인이 다시 돈다. 초기화하면 표시도 지운다."""
@@ -2658,6 +2670,7 @@ def main() -> None:
         readiness()
         screen_flows()
         debug_pass()
+        passed_reopen()
         own_way_flow()
         state_names_by_mode()
         chair_found()
