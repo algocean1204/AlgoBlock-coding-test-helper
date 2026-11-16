@@ -1,0 +1,54 @@
+{
+ "python": [
+  {
+   "file": "lang_1.py",
+   "trap": "python.recursion_limit",
+   "at": [
+    "폴더 속의 폴더까지 모두"
+   ],
+   "fails": {
+    "20": "runtime_error",
+    "21": "runtime_error"
+   },
+   "source": 3676338334
+  },
+  {
+   "file": "lang_2.py",
+   "trap": "python.negative_index",
+   "at": [
+    "parent[0]은 -1입니다"
+   ],
+   "fails": {
+    "1": "failed",
+    "3": "failed",
+    "12": "failed",
+    "13": "failed",
+    "16": "failed",
+    "20": "failed"
+   },
+   "source": 534672119
+  }
+ ],
+ "javascript": [
+  {
+   "file": "lang_1.js",
+   "trap": "javascript.recursion_depth",
+   "at": [
+    "폴더 속의 폴더까지 모두"
+   ],
+   "fails": {
+    "20": "runtime_error",
+    "21": "runtime_error"
+   },
+   "source": 2193449523
+  }
+ ],
+ "cpp": [
+  {
+   "file": "lang_1.cpp",
+   "trap": "cpp.unsigned_loop",
+   "varies": true,
+   "source": 3632734608
+  }
+ ]
+}

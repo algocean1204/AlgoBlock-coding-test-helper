@@ -8,7 +8,7 @@ app에서:
         --no-langs         파이썬 정답 풀이만 검사해 싣는다(기본은 다른 언어 정답 풀이(solution.java 등)도 검사해 싣는다. 그 언어의 도구가 기기에 있어야 한다.
                            이 옵션으로 묶으면 이미 실린 문제의 다른 언어 풀이가 묶음에서 빠진다)
         --only 폴더 …      그 문제만 검사하고 묶는다(예: hash/1_popular_shelf). 다른 문제의 행은 지금 묶음의 것을 그대로 둔다(문제 하나를 더할 때)
-        --no-check         검사를 다시 돌리지 않고 폴더의 cases.json(지난 검사가 얼린 것)을 믿는다(개발·시험용. 실을 때는 쓰지 않는다)
+        --no-check         검사를 다시 돌리지 않고 폴더의 cases.json·lang.json(지난 검사가 얼린 것)을 믿는다(개발·시험용. 실을 때는 쓰지 않는다)
         --out 파일          다른 곳에 쓴다(기본 ui/builtin.json)
         --workers N        한 번에 몇 문제(기본 4)
 
@@ -70,6 +70,7 @@ def entry(folder: Path, langs: bool = True, check: bool = True) -> dict:
     solutions = {"python": files["solution.py"]}
     if langs:  # 검사한 언어만 싣는다(--no-langs면 파이썬만)
         solutions |= {language: files[f"solution.{ext}"] for language, ext in problemkit.EXT.items() if language != "python" and f"solution.{ext}" in files}
+    traps = traps_of(problem, solutions)
     return {
         "id": problem["id"], "theme": problem["theme"], "level": problem["level"], "title": problem["title"], "language": "python",
         "text": text_of(problem, cases), "params": problem["params"], "returns": problem["returns"],
@@ -77,9 +78,19 @@ def entry(folder: Path, langs: bool = True, check: bool = True) -> dict:
         "cases": cases, "large": files["gen.py"] if any(case["kind"] == "efficiency" for case in cases) else "", **({"limits": limits} if limits else {}),
         "signals": problem["signals"], "pattern": problem["pattern"], "learn": problem["learn"], "pitfalls": problem["pitfalls"], "ladder": problem["ladder"],
         "languages": [language for language in LANGUAGES if language in solutions], "solutions": solutions,
-        "starters": {language: stub(problem, language) for language in LANGUAGES},
+        "starters": {language: stub(problem, language) for language in LANGUAGES}, **({"traps": traps} if traps else {}),
         "source": zlib.crc32((problem["statement"] + json.dumps(problem["limits"], ensure_ascii=False) + files["solution.py"]).encode()),  # 글·정답 풀이가 바뀌었는지
     }
+
+
+def traps_of(problem: dict, solutions: dict) -> dict:
+    """싣는 언어의 증명된 함정: {언어: [{id, what, fix, at(구절 목록, 있으면), fails 또는 varies}]}. 글은 함정 목록에서, 증명은 lang.json(검사가 얼린 것)에서 온다.
+    varies: 결과가 정해지지 않은 동작이라 떨어지는 케이스가 기기마다 다를 수 있다(떨어진 케이스 목록을 싣지 않는다)."""
+    path = problem["dir"] / "lang.json"
+    saved = json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {}
+    text = {row["id"]: row for rows in problemkit.traps().values() for row in rows}
+    return {language: [{"id": row["trap"], "what": text[row["trap"]]["what"], "fix": text[row["trap"]]["fix"], **{key: row[key] for key in ("at", "fails", "varies") if key in row}}
+                       for row in rows if row["trap"] in text] for language, rows in saved.items() if language in solutions}
 
 
 def ready_of(row: dict) -> dict:
