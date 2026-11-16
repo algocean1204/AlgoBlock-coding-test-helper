@@ -315,7 +315,7 @@ def report() -> None:
     assert body["summary"]["solved"] == 1 and body["summary"]["total"] == len(ROWS) and body["summary"]["languages"]["python"] >= 5
     assert body["recent"][0]["id"] == PID and len(body["recent"]) <= 10
     assert [group["key"] for group in body["signals"]] == ["hash"] and body["signals"][0]["items"][0]["title"] == FIRST["title"]  # 푼 문제의 신호만
-    assert 1 <= len(body["next"]) <= 5 and all(row["id"] != PID for row in body["next"])
+    assert 1 <= len(body["next"]) <= 5 and body["readiness"]["solved"] == 0  # PID는 해설을 먼저 보고 통과해서 도움 없이 푼 것이 아니다: 다시 풀 후보로 권할 수 있다
     others = [theme for theme in body["themes"] if theme["key"] != "hash"]
     assert all(theme["state"] == "new" for theme in others)
     # 약점 규칙: 한 주제의 두 문제에서 답은 맞았지만 큰 입력에서 시간이 모자라면 약한 주제다. 한 문제에서 여러 번, 정확성 케이스의 시간 초과, 세부가 없는 예전 기록은 아니다
@@ -516,6 +516,12 @@ def readiness() -> None:
     assert hashed(history(*[solve(pid, talk=EARLY) for pid in hash5[:3]]))["state"] == "progress"
     assert hashed(history(*[solve(pid) for pid in hash5[:3]]))["state"] == "strong"
     assert hashed(history(*[solve(pid, fails=5 if n == 0 else 0) for n, pid in enumerate(hash5)]))["state"] != "weak"
+    # 다음 문제는 도움 없이 푼 단계가 기준이다: 모두 도움을 받아 1~4단계를 통과했으면 5단계가 아니라 가장 낮은 단계부터. 모두 도움 없이 풀었으면 5단계(그대로)
+    nxt = lambda body: next(row for row in body["themes"] if row["key"] == "hash")["next"]["id"]  # noqa: E731
+    assert nxt(history(*[solve(pid, helped=EARLY) for pid in hash5[:4]])) == hash5[0]
+    assert nxt(history(*[solve(pid) for pid in hash5[:4]])) == hash5[4]
+    assert nxt(history(solve(hash5[0]), solve(hash5[1]), solve(hash5[2], helped=EARLY))) == hash5[2]  # 도움 받은 3단계는 다시 풀 후보
+    assert nxt(history(solve(hash5[0], helped=EARLY))) == hash5[0] and nxt(history(solve(hash5[0]))) == hash5[1]  # 기록이 아주 적을 때
     # '새 주제 시작'은 학습 지도 순서다(스택·큐 → BFS·DFS가 힙·DP보다 먼저)
     fresh = [row["theme_name"] for row in history()["next"] if row["why"] == "새 주제 시작"]
     assert fresh == [server.theme_name(key) for key in server.PREREQS][:len(fresh)], fresh

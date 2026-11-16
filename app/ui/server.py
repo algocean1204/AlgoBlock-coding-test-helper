@@ -708,8 +708,9 @@ def problem_rows(t) -> list[dict]:
 
 
 def next_up(mine: list[dict], solved: set):
-    """한 주제(단계 순서)에서 다음에 풀 문제: 위에 못 푼 단계가 남은 통과 단계 가운데 가장 높은 것 바로 위의 못 푼 단계(3·5단계를 통과했으면 4단계).
-    통과한 단계 위에 못 푼 것이 없으면 가장 낮은 못 푼 단계. 다 풀었으면 None."""
+    """한 주제(단계 순서)에서 다음에 풀 문제: 위에 못 푼 단계가 남은 푼 단계 가운데 가장 높은 것 바로 위의 못 푼 단계(3·5단계를 풀었으면 4단계).
+    푼 단계 위에 못 푼 것이 없으면 가장 낮은 못 푼 단계. 다 풀었으면 None. 보고서는 solved에 '도움 없이 푼' 문제만 넘겨,
+    도움을 받아 통과한 단계는 다시 풀 후보로 남는다."""
     todo = [row for row in mine if row["id"] not in solved]
     for top in sorted({row["level"] for row in mine if row["id"] in solved}, reverse=True):
         above = [row for row in todo if row["level"] > top]
@@ -2201,7 +2202,7 @@ def learning_report(t) -> dict:
         slow = {sub["problem_id"] for sub in mine_subs if fail_kind(sub) == "slow"}
         stuck = [row for row in tried + own_tried if row["id"] not in solved and len(by_problem[row["id"]]) > 3]
         failed = sum(fails.values())
-        todo = next_up(mine, solved)
+        todo = next_up(mine, {row["id"] for row in alone})  # 도움 없이 푼 단계가 기준이다(도움 받아 통과한 것은 다시 풀 후보)
         # 해설을 먼저 본 문제: 그 뒤의 통과 제출이 한 번 이하면 힌트·해설 없이 다시 풀었는지 가릴 수 없어 다시 권한다
         review = next((row for row in mine if studies[row["id"]]["solution_before_pass"]
                        and sum(sub["ok"] and stamp(sub["at"]) >= stamp(studies[row["id"]]["solution_at"]) for sub in by_problem.get(row["id"], [])) <= 1), None)
