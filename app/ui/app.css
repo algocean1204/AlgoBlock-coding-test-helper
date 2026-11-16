@@ -178,6 +178,7 @@ svg.ico { width: 14px; height: 14px; flex: none; fill: none; stroke: currentColo
 .btn:hover { background: var(--fill-2); }
 .btn:active { transform: scale(0.97); }
 .btn.small { min-height: 30px; padding: 0 10px; border-radius: var(--r-sm); font-size: 13px; }
+[data-ai]::after { content: "AI"; padding: 0 5px; border-radius: 999px; box-shadow: inset 0 0 0 1px currentColor; font-size: 10.5px; font-weight: 700; line-height: 16px; letter-spacing: 0.02em; opacity: 0.8; } /* AI를 부르는 단추의 작은 표시(글자색을 따라 어느 단추에서도 대비가 같다) */
 .btn.primary { background: var(--accent); color: var(--on-accent); }
 .btn.primary:hover { background: var(--accent-hover); }
 .btn.quiet { background: transparent; color: var(--muted); }
