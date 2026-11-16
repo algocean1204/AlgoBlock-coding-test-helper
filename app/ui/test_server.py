@@ -981,7 +981,7 @@ def result_guides() -> None:
     튜터 방식 전환 단추는 무엇이 바뀌는지 말하고, 튜터의 질문으로에서 코드 칸으로 가는 길이 보인다. 브라우저 동작은 화면 확인으로 본다."""
     js = (HERE / "app.js").read_text(encoding="utf-8")
     assert 'const effCrash = (r) => r.cases.find((c) => c.kind === "efficiency" && c.status === "runtime_error");' in js and "답은 맞지만 큰 입력에서 오류가 나요" in js
-    assert "아주 큰 입력에서 실행 중 오류가 났어요(" in js and "답이 맞아서 ‘틀린 곳 같이 찾기’는 열지 않아요." in js
+    assert "아주 큰 입력에서 실행 중 오류가 났어요: " in js and "답이 맞아서 ‘틀린 곳 같이 찾기’는 열지 않아요." in js
     assert "혼자 풀기로 바뀌어요" not in js and "오른쪽 칸이 해설로 바뀌어요" in js and "오른쪽 칸이 힌트로 바뀌어요" in js
     assert 'S.talk === "chair" && !s.blocks.some((b, i) => blockState(b, i) === "found")' in js and 'data-tab="direct">코드 전체 칸 열기' in js
     assert "efficiency_message(report)" in (HERE / "server.py").read_text(encoding="utf-8")

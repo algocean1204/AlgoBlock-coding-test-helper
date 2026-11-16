@@ -1792,7 +1792,7 @@ function failGuide(r, slowOnly) {
   if (examplesOk && hidden.some((c) => c.status !== "passed")) return "예시는 통과했지만 숨은 테스트에서 틀렸어요. 가장 작은 입력, 같은 값이 여러 개인 입력, 가장 큰 입력을 직접 만들어 확인해 보세요.";
   if (slowOnly) { // 답은 맞고 효율성만 실패했다. 틀린 곳이 아니라 큰 입력에서 일어난 일이라 ‘틀린 곳 같이 찾기’는 없다
     const crash = effCrash(r), why = connected() ? " 답이 맞아서 ‘틀린 곳 같이 찾기’는 열지 않아요." : "";
-    return crash ? `답은 모두 맞아요. 아주 큰 입력에서 실행 중 오류가 났어요(${esc(errText(crash))}).${crash.hint ? ` ${inline(crash.hint)}` : " 아래 효율성 테스트의 오류를 보세요."}${why}`
+    return crash ? `답은 모두 맞아요. 아주 큰 입력에서 실행 중 오류가 났어요: ${esc(errText(crash))}.${crash.hint ? ` ${inline(crash.hint)}` : " 아래 효율성 테스트의 오류를 보세요."}${why}`
       : `답은 모두 맞아요. 입력이 아주 클 때 시간이 모자라요. 제한사항의 입력 크기를 보고, 같은 것을 되풀이해 세거나 찾는 곳이 없는지 살펴보세요.${why}`;
   }
   return "";
