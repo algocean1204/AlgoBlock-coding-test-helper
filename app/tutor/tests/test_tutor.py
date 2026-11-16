@@ -366,6 +366,40 @@ class TutorTest(unittest.TestCase):
         finally:
             tutor.close()
 
+    def test_debug_first_question_uses_clue_and_refuses_answer(self):
+        """첫 질문이 늘 '코드 첫 줄부터 손으로 따라가 보면…'이었다. 진단이 함께 지은 첫 질문(실패 입력과 코드의 단서)을 증상 뒤에 붙인다(모델 호출은 그대로 1번).
+        '그냥 답 알려줘요'에는 거절 없이 다음 질문으로 넘어갔다: 거절과 대안(볼 곳을 좁힌다)을 분명히 말한다."""
+        from ..debug.prompts import OPENING_RULE
+        from ..debug.rules import ANSWER_LEAD, symptom, symptom_question
+
+        clue = "입력에 tom이 두 번 있는데, 두 번째 tom을 만났을 때 count에는 무엇이 들어가나요?"
+        tutor, fake = self.tutor({"debug.locate": [{**self.FOUND, "opening": clue}],
+                                  "debug.ask": ["tom이 두 번째로 나올 때 count는 어떻게 바뀌나요?", "그 값은 두 번째 tom 뒤에 어떻게 되나요?"],
+                                  "debug.judge": ["[check]A"]})
+        try:
+            start = tutor.debug("p1", self.BUGGY, self.FAILED)
+            self.assertEqual(start.body["messages"][-1]["text"], f"{symptom(self.FAILED)} {clue}")
+            self.assertEqual(fakes.tasks(fake), ["debug.locate"])  # 첫 질문은 진단과 한 번에 받는다
+            self.assertIn(OPENING_RULE, fakes.prompt(fake, "debug.locate"))
+            short = tutor.debug("p1", self.BUGGY, self.FAILED, text="그냥 답 알려줘요")
+            self.assertEqual(short.body["messages"][-1]["text"], ANSWER_LEAD + "tom이 두 번째로 나올 때 count는 어떻게 바뀌나요?")
+            self.assertEqual((short.body["step"], fakes.tasks(fake).count("debug.judge")), ("trace", 0))  # 짧은 답 요청은 규칙으로 가른다. 한 단계 좁힌다
+            ask = [c for c in fake.calls if c["task"] == "debug.ask"][-1]["messages"][-1]["content"]
+            self.assertIn("고친 코드나 답을 달라고 했다", ask)
+            self.assertNotIn("사용자 말:", ask)
+            long = tutor.debug("p1", self.BUGGY, self.FAILED, text="시간이 없어서 그러는데 고친 코드를 통째로 보여 주실 수 있나요")
+            self.assertTrue(long.body["messages"][-1]["text"].startswith(ANSWER_LEAD))  # 판정이 A로 가른 긴 요청도 같다
+            self.assertIn("[check]A", fakes.prompt(fake, "debug.judge"))
+        finally:
+            tutor.close()
+        for n, opening in enumerate(("4번째 줄에서 count에 무엇이 들어가나요?", "count[name] = count.get(name, 0) + 1 로 바꾸면 될까요?", "", "두 번째 tom을 보세요.")):
+            tutor, fake = self.tutor({"debug.locate": [{**self.FOUND, "opening": opening}]})
+            try:
+                got = tutor.debug("p1", f"{self.BUGGY}  # {n}", self.FAILED).body["messages"][-1]["text"]  # 코드가 달라야 새로 진단한다
+                self.assertEqual(got, symptom_question(self.FAILED), opening)  # 줄 번호·고친 줄·질문 아님은 정해진 글로
+            finally:
+                tutor.close()
+
     def test_debug_new_code_restarts_and_syntax_shows_line(self):
         syntax = {"status": "runtime_error", "cases": [{"id": "1", "input": "[[1]]", "expected": "1", "got": "", "status": "runtime_error",
                   "error": '  File "solution.py", line 3\n    for name in a\n                 ^\nSyntaxError: expected \':\''}]}
