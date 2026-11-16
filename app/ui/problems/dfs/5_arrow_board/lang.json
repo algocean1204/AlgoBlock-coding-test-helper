@@ -1,0 +1,246 @@
+{
+ "python": [
+  {
+   "file": "lang_1.py",
+   "trap": "python.shared_rows",
+   "fails": {
+    "1": "failed",
+    "2": "failed",
+    "7": "failed",
+    "9": "failed",
+    "10": "failed",
+    "11": "failed",
+    "12": "failed",
+    "13": "failed",
+    "14": "failed",
+    "15": "failed",
+    "16": "failed",
+    "17": "failed",
+    "18": "failed",
+    "19": "failed",
+    "20": "failed",
+    "21": "failed",
+    "22": "failed",
+    "23": "failed"
+   },
+   "outs": {
+    "1": "7",
+    "2": "4",
+    "7": "3",
+    "9": "1",
+    "10": "900",
+    "11": "900",
+    "12": "272",
+    "13": "100",
+    "14": "7",
+    "15": "24",
+    "16": "21",
+    "17": "62",
+    "18": "51",
+    "19": "18",
+    "20": "46",
+    "21": "250000",
+    "22": "250000",
+    "23": "65824"
+   },
+   "source": 4209733766
+  },
+  {
+   "file": "lang_2.py",
+   "trap": "python.negative_index",
+   "at": [
+    "옮겨 갈 칸이 놀이판 밖이거나"
+   ],
+   "fails": {
+    "12": "failed",
+    "14": "failed",
+    "15": "failed",
+    "16": "failed",
+    "17": "failed",
+    "18": "failed",
+    "19": "failed",
+    "20": "failed",
+    "23": "failed"
+   },
+   "outs": {
+    "12": "275757",
+    "14": "115",
+    "15": "359",
+    "16": "874",
+    "17": "1769",
+    "18": "1004",
+    "19": "1115",
+    "20": "3329",
+    "23": "16122440911"
+   },
+   "source": 1415907630
+  }
+ ],
+ "java": [
+  {
+   "file": "lang_1.java",
+   "trap": "java.int_overflow",
+   "at": [
+    "모든 칸의 점수를 더한 값"
+   ],
+   "fails": {
+    "21": "failed",
+    "22": "failed",
+    "23": "failed"
+   },
+   "outs": {
+    "21": "1185353928",
+    "22": "-1924509440",
+    "23": "-1058054511"
+   },
+   "source": 2583765423
+  },
+  {
+   "file": "lang_2.java",
+   "trap": "java.string_equals",
+   "fails": {
+    "1": "failed",
+    "2": "failed",
+    "3": "failed",
+    "7": "failed",
+    "11": "failed",
+    "12": "failed",
+    "13": "failed",
+    "14": "failed",
+    "15": "failed",
+    "16": "failed",
+    "17": "failed",
+    "19": "failed",
+    "20": "failed",
+    "22": "failed",
+    "23": "failed"
+   },
+   "outs": {
+    "1": "13",
+    "2": "11",
+    "3": "6",
+    "7": "10",
+    "11": "392879",
+    "12": "113590",
+    "13": "651",
+    "14": "67",
+    "15": "346",
+    "16": "981",
+    "17": "2080",
+    "19": "2205",
+    "20": "3533",
+    "22": "31187875499",
+    "23": "7916957728"
+   },
+   "source": 3607465708
+  }
+ ],
+ "javascript": [
+  {
+   "file": "lang_1.js",
+   "trap": "javascript.fill_shared",
+   "fails": {
+    "1": "failed",
+    "9": "failed",
+    "10": "failed",
+    "12": "failed",
+    "13": "failed",
+    "14": "failed",
+    "15": "failed",
+    "16": "failed",
+    "17": "failed",
+    "18": "failed",
+    "19": "failed",
+    "20": "failed",
+    "21": "failed",
+    "23": "failed"
+   },
+   "outs": {
+    "1": "16",
+    "9": "1600",
+    "10": "796950",
+    "12": "298950",
+    "13": "2800",
+    "14": "80",
+    "15": "400",
+    "16": "870",
+    "17": "2000",
+    "18": "1164",
+    "19": "980",
+    "20": "2250",
+    "21": "62437625000",
+    "23": "16313451000"
+   },
+   "source": 2237285467
+  },
+  {
+   "file": "lang_2.js",
+   "trap": "javascript.float_division",
+   "fails": {
+    "1": "runtime_error",
+    "3": "runtime_error",
+    "6": "runtime_error",
+    "8": "runtime_error",
+    "10": "runtime_error",
+    "12": "runtime_error",
+    "13": "runtime_error",
+    "14": "runtime_error",
+    "15": "runtime_error",
+    "16": "runtime_error",
+    "17": "runtime_error",
+    "18": "runtime_error",
+    "19": "runtime_error",
+    "20": "runtime_error",
+    "21": "runtime_error",
+    "23": "runtime_error"
+   },
+   "source": 4235695370
+  }
+ ],
+ "cpp": [
+  {
+   "file": "lang_1.cpp",
+   "trap": "cpp.unsigned_loop",
+   "varies": true,
+   "source": 2291309070
+  },
+  {
+   "file": "lang_2.cpp",
+   "trap": "cpp.int_overflow",
+   "at": [
+    "모든 칸의 점수를 더한 값"
+   ],
+   "fails": {
+    "21": "failed",
+    "22": "failed",
+    "23": "failed"
+   },
+   "outs": {
+    "21": "1185353928",
+    "22": "-1924509440",
+    "23": "-1058054511"
+   },
+   "source": 3030945390
+  }
+ ],
+ "rust": [
+  {
+   "file": "lang_1.rs",
+   "trap": "rust.i32_wrap",
+   "at": [
+    "모든 칸의 점수를 더한 값"
+   ],
+   "fails": {
+    "21": "failed",
+    "22": "failed",
+    "23": "failed"
+   },
+   "outs": {
+    "21": "1185353928",
+    "22": "-1924509440",
+    "23": "-1058054511"
+   },
+   "source": 2602897475
+  }
+ ]
+}

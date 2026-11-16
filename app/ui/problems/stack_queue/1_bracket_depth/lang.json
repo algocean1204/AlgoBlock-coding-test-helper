@@ -1,0 +1,47 @@
+{
+ "java": [
+  {
+   "file": "lang_1.java",
+   "trap": "java.string_equals",
+   "fails": {
+    "1": "failed",
+    "5": "failed",
+    "9": "failed",
+    "10": "failed",
+    "11": "failed",
+    "13": "failed",
+    "14": "failed",
+    "17": "failed",
+    "18": "failed",
+    "20": "failed",
+    "22": "failed",
+    "23": "failed",
+    "24": "failed"
+   },
+   "outs": {
+    "1": "-1",
+    "5": "-1",
+    "9": "0",
+    "10": "-1",
+    "11": "-1",
+    "13": "-1",
+    "14": "-1",
+    "17": "-1",
+    "18": "-1",
+    "20": "-1",
+    "22": "-1",
+    "23": "-1",
+    "24": "-1"
+   },
+   "source": 1113861850
+  }
+ ],
+ "cpp": [
+  {
+   "file": "lang_1.cpp",
+   "trap": "cpp.out_of_range",
+   "varies": true,
+   "source": 3840297261
+  }
+ ]
+}

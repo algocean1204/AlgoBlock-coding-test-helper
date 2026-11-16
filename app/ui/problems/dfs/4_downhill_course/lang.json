@@ -1,0 +1,225 @@
+{
+ "python": [
+  {
+   "file": "lang_1.py",
+   "trap": "python.recursion_limit",
+   "at": [
+    "n은 1 이상 50,000 이하"
+   ],
+   "fails": {
+    "19": "runtime_error",
+    "20": "runtime_error"
+   },
+   "source": 870803301
+  },
+  {
+   "file": "lang_2.py",
+   "trap": "python.missing_key",
+   "fails": {
+    "1": "runtime_error",
+    "3": "runtime_error",
+    "4": "runtime_error",
+    "5": "runtime_error",
+    "6": "runtime_error",
+    "8": "runtime_error",
+    "9": "runtime_error",
+    "10": "runtime_error",
+    "11": "runtime_error",
+    "12": "runtime_error",
+    "13": "runtime_error",
+    "14": "runtime_error",
+    "15": "runtime_error",
+    "16": "runtime_error",
+    "17": "runtime_error",
+    "18": "runtime_error",
+    "19": "runtime_error",
+    "20": "runtime_error"
+   },
+   "source": 2145941221
+  },
+  {
+   "file": "lang_3.py",
+   "trap": "python.shared_rows",
+   "fails": {
+    "1": "failed",
+    "2": "failed",
+    "3": "failed",
+    "7": "failed",
+    "9": "failed",
+    "11": "failed",
+    "12": "failed",
+    "13": "failed",
+    "14": "failed",
+    "15": "failed",
+    "16": "failed",
+    "17": "failed",
+    "18": "failed",
+    "19": "timeout",
+    "20": "timeout"
+   },
+   "outs": {
+    "1": "2",
+    "2": "5",
+    "3": "2",
+    "7": "15",
+    "9": "0",
+    "11": "3",
+    "12": "4",
+    "13": "0",
+    "14": "6",
+    "15": "8",
+    "16": "22",
+    "17": "0",
+    "18": "34"
+   },
+   "source": 2188696797
+  }
+ ],
+ "java": [
+  {
+   "file": "lang_1.java",
+   "trap": "java.missing_key_null",
+   "fails": {
+    "1": "runtime_error",
+    "3": "runtime_error",
+    "5": "runtime_error",
+    "6": "runtime_error",
+    "8": "runtime_error",
+    "9": "runtime_error",
+    "10": "runtime_error",
+    "11": "runtime_error",
+    "12": "runtime_error",
+    "13": "runtime_error",
+    "14": "runtime_error",
+    "15": "runtime_error",
+    "16": "runtime_error",
+    "17": "runtime_error",
+    "18": "runtime_error",
+    "19": "runtime_error",
+    "20": "runtime_error"
+   },
+   "source": 923342460
+  }
+ ],
+ "javascript": [
+  {
+   "file": "lang_1.js",
+   "trap": "javascript.recursion_depth",
+   "at": [
+    "n은 1 이상 50,000 이하"
+   ],
+   "fails": {
+    "19": "runtime_error",
+    "20": "runtime_error"
+   },
+   "source": 4122196005
+  },
+  {
+   "file": "lang_2.js",
+   "trap": "javascript.missing_key_undefined",
+   "fails": {
+    "1": "failed",
+    "3": "failed",
+    "5": "failed",
+    "6": "failed",
+    "8": "failed",
+    "9": "failed",
+    "10": "failed",
+    "11": "failed",
+    "12": "failed",
+    "13": "failed",
+    "14": "failed",
+    "15": "failed",
+    "16": "failed",
+    "17": "failed",
+    "18": "failed",
+    "19": "failed",
+    "20": "failed"
+   },
+   "outs": {
+    "1": "null",
+    "3": "null",
+    "5": "null",
+    "6": "null",
+    "8": "null",
+    "9": "null",
+    "10": "null",
+    "11": "null",
+    "12": "null",
+    "13": "null",
+    "14": "null",
+    "15": "null",
+    "16": "null",
+    "17": "null",
+    "18": "null",
+    "19": "null",
+    "20": "null"
+   },
+   "source": 2835924965
+  },
+  {
+   "file": "lang_3.js",
+   "trap": "javascript.fill_shared",
+   "fails": {
+    "1": "failed",
+    "2": "failed",
+    "3": "failed",
+    "7": "failed",
+    "9": "failed",
+    "11": "failed",
+    "12": "failed",
+    "13": "failed",
+    "14": "failed",
+    "15": "failed",
+    "16": "failed",
+    "17": "failed",
+    "18": "failed",
+    "19": "timeout",
+    "20": "timeout"
+   },
+   "outs": {
+    "1": "2",
+    "2": "5",
+    "3": "2",
+    "7": "15",
+    "9": "0",
+    "11": "3",
+    "12": "4",
+    "13": "0",
+    "14": "6",
+    "15": "8",
+    "16": "22",
+    "17": "0",
+    "18": "34"
+   },
+   "source": 3523664087
+  }
+ ],
+ "rust": [
+  {
+   "file": "lang_1.rs",
+   "trap": "rust.unwrap_none",
+   "fails": {
+    "1": "runtime_error",
+    "3": "runtime_error",
+    "4": "runtime_error",
+    "5": "runtime_error",
+    "6": "runtime_error",
+    "8": "runtime_error",
+    "9": "runtime_error",
+    "10": "runtime_error",
+    "11": "runtime_error",
+    "12": "runtime_error",
+    "13": "runtime_error",
+    "14": "runtime_error",
+    "15": "runtime_error",
+    "16": "runtime_error",
+    "17": "runtime_error",
+    "18": "runtime_error",
+    "19": "runtime_error",
+    "20": "runtime_error"
+   },
+   "source": 1312074608
+  }
+ ]
+}

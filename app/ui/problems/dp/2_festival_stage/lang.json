@@ -1,0 +1,30 @@
+{
+ "python": [
+  {
+   "file": "lang_1.py",
+   "trap": "python.recursion_limit",
+   "at": [
+    "pay의 길이(축제 기간)는 1 이상 100,000 이하"
+   ],
+   "fails": {
+    "22": "runtime_error",
+    "23": "runtime_error"
+   },
+   "source": 4224989808
+  }
+ ],
+ "javascript": [
+  {
+   "file": "lang_1.js",
+   "trap": "javascript.recursion_depth",
+   "at": [
+    "pay의 길이(축제 기간)는 1 이상 100,000 이하"
+   ],
+   "fails": {
+    "22": "runtime_error",
+    "23": "runtime_error"
+   },
+   "source": 1720223184
+  }
+ ]
+}
