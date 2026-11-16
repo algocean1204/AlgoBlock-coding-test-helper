@@ -322,7 +322,9 @@ def report() -> None:
     assert body["summary"]["solved"] == 1 and body["summary"]["total"] == len(ROWS) and body["summary"]["languages"]["python"] >= 5
     assert body["recent"][0]["id"] == PID and len(body["recent"]) <= 10
     assert [group["key"] for group in body["signals"]] == ["hash"] and body["signals"][0]["items"][0]["title"] == FIRST["title"]  # 푼 문제의 신호만
-    assert 1 <= len(body["next"]) <= 5 and all(row["id"] != PID for row in body["next"])
+    assert 1 <= len(body["next"]) <= 5 and body["readiness"]["solved"] == 0
+    again = [row for row in body["next"] if row["id"] == PID]  # PID는 해설을 먼저 보고 통과해서 도움 없이 푼 것이 아니다: 다시 풀 후보로 권하되 '이어서 풀기'라 하지 않는다
+    assert all(row["why"].startswith("도움 없이 다시 풀기(") for row in again), again
     others = [theme for theme in body["themes"] if theme["key"] != "hash"]
     assert all(theme["state"] == "new" for theme in others)
     # 약점 규칙: 한 주제의 두 문제에서 답은 맞았지만 큰 입력에서 시간이 모자라면 약한 주제다. 한 문제에서 여러 번, 정확성 케이스의 시간 초과, 세부가 없는 예전 기록은 아니다
@@ -358,13 +360,14 @@ BANNED = ("준비됐", "합격", "약해요", "부족해요", "%")  # 준비도�
 EARLY, LATE = "2000-01-01T00:00:00+09:00", "2999-01-01T00:00:00+09:00"
 
 
-def history(*steps) -> dict:
-    """빈 기록 파일에 steps(t를 받는 함수)를 넣고 학습 보고서를 받는다(다른 시험의 기록과 섞이지 않는다)."""
+def history(*steps, listed: bool = False) -> dict:
+    """빈 기록 파일에 steps(t를 받는 함수)를 넣고 학습 보고서를 받는다(다른 시험의 기록과 섞이지 않는다). listed면 문제 목록의 주제별 '다음'을 보고서의 themes에 겹쳐 돌려준다."""
     with tempfile.TemporaryDirectory() as folder, patch.object(server, "DB", Path(folder) / "report.db"):
         with server.tutor() as t:
             for step in steps:
                 step(t)
-        return call("/api/report")[1]
+        body = call("/api/report")[1]
+        return {**body, "listed": {row["key"]: row["next"] for row in call("/api/problems")[1]["themes"]}} if listed else body
 
 
 def at(when: str):
@@ -496,6 +499,19 @@ def readiness() -> None:
     rest = stage(*[solve(pid) for pid in ids([k for k in ess if k not in ("bfs", "dfs")], (1, 2))])
     assert {row["key"] for row in rest["remaining"]} == {"bfs", "dfs"} and rest["focus"]["key"] == "stack_queue"
     assert next(row for row in rest["remaining"] if row["key"] == "bfs")["after"] == [server.theme_name("stack_queue")]
+    # 추천 큐도 같은 선수 규칙: DFS만 푼 기록이면 이어서 풀기가 DFS 2단계가 아니라 선수 주제(스택·큐)의 첫 문제다. 준비도 칸의 다음 주제와 같다
+    def stuck_ahead(body):  # 추천(쓰던 문제 말고)이 선수 주제가 모자란 주제의 문제인가: 준비도 칸의 '먼저 익힐 주제'와 견준다
+        blocked = {row["name"] for row in body["readiness"]["remaining"] if row["after"]}
+        return [row for row in body["next"] if row["why"] != "쓰던 문제예요." and row["theme_name"] in blocked]
+    sole = history(solve(levels[("dfs", 1)]))
+    assert not stuck_ahead(sole) and any(row["id"] == levels[("stack_queue", 1)] and row["why"].startswith("먼저 익힐 주제예요") for row in sole["next"])
+    assert not any(row["id"] == levels[("dfs", 2)] for row in sole["next"])
+    # 선수 주제를 익혔으면 그대로 이어서 풀기(바뀌지 않는다). 선수가 없는 주제(해시)와 기록이 아주 적은 때도 그대로
+    ready = history(*[solve(pid) for pid in ids(["stack_queue", "brute_force"], (1, 2))], solve(levels[("dfs", 1)]))
+    assert not stuck_ahead(ready)
+    assert next(row for row in ready["next"] if row["why"] == "이어서 풀기" and row["theme_name"] == server.theme_name("dfs"))["id"] == levels[("dfs", 2)]
+    assert any(row["id"] == levels[("hash", 2)] and row["why"] == "이어서 풀기" for row in history(solve(levels[("hash", 1)]))["next"])
+    assert any(row["why"] == "새 주제 시작" for row in history()["next"])
     # 등록한 문제만 푼 기록은 준비도에 들지 않는다
     own = {f"own-{n}": SimpleNamespace(id=f"own-{n}", title="내 문제", sample=False, builtin=False, theme=ess[n % 2], theme_name="", level=0, mode="function") for n in range(6)}
     with patch.dict(server.PROBLEMS, own):
@@ -520,12 +536,32 @@ def readiness() -> None:
         assert history(*[fail(pid, "entry_missing", {"accuracy": [0, 0]}, "java") for pid in three])["patterns"][0]["line"].startswith("Java 코드로 낸 3문제(")
     # 강·약 규칙: 튜터와 함께 첫 제출에 푼 3문제는 강점이 아니다. 한 문제에서 시간 초과 5번 뒤 통과는 약점이 아니다
     hashed = lambda body: next(row for row in body["themes"] if row["key"] == "hash")  # noqa: E731
-    assert hashed(history(*[solve(pid, talk=EARLY) for pid in hash5[:3]]))["state"] == "progress"
+    assert hashed(history(*[solve(pid, talk=EARLY) for pid in hash5[:3]]))["state"] == "weak"  # 강점이 아니고, 도움에만 기댄 통과라 약한 주제
     assert hashed(history(*[solve(pid) for pid in hash5[:3]]))["state"] == "strong"
     assert hashed(history(*[solve(pid, fails=5 if n == 0 else 0) for n, pid in enumerate(hash5)]))["state"] != "weak"
-    # '새 주제 시작'은 학습 지도 순서다(스택·큐 → BFS·DFS가 힙·DP보다 먼저)
+    # 다음 문제는 도움 없이 푼 단계가 기준이다: 모두 도움을 받아 1~4단계를 통과했으면 5단계가 아니라 가장 낮은 단계부터. 모두 도움 없이 풀었으면 5단계(그대로)
+    nxt = lambda body: next(row for row in body["themes"] if row["key"] == "hash")["next"]["id"]  # noqa: E731
+    assert nxt(history(*[solve(pid, helped=EARLY) for pid in hash5[:4]])) == hash5[0]
+    assert nxt(history(*[solve(pid) for pid in hash5[:4]])) == hash5[4]
+    assert nxt(history(solve(hash5[0]), solve(hash5[1]), solve(hash5[2], helped=EARLY))) == hash5[2]  # 도움 받은 3단계는 다시 풀 후보
+    assert nxt(history(solve(hash5[0], helped=EARLY))) == hash5[0] and nxt(history(solve(hash5[0]))) == hash5[1]  # 기록이 아주 적을 때
+    # 도움 받아 통과한 문제를 다시 권할 때는 사실대로 말한다(이어서 풀기가 아니다). 문제 목록의 '다음'도 보고서와 같다
+    aided = history(*[solve(pid, helped=EARLY) for pid in hash5[:4]], listed=True)
+    assert [row["why"] for row in aided["next"] if row["id"] == hash5[0]][0].startswith("도움 없이 다시 풀기(") and aided["listed"]["hash"]["id"] == hash5[0]
+    assert all(row["why"] != "이어서 풀기" for row in aided["next"] if row["id"] in hash5)
+    plain = history(*[solve(pid) for pid in hash5[:4]], listed=True)
+    assert plain["listed"]["hash"]["id"] == hash5[4] == nxt(plain)
+    # 도움에 기대 통과한 주제는 약한 주제다: 서로 다른 두 문제를 모두 도움을 받아 통과 → 약함, 도움 없이 푼 문제가 하나라도 있으면 아님, 한 문제만이면 판정하지 않는다
+    assert hashed(history(*[solve(pid, helped=EARLY) for pid in hash5[:2]]))["state"] == "weak"
+    assert hashed(history(*[solve(pid, hints_seen=1, helped=EARLY) for pid in hash5[:4]]))["state"] == "weak"
+    assert hashed(history(solve(hash5[0]), solve(hash5[1], helped=EARLY)))["state"] == "progress"
+    assert hashed(history(*[solve(pid) for pid in hash5[:2]]))["state"] == "progress"
+    assert hashed(history(solve(hash5[0], helped=EARLY)))["state"] == "progress"
+    weakened = history(*[solve(pid, helped=EARLY) for pid in hash5[:2]])
+    assert any(row["key"] == "hash" and "도움 없이 푼 문제가 아직 없어요" in row["why"] for row in weakened["weaknesses"])
+    # '새 주제 시작'은 학습 지도 순서이고, 선수 주제가 있는 주제는 선수 주제를 익힌 뒤에야 나온다(기록이 없으면 선수 없는 주제만)
     fresh = [row["theme_name"] for row in history()["next"] if row["why"] == "새 주제 시작"]
-    assert fresh == [server.theme_name(key) for key in server.PREREQS][:len(fresh)], fresh
+    assert fresh == [server.theme_name(key) for key in server.PREREQS if not server.PREREQS[key]][:len(fresh)], fresh
     # 주제를 '자동'으로 둔 등록 문제: 대조 검증이 all이면 풀이 계획의 유형으로 실패 수·약점 판정에 든다(기본 문제 칸·준비도에는 들지 않는다).
     # 고른 주제가 먼저이고, 계획의 유형과 다르면 둘을 나란히 보인다
     auto, auto2, partly, chosen = (server.register(GOOD)["id"] for _ in range(4))
@@ -908,6 +944,18 @@ def debug_pass() -> None:
     assert got["judged"]["unsaved"] and got["judged"]["ok"] and (state["submitted"], state["passed"]) == (1, 0), (state["submitted"], state["passed"])
 
 
+def passed_reopen() -> None:
+    """통과한 풀이를 다시 열면(화면 코드 확인): 풀던 중의 실패 말, '끝까지 쓰는 중' 안내, 틀린 곳 찾기의 옛 질문이 지금 상태처럼 남지 않는다. 브라우저 동작은 화면 확인으로 본다."""
+    js, css = (HERE / "app.js").read_text(encoding="utf-8"), (HERE / "app.css").read_text(encoding="utf-8")
+    assert "const passedNow = () => !!(S.problem && S.problem.study.passed_now);" in js
+    assert "ownWayOn() && !passedNow() ?" in js  # 통과한 뒤에는 '끝까지 내 방식으로 쓰는 중' 안내를 걷는다
+    assert "const result = !passedNow() && st && st !== \"pass\"" in js  # 블록 아래의 옛 실패 한 줄도
+    assert "if (passedNow()) html += '<p class=\"notice\" role=\"status\">이번 풀이는 통과했어요." in js  # 튜터 대화의 맨 아래가 옛 실패 말이어도 통과를 알린다
+    assert 'if (d.passed && html) html = `<details class="old-talk">' in js and ".old-talk summary" in css  # 통과한 뒤 틀린 곳 찾기의 옛 대화는 접는다
+    assert "S.debug.passed = true; S.debug.line = null;" in js  # 제출로 통과해도 옛 질문과 짚은 줄을 걷는다
+    assert call("/api/state", id=PID)[1]["problem"]["study"].get("passed_now") is not None  # 화면이 쓰는 값
+
+
 def own_way_flow() -> None:
     """'끝까지 내 방식으로 쓰기'(모델·실행 0회): 지금 블록은 넘어가기와 같게 확인 전, 남은 블록을 모두 열고 표시가 남는다(다시 열어도).
     통과(Y)를 새로 만들지 않는다. '튜터 차례로 돌아가기' 뒤에는 블록 코드 확인이 다시 돈다. 초기화하면 표시도 지운다."""
@@ -940,6 +988,17 @@ def state_names_by_mode() -> None:
     assert [b["name"] for b in guide["blocks"]] == ["개수 세기", None], guide["blocks"]
     assert [b["name"] for b in chair["blocks"]] == [None, None], chair["blocks"]
     call("/api/reset", id=PID)
+
+
+def keyboard_focus() -> None:
+    """키보드 초점(화면 코드 확인): 키보드로 누른 단추가 사라지면 초점을 이어 갈 자리로 돌려 놓고, 건너뛰기 링크는 주소를 바꾸지 않고 본문 제목으로 옮기며,
+    코드 칸에 초점이 있는 동안 Esc 다음 Tab 안내가 보인다. 사용법 창은 처음부터 showModal로 연다. 브라우저 동작은 화면 확인으로 본다."""
+    js, css, html = (HERE / "app.js").read_text(encoding="utf-8"), (HERE / "app.css").read_text(encoding="utf-8"), (HERE / "index.html").read_text(encoding="utf-8")
+    assert "function focusAfter(el)" in js and 'e.detail === 0 && e.target.closest("#view-code button")' in js and "}, true);" in js  # 다시 그리기 전에(잡기 단계에서) 받는다
+    assert '"#say"' in js[js.index("function focusAfter(el)"):js.index("document.addEventListener(\"focusin\"")] and 'textarea[data-block=' in js  # 첫 질문 → 입력 칸, 블록 확인 → 그 블록 칸
+    assert 'e.target.closest("a.skip")' in js and "e.preventDefault();" in js[js.index('a.skip'):js.index("codeCell")] and '<main id="main" tabindex="-1">' in html  # 주소를 바꾸면 화면이 홈으로 갔다
+    assert 'id="tab-hint"' in html and "Esc를 누른 뒤 Tab" in html and ".tab-hint.on { visibility: visible; }" in css and '$("tab-hint").classList.toggle("on", codeCell(e.target))' in js
+    assert "tour.showModal" in js  # 사용법 창은 모달: Tab이 창 안에서 돈다
 
 
 def chair_found() -> None:
@@ -2130,6 +2189,10 @@ def home_screen() -> None:
     assert "rd.solved" in status and "sum.solved - rd.solved" in status and "rd.rule_short" in status and 'role="img"' in status  # 도움 없이·그 밖의 통과를 갈라 보이고 기준을 ⓘ로 편다
     assert "도움 받아 통과" not in js and "그 밖의 통과" in status and js.count("그 밖의 통과") >= 6  # 도움을 쓰지 않은 통과(제출 4번째, 처음부터 뒤 하루 안)도 들어 있어서 '도움 받아'라 부르지 않는다
     assert "weaknesses.find" not in js[js.index("async function showReport()"):js.index("async function showReport()") + 1500]  # 보고서 단추가 약한 주제를 따로 앞세우지 않는다
+    # 되풀이한 실수: '틀린 곳 같이 찾기'에서만 쌓이니 소개 글이 그렇게 말하고, 목록이 비어도 카드는 남아 쌓이는 법을 한 줄로 안내한다
+    report_js = js[js.index("async function showReport()"):js.index("async function showReport()") + 9000]
+    assert "‘틀린 곳 같이 찾기’를 쓰면 되풀이한 실수도 모아 줘요" in js and "제출 기록에서 강한 주제와 더 공부할 주제, 자주 하는 실수" not in js
+    assert "d.pitfalls.length ? `<section" not in report_js and "‘틀린 곳 같이 찾기’를 쓰면 쌓여요" in report_js
 
 
 def settings_screen() -> None:
@@ -2177,6 +2240,29 @@ def aid_note() -> None:
     assert not server.unaided_open(SimpleNamespace(builtin=True), [], study, "2026-01-01T00:00:00+00:00", False)  # 튜터와 말했다
 
 
+def report_terms() -> None:
+    """학습 보고서의 낱말 풀이와 할 일 하나(화면 코드 확인): 준비도·기준·출석·실전 신호를 한 줄로 풀고, 다음에 배울 주제의 첫 문제가 ‘이어서 풀기’와 같으면 따로 링크하지 않는다."""
+    js = (HERE / "app.js").read_text(encoding="utf-8")
+    for text in ("도움(튜터·힌트·해설) 없이 푼 기본 문제가 얼마나 쌓였는지 보는 단계예요.", "준비도 기준 보기(어떤 통과를 도움 없이 푼 것으로 세는지)", "앱을 연 날을 세요.",
+                 "실전 신호는 풀이 가이드가 짚어 준 단서예요.", "단계는 주제별로 익힌 정도로 정해져요.", "첫 줄이 위의 ‘이어서 풀기’와 같아요."):
+        assert text in js, text
+    import re
+    import shutil
+    node = shutil.which("node")
+    if not node:
+        return print("node가 없어 보고서 분기 시험은 건너뜀")
+    source = re.search(r"/\* report-pure:start.*?\*/(.*?)/\* report-pure:end \*/", js, re.S).group(1)
+    script = source + """
+const t = { id: "a" };
+console.log(JSON.stringify([focusTail({ next: { id: "a" } }, t), focusTail({ next: { id: "b" } }, t), focusTail({ next: null }, t), focusTail({ next: { id: "a" } }, null),
+  sideNext({ next: { id: "a", title: "A" } }, t), sideNext({ next: { id: "b", title: "B" } }, t), sideNext({ next: null }, t)]));
+"""
+    same, other, none, no_target, side_same, side_other, side_none = json.loads(subprocess.run([node, "-e", script], capture_output=True, text=True, check=True).stdout)
+    assert "첫 문제는 위의" in same and "끝낸 뒤" in other and none == "" and "끝낸 뒤" in no_target  # 같을 때만 ‘첫 문제는 위’, 다르면 링크 없이 순서만
+    assert side_same == "" and side_other == "‘이어서 풀기’를 끝낸 뒤: B" and side_none == ""
+    assert "focusTail(focus, target)" in js and "sideNext(x, target)" in js and 'href="#/p/${esc(focus.next.id)}"' not in js
+
+
 def way_info() -> None:
     """푸는 방식 설명: 네 방식이 한 자료에서 나오고, ⓘ는 눌러 펴며(키보드·Esc), 잠긴 방식도 글이 읽히고 ⓘ가 열린다. 브라우저 동작은 화면 확인으로 본다."""
     import re
@@ -2218,6 +2304,15 @@ def new_draft() -> None:
     keep = js[js.index("function saveDraft()"):js.index("function restoreDraft()")]
     assert "sessionStorage.setItem(DRAFT" in keep and "localStorage" not in keep and "api(" not in keep and "fetch(" not in keep
     assert js.count("sessionStorage.removeItem(DRAFT)") >= 2 and "restoreDraft();" in js  # 비우면 지우고, 처음 열 때 되살린다
+
+
+def menu_and_title_note() -> None:
+    """더 보기 메뉴와 내 문제 넣기의 제목 안내(화면 코드 확인): 닫힌 메뉴는 클릭을 받지 않고 Tab으로 나가면 닫히며, 제목 칸 안내는 실제로 채웠을 때만 '첫 줄에서 채웠어요'라고 한다."""
+    js, css, html = (HERE / "app.js").read_text(encoding="utf-8"), (HERE / "app.css").read_text(encoding="utf-8"), (HERE / "index.html").read_text(encoding="utf-8")
+    assert ".more:not([open]) > .more-menu { display: none; }" in css
+    assert '$("more").addEventListener("focusout"' in js and "!$(\"more\").contains(e.relatedTarget)" in js
+    assert "function titleNote()" in js and js.count("titleNote();") >= 2 and "제목을 찾지 못했어요. 문제 이름을 직접 적어 주세요." in js
+    assert '<small id="new-title-note" class="hint">글의 첫 줄에서 채웠어요' not in html  # 처음 글에는 채웠다고 말하지 않는다
 
 
 def pane_widths() -> None:
@@ -2656,7 +2751,19 @@ def build_only() -> None:
     assert run("--only", "hash/없는_폴더").returncode == 2 and run("--only").returncode == 2
 
 
+def neutral_notes() -> None:
+    """기본 문제 해설(단서의 뜻·익힌 것·흔한 실수·사다리)은 언어마다 갈리지 않으니 한 언어에만 있는 낱말(KeyError, 딕셔너리, heapq 등)이 없어야 한다."""
+    import problemkit
+    found = [f"{row['id']}: {line}" for row in ROWS for line in problemkit.language_bound(row)]
+    assert not found, found
+    bad = {"learn": "x", "pattern": "x", "ladder": "x", "pitfalls": ["count[k] += 1에서 KeyError가 난다"], "signals": [{"means": "딕셔너리에 넣는다"}]}
+    assert len(problemkit.language_bound(bad)) == 2  # 걸러야 할 글은 실제로 걸린다
+    for word in ("KeyError가 난다", "heapq에서 꺼낸다", "dict로 센다", "int에 담는다", "IndexError가 난다", "long으로 더한다"):  # 한글 조사가 붙은 낱말도 걸린다
+        assert problemkit.language_bound({**bad, "pitfalls": [word], "signals": [{"means": "x"}]}), word
+
+
 def main() -> None:
+    neutral_notes()
     build_only()
     error_lines()
     broken_files()
@@ -2676,8 +2783,10 @@ def main() -> None:
         readiness()
         screen_flows()
         debug_pass()
+        passed_reopen()
         own_way_flow()
         state_names_by_mode()
+        keyboard_focus()
         chair_found()
         guide_spoken()
         result_guides()
@@ -2710,7 +2819,9 @@ def main() -> None:
         settings_screen()
         settings_items()
         way_info()
+        report_terms()
         new_draft()
+        menu_and_title_note()
         hidden_cases()
         hint_by_block()
         assert not fake.calls, fake.calls  # 고치기·지우기도 모델을 부르지 않는다

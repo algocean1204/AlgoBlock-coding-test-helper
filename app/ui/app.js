@@ -467,6 +467,10 @@ function failTip(fails) {
 }
 const when = (at) => String(at || "").slice(0, 16).replace("T", " ");
 
+/* report-pure:start 보고서의 ‘첫 할 일은 하나’ 분기(node로도 시험한다). 맨 위 ‘이어서 풀기’(target)와 같은 문제만 가리키고, 다른 문제는 링크로 내지 않는다. */
+const focusTail = (focus, target) => (!focus.next ? "" : target && focus.next.id === target.id ? " · 첫 문제는 위의 ‘이어서 풀기’예요" : " — ‘이어서 풀기’를 끝낸 뒤");
+const sideNext = (x, target) => (x.next && !(target && x.next.id === target.id) ? `‘이어서 풀기’를 끝낸 뒤: ${x.next.title}` : "");
+/* report-pure:end */
 async function showReport() {
   show("report");
   const [rep, ps] = await Promise.all([api("/api/report"), api("/api/problems")]);
@@ -490,26 +494,26 @@ async function showReport() {
     <div class="tile"><span class="tile-label">통과한 기본 문제</span><strong>${sum.solved}<small> / ${sum.total}</small></strong><span class="bar" aria-hidden="true"><i style="width:${sum.total ? Math.round(100 * sum.solved / sum.total) : 0}%"></i></span><span class="tile-sub">도움 없이 ${d.readiness.solved} · 그 밖의 통과 ${sum.solved - d.readiness.solved}</span>${sum.own.total ? `<span class="tile-sub">등록한 문제 ${sum.own.solved} / ${sum.own.total}</span>` : ""}</div>
     <div class="tile"><span class="tile-label">제출</span><strong>${sum.submissions}<small>번</small></strong><span class="tile-sub">${esc(langs || "아직 없어요")}</span></div>
     <div class="tile"><span class="tile-label">첫 제출에 통과</span><strong>${Math.round(100 * sum.first_try_rate)}<small>%</small></strong><span class="tile-sub">제출한 문제 가운데 첫 제출에 통과한 비율</span></div>
-    <div class="tile"><span class="tile-label">출석</span><strong>${att.days}<small>일</small></strong>
+    <div class="tile"><span class="tile-label">출석</span><strong>${att.days}<small>일</small></strong><span class="tile-sub">앱을 연 날을 세요. 아래 점은 최근 14일이에요.</span>
       <span class="days" role="img" aria-label="최근 14일 가운데 ${came}일 출석">${att.recent.map((on) => `<i${on ? ' class="on"' : ""}></i>`).join("")}</span></div>
   </section>`;
   // 준비도(도움 없이 푼 기본 문제로만)와 다음 단계까지 남은 주제(학습 지도 순서), 여러 주제에서 되풀이된 실패. 빈 카드는 보이지 않는다
   const rd = d.readiness, focus = rd.focus, SHOWN = 5; // 남은 주제는 앞의 다섯 줄만 펼쳐 두고 나머지는 접는다
   const lefts = (rows) => `<ul class="points plain">${rows.map((x) => `<li><strong>${esc(x.name)}</strong>
       <span>${esc(x.todo)}${x.after.length ? ` · 먼저 ${esc(x.after.join(", "))}` : ""}</span></li>`).join("")}</ul>`;
-  html += `<div class="sides${d.patterns.length ? "" : " full"}"><section class="card side"><h2>준비도 <span class="muted">${esc(rd.label)}</span></h2><p>${esc(rd.line)}</p>
-    ${focus ? `<p class="hint">다음에 배울 주제: <strong>${esc(focus.name)}</strong>${focus.next ? ` · <a class="link" href="#/p/${esc(focus.next.id)}">${esc(focus.next.title)}</a>` : ""}</p>` : ""}
+  html += `<div class="sides${d.patterns.length ? "" : " full"}"><section class="card side"><h2>준비도 <span class="muted">${esc(rd.label)}</span></h2><p class="hint">도움(튜터·힌트·해설) 없이 푼 기본 문제가 얼마나 쌓였는지 보는 단계예요. 단계는 주제별로 익힌 정도로 정해져요.</p><p>${esc(rd.line)}</p>
+    ${focus ? `<p class="hint">다음에 배울 주제: <strong>${esc(focus.name)}</strong>${focusTail(focus, target)}</p>` : ""}
     ${rd.remaining.length ? `<p class="hint">${esc(rd.goal)}까지 남은 주제</p>${lefts(rd.remaining.slice(0, SHOWN))}` : ""}
     ${rd.remaining.length > SHOWN ? `<details class="signal-group"><summary>나머지 ${rd.remaining.length - SHOWN}개 주제 보기</summary>${lefts(rd.remaining.slice(SHOWN))}</details>` : ""}
-    <details class="signal-group"><summary>기준 보기</summary><ul class="plain-list">${rd.rules.map((x) => `<li>${esc(x)}</li>`).join("")}</ul></details>
+    <details class="signal-group"><summary>준비도 기준 보기(어떤 통과를 도움 없이 푼 것으로 세는지)</summary><ul class="plain-list">${rd.rules.map((x) => `<li>${esc(x)}</li>`).join("")}</ul></details>
     <p class="hint">${esc(rd.basis)}</p></section>
     ${d.patterns.length ? `<section class="card side"><h2>여러 주제에서 되풀이된 실패</h2><ul class="points">${d.patterns.map((x) => `<li>${esc(x.line)}</li>`).join("")}</ul></section>` : ""}</div>`;
   const side = (title, rows, cls) => `<section class="card side ${cls}"><h2>${title}</h2><ul class="points">${rows.map((x) => `<li><strong>${esc(x.name)}</strong><span>${esc(x.why)}</span>
-    ${x.next && !(target && x.next.id === target.id) ? `<a class="link" href="#/p/${esc(x.next.id)}">다음에 풀 문제: ${esc(x.next.title)}</a>` : ""}</li>`).join("")}</ul></section>`;
+    ${sideNext(x, target) ? `<span class="hint">${esc(sideNext(x, target))}</span>` : ""}</li>`).join("")}</ul></section>`;
   const sides = [d.weaknesses.length ? side("더 공부할 주제", d.weaknesses, "weak") : "", d.strengths.length ? side("강한 주제", d.strengths, "strong") : ""].filter(Boolean); // 빈 카드는 보이지 않는다
   if (sides.length) html += `<div class="sides">${sides.join("")}</div>`;
   const nexts = d.next; // 첫 줄이 홈의 ‘이어서 풀기’와 결과·피드백의 ‘다음 문제’다
-  if (nexts.length) html += `<h2 class="list-label">다음에 풀 문제</h2><ul class="rows">${nexts.map((n) => `<li><a class="row" href="#/p/${esc(n.id)}"><span><span class="row-title">${esc(n.title)}</span>
+  if (nexts.length) html += `<h2 class="list-label">다음에 풀 문제</h2><p class="hint">첫 줄이 위의 ‘이어서 풀기’와 같아요. 나머지는 그다음 후보예요.</p><ul class="rows">${nexts.map((n) => `<li><a class="row" href="#/p/${esc(n.id)}"><span><span class="row-title">${esc(n.title)}</span>
     <span class="badges">${lvBadge(n.level)}${n.theme_name ? `<span class="theme-chip">${esc(n.theme_name)}</span>` : ""}</span><span class="row-meta">${esc(n.why)}</span></span><span></span>${ico("i-caret")}<span class="sr-only">열기</span></a></li>`).join("")}</ul>`;
   const fold = (title, count, body) => `<details class="fold card"><summary>${ico("i-caret")}<span>${title}</span> <span class="muted">${count}</span></summary>${body}</details>`;
   html += fold("주제별 진행", `${d.themes.length}개 주제 · 통과 ${sum.solved}`, `${LEGEND}<ul class="ladders report">${d.themes.map((t) => `<li class="ladder-row">
@@ -521,9 +525,9 @@ async function showReport() {
   </li>`).join("")}</ul>`);
   const cards = [failAll ? `<section class="card side"><h2>통과하지 못한 제출</h2><ul class="bars">${fails.map(([kind, n]) => `<li><span>${FAIL_WORD[kind]}</span><span class="bar" aria-hidden="true"><i class="${kind}" style="width:${Math.round(100 * n / failMax)}%"></i></span><b>${n}</b></li>`).join("")}</ul>
       <p class="hint">${failTip(fails)}</p></section>` : "",
-    d.pitfalls.length ? `<section class="card side"><h2>되풀이한 실수</h2><ul class="points plain">${d.pitfalls.map((x) => `<li><strong>${esc(x.name)}</strong><span>${x.count}번</span>${x.problems.length ? `<span class="pit-from muted">${x.problems.map((p) => `<a href="#/p/${esc(p.id)}">${esc(p.title)}</a>`).join(" · ")}</span>` : ""}</li>`).join("")}</ul></section>` : ""].filter(Boolean);
+    `<section class="card side"><h2>되풀이한 실수</h2>${d.pitfalls.length ? "" : `<p class="hint">같은 실수를 두 번 이상 하면 여기에 모여요. ‘틀린 곳 같이 찾기’를 쓰면 쌓여요(제출이 틀린 것만으로는 쌓이지 않아요).</p>`}<ul class="points plain">${d.pitfalls.map((x) => `<li><strong>${esc(x.name)}</strong><span>${x.count}번</span>${x.problems.length ? `<span class="pit-from muted">${x.problems.map((p) => `<a href="#/p/${esc(p.id)}">${esc(p.title)}</a>`).join(" · ")}</span>` : ""}</li>`).join("")}</ul></section>`].filter(Boolean);
   if (cards.length) html += `<div class="sides">${cards.join("")}</div>`;
-  if (d.signals.length) html += fold("실전 신호 모음", `${d.signals.reduce((n, g) => n + g.items.length, 0)}개`, `<p class="hint">통과한 문제에서 모았어요. 실전에서 이런 표현을 보면 이 방법을 떠올려요.</p>
+  if (d.signals.length) html += fold("실전 신호 모음", `${d.signals.reduce((n, g) => n + g.items.length, 0)}개`, `<p class="hint">실전 신호는 풀이 가이드가 짚어 준 단서예요. 어떤 표현이 어떤 방법을 떠올리게 하는지 통과한 문제에서 모았어요. 실전에서 이런 표현을 보면 이 방법을 떠올려요.</p>
     ${d.signals.map((g) => `<details class="signal-group"><summary>${ico("i-caret")}${esc(g.name)} <span class="muted">${g.items.length}개</span></summary><ul class="signals">${g.items.map((x) => `<li class="signal"><q>${esc(x.phrase)}</q><span>${esc(x.means)}</span><small>${esc(x.title)}</small></li>`).join("")}</ul></details>`).join("")}`);
   if (d.feedbacks.length) html += `<h2 class="list-label">받은 AI 피드백</h2><ul class="rows">${d.feedbacks.map((f) => `<li><a class="row" href="#/p/${esc(f.id)}/feedback"><span><span class="row-title">${esc(f.title)}</span>
     <span class="row-meta">${esc(when(f.at))}${f.summary ? ` · ${esc(f.summary.length > 90 ? `${f.summary.slice(0, 90).replace(/\s*\S*$/, "")}…` : f.summary)}` : ""}</span></span><span></span>${ico("i-caret")}<span class="sr-only">피드백 열기</span></a></li>`).join("")}</ul>`;
@@ -610,7 +614,14 @@ async function findTable() {
 
 /** 등록 화면의 작은 안내: 실수 허용 오차(함수 방식에서 케이스에 실수가 있을 때), '새로 쓰기'(적은 것이 있을 때. 수정 화면은 아니다). */
 const hasFloat = (t) => /\d\.\d|\d[eE][-+]?\d/.test(String(t).replace(/"(?:\\.|[^"\\])*"/g, "")); // 문자열 안은 보지 않는다
+/** 제목 칸 아래 안내: 정말 첫 줄에서 채웠을 때만 그렇게 말한다. 채우지 못했거나(첫 줄이 문장이면 제목으로 쓰지 않는다) 내가 적었으면 그에 맞게. */
+function titleNote() {
+  const title = $("new-title").value.trim();
+  $("new-title-note").textContent = !title ? "제목을 찾지 못했어요. 문제 이름을 직접 적어 주세요."
+    : autoTitle && title === autoTitle.trim() ? "글의 첫 줄에서 채웠어요. 고쳐도 돼요." : "문제 목록에 보이는 이름이에요.";
+}
 function syncForm() {
+  titleNote();
   const rows = formCases();
   $("case-float").hidden = $("new-mode").value === "program" || !rows.some((x) => hasFloat(x.input) || hasFloat(x.expected));
   $("case-names-field").hidden = $("new-mode").value === "program" || !!NAMES; // 표 머리에서 이름을 얻지 못한 함수 문제만: 글의 이름을 직접 적을 수 있다
@@ -769,6 +780,7 @@ function setStep(n, focus = true) {
   clearError();
   saveDraft();
   if (n === 3) renderSummary();
+  titleNote();
   if (focus) $("wstep-title").focus();
 }
 
@@ -1230,6 +1242,8 @@ const slowHead = (r) => (effCrash(r) ? "답은 맞지만 큰 입력에서 오류
 const effCrash = (r) => r.cases.find((c) => c.kind === "efficiency" && c.status === "runtime_error");
 const slowOnlyOf = (r) => !r.ok && !r.run && r.cases.length > 0 && !!r.score && r.score.accuracy[0] === r.score.accuracy[1] && r.score.efficiency[1] > 0;
 /** '끝까지 내 방식으로 쓰기'가 지금 보이는 튜터 차례(가이드)에 켜져 있다. */
+/** 이번 풀이에서 이미 통과했다: 풀던 중의 실패 말과 '끝까지 쓰는 중' 안내를 지금 상태처럼 보이지 않는다. */
+const passedNow = () => !!(S.problem && S.problem.study.passed_now);
 const ownWayOn = () => !!S.ownWay && S.mode === "guide" && S.talk === "guide";
 /** 튜터 블록을 다 열고(의자는 다 찾고) 빈 칸이 없다: 모아서 실행할 때. */
 const blocksReady = () => S.session.blocks.length > 0 && (S.mode === "chair" ? allFound() : S.session.open_count >= S.session.blocks.length || passedAloneAt() >= 0) && !emptyBlocks().length;
@@ -1316,7 +1330,7 @@ function renderBlocks() {
       const empty = !saved.code.trim();
       const cell = !current || !empty || S.talk === "guide";
       const check = showCheck(b, state, current), st = empty ? "" : blockStatus(b, saved), line = saved.line || {};
-      const result = st && st !== "pass" && sameCode(b, saved) && line.text ? `<p class="block-result is-${line.ok === false ? "fail" : "wait"}">${inline(line.text)}${line.skipped ? "" : ' <span class="muted">자세한 말은 오른쪽 튜터의 말에 있어요.</span>'}</p>` : "";
+      const result = !passedNow() && st && st !== "pass" && sameCode(b, saved) && line.text ? `<p class="block-result is-${line.ok === false ? "fail" : "wait"}">${inline(line.text)}${line.skipped ? "" : ' <span class="muted">자세한 말은 오른쪽 튜터의 말에 있어요.</span>'}</p>` : "";
       const skip = current && S.talk === "guide" && (st === "fail" || st === "wait") && sameCode(b, saved) && !!line.text; // 마지막 확인이 통과가 아니면 갇히지 않게 넘어갈 길을 준다
       return `<li class="block is-${state}${st ? ` st-${st}` : ""}"${current ? ' aria-current="step"' : ""}>
         <span class="no" aria-hidden="true">${n}</span>
@@ -1342,7 +1356,7 @@ function renderBlocks() {
   }
   // 튜터의 질문으로: 블록을 찾기 전에는 블록 칸이 없다. 코드를 먼저 쓰고 싶은 사람이 ‘코드 전체’ 탭을 찾아 헤매지 않게 길을 보인다
   const nocell = S.talk === "chair" && !s.blocks.some((b, i) => blockState(b, i) === "found") ? '<div class="note" role="status">블록은 찾는 대로 하나씩 열려요. 먼저 코드를 써 보고 싶으면 ‘코드 전체’ 칸에 쓸 수 있어요. <button type="button" class="btn quiet small" data-tab="direct">코드 전체 칸 열기</button></div>' : "";
-  const own = ownWayOn() ? `<div class="note" role="status">내 방식으로 끝까지 쓰는 중이에요. 블록마다 확인하지 않고, 다 쓴 뒤 ‘모아서 실행’으로 확인해요. <button type="button" class="btn quiet small" data-own-off>튜터 차례로 돌아가기</button></div>` : "";
+  const own = ownWayOn() && !passedNow() ? `<div class="note" role="status">내 방식으로 끝까지 쓰는 중이에요. 블록마다 확인하지 않고, 다 쓴 뒤 ‘모아서 실행’으로 확인해요. <button type="button" class="btn quiet small" data-own-off>튜터 차례로 돌아가기</button></div>` : "";
   $("blocks-note").innerHTML = (S.busy && S.busy.where === "blocks" ? `<div class="note">${waitLine("blocks")}</div>` : "") + nocell + own + noteHtml(S.note.blocks);
 }
 
@@ -1886,6 +1900,7 @@ async function judgeCode(run, input) {
   $("code")._seen = code;
   S.result = r.ok ? { ...r.data, run, own, looks: looksLike(code) } : { alert: errorNote(r.error) };
   S.casesOpen = null;
+  if (r.ok && r.data.ok && !run && !own && S.debug) { S.debug.passed = true; S.debug.line = null; } // 제출로 통과했다: 틀린 곳 찾기의 옛 질문과 짚은 줄을 걷는다
   say(!r.ok ? "" : own ? "직접 넣은 값으로 실행했어요." : run ? (r.data.ok ? "예시를 모두 맞혔어요." : r.data.many ? `${MANY_HEAD}.` : "예시에서 틀려요.") : r.data.ok ? "채점 결과: 통과" : `채점 결과: ${r.data.many ? MANY_HEAD : "아직 틀려요"}`);
   if (run) return render();
   await loadState();
@@ -2000,7 +2015,8 @@ function renderTutor() {
     }
   });
   const last = chat[chat.length - 1], gaps = last && last.role === "service" && /^블[록럭]을 모두 채웠어요/.test(last.text) ? emptyBlocks() : [];
-  if (gaps.length) html += `<p class="notice warn" role="status">${esc(gapText(gaps))}</p>`; // 엔진의 고정 안내 아래에 빈 칸을 알린다
+  if (passedNow()) html += '<p class="notice" role="status">이번 풀이는 통과했어요. 위 대화는 풀던 중의 기록이에요.</p>'; // 맨 아래 말이 옛 실패 말이어도 지금 상태로 읽히지 않게
+  else if (gaps.length) html += `<p class="notice warn" role="status">${esc(gapText(gaps))}</p>`; // 엔진의 고정 안내 아래에 빈 칸을 알린다
   if (S.busy && S.busy.where === "chat") html += (S.sending ? meMsg(S.sending.text, true) : "") + pending("chat");
   else if (allFound()) html += '<p class="notice" role="status">블록을 모두 찾았어요. 블록 칸을 채우고 ‘모아서 실행’을 눌러 보세요.</p>';
   html += noteHtml(S.note.chat);
@@ -2267,6 +2283,7 @@ function renderDebug() {
   $("debug-sheet").hidden = !open;
   if (!open) return;
   let html = d.messages.map((m) => (m.role === "service" ? tutorBubble(m.text) : m.role === "regrade" ? `<p class="regrade" role="separator">${esc(m.text)}</p>` : meMsg(m.text))).join("");
+  if (d.passed && html) html = `<details class="old-talk"><summary>풀던 대화 보기</summary>${html}</details>`; // 통과한 뒤에는 옛 질문이 맨 아래에 남지 않게 접는다
   if (S.busy && S.busy.where === "debug") html += (S.sending ? meMsg(S.sending.text, true) : "") + pending("debug");
   if (d.passed) html += '<div class="note ok" role="status">고친 코드가 모든 케이스를 통과했어요. 채점 결과 칸에서 피드백을 받아 보세요.</div>';
   html += noteHtml(d.note);
@@ -2656,7 +2673,7 @@ const TOUR = [
   ["어떻게 풀지 골라요", "문제를 열면 오른쪽에서 푸는 방식을 골라요. ‘혼자 풀기’는 튜터 없이 풀고 막히면 힌트를 봐요. ‘튜터의 질문으로’는 답 대신 질문만 하고, ‘튜터와 차례로’는 풀이를 블록으로 나눠 하나씩 열어 줘요. 카드의 ⓘ를 누르면 자세한 설명이 나와요."],
   ["결과 바로 아래에 다음 할 일", "제출하면 결과 아래에 할 일이 하나 나와요. 틀리면 ‘틀린 곳 같이 찾기’나 ‘풀이 힌트 보기’, 통과하면 ‘다음 문제’예요. 통과한 문제는 실전 신호가 열려 비슷한 문제를 알아보는 눈을 길러요."],
   ["내 문제 넣기는 세 걸음", "글을 붙여 넣거나 사진·PDF를 넣고(1 글 넣기), 읽은 글과 자동으로 채운 예시를 확인한 뒤(2 확인하기), 등록해요(3 등록). 등록한 문제도 같은 방식으로 채점해요."],
-  ["학습 보고서로 약한 곳을 찾아요", "제출 기록에서 강한 주제와 더 공부할 주제, 자주 하는 실수를 모아 보여 주고, 더 공부할 문제를 바로 열어 줘요."],
+  ["학습 보고서로 약한 곳을 찾아요", "제출 기록에서 강한 주제와 더 공부할 주제를 모아 보여 주고, 더 공부할 문제를 바로 열어 줘요. ‘틀린 곳 같이 찾기’를 쓰면 되풀이한 실수도 모아 줘요."],
   ["AI 연결은 선택이에요", "튜터는 언어 모델로 움직여요. 쓰려면 오른쪽 위 ‘설정’의 ‘AI 연결’에서 Claude나 OpenAI 키를 넣거나 ChatGPT로 로그인해요. 키는 이 기기에만 저장해요."],
 ];
 let tourAt = 0;
@@ -3198,6 +3215,46 @@ document.addEventListener("keydown", (e) => {
 });
 
 $("more").addEventListener("toggle", () => { if (!$("more").open) { $("reset-confirm").hidden = true; $("reset").hidden = false; } }); // 메뉴를 닫으면 처음부터의 물음도 접는다
+/** 더 보기: 키보드로 메뉴 밖으로 나가면(Tab) 닫는다. 열린 채 남은 메뉴가 그 아래 단추(방식 바꾸기 등)를 덮지 않게. */
+$("more").addEventListener("focusout", (e) => { if ($("more").open && e.relatedTarget && !$("more").contains(e.relatedTarget)) $("more").open = false; });
+/* ── 키보드 초점 ── */
+const focusable = (x) => !!x && !x.disabled && !x.closest("[hidden]") && !!x.offsetParent;
+/** 키보드로 누른 단추가 다시 그리며 사라지거나 새로 그려져 초점이 문서 맨 위(body)로 떨어지면, 같은 단추나 그 일이 이어지는 자리로 돌려 놓는다.
+    기다림(모델·채점)이 끝난 뒤에 한 번 본다. 그 사이 사용자가 초점을 옮겼으면 건드리지 않는다. */
+function focusAfter(el) {
+  const own = [...el.attributes].filter((a) => a.name.startsWith("data-") && a.name !== "data-model").map((a) => `[${a.name}="${CSS.escape(a.value)}"]`)[0];
+  const block = el.dataset.check || el.dataset.fill || el.dataset.skip || el.dataset.own;
+  const next = [el.id ? `#${el.id}` : own, el.id === "start" && "#say", block && `textarea[data-block="${CSS.escape(block)}"]`, "#p-title"].filter(Boolean); // 같은 단추 → 이어서 할 칸 → 문제 제목
+  const t0 = Date.now();
+  let waited = false;
+  const look = () => {
+    const now = document.activeElement, lost = !now || now === document.body || !now.isConnected;
+    if (!lost && now !== el) return; // 사용자(또는 그 일 자체)가 다른 곳으로 옮겼다
+    if (lost && !S.busy) { // 기다림 동안 잠겨 있던 단추가 풀린 뒤에 돌려 놓는다
+      const hit = next.map((q) => document.querySelector(`#view-code ${q}`)).find(focusable);
+      return void (hit && hit.focus());
+    }
+    waited = waited || !!S.busy;
+    if (S.busy ? Date.now() - t0 < 120000 : !waited && Date.now() - t0 < 1500) setTimeout(look, 100); // 기다림이 끝날 때까지(기다림이 없으면 1.5초만) 본다
+  };
+  setTimeout(look, 60);
+}
+document.addEventListener("click", (e) => {
+  const el = e.detail === 0 && e.target.closest("#view-code button");
+  if (el) focusAfter(el);
+}, true); // 앞서 받아 둔다(다른 처리기가 단추를 다시 그리면 이 단추는 문서에서 빠져 ‘어느 화면의 단추’인지 알 수 없다)
+/** 건너뛰기 링크: 주소(#main)를 바꾸면 화면이 홈으로 가므로, 주소는 두고 지금 화면의 본문 제목으로 초점을 옮긴다. */
+document.addEventListener("click", (e) => {
+  if (!e.target.closest("a.skip")) return;
+  e.preventDefault();
+  const head = [...$("main").querySelectorAll("h1[tabindex]")].find(focusable) || $("main");
+  head.focus();
+  head.scrollIntoView({ block: "start" });
+});
+/** 코드 칸에서 Tab은 들여쓰기라, 칸에 초점이 있는 동안 나가는 길(Esc 다음 Tab)을 눈에 보이게 알린다. */
+const codeCell = (t) => !!t && t.tagName === "TEXTAREA" && (t.id === "code" || t.dataset.block !== undefined);
+document.addEventListener("focusin", (e) => $("tab-hint").classList.toggle("on", codeCell(e.target)));
+
 document.addEventListener("click", (e) => {
   const summary = e.target.closest("details.case-fold > summary");
   if (summary) S.casesOpen = !summary.parentElement.open;

@@ -241,6 +241,26 @@ class ChairTest(unittest.TestCase):
             talk = talk + [fakes.user(text, 0, f"u{n}"), fakes.service(replies[-1], 0, f"s{n}", done["result"]["move"])]
         self.assertEqual(replies, [fakes.HINTS1[1], FILL_TIP + fakes.HINTS1[2], HINTS_DONE_UNFOUND, "답 코드는 드리지 않아요. " + HINTS_DONE_UNFOUND])
 
+    def test_term_question_and_hard_message_reach_the_prompt(self):
+        """'그게 뭐예요?'에 뜻을 풀지 않고 되묻기만 했다. 판정이 뜻 묻기(W)를 가르고, 질문 지시가 짧은 뜻과 예 뒤에 원래 질문으로 돌아가게 한다."""
+        from ..common.talk_prompts import HARD_STEP, TERM_STEP
+
+        asked = "변수는 값을 담아 두는 이름표예요. 예를 들어 나이를 age라는 이름에 담아 둘 수 있어요. 그럼 책마다 무엇을 담아 둬야 할까요?"
+        done, fake = fakes.go(chair_state("변수가 뭐예요?"), {"chair.judge": ["[check]W"], "chair.ask": [asked]})
+        self.assertEqual((done["result"]["move"], done["result"]["advance"], done["result"]["reply"]), ("term", False, asked))
+        self.assertIn("[check]W", fakes.prompt(fake, "chair.judge"))
+        prompt = fakes.prompt(fake, "chair.ask")
+        self.assertIn(TERM_STEP, prompt)
+        self.assertIn("사용자 말:변수가 뭐예요?", prompt)  # 무엇을 물었는지 본다(답 요청·무관한 말처럼 가리지 않는다)
+        done, fake = fakes.go(chair_state("너무 어려워서 어디서부터 봐야 할지 감이 안 와요"), {"chair.judge": ["[check]N1"], "chair.ask": ["owl 하나만 있으면 무엇을 셀까요?"]})
+        self.assertIn(HARD_STEP, fakes.prompt(fake, "chair.ask"))
+        done, fake = fakes.go(chair_state("한 번씩만 세면 될 것 같아요"), {"chair.judge": ["[check]N1"], "chair.ask": ["같은 이름이 또 나오면요?"]})
+        self.assertNotIn(HARD_STEP, fakes.prompt(fake, "chair.ask"))
+        done, fake = fakes.go(chair_state("어려운 건 없고 이름별로 세면 될 것 같아요"), {"chair.judge": ["[check]N1"], "chair.ask": ["같은 이름이 또 나오면요?"]})
+        self.assertNotIn(HARD_STEP, fakes.prompt(fake, "chair.ask"))  # 어렵다는 말이 아니다
+        done, fake = fakes.go(chair_state("그게 뭔지 몰라요"), {"chair.judge": ["[check]W"], "chair.ask": ["세다는 건 몇 번인지 헤아리는 거예요. 그럼 무엇을 세어 둘까요?"]})
+        self.assertEqual((done["result"]["move"], fakes.tasks(fake)), ("term", ["chair.judge", "chair.ask"]))  # '모르겠어요'로 끊지 않고 판정한다
+
     def test_model_failure_is_error(self):
         done, _ = fakes.go(chair_state("한 번씩만 세면 될 것 같아요"), {"chair.judge": ["[check]N1"], "chair.ask": [LlmTimeout("늦음")]})
         self.assertEqual(done["error"].code, "llm_timeout")
@@ -255,6 +275,15 @@ class GuideTest(unittest.TestCase):
     def guide(self, text=None, event="message", guide=()):
         ctx = fakes.context(plan=fakes.planned(fakes.hinted()), open_count=1, guide=list(guide))
         return fakes.make_state("turn", ctx, mode="guide", event=event, text=text)
+
+    def test_guide_term_question_is_answered(self):
+        from ..common.talk_prompts import TERM_STEP
+
+        done, fake = fakes.go(self.guide("딕셔너리가 뭔가요?"), {"guide.judge": ["[check]W"], "guide.lead": ["이름표를 붙여 값을 넣는 상자예요. 그럼 무엇을 세어 둘까요?"]})
+        self.assertEqual(done["result"]["move"], "term")
+        lead = fakes.prompt(fake, "guide.lead")
+        self.assertIn(TERM_STEP, lead)
+        self.assertNotIn("맞는 부분과 빠진 부분", lead)  # 생각을 낸 말에 답하는 지시가 아니다
 
     def test_guide_opens_with_saved_hints_and_never_asks_basis(self):
         """모델이 지은 블록 안내 말은 블록의 답을 문장으로 말하곤 했다. 여는 말과 내용 없는 답 뒤는 저장 힌트(모델 0회)."""
@@ -292,6 +321,12 @@ class GuideTest(unittest.TestCase):
         said = messages_body([ChatMessage(id="1", role="user", text="말", at="", move="check"), ChatMessage(id="2", role="service", text=WRITE_TIP, at="", move="write")])
         self.assertEqual([m["move"] for m in said], [None, "write"])  # 화면은 튜터 말의 차례만 받는다(write면 블록 코드 확인을 권한다)
         self.assertNotIn("근거 수준", fakes.prompt(fake, "guide.judge"))
+        asked, fake = fakes.go(self.guide("이름마다 세면 되나요?"), {"guide.judge": ["[check]Y"], "guide.lead": ["owl, tide, owl이면 owl은 몇이 되나요?"]})
+        self.assertEqual((asked["result"]["move"], asked["result"]["advance"], fakes.tasks(fake)), ("verify", False, ["guide.judge", "guide.lead"]))
+        self.assertEqual(asked["result"]["reply"], "owl, tide, owl이면 owl은 몇이 되나요?")  # 물음에는 고정 말이 아니라 그 물음을 받는 질문
+        lead = fakes.prompt(fake, "guide.lead")
+        self.assertIn("맞다·틀리다를 말하지 않고", lead)
+        self.assertNotIn("맞는 부분과 빠진 부분", lead)  # 사용자 말에 답하는 일반 지시(빠진 것을 찾게 한다)가 아니다
 
     def code_turn(self, code, open_count=1):
         blocks = [fakes.block(1, "준비", "def solution(a):\n    count = {}  # 센다", checks=["이름별로 센다"]),
@@ -445,7 +480,8 @@ class RunCheckTest(unittest.TestCase):
 
         seen = []
         done, fake = fakes.go(self.turn("arr = sorted(items)"), {}, sort_check(seen))
-        note = "이 블록에서 쓴 이름(`arr`)을 튜터의 코드는 다른 이름(`order`)으로 불러요. 뒤 블록을 '이 블록 채우기'로 채우면 내 이름으로 바꿔 채워요."
+        note = ("같은 값을 튜터의 코드는 다른 이름으로 써요(내 이름 → 튜터의 이름: `arr` → `order`). 이름이 달라도 이어서 돌아가요. "
+                "뒤 블록을 '이 블록 채우기'로 채우면 튜터의 코드를 내 이름으로 바꿔 넣어요.")
         self.assertEqual((len(seen), done["block_check"].verdict, done["result"]["renamed"]), (1, "Y", [["arr", "order"]]))  # 이름이 달라 실행으로 통과
         self.assertEqual(rename_note([["arr", "order"]]), note)
         self.assertEqual(done["result"]["reply"], note + " " + open_lead("guide", "var_during") + fakes.HINTS2[0])
@@ -462,7 +498,7 @@ class RunCheckTest(unittest.TestCase):
         info = pair_block("day_count, window_size = map(int, input().split())\nfirst_line = 1", "n, k = map(int, input().split())", {},
                           "day_count window_size", set(), "python")
         self.assertEqual(info.fixed, {"day_count": "n", "window_size": "k"})
-        self.assertIn("쓴 이름(`n`)을 튜터의 코드는 다른 이름(`belt`)으로", rename_note([["n", "belt"]]))
+        self.assertIn("`n` → `belt`", rename_note([["n", "belt"]]))
         states = {"b1": BlockState("b1", "arr = sorted(items)", code_hash("arr = sorted(items)"), "Y", renames=[["arr", "order"]])}
         again = fakes.context(plan=fakes.planned(SORT_BLOCKS), open_count=1, guide=[fakes.service(fakes.HINTS1[0], 0)], block_states=states)
         done, fake = fakes.go(fakes.make_state("turn", again, mode="guide", event="block_filled", block_id="b1", code="arr = sorted(items)  # 다시"), {}, sort_check([]))
@@ -759,7 +795,7 @@ class BlockCheckNewNameTest(unittest.TestCase):
         seen = []
         done, fake = fakes.go(fakes.make_state("turn", ctx, mode="guide", event="block_filled", block_id="b1", code="int t = 0;\nauto s = 1;\nint u = 2;"), {}, check(seen))
         self.assertTrue(seen and not any("t.size()" in program or "u.size()" in program for program in seen), seen)  # string 자리에 int 이름을 넣지 않는다
-        self.assertTrue(done["verdict"].seen.startswith("뒤 블록을 튜터의 코드로 이어 돌리면 ") and "이렇게 알고 이어 돌렸어요" in done["verdict"].seen, done["verdict"].seen)  # 굳지 않은 짝으로 돌린 결과 + 그 가정
+        self.assertTrue(done["verdict"].seen.startswith("뒤 블록을 튜터의 코드로 이어 돌리면 ") and "같은 값으로 보고 이어 돌린 이름" in done["verdict"].seen, done["verdict"].seen)  # 굳지 않은 짝으로 돌린 결과 + 그 가정
         blocks = [fakes.block(1, "범위", "def solution(ranges):\n    for low, high in ranges:\n        start = low * 10", "loop", hints=list(fakes.HINTS1)),
                   fakes.block(2, "답", "        return start + high", hints=list(fakes.HINTS2))]
         done, seen = self.turn(blocks, {}, "b1", "for q in ranges:\n    a, b = q\n    s = a * 10", [([[[1, 2]]], 12), ([[[3, 5]]], 35)])
@@ -936,7 +972,7 @@ class BlockCheckEntryAndGroupTest(unittest.TestCase):
         blocks = [fakes.block(1, "범위", "def solution(q):\n    start = q[0] * 10\n    high = q[1]", hints=list(fakes.HINTS1)),
                   fakes.block(2, "답", "    return start + high", hints=list(fakes.HINTS2))]
         done, _ = self.turn(blocks, {}, "b1", "s = q[0]\nhi = q[1]\nextra = 0", [([[1, 2]], 12)])  # start의 짝이 굳지 않고 가정마다 실패가 다르다
-        self.assertTrue(done["verdict"].seen.startswith("뒤 블록을 튜터의 코드로 이어 돌리면 ") and "이렇게 알고 이어 돌렸어요" in done["verdict"].seen, done["verdict"].seen)
+        self.assertTrue(done["verdict"].seen.startswith("뒤 블록을 튜터의 코드로 이어 돌리면 ") and "같은 값으로 보고 이어 돌린 이름" in done["verdict"].seen, done["verdict"].seen)
         done, _ = self.turn(SORT_BLOCKS, {}, "b1", "arr = sorted(items[1:])", SORT_CASES_ARGS)  # (나) 굳은 짝(만드는 꼴 하나뿐)
         self.assertEqual(done["verdict"].seen, "뒤 블록을 튜터의 코드로 이어 돌리면 예시 `solution([3, 1, 2])`의 기대한 값은 2인데 1이 나와요. " + NOT_JOINED)
 
@@ -989,7 +1025,7 @@ class BlockCheckInvariantTest(unittest.TestCase):
         self.assertEqual((len(seen), done["block_check"].verdict), (1, "Y"))
         # 이름을 모두 바꾼 매개변수는 자리로 짐작한 짝이다: 틀린 코드면 HOLD_PARAMS가 아니라 돌린 결과와 그 가정
         done, seen = self.turn(BS4, {}, "b1", "def cnt_le(rows, cols, x):\n    c = 1", BS4_CASES)
-        self.assertTrue(done["verdict"].seen.startswith("뒤 블록을 튜터의 코드로 이어 돌리면 예시") and "`rows`→`n`, `cols`→`m`, `x`→`area`" in done["verdict"].seen,
+        self.assertTrue(done["verdict"].seen.startswith("뒤 블록을 튜터의 코드로 이어 돌리면 예시") and "`rows` → `n`, `cols` → `m`, `x` → `area`" in done["verdict"].seen,
                         done["verdict"].seen)
 
     def test_changed_block_stales_later_and_failed_recheck_is_unchecked(self):
@@ -1091,7 +1127,7 @@ class BlockCheckInvariantTest(unittest.TestCase):
         ctx = fakes.context(plan=fakes.planned(fakes.two()), open_count=2, guide=guide, block_states={"b1": BlockState("b1", "x = 2", "h", "Y", None, 2)},
                             failed_submissions=["runtime_error", "failed", "timeout"])
         lines = record_lines(ctx, ctx.plan)
-        self.assertFalse(any("넘어가지 못한 답" in line for line in lines), lines)
+        self.assertFalse(any("맞히지 못한 말" in line for line in lines), lines)
         self.assertIn("- 블록 1(입력받기) 블록 코드 확인에서 튜터의 코드와 이어지지 않은 횟수 1번(틀렸다는 뜻이 아니다)", lines)
         self.assertIn("- 통과하지 못한 제출: 실행 오류 1번, 오답 1번, 시간 초과 1번", lines)
         for quiet, rows in ((False, 1), (True, 0)):
@@ -1198,12 +1234,13 @@ class BraceCheckTest(unittest.TestCase):
             return {"status": "passed" if done else "failed", "cases": [{"kind": "accuracy", "status": "passed" if done else "failed", "expected": "1", "got": ""}]}
         done, fake = fakes.go(self.turn("for (int i = 0; i < n; i++) {\n    sum += i;\n}"), {}, check)
         self.assertEqual((fake.calls, len(seen), done["block_check"].verdict), ([], 1, "N"))  # 오류는 튜터가 닫는 줄에서 났다: 내 블록 탓이라 할 수 없다(앞 블록에 글이 없어 내 블록만 잇는 실행은 하지 않는다)
-        self.assertTrue(BRACE_OPEN in done["verdict"].seen and "class, interface" in done["verdict"].seen and "튜터의 코드" in done["verdict"].seen, done["verdict"].seen)
+        opened = "튜터의 풀이는 이 블록에서 연 괄호(`for (int i = 0; i < n; i++) {`)를 이 블록이 끝날 때도 열어 두고 뒤 블록에서 닫아요."
+        self.assertTrue(opened in done["verdict"].seen and "class, interface" in done["verdict"].seen and "튜터의 코드" in done["verdict"].seen, done["verdict"].seen)
         done, fake = fakes.go(self.turn("for (int i = 0; i < n; i++) {\n    sum = sum + i;"), {}, check)
         self.assertEqual((fake.calls, done["block_check"].verdict, len(seen)), ([], "Y", 2))
         self.assertIn("        for (int i = 0; i < n; i++) {\n            sum = sum + i;\n        }\n        System.out.println(sum);", seen[1])
         done, fake = fakes.go(self.turn("for (int i = 0; i < n; i++) sum += i;"), {}, check)  # 중괄호 없는 한 줄 반복도 열어 두지 않았다
-        self.assertIn(BRACE_OPEN, done["verdict"].seen)
+        self.assertIn(opened, done["verdict"].seen)
         # 진입 줄 꼴이 계획과 다르면(화살표 함수) 실행 전에 '닫아 주세요'로 거부했다: 이제 실행한 결과를 말하고, 진입 줄에 기댄 괄호 수 안내는 붙이지 않는다
         arrow = [fakes.block(1, "준비", "function solution(n) {\n    let total = 0;"), fakes.block(2, "끝", "    return total + n;\n}")]
         ctx = fakes.context(plan=fakes.planned(arrow), open_count=1, guide=[fakes.service("빈칸?", 0)], language="javascript")
@@ -1211,7 +1248,26 @@ class BraceCheckTest(unittest.TestCase):
                                                code="const solution = (n) => {\n    let total = 0;"), {"guide.lead": ["다음은 무엇일까요?"]}, check)
         self.assertEqual(len(seen), 5)  # 앞의 셋이 실행 3번(앞 블록에 글이 없어 내 블록만 잇는 실행은 없다), 화살표 함수도 실행하고(이은 것 하나, 내 블록만 이은 것 하나) 말한다
         self.assertNotIn("괄호", done["verdict"].seen)
-        self.assertEqual(brace_note("if (n > 0) {\n    sum += n;", fakes.block(9, "x", "        if (n > 0) sum += n;", "condition"), "java", True), BRACE_CLOSE)
+        self.assertEqual(brace_note("if (n > 0) {\n    sum += n;", fakes.block(9, "x", "        if (n > 0) sum += n;", "condition"), "java", True),
+                         BRACE_CLOSE.format(opener="이 블록에서 연 괄호(`if (n > 0) {`)"))
+
+    def test_boundary_counts_my_earlier_blocks(self):
+        """앞 블록에서 반복을 '}'로 닫은 사람에게 그 블록에서는 '내 블록은 닫았어요', 다음 블록에서는 '내 블록은 열어 둔 채'라고 서로 반대로 말했다.
+        괄호 수는 이 실행에 내 글로 들어간 앞 블록까지 이어서 견준다. 여러 중괄호 언어에서 같다."""
+        cases = {  # 언어: (반복을 여는 계획 블록, 반복을 닫고 이어 가는 계획 블록, 내가 닫아 적은 반복, 내가 이어 적은 블록)
+            "java": ("for (int i = 0; i < n; i++) {\n    sum += i;", "}\nfor (int j = 0; j < n; j++) {\n    sum -= j;",
+                     "for (int i = 0; i < n; i++) {\n    sum += i;\n}", "for (int j = 0; j < n; j++) {\n    sum -= j;"),
+            "kotlin": ("for (i in 0 until n) {\n    sum += i", "}\nfor (j in 0 until n) {\n    sum -= j",
+                       "for (i in 0 until n) {\n    sum += i\n}", "for (j in 0 until n) {\n    sum -= j"),
+            "go": ("for i := 0; i < n; i++ {\n    sum += i", "}\nfor j := 0; j < n; j++ {\n    sum -= j",
+                   "for i := 0; i < n; i++ {\n    sum += i\n}", "for j := 0; j < n; j++ {\n    sum -= j"),
+        }
+        for language, (loop, rest, closed, mine) in cases.items():
+            with self.subTest(language=language):
+                second = fakes.block(2, "이어 가기", rest, "loop")
+                self.assertEqual(brace_note(mine, second, language, False), BRACE_CLOSE.format(opener=f"이 블록에서 연 괄호(`{mine.splitlines()[0]}`)"))  # 블록 하나만 보면 반대 안내
+                self.assertEqual(brace_note(mine, second, language, False, [(closed, loop)]), "")  # 앞 블록에서 이미 닫았다: 여기까지 이어 보면 같다
+                self.assertTrue(brace_note(closed, fakes.block(1, "반복", loop, "loop"), language, False).startswith("튜터의 풀이는 이 블록에서 연 괄호("))
 
 
 KOTLIN_BLOCKS = [fakes.block(1, "세기 준비", "fun solution(heights: IntArray, limit: Int): Int {\n    var count = 0", hints=list(fakes.HINTS1)),
@@ -1564,7 +1620,7 @@ class OtherFeatureTest(unittest.TestCase):
                             debug_state=DebugState("h", "logic", 12, "< 대신 <=를 써야 한다.", "", 1, ""), failed_submissions=["wrong_answer", "wrong_answer"], hints_seen=1)
         done, fake = fakes.go(fakes.make_state("feedback", ctx), {"feedback.assess": ["[check]90 Y"], "feedback.analyze": [{"analysis": "a.", "similar_hint": "h", "advice": "c"}]})
         text = fakes.prompt(fake, "feedback.analyze")
-        for must in ("이번 풀이의 기록", "블록 1(입력받기): 튜터의 질문으로 풀 때 이 블록에서 다음 블록으로 넘어가지 못한 답이 1번", "블록 2(NEXT_SECRET) 블록 코드 확인에서 튜터의 코드와 이어지지 않은 횟수 1번(틀렸다는 뜻이 아니다)",
+        for must in ("이번 풀이의 기록", "블록 1(입력받기): '튜터의 질문으로'에서 이 블록을 찾지 못한 답이 1번", "블록 2(NEXT_SECRET) 블록 코드 확인에서 튜터의 코드와 이어지지 않은 횟수 1번(틀렸다는 뜻이 아니다)",
                      "12번째 줄. < 대신 <=를 써야 한다.", "오답 2번", "본 힌트: 1개", "기록에 없으면 막힌 지점이 없었다고", "계산하지 않았으면 수를 말하지 않는다"):
             self.assertIn(must, text)
 
@@ -1577,7 +1633,7 @@ class OtherFeatureTest(unittest.TestCase):
                  fakes.user("belt = deque()", 0, "u3"), fakes.service("맞아요.", 0, "m4", "done")]  # 통과한 코드를 다시 확인했다(tries는 그대로)
         ctx = fakes.context(plan=fakes.planned(fakes.two()), open_count=2, latest_submission=sub, chair=chair,
                             block_states={"b1": BlockState("b1", "belt = deque()", "h", "Y", None, 2)})
-        analysis = {"analysis": "벨트에서 꺼낼 때 비어 있을 수 있을까요? 블록 1에서 다음 블록으로 넘어가지 못한 답이 1번이었습니다. 제출은 통과했습니다.",
+        analysis = {"analysis": "벨트에서 꺼낼 때 비어 있을 수 있을까요? 블록 1에서 찾지 못한 답이 1번이었습니다. 제출은 통과했습니다.",
                     "similar_hint": "h", "advice": "c"}
         done, fake = fakes.go(fakes.make_state("feedback", ctx), {"feedback.assess": ["[check]90 Y"], "feedback.analyze": [analysis]})
         self.assertNotIn("틀린 코드", fakes.prompt(fake, "feedback.analyze"))  # 튜터의 오판은 세지 않는다
@@ -1586,10 +1642,39 @@ class OtherFeatureTest(unittest.TestCase):
         tried = [m for w in wrongs for m in (w, fakes.service(RETRY_LEAD + "다시.", 0, "r" + w.id))] + chair[5:]
         lines = record_lines(fakes.context(chair=tried, block_states={"b1": BlockState("b1", "belt = deque()", "h", "Y", None, 4)}), fakes.planned(fakes.two()))
         self.assertIn("블록 1(입력받기) 블록 코드 확인에서 튜터의 코드와 이어지지 않은 횟수 3번", "\n".join(lines))  # 같은 맞는 코드를 두 번 확인해도 3번
-        self.assertIn("[확실] 블록 1에서 다음 블록으로 넘어가지 못한 답이 1번이었습니다.", done["result"]["analysis"])
+        self.assertIn("[확실] 블록 1에서 찾지 못한 답이 1번이었습니다.", done["result"]["analysis"])
         from ..feedback.rules import mark_claims
         self.assertEqual(mark_claims("7번째 줄을 고쳤다.", "- 디버그: 틀린 곳은 7번째 줄."), "[확실] 7번째 줄을 고쳤다.")
         self.assertEqual(mark_claims("3번 틀렸다.", "- 본 힌트: 1개"), "[추측] 3번 틀렸다.")  # 기록에 없는 수
+
+    def test_feedback_record_has_only_what_each_way_did(self):
+        """'튜터의 질문으로'로 푼 뒤 피드백이 일어나지 않은 '블록 넘어가기 실패'를 [확실]로 셌다. 블록 이름도 화면과 달랐다(다시 짜기 앞의 말이 다른 계획의 번호였다).
+        기록은 방식마다 그 방식의 사실만, 앞 답이 블록을 찾지 못해 나온 튜터의 차례만 센다."""
+        from ..feedback.prompts import MISSED_TEXT, REPLANNED, record_lines
+        from ..feedback.rules import mark_claims
+
+        plan = fakes.planned(fakes.two())
+        missed = [fakes.service("q", 0, "m0"), fakes.user("이름별로 세요", 0, "u0"), fakes.service("q2?", 0, "m1", "clue")]
+        self.assertEqual(record_lines(fakes.context(chair=missed), plan), [f"- 블록 1(입력받기): {MISSED_TEXT['chair']}이 1번"])
+        for move in ("basis", "recap", "close", "found", "write", "verify", "새 차례"):  # 블록을 찾지 못해 나온 차례가 아니다(다시 짜기는 아래)
+            said = [fakes.service("q", 0, "m0"), fakes.user("이름별로 세요", 0, "u0"), fakes.service("말", 0, "m1", move)]
+            self.assertEqual(record_lines(fakes.context(chair=said), plan), [], move)
+        # 다시 짜기 앞의 말은 다른 계획의 블록 번호다: 블록별로 세지 않고 다시 짰다는 사실만 남긴다
+        replanned = [*missed, fakes.user("정렬해서 앞에서부터 보면 돼요", 0, "u1"), fakes.service("다시 짰어요.", 0, "m2", "replan"),
+                     fakes.user("모르겠어요", 0, "u2"), fakes.service("q3?", 0, "m3", "open")]
+        self.assertEqual(record_lines(fakes.context(chair=replanned), plan), [REPLANNED, f"- 블록 1(입력받기): {MISSED_TEXT['chair']}이 1번"])
+        record = "\n".join(record_lines(fakes.context(chair=missed, failed_submissions=["failed", "failed"]), plan))
+        self.assertEqual(mark_claims("[확실] 블록 1에서 찾지 못한 답이 2번이었습니다.", record), "[추측] 블록 1에서 찾지 못한 답이 2번이었습니다.")  # 2번은 다른 줄(제출)의 수다
+        self.assertEqual(mark_claims("블록 1에서 찾지 못한 답이 1번이었습니다.", record), "[확실] 블록 1에서 찾지 못한 답이 1번이었습니다.")
+        self.assertEqual(mark_claims("[확실] 오답이 2번 나왔습니다.", record), "[확실] 오답이 2번 나왔습니다.")
+        # 수만 같고 다른 사실(수 앞의 낱말이 기록 줄에 없다), 기록과 맞지 않게 블록을 짚은 수 없는 문장은 [확실]이 아니다
+        for wrong in ("실행 오류가 2번 났습니다.", "블록 코드 확인을 2번 틀렸습니다.", "블록 1에서 다음 블록으로 넘어가지 못했습니다."):
+            self.assertEqual(mark_claims(f"[확실] {wrong}", record), f"[추측] {wrong}", wrong)
+        self.assertEqual(mark_claims("[확실] 블록 1에서 이 블록을 찾지 못한 답이 있었습니다.", record), "[확실] 블록 1에서 이 블록을 찾지 못한 답이 있었습니다.")  # 그 블록의 기록 줄과 같은 말
+        self.assertEqual(mark_claims("[확실] 반복문이 끝까지 돕니다.", record), "[확실] 반복문이 끝까지 돕니다.")  # 수도 블록도 없는 코드 이야기는 모델의 표시를 둔다
+        both = "- 통과하지 못한 제출: 실행 오류 1번, 오답 2번"
+        self.assertEqual(mark_claims("[확실] 실행 오류가 2번, 오답이 1번 있었습니다.", both), "[추측] 실행 오류가 2번, 오답이 1번 있었습니다.")  # 수마다 맞아야 한다
+        self.assertEqual(mark_claims("실행 오류가 1번, 오답이 2번 있었습니다.", both), "[확실] 실행 오류가 1번, 오답이 2번 있었습니다.")
 
     def test_unchecked_block_answers_are_not_stuck(self):
         """블록 코드 확인의 글에는 판정이 남고, '확인 전'으로 끝난 확인은 막힌 답으로 세지 않는다(표시 없는 옛 기록은 그대로 읽는다)."""
@@ -1608,7 +1693,7 @@ class OtherFeatureTest(unittest.TestCase):
         states = {"b1": BlockState("b1", "x = 1", "h", "Y", None, 1)}
         self.assertEqual(record_lines(fakes.context(guide=[marked, held], block_states=states), plan), [])
         old = record_lines(fakes.context(guide=[fakes.user("x = 1", 0), held], block_states=states), plan)
-        self.assertTrue(any("넘어가지 못한 답이 1번" in line for line in old), old)  # 표시 없는 옛 기록은 전과 같게 읽는다
+        self.assertTrue(any("빈칸을 맞히지 못한 말이 1번" in line for line in old), old)  # 표시 없는 옛 기록은 전과 같게 읽는다
         talk = [fakes.user("모르겠는데 반복을 먼저 할까요", 0), fakes.service("무엇을 세야 할까요?", 0, "m2", "blank")]
         self.assertTrue(record_lines(fakes.context(guide=talk, block_states=states), plan))  # 말로 막힌 것은 그대로 센다
         right = [fakes.user("count[p] += 1", 0), fakes.service(WRITE_TIP, 0, "m3", "write")]
