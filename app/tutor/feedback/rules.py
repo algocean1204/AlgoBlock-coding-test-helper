@@ -3,7 +3,7 @@
 import re
 from difflib import SequenceMatcher
 
-from ..common.talk_rules import BANNED
+from ..common.talk_rules import BANNED, sentences
 from ..state import ErrorInfo
 
 MARKS = ("[확실]", "[가능성 높음]", "[추측]")
@@ -78,16 +78,31 @@ def mark_claims(analysis: str, record: str = "") -> str:
     return " ".join(out)
 
 
+_BLOCK_REF = re.compile(r"블록\s*(\d+(?:\s*[·,~-]\s*\d+)*)|블록")
+UNOPENED_FALLBACK = "제출한 코드를 처음부터 따라가 보면 어떤 입력에서 달라질까요?"
+
+
+def drop_unopened(text: str, opened: int) -> str:
+    """열지 않은 블록 번호를 말한 문장을 지운다(opened: 사용자가 연 블록 수. 0이면 블록 방식을 쓰지 않았으니 '블록'을 말한 문장 모두).
+    블록 번호는 기록과 열린 수로 가릴 수 있어 모델에게 다시 쓰라 하지 않고 문장째 뺀다."""
+    def unopened(part: str) -> bool:
+        return any(hit.group(1) is None or opened == 0 or any(int(n) > opened for n in re.findall(r"\d+", hit.group(1))) for hit in _BLOCK_REF.finditer(part))
+    return " ".join(part for part in sentences(text) if not unopened(part))
+
+
 def strip_banned(text: str) -> str:
     for word in BANNED:
         text = text.replace(word, "")
     return re.sub(r"\s{2,}", " ", text).strip()
 
 
-def check_feedback(analysis: str, hint: str, advice: str, algorithm_name: str, record: str = "") -> tuple[dict, ErrorInfo | None]:
+def check_feedback(analysis: str, hint: str, advice: str, algorithm_name: str, record: str = "", opened: int | None = None) -> tuple[dict, ErrorInfo | None]:
     if "```" in (hint or "") or "```" in (advice or ""):
         return {}, ErrorInfo("invalid_output", "힌트에 코드 펜스가 있습니다.")
     hint = strip_banned(hint or "")
+    if opened is not None:
+        analysis = drop_unopened(analysis or "", opened) or UNOPENED_FALLBACK
+        advice = drop_unopened(advice or "", opened)
     if algorithm_name and not hint.startswith(f"{algorithm_name}:"):
         hint = f"{algorithm_name}: {hint}"
     return {"analysis": mark_claims(strip_banned(analysis or ""), record), "similar_hint": hint, "advice": strip_banned(advice or "")}, None
