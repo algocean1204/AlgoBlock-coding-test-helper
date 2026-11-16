@@ -445,7 +445,8 @@ class RunCheckTest(unittest.TestCase):
 
         seen = []
         done, fake = fakes.go(self.turn("arr = sorted(items)"), {}, sort_check(seen))
-        note = "이 블록에서 쓴 이름(`arr`)을 튜터의 코드는 다른 이름(`order`)으로 불러요. 뒤 블록을 '이 블록 채우기'로 채우면 내 이름으로 바꿔 채워요."
+        note = ("같은 값을 튜터의 코드는 다른 이름으로 써요(내 이름 → 튜터의 이름: `arr` → `order`). 이름이 달라도 이어서 돌아가요. "
+                "뒤 블록을 '이 블록 채우기'로 채우면 튜터의 코드를 내 이름으로 바꿔 넣어요.")
         self.assertEqual((len(seen), done["block_check"].verdict, done["result"]["renamed"]), (1, "Y", [["arr", "order"]]))  # 이름이 달라 실행으로 통과
         self.assertEqual(rename_note([["arr", "order"]]), note)
         self.assertEqual(done["result"]["reply"], note + " " + open_lead("guide", "var_during") + fakes.HINTS2[0])
@@ -462,7 +463,7 @@ class RunCheckTest(unittest.TestCase):
         info = pair_block("day_count, window_size = map(int, input().split())\nfirst_line = 1", "n, k = map(int, input().split())", {},
                           "day_count window_size", set(), "python")
         self.assertEqual(info.fixed, {"day_count": "n", "window_size": "k"})
-        self.assertIn("쓴 이름(`n`)을 튜터의 코드는 다른 이름(`belt`)으로", rename_note([["n", "belt"]]))
+        self.assertIn("`n` → `belt`", rename_note([["n", "belt"]]))
         states = {"b1": BlockState("b1", "arr = sorted(items)", code_hash("arr = sorted(items)"), "Y", renames=[["arr", "order"]])}
         again = fakes.context(plan=fakes.planned(SORT_BLOCKS), open_count=1, guide=[fakes.service(fakes.HINTS1[0], 0)], block_states=states)
         done, fake = fakes.go(fakes.make_state("turn", again, mode="guide", event="block_filled", block_id="b1", code="arr = sorted(items)  # 다시"), {}, sort_check([]))
@@ -759,7 +760,7 @@ class BlockCheckNewNameTest(unittest.TestCase):
         seen = []
         done, fake = fakes.go(fakes.make_state("turn", ctx, mode="guide", event="block_filled", block_id="b1", code="int t = 0;\nauto s = 1;\nint u = 2;"), {}, check(seen))
         self.assertTrue(seen and not any("t.size()" in program or "u.size()" in program for program in seen), seen)  # string 자리에 int 이름을 넣지 않는다
-        self.assertTrue(done["verdict"].seen.startswith("뒤 블록을 튜터의 코드로 이어 돌리면 ") and "이렇게 알고 이어 돌렸어요" in done["verdict"].seen, done["verdict"].seen)  # 굳지 않은 짝으로 돌린 결과 + 그 가정
+        self.assertTrue(done["verdict"].seen.startswith("뒤 블록을 튜터의 코드로 이어 돌리면 ") and "같은 값으로 보고 이어 돌린 이름" in done["verdict"].seen, done["verdict"].seen)  # 굳지 않은 짝으로 돌린 결과 + 그 가정
         blocks = [fakes.block(1, "범위", "def solution(ranges):\n    for low, high in ranges:\n        start = low * 10", "loop", hints=list(fakes.HINTS1)),
                   fakes.block(2, "답", "        return start + high", hints=list(fakes.HINTS2))]
         done, seen = self.turn(blocks, {}, "b1", "for q in ranges:\n    a, b = q\n    s = a * 10", [([[[1, 2]]], 12), ([[[3, 5]]], 35)])
@@ -936,7 +937,7 @@ class BlockCheckEntryAndGroupTest(unittest.TestCase):
         blocks = [fakes.block(1, "범위", "def solution(q):\n    start = q[0] * 10\n    high = q[1]", hints=list(fakes.HINTS1)),
                   fakes.block(2, "답", "    return start + high", hints=list(fakes.HINTS2))]
         done, _ = self.turn(blocks, {}, "b1", "s = q[0]\nhi = q[1]\nextra = 0", [([[1, 2]], 12)])  # start의 짝이 굳지 않고 가정마다 실패가 다르다
-        self.assertTrue(done["verdict"].seen.startswith("뒤 블록을 튜터의 코드로 이어 돌리면 ") and "이렇게 알고 이어 돌렸어요" in done["verdict"].seen, done["verdict"].seen)
+        self.assertTrue(done["verdict"].seen.startswith("뒤 블록을 튜터의 코드로 이어 돌리면 ") and "같은 값으로 보고 이어 돌린 이름" in done["verdict"].seen, done["verdict"].seen)
         done, _ = self.turn(SORT_BLOCKS, {}, "b1", "arr = sorted(items[1:])", SORT_CASES_ARGS)  # (나) 굳은 짝(만드는 꼴 하나뿐)
         self.assertEqual(done["verdict"].seen, "뒤 블록을 튜터의 코드로 이어 돌리면 예시 `solution([3, 1, 2])`의 기대한 값은 2인데 1이 나와요. " + NOT_JOINED)
 
@@ -989,7 +990,7 @@ class BlockCheckInvariantTest(unittest.TestCase):
         self.assertEqual((len(seen), done["block_check"].verdict), (1, "Y"))
         # 이름을 모두 바꾼 매개변수는 자리로 짐작한 짝이다: 틀린 코드면 HOLD_PARAMS가 아니라 돌린 결과와 그 가정
         done, seen = self.turn(BS4, {}, "b1", "def cnt_le(rows, cols, x):\n    c = 1", BS4_CASES)
-        self.assertTrue(done["verdict"].seen.startswith("뒤 블록을 튜터의 코드로 이어 돌리면 예시") and "`rows`→`n`, `cols`→`m`, `x`→`area`" in done["verdict"].seen,
+        self.assertTrue(done["verdict"].seen.startswith("뒤 블록을 튜터의 코드로 이어 돌리면 예시") and "`rows` → `n`, `cols` → `m`, `x` → `area`" in done["verdict"].seen,
                         done["verdict"].seen)
 
     def test_changed_block_stales_later_and_failed_recheck_is_unchecked(self):
@@ -1198,12 +1199,13 @@ class BraceCheckTest(unittest.TestCase):
             return {"status": "passed" if done else "failed", "cases": [{"kind": "accuracy", "status": "passed" if done else "failed", "expected": "1", "got": ""}]}
         done, fake = fakes.go(self.turn("for (int i = 0; i < n; i++) {\n    sum += i;\n}"), {}, check)
         self.assertEqual((fake.calls, len(seen), done["block_check"].verdict), ([], 1, "N"))  # 오류는 튜터가 닫는 줄에서 났다: 내 블록 탓이라 할 수 없다(앞 블록에 글이 없어 내 블록만 잇는 실행은 하지 않는다)
-        self.assertTrue(BRACE_OPEN in done["verdict"].seen and "class, interface" in done["verdict"].seen and "튜터의 코드" in done["verdict"].seen, done["verdict"].seen)
+        opened = "튜터의 풀이는 이 블록에서 연 괄호(`for (int i = 0; i < n; i++) {`)를 이 블록이 끝날 때도 열어 두고 뒤 블록에서 닫아요."
+        self.assertTrue(opened in done["verdict"].seen and "class, interface" in done["verdict"].seen and "튜터의 코드" in done["verdict"].seen, done["verdict"].seen)
         done, fake = fakes.go(self.turn("for (int i = 0; i < n; i++) {\n    sum = sum + i;"), {}, check)
         self.assertEqual((fake.calls, done["block_check"].verdict, len(seen)), ([], "Y", 2))
         self.assertIn("        for (int i = 0; i < n; i++) {\n            sum = sum + i;\n        }\n        System.out.println(sum);", seen[1])
         done, fake = fakes.go(self.turn("for (int i = 0; i < n; i++) sum += i;"), {}, check)  # 중괄호 없는 한 줄 반복도 열어 두지 않았다
-        self.assertIn(BRACE_OPEN, done["verdict"].seen)
+        self.assertIn(opened, done["verdict"].seen)
         # 진입 줄 꼴이 계획과 다르면(화살표 함수) 실행 전에 '닫아 주세요'로 거부했다: 이제 실행한 결과를 말하고, 진입 줄에 기댄 괄호 수 안내는 붙이지 않는다
         arrow = [fakes.block(1, "준비", "function solution(n) {\n    let total = 0;"), fakes.block(2, "끝", "    return total + n;\n}")]
         ctx = fakes.context(plan=fakes.planned(arrow), open_count=1, guide=[fakes.service("빈칸?", 0)], language="javascript")
@@ -1211,7 +1213,26 @@ class BraceCheckTest(unittest.TestCase):
                                                code="const solution = (n) => {\n    let total = 0;"), {"guide.lead": ["다음은 무엇일까요?"]}, check)
         self.assertEqual(len(seen), 5)  # 앞의 셋이 실행 3번(앞 블록에 글이 없어 내 블록만 잇는 실행은 없다), 화살표 함수도 실행하고(이은 것 하나, 내 블록만 이은 것 하나) 말한다
         self.assertNotIn("괄호", done["verdict"].seen)
-        self.assertEqual(brace_note("if (n > 0) {\n    sum += n;", fakes.block(9, "x", "        if (n > 0) sum += n;", "condition"), "java", True), BRACE_CLOSE)
+        self.assertEqual(brace_note("if (n > 0) {\n    sum += n;", fakes.block(9, "x", "        if (n > 0) sum += n;", "condition"), "java", True),
+                         BRACE_CLOSE.format(opener="이 블록에서 연 괄호(`if (n > 0) {`)"))
+
+    def test_boundary_counts_my_earlier_blocks(self):
+        """앞 블록에서 반복을 '}'로 닫은 사람에게 그 블록에서는 '내 블록은 닫았어요', 다음 블록에서는 '내 블록은 열어 둔 채'라고 서로 반대로 말했다.
+        괄호 수는 이 실행에 내 글로 들어간 앞 블록까지 이어서 견준다. 여러 중괄호 언어에서 같다."""
+        cases = {  # 언어: (반복을 여는 계획 블록, 반복을 닫고 이어 가는 계획 블록, 내가 닫아 적은 반복, 내가 이어 적은 블록)
+            "java": ("for (int i = 0; i < n; i++) {\n    sum += i;", "}\nfor (int j = 0; j < n; j++) {\n    sum -= j;",
+                     "for (int i = 0; i < n; i++) {\n    sum += i;\n}", "for (int j = 0; j < n; j++) {\n    sum -= j;"),
+            "kotlin": ("for (i in 0 until n) {\n    sum += i", "}\nfor (j in 0 until n) {\n    sum -= j",
+                       "for (i in 0 until n) {\n    sum += i\n}", "for (j in 0 until n) {\n    sum -= j"),
+            "go": ("for i := 0; i < n; i++ {\n    sum += i", "}\nfor j := 0; j < n; j++ {\n    sum -= j",
+                   "for i := 0; i < n; i++ {\n    sum += i\n}", "for j := 0; j < n; j++ {\n    sum -= j"),
+        }
+        for language, (loop, rest, closed, mine) in cases.items():
+            with self.subTest(language=language):
+                second = fakes.block(2, "이어 가기", rest, "loop")
+                self.assertEqual(brace_note(mine, second, language, False), BRACE_CLOSE.format(opener=f"이 블록에서 연 괄호(`{mine.splitlines()[0]}`)"))  # 블록 하나만 보면 반대 안내
+                self.assertEqual(brace_note(mine, second, language, False, [(closed, loop)]), "")  # 앞 블록에서 이미 닫았다: 여기까지 이어 보면 같다
+                self.assertTrue(brace_note(closed, fakes.block(1, "반복", loop, "loop"), language, False).startswith("튜터의 풀이는 이 블록에서 연 괄호("))
 
 
 KOTLIN_BLOCKS = [fakes.block(1, "세기 준비", "fun solution(heights: IntArray, limit: Int): Int {\n    var count = 0", hints=list(fakes.HINTS1)),

@@ -111,6 +111,20 @@ def open_braces(code: str, language: str, program: bool = False) -> int:
     return sum(_NOT_BRACE.sub("", row).count("{") - _NOT_BRACE.sub("", row).count("}") for row, skip in zip(rows, frame_flags(rows, language, program)) if not skip)
 
 
+def unclosed_row(code: str, language: str, program: bool = False) -> str:
+    """이 글 안에서 닫히지 않은 채 남는 중괄호를 연 마지막 줄(앞뒤 공백을 뗀 글). 없으면 빈 글. 틀 줄은 보지 않는다(open_braces와 같다)."""
+    rows, opened = (code or "").splitlines(), []
+    for row, skip in zip(rows, frame_flags(rows, language, program)):
+        if skip:
+            continue
+        for mark in re.findall(r"[{}]", _NOT_BRACE.sub("", row)):
+            if mark == "{":
+                opened.append(row.strip())
+            elif opened:
+                opened.pop()
+    return opened[-1] if opened else ""
+
+
 def body_lines(code: str, language: str, program: bool = False) -> list[str]:
     """틀 줄·빈 줄·주석을 뺀 줄(정규화한 꼴)."""
     rows = (code or "").splitlines()
