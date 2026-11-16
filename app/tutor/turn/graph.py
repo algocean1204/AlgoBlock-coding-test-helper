@@ -12,7 +12,7 @@ pick_move -- 생성 필요(내용 있는 말, 저장 힌트 없는 옛 계획) -
 from langgraph.graph import END, START, StateGraph
 
 from ..common.progress_view import active_plan, found_check
-from ..common.verdict import ASIDE_RULE, ask_verdict
+from ..common.verdict import ASIDE_RULE, TERM_RULE, ask_verdict
 from ..llm import llm, model_name
 from ..state import MainState, MovePlan, Verdict
 from .code_check import check_code
@@ -31,7 +31,7 @@ def turn_graph(mode: str, judge_messages, judge_rule: str, system: str, steps: d
         got = rule_verdict(state["request"].text or "")
         if got is not None:
             return {"verdict": got}
-        got = ask_verdict(judge_messages(state), judge_rule + ASIDE_RULE, f"{mode}.judge")
+        got = ask_verdict(judge_messages(state), judge_rule + ASIDE_RULE + TERM_RULE, f"{mode}.judge")
         if got is None:  # 형식 오류는 N으로 진행한다
             return {"verdict": Verdict(False, malformed=True)}
         if mode == "chair" and got.basis is None:

@@ -241,6 +241,26 @@ class ChairTest(unittest.TestCase):
             talk = talk + [fakes.user(text, 0, f"u{n}"), fakes.service(replies[-1], 0, f"s{n}", done["result"]["move"])]
         self.assertEqual(replies, [fakes.HINTS1[1], FILL_TIP + fakes.HINTS1[2], HINTS_DONE_UNFOUND, "답 코드는 드리지 않아요. " + HINTS_DONE_UNFOUND])
 
+    def test_term_question_and_hard_message_reach_the_prompt(self):
+        """'그게 뭐예요?'에 뜻을 풀지 않고 되묻기만 했다. 판정이 뜻 묻기(W)를 가르고, 질문 지시가 짧은 뜻과 예 뒤에 원래 질문으로 돌아가게 한다."""
+        from ..common.talk_prompts import HARD_STEP, TERM_STEP
+
+        asked = "변수는 값을 담아 두는 이름표예요. 예를 들어 나이를 age라는 이름에 담아 둘 수 있어요. 그럼 책마다 무엇을 담아 둬야 할까요?"
+        done, fake = fakes.go(chair_state("변수가 뭐예요?"), {"chair.judge": ["[check]W"], "chair.ask": [asked]})
+        self.assertEqual((done["result"]["move"], done["result"]["advance"], done["result"]["reply"]), ("term", False, asked))
+        self.assertIn("[check]W", fakes.prompt(fake, "chair.judge"))
+        prompt = fakes.prompt(fake, "chair.ask")
+        self.assertIn(TERM_STEP, prompt)
+        self.assertIn("사용자 말:변수가 뭐예요?", prompt)  # 무엇을 물었는지 본다(답 요청·무관한 말처럼 가리지 않는다)
+        done, fake = fakes.go(chair_state("너무 어려워서 어디서부터 봐야 할지 감이 안 와요"), {"chair.judge": ["[check]N1"], "chair.ask": ["owl 하나만 있으면 무엇을 셀까요?"]})
+        self.assertIn(HARD_STEP, fakes.prompt(fake, "chair.ask"))
+        done, fake = fakes.go(chair_state("한 번씩만 세면 될 것 같아요"), {"chair.judge": ["[check]N1"], "chair.ask": ["같은 이름이 또 나오면요?"]})
+        self.assertNotIn(HARD_STEP, fakes.prompt(fake, "chair.ask"))
+        done, fake = fakes.go(chair_state("어려운 건 없고 이름별로 세면 될 것 같아요"), {"chair.judge": ["[check]N1"], "chair.ask": ["같은 이름이 또 나오면요?"]})
+        self.assertNotIn(HARD_STEP, fakes.prompt(fake, "chair.ask"))  # 어렵다는 말이 아니다
+        done, fake = fakes.go(chair_state("그게 뭔지 몰라요"), {"chair.judge": ["[check]W"], "chair.ask": ["세다는 건 몇 번인지 헤아리는 거예요. 그럼 무엇을 세어 둘까요?"]})
+        self.assertEqual((done["result"]["move"], fakes.tasks(fake)), ("term", ["chair.judge", "chair.ask"]))  # '모르겠어요'로 끊지 않고 판정한다
+
     def test_model_failure_is_error(self):
         done, _ = fakes.go(chair_state("한 번씩만 세면 될 것 같아요"), {"chair.judge": ["[check]N1"], "chair.ask": [LlmTimeout("늦음")]})
         self.assertEqual(done["error"].code, "llm_timeout")
@@ -255,6 +275,15 @@ class GuideTest(unittest.TestCase):
     def guide(self, text=None, event="message", guide=()):
         ctx = fakes.context(plan=fakes.planned(fakes.hinted()), open_count=1, guide=list(guide))
         return fakes.make_state("turn", ctx, mode="guide", event=event, text=text)
+
+    def test_guide_term_question_is_answered(self):
+        from ..common.talk_prompts import TERM_STEP
+
+        done, fake = fakes.go(self.guide("딕셔너리가 뭔가요?"), {"guide.judge": ["[check]W"], "guide.lead": ["이름표를 붙여 값을 넣는 상자예요. 그럼 무엇을 세어 둘까요?"]})
+        self.assertEqual(done["result"]["move"], "term")
+        lead = fakes.prompt(fake, "guide.lead")
+        self.assertIn(TERM_STEP, lead)
+        self.assertNotIn("맞는 부분과 빠진 부분", lead)  # 생각을 낸 말에 답하는 지시가 아니다
 
     def test_guide_opens_with_saved_hints_and_never_asks_basis(self):
         """모델이 지은 블록 안내 말은 블록의 답을 문장으로 말하곤 했다. 여는 말과 내용 없는 답 뒤는 저장 힌트(모델 0회)."""
