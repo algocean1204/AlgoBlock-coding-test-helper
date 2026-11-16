@@ -21,7 +21,7 @@
     "윗변(오른쪽으로), 오른쪽 변(아래로), 아랫변(왼쪽으로), 왼쪽 변(위로) 순서로 칸 좌표를 cells에 담는다 — 문제의 시계 방향 순서를 그대로 한 줄로 만들기 위해",
     "cells에 담긴 칸의 보석 번호를 values에 옮겨 두고 칸 수 length를 센다 — 결과를 덮어써도 원래 보석이 무엇이었는지 알 수 있게",
     "shift를 k % length로 정하고, 홀수 번 고리이면 (length - shift) % length로 바꾼다 — 칸 수만큼 돌면 제자리이고, 반시계 회전은 시계 방향 회전으로 바꿔 계산할 수 있기 때문",
-    "i번째 칸의 보석 values[i]를 cells[(i + shift) % length] 칸에 넣는다 — 시계 방향으로 shift칸 돌면 보석은 shift칸 뒤로 가고, 끝을 넘으면 앞으로 돌아오기 때문",
+    "테두리를 돌며 모은 i번째 칸의 보석을 테두리 칸 순서의 (i + shift) % length번째 칸에 넣는다 — 시계 방향으로 shift칸 돌면 보석은 shift칸 뒤로 가고, 끝을 넘으면 앞으로 돌아오기 때문",
     "모든 고리를 처리한 result를 return 한다 — 모든 고리가 동시에 돈 결과가 담겨 있기 때문"
    ],
    "code": "def solution(board, k):\n    n, m = len(board), len(board[0])\n    result = [row[:] for row in board]\n    for ring in range(min(n, m) // 2):\n        top, bottom, left, right = ring, n - 1 - ring, ring, m - 1 - ring\n        # 고리의 칸을 왼쪽 위 모서리부터 시계 방향 순서로 늘어놓는다\n        cells = []\n        for c in range(left, right + 1):\n            cells.append((top, c))\n        for r in range(top + 1, bottom + 1):\n            cells.append((r, right))\n        for c in range(right - 1, left - 1, -1):\n            cells.append((bottom, c))\n        for r in range(bottom - 1, top, -1):\n            cells.append((r, left))\n        values = [board[r][c] for r, c in cells]\n        length = len(cells)\n        shift = k % length  # 칸 수만큼 돌면 제자리로 돌아온다\n        if ring % 2 == 1:\n            shift = (length - shift) % length  # 반시계 방향으로 shift칸 = 시계 방향으로 length - shift칸(다른 언어에서 음수의 나머지를 피한다)\n        # 시계 방향으로 shift칸 돌면 i번째 칸의 보석은 i + shift번째 칸으로 간다\n        for i in range(length):\n            r, c = cells[(i + shift) % length]\n            result[r][c] = values[i]\n    return result",
