@@ -133,6 +133,8 @@ class Solution { … }
 
 손으로 고쳐도 되는 칸과 빌드가 싣기 전에 보는 것은 [Docs/contributing/add-builtin-problem.md](../../../Docs/contributing/add-builtin-problem.md)에 있다. `ui/builtin.json`은 묶은 결과물이라 고치지 않는다.
 
+글을 가이드와 상관없게 조금 고쳤을 때(오타, 띄어쓰기 등): `build --no-model`은 `ready.json`의 `source`가 지금 글과 다르면 그 문제 이름과 까닭을 알리고 실패로 끝난다. 가이드를 다시 만들 필요가 없으면 `source`를 새 값으로 고친다. 값은 `zlib.crc32((statement + json.dumps(limits, ensure_ascii=False) + solution.py 내용).encode())`이고, `problem.json`의 `statement`·`limits`와 `solution.py`로 계산한다. 가이드가 가리키는 내용이 바뀌었다면 값을 맞추지 말고 모델로 다시 만든다(`build --redo <문제>`).
+
 ### problem.json
 
 ```json

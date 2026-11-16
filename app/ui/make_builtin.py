@@ -210,6 +210,11 @@ def build(args: list[str]) -> int:
                     why = f"{type(exc).__name__}: {str(exc)[:600]}"
             else:
                 return name, row, f"가이드·블록을 만들지 못했다(가이드 없이 싣는다): {why}"
+        elif not path.exists():  # 키 없이 넣은 새 문제: 가이드 없이 싣는 것이 정상이다(알리기만 하고 실패로 세지 않는다)
+            print(f"알림 {name}: ready.json이 없어 가이드 없이 싣는다(키를 넣고 모델로 build하면 만든다)", file=sys.stderr)
+        else:  # 있던 가이드가 낡았거나 다시 만들라고 골랐다: 조용히 빠지면 안 된다
+            have = f"ready.json의 출처 값 {kept['source']}이(가) 지금 글·정답 풀이의 값 {row['source']}과 다르다" if kept.get("source") is not None else "--redo로 다시 만들라고 골랐다"
+            return name, row, f"가이드 없이 싣는다: {have}. 모델 없이는 다시 만들 수 없다(모델로 build하거나, 가이드와 상관없는 수정이면 출처 값을 맞춘다)"
         return name, row, ""
 
     contexts = [copy_context() for _ in folders]

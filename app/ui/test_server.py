@@ -2981,6 +2981,20 @@ def build_only() -> None:
     assert run("--only", "hash/1_popular_shelf", "--no-langs").returncode == 0
     assert next(row for row in json.loads(out.read_text(encoding="utf-8")) if row["id"] == FIRST["id"])["languages"] == ["python"]
     assert run("--only", "hash/없는_폴더").returncode == 2 and run("--only").returncode == 2
+    # 글이 바뀌어 ready.json의 출처 값이 맞지 않으면 모델 없이는 가이드를 못 만든다: 그 문제와 까닭을 알리고 0이 아닌 코드로 끝난다
+    import shutil
+    root = TMP / "stale_root"
+    shutil.copytree(HERE / "problems" / "hash" / "1_popular_shelf", root / "hash" / "1_popular_shelf")
+    folder = root / "hash" / "1_popular_shelf"
+    changed = json.loads((folder / "problem.json").read_text(encoding="utf-8"))
+    changed["statement"] += " 입력은 항상 올바릅니다."
+    (folder / "problem.json").write_text(json.dumps(changed, ensure_ascii=False), encoding="utf-8")
+    stale = subprocess.run([sys.executable, "-c", f"import sys; sys.path.insert(0, {str(HERE)!r}); import make_builtin as m; from pathlib import Path; m.ROOT = Path({str(root)!r}); "
+                            f"sys.exit(m.build(['--no-model', '--no-check', '--no-langs', '--only', 'hash/1_popular_shelf', '--out', {str(TMP / 'stale.json')!r}]))"], capture_output=True, text=True)
+    assert stale.returncode == 1 and "hash/1_popular_shelf" in stale.stderr and "출처 값" in stale.stderr, (stale.returncode, stale.stderr)
+    (folder / "ready.json").unlink()  # 키 없이 넣은 새 문제처럼 ready.json이 아예 없으면 알리기만 하고 실패로 끝나지 않는다
+    fresh = subprocess.run(stale.args, capture_output=True, text=True)
+    assert fresh.returncode == 0 and "알림 hash/1_popular_shelf" in fresh.stderr and "실패" not in fresh.stderr, (fresh.returncode, fresh.stderr)
 
 
 def neutral_notes() -> None:
