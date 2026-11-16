@@ -3034,6 +3034,8 @@ def lang_traps() -> None:
         assert [trap.get("outs") for trap in mine] == [trap.get("outs") for trap in frozen], row["id"]  # 틀린 답의 돌려준 값도 싣는다
         shipped += len(mine)
     assert shipped >= 5, shipped
+    js = (HERE / "app.js").read_text(encoding="utf-8")  # 해설 상자의 꼬리말은 뜻이 드러나는 말이다(내부 참조처럼 '문제 글:'로 쓰지 않는다)
+    assert "<small>이 문제에서 걸리는 곳: ${x.at" in js and "<small>문제 글: ${x.at" not in js
     for language, rows in listed.items():  # 결과가 정해지지 않은 동작의 함정은 떨어진 케이스 목록을 얼리지 않는다
         for path in sorted((HERE / "problems").glob("*/*/lang.json")):
             for row in json.loads(path.read_text(encoding="utf-8")).get(language, []):
