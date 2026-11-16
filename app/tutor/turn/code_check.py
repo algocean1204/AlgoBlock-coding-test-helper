@@ -556,6 +556,9 @@ def run_verdict(state: MainState, plan, index: int, code: str, check) -> dict | 
     return {"verdict": got, "stored": [], "told": [], "fixes": []}
 
 
+_SYNTAX = re.compile(r"\b(?:SyntaxError|IndentationError|TabError)\b")
+
+
 def _place(report: dict, spans: list[dict]) -> tuple[str, int, int, str] | None:
     """오류가 난 줄이 누구의 것인가: (whose(this·mine·tutor), 블록 순번, 내 글의 몇 번째 줄, 그 줄의 글). 줄을 알 수 없으면 None.
     줄은 채점기가 알려 준 것이다(컴파일 오류의 줄, 처음 실행 오류가 난 케이스의 줄)."""
@@ -564,6 +567,12 @@ def _place(report: dict, spans: list[dict]) -> tuple[str, int, int, str] | None:
     span = next((s for s in spans if isinstance(line, int) and s["first"] <= line <= s["last"]), None)
     if span is None:
         return None
+    syntax = report.get("status") == "compile_error" or bool(case and _SYNTAX.search(case.get("error") or ""))  # Python·JavaScript의 문법 오류는 실행 오류로 온다
+    if span["whose"] == "tutor" and syntax:  # 문법 오류가 튜터 덩이의 첫 줄이고 바로 앞이 내 글이면 내 글이 끝난 자리에서 이어지지 않은 것이다
+        at = spans.index(span)
+        mine = next((s for s in reversed(spans[:at]) if s["rows"]), None)
+        if mine and mine["whose"] != "tutor" and mine["last"] == span["first"] - 1 and line == span["first"] and mine["code"].strip():
+            return "join", span["block"], mine["block"], mine["code"].rstrip().split("\n")[-1].strip()
     gap = span.get("gap")  # 시작 코드의 가져오기 줄이 이 덩이 안에 들어갔다: 그 뒤의 줄은 넣은 수만큼 밀려 있다
     if gap and line >= gap[0] - gap[1]:
         if line < gap[0]:
@@ -595,6 +604,9 @@ def failure_verdict(report: dict, spans: list[dict], program: bool, lead: str, a
             said = f"{kind}가 났는데 어느 줄에서 났는지는 알 수 없어요.\n{raw}"
         elif place[0] == "tutor":
             said = f"튜터의 코드({place[1] + 1}번 블록 자리)에서 {kind}가 났어요.\n{raw}"
+        elif place[0] == "join":  # 내 블록이 끝난 바로 뒤에서 튜터의 블록이 이어지지 않는다: 튜터의 블록 탓이라 하지 않고 내 블록의 끝을 짚는다
+            said = (f"내 {place[2] + 1}번 블록의 마지막 줄(`{_tick(place[3])}`) 뒤에 튜터의 코드({place[1] + 1}번 블록 자리)를 이으면 {kind}가 나요. "
+                    f"내 블록의 끝과 다음 블록의 시작이 문법으로 맞물리지 않아요. 내 블록을 어디서 닫았는지 보세요.\n{raw}")
         elif place[0] == "other":
             said = f"다른 블록의 코드에서 {kind}가 났어요.\n{raw}"
         else:
