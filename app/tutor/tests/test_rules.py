@@ -1248,8 +1248,12 @@ class PlainWordsTest(unittest.TestCase):
 class LanguageNeutralTextTest(unittest.TestCase):
     """실전 신호·익힐 것·풀이 단계는 한 언어에서만 맞는 말을 조건 없이 쓰지 않는다."""
 
-    # 이 말이 나오는 문장에는 언어의 성질로 단 조건이 함께 있어야 한다.
-    RULES = (("64비트 정수", "넘칠 수 있는 언어"), ("재귀 대신", "깊이 한도가 낮은 언어"), ("힙 부호를 뒤집", "언어"))
+    # 이 말이 나오는 문장이 있으면 같은 항목 안에 언어의 성질로 단 조건이 있어야 한다.
+    RULES = (
+        (r"64비트 정수", "넘칠 수 있는 언어"),
+        (r"재귀 대신|재귀 없이|재귀는[^.]*넘칠|재귀가[^.]*필요", "깊이 한도가 낮은 언어"),
+        (r"힙[^.]*부호를 뒤집|부호를 뒤집[^.]*힙", "최소 힙만 있는 언어|힙이 가장 작은 값만 꼭대기에 둔다면"),
+    )
 
     def test_conditions(self):
         import re
@@ -1270,12 +1274,12 @@ class LanguageNeutralTextTest(unittest.TestCase):
 
         for path in root.glob("*/*/problem.json"):
             data = json.loads(path.read_text(encoding="utf-8"))
-            for key in ("signals", "learn", "ladder"):
+            for key in ("signals", "learn", "ladder", "pitfalls", "pattern"):
                 walk(data.get(key), path)
         for path in root.glob("*/*/ready.json"):
             walk(json.loads(path.read_text(encoding="utf-8")).get("ready"), path)
         for where, text in texts:
             for sentence in re.split(r"(?<=[.다요])\s+", text):
-                for word, cond in self.RULES:
-                    if all(w in sentence for w in word.split()):
-                        self.assertIn(cond, sentence, f"{where.parent.name}: {sentence}")
+                for rule, cond in self.RULES:
+                    if re.search(rule, sentence):
+                        self.assertRegex(text, cond, f"{where.parent.name}: {sentence}")
