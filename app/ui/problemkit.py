@@ -20,6 +20,7 @@ app에서:
 lang.json(언어 함정이 어느 케이스에서 어떤 상태로 떨어졌는지. 증명 파일이 있을 때만)을 쓴다.
 """
 
+import functools
 import importlib.util
 import json
 import os
@@ -421,8 +422,20 @@ def attempt(folder, path) -> bool:
 # 언어 함정: 해설의 정답 코드 위에 '이 언어에서 조심할 것'을 보인다. 보일 글은 목록(problems/lang_traps.json) 한 곳에만 있다.
 # 문제 폴더의 lang_<번호>.<확장자>는 정답 풀이에 그 실수 하나만 넣은 풀이이고, 이 문제의 케이스에서 실제로 떨어져야 한다(증명).
 TRAPS = HERE / "problems" / "lang_traps.json"
+TRAP_RULES = HERE.parent / "tutor" / "debug" / "rules.py"
+
+
+@functools.cache
+def trap_rules():
+    """증명을 얼리고 확인하는 판정(돌려준 값의 꼴, 모양 식). 튜터가 후보를 거르는 것과 같은 파일을 judge()처럼 경로로 읽는다:
+    튜터 묶음(tutor/__init__)을 부르지 않아 langgraph 없이 돌고, 쓰는 함수 안에서만 읽어 서버(fits만 쓴다)는 이 파일을 읽지 않는다."""
+    spec = importlib.util.spec_from_file_location("algoblock_trap_rules", TRAP_RULES)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 TRAP_MAX, TRAP_CHARS, TRAP_FILES, TRAP_LINES, TRAP_AT = 12, 80, 3, 6, 2  # 언어마다 항목 수, what·fix 길이, 문제·언어마다 증명 파일 수, 넣은 줄·지운 줄 수, 구절 수
 TRAP_KEYS = ("id", "what", "fix", "code", "right", "recipe")  # 그 밖에 "varies": true(결과가 정해지지 않은 동작이라 떨어지는 케이스가 기기마다 다를 수 있다)
+# 그리고 "shape": 실수의 모양 식(정규식, 주석 밖 코드에 맞춘다). 이름만으로 다른 버그와 가를 수 없을 때 둔다. varies 함정은 이것이 없으면 튜터가 후보로 내지 않는다
 # 어느 풀이에나 흔한 낱말과 한 글자 기호는 닻(증명 파일이 그 실수를 넣었다는 표시)으로 세지 않는다. 우연히 바뀐 줄로 통과하지 않게
 COMMON = frozenset({"for", "while", "if", "else", "return", "in", "of", "get", "set", "new", "let", "const", "var", "def", "fn", "function", "int", "auto"})
 FALLS = ("failed", "runtime_error", "timeout", "memory_limit")  # 떨어진 상태. 건너뜀(skipped)은 근거로 얼리지 않고, 빌드가 안 된 것(컴파일 오류 등)은 증명이 아니다
@@ -491,12 +504,19 @@ def lang_check(problem: dict, listed: dict | None = None) -> list[str]:
             found.append(f"{name}: 바꾼 줄에 {trap}의 표시가 없다(넣은 줄에만 있는 code {row['code']}, 또는 지운 줄에만 있는 right {row['right']}. 흔한 낱말과 한 글자는 세지 않는다)")
         if not any(has_term(term, solution) for term in row["right"]):
             found.append(f"{name}: 정답 풀이에 {trap}의 right {row['right']} 가운데 하나도 없다")
+        if isinstance(row.get("shape"), str) and not _shape_ok(row, files[name], solution):
+            found.append(f"{name}: {trap}의 모양 식(shape)이 증명 풀이에는 맞고 정답 풀이에는 맞지 않아야 한다")
     for language, ids in seen.items():
         if len(ids) > TRAP_FILES:
             found.append(f"{language} 증명 파일이 {len(ids)}개다({TRAP_FILES}개까지)")
         if len(set(ids)) < len(ids):
             found.append(f"{language}에서 같은 함정을 증명 파일 둘이 보인다")
     return found
+
+
+def _shape_ok(row: dict, proof: str, solution: str) -> bool:
+    """모양 식이 증명 풀이에는 맞고 정답 풀이에는 맞지 않는가."""
+    return trap_rules().shape_in(row, proof) and not trap_rules().shape_in(row, solution)
 
 
 def lang_run(problem: dict, cases: list[dict], languages: list[str], limits: dict, listed: dict | None = None) -> tuple[dict, list[str]]:
@@ -509,13 +529,14 @@ def lang_run(problem: dict, cases: list[dict], languages: list[str], limits: dic
             continue
         ran = run(language, problem["files"][name], cases, limits.get(language) or LIMIT[language])
         fails = {case["id"]: row["status"] for case, row in zip(cases, ran) if row["status"] not in ("passed", "skipped")}
+        outs = {case["id"]: trap_rules().out_key(row["got"]) for case, row in zip(cases, ran) if row["status"] == "failed"}  # 틀린 답은 돌려준 값까지(같은 케이스에서 틀리는 다른 버그와 가른다)
         odd = sorted(set(fails.values()) - set(FALLS))
         if not fails:
             found.append(f"{name}({trap})가 모든 케이스를 통과한다: 이 문제에서는 증명되지 않으니 파일을 지운다")
         elif odd:
             found.append(f"{name}({trap})를 돌리지 못했다({', '.join(odd)}): 증명 파일은 빌드되고 실행돼야 한다 {ran[0]['why'][-300:]}")
         else:
-            rows.setdefault(language, []).append({"file": name, "trap": trap, **({"at": list(phrases)} if phrases else {}), **({"varies": True} if trap in varies else {"fails": fails})})
+            rows.setdefault(language, []).append({"file": name, "trap": trap, **({"at": list(phrases)} if phrases else {}), **({"varies": True} if trap in varies else {"fails": fails, **({"outs": outs} if outs else {})})})
     return rows, found
 
 
@@ -543,8 +564,9 @@ def lang_frozen(problem: dict) -> list[str]:
     path, cases = problem["dir"] / "lang.json", problem["dir"] / "cases.json"
     saved = json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {}
     cases_text = cases.read_text(encoding="utf-8") if cases.is_file() else ""
+    outs = lambda row: set(row.get("outs") or {}) == {cid for cid, status in (row.get("fails") or {}).items() if status == "failed"}  # 틀린 답의 케이스마다 돌려준 값이 얼려 있다
     have = sorted((row["file"], language, row["trap"], tuple(row.get("at", []))) for language, rows in saved.items() for row in rows
-                  if (row.get("fails") or row.get("varies")) and row["file"] in problem["files"] and row.get("source") == proof_source(problem, row["file"], cases_text))
+                  if (row.get("fails") or row.get("varies")) and outs(row) and row["file"] in problem["files"] and row.get("source") == proof_source(problem, row["file"], cases_text))
     return [] if have == proof_files(problem) else ["lang.json이 증명 파일(lang_*)이나 케이스와 다르다: check(다른 언어는 --langs)로 다시 쓴다"]
 
 
@@ -565,10 +587,15 @@ def trap_list_check(listed: dict | None = None, root: Path = HERE / "problems") 
             row = row if isinstance(row, dict) else {}
             texts = all(isinstance(row.get(key), str) and row[key].strip() for key in ("id", "what", "fix", "recipe"))
             names = all(isinstance(row.get(key), list) and all(isinstance(term, str) and term for term in row[key]) for key in ("code", "right")) and bool(row.get("right"))
-            if not set(TRAP_KEYS) <= set(row) <= {*TRAP_KEYS, "varies"} or not texts or not names or row.get("varies", True) is not True:
-                found.append(f"lang_traps.json: {language}의 {row.get('id')!r}: 칸은 {', '.join(TRAP_KEYS)}(그리고 varies: true)이고, 글은 비지 않고, "
+            if not set(TRAP_KEYS) <= set(row) <= {*TRAP_KEYS, "varies", "shape"} or not texts or not names or row.get("varies", True) is not True:
+                found.append(f"lang_traps.json: {language}의 {row.get('id')!r}: 칸은 {', '.join(TRAP_KEYS)}(그리고 varies: true, shape)이고, 글은 비지 않고, "
                              "code는 이름 목록(비어도 된다), right는 대안 이름 목록(하나 이상)이다")
                 continue
+            if "shape" in row:
+                try:
+                    re.compile(row["shape"])
+                except (re.error, TypeError):
+                    found.append(f"lang_traps.json: {row['id']}의 shape가 정규식이 아니다")
             trap = row["id"]
             ids.append(trap)
             if not trap.startswith(language + ".") or not TRAP_HEAD.fullmatch(f"# 언어 함정: {trap}"):

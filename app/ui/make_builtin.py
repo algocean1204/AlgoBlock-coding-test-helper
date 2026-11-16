@@ -84,13 +84,23 @@ def entry(folder: Path, langs: bool = True, check: bool = True) -> dict:
 
 
 def traps_of(problem: dict, solutions: dict) -> dict:
-    """싣는 언어의 증명된 함정: {언어: [{id, what, fix, at(구절 목록, 있으면), fails 또는 varies}]}. 글은 함정 목록에서, 증명은 lang.json(검사가 얼린 것)에서 온다.
-    varies: 결과가 정해지지 않은 동작이라 떨어지는 케이스가 기기마다 다를 수 있다(떨어진 케이스 목록을 싣지 않는다)."""
+    """싣는 언어의 증명된 함정: {언어: [{id, what, fix, code, right, shape(있으면), at(구절 목록, 있으면), fails·outs 또는 varies}]}. 글은 함정 목록에서, 증명은 lang.json(검사가 얼린 것)에서 온다.
+    varies: 결과가 정해지지 않은 동작이라 떨어지는 케이스가 기기마다 다를 수 있다(떨어진 케이스 목록을 싣지 않는다). outs: 틀린 답을 낸 케이스의 돌려준 값(짧게, 길면 지문).
+    code·right: 사용자 코드가 그 함정의 꼴인지 보는 이름(튜터가 후보를 거른다). 증명 검사와 같게 흔한 낱말과 한 글자는 뺀다.
+    right_base: 그 언어 정답 풀이(주석 밖)에 right 이름이 나오는 횟수의 합. code가 없는 함정은 사용자 코드에서 이보다 적게 나와야 후보다."""
+    from tutor.debug.rules import right_count
+
     path = problem["dir"] / "lang.json"
     saved = json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {}
     text = {row["id"]: row for rows in problemkit.traps().values() for row in rows}
-    return {language: [{"id": row["trap"], "what": text[row["trap"]]["what"], "fix": text[row["trap"]]["fix"], **{key: row[key] for key in ("at", "fails", "varies") if key in row}}
-                       for row in rows if row["trap"] in text] for language, rows in saved.items() if language in solutions}
+    names = lambda row, key: [term for term in text[row["trap"]][key] if problemkit.anchor(term)]
+
+    def one(row: dict, language: str) -> dict:
+        trap = {"id": row["trap"], "what": text[row["trap"]]["what"], "fix": text[row["trap"]]["fix"], "code": names(row, "code"), "right": names(row, "right"),
+                **{key: text[row["trap"]][key] for key in ("shape",) if key in text[row["trap"]]}, **{key: row[key] for key in ("at", "fails", "outs", "varies") if key in row}}
+        return trap | {"right_base": right_count(trap, solutions[language])}
+
+    return {language: [one(row, language) for row in rows if row["trap"] in text] for language, rows in saved.items() if language in solutions}
 
 
 def ready_of(row: dict) -> dict:

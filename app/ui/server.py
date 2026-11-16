@@ -402,9 +402,11 @@ def given(pid: str, language: str) -> dict | None:
 
 
 def problem_shape(pid: str, language: str) -> dict:
-    """엔진에 넘기는 문항의 방식과 이 언어의 시작 코드(블록 코드 확인이 방식을 짐작하지 않고, 풀이 가이드가 시작 코드의 머리를 따른다)."""
+    """엔진에 넘기는 문항의 방식과 이 언어의 시작 코드(블록 코드 확인이 방식을 짐작하지 않고, 풀이 가이드가 시작 코드의 머리를 따른다),
+    그리고 이 언어에서 증명된 언어 함정(틀린 곳 찾기가 실패와 맞는 것을 고른다. 기본 문제만, 없으면 빈 목록)."""
     p = PROBLEMS.get(pid)
-    return {} if p is None else {"mode": p.mode, "starter": starter_of(p, language), "many_answers": getattr(p, "many_answers", False) is True}
+    traps = ((BUILTIN.get(pid) or {}).get("traps") or {}).get(language, [])
+    return {} if p is None else {"mode": p.mode, "starter": starter_of(p, language), "many_answers": getattr(p, "many_answers", False) is True, "traps": traps}
 
 
 def cross_mode(pid: str) -> str | None:
