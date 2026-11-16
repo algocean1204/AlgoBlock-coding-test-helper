@@ -2144,6 +2144,10 @@ def home_screen() -> None:
     assert "rd.solved" in status and "sum.solved - rd.solved" in status and "rd.rule_short" in status and 'role="img"' in status  # 도움 없이·그 밖의 통과를 갈라 보이고 기준을 ⓘ로 편다
     assert "도움 받아 통과" not in js and "그 밖의 통과" in status and js.count("그 밖의 통과") >= 6  # 도움을 쓰지 않은 통과(제출 4번째, 처음부터 뒤 하루 안)도 들어 있어서 '도움 받아'라 부르지 않는다
     assert "weaknesses.find" not in js[js.index("async function showReport()"):js.index("async function showReport()") + 1500]  # 보고서 단추가 약한 주제를 따로 앞세우지 않는다
+    # 되풀이한 실수: '틀린 곳 같이 찾기'에서만 쌓이니 소개 글이 그렇게 말하고, 목록이 비어도 카드는 남아 쌓이는 법을 한 줄로 안내한다
+    report_js = js[js.index("async function showReport()"):js.index("async function showReport()") + 9000]
+    assert "‘틀린 곳 같이 찾기’를 쓰면 되풀이한 실수도 모아 줘요" in js and "제출 기록에서 강한 주제와 더 공부할 주제, 자주 하는 실수" not in js
+    assert "d.pitfalls.length ? `<section" not in report_js and "‘틀린 곳 같이 찾기’를 쓰면 쌓여요" in report_js
 
 
 def settings_screen() -> None:
