@@ -1,8 +1,9 @@
 """응답 글에서 JSON을 골라 스키마로 만든다."""
 
 import json
+import types
 from dataclasses import MISSING, fields, is_dataclass
-from typing import Any, get_args, get_origin, get_type_hints
+from typing import Any, Union, get_args, get_origin, get_type_hints
 
 from app.llm.errors import LlmFailed
 
@@ -80,6 +81,19 @@ def _value(typ: Any, value: Any) -> Any:
     origin = get_origin(typ)
     if origin is None and is_dataclass(typ):
         return coerce(typ, value)
+    if origin is Union or origin is types.UnionType:  # X | None 꼴(숨은 테스트의 제한사항 등). 앞에서부터 맞는 꼴로 읽는다
+        if value is None:
+            if type(None) not in get_args(typ):
+                raise LlmFailed("모양 불일치")
+            return None
+        for arg in get_args(typ):
+            if arg is type(None):
+                continue
+            try:
+                return _value(arg, value)
+            except LlmFailed:
+                continue
+        raise LlmFailed("모양 불일치")
     if origin is list:
         (inner,) = get_args(typ)
         if not isinstance(value, list):
