@@ -2181,7 +2181,8 @@ def learning_report(t) -> dict:
                풀기 전에 해설을 연 문제가 없다.
     - weak     아래 가운데 하나: 두 문제 이상에 걸쳐 제출이 3번 이상인데 60% 이상이 통과하지 못했다(한 문제에서 여러 번 틀리고 푼 것은 약점이 아니다) /
                두 문제 이상에서 답은 맞았지만 큰 입력에서 시간이 모자랐다(fail_kind의 slow) /
-               풀기 전에 해설을 연 문제가 2개 이상이다 / 3번 넘게 제출하고도 아직 못 푼 문제가 있다.
+               풀기 전에 해설을 연 문제가 2개 이상이다 / 3번 넘게 제출하고도 아직 못 푼 문제가 있다 /
+               서로 다른 문제 2개 이상을 통과했는데 도움 없이 푼 문제가 하나도 없다.
     - progress 그 밖(풀고 있는 중).
     """
     subs = [sub for sub in t.store.submissions() if sub["status"] != "toolchain_missing"]  # 도구가 없어 채점하지 못한 예전 기록은 제출이 아니다
@@ -2241,6 +2242,8 @@ def learning_report(t) -> dict:
             state, why = "weak", f"풀기 전에 해설을 먼저 연 문제가 {early}개예요. 힌트까지만 보고 한 번 더 버텨 보세요."
         elif stuck:
             state, why = "weak", f"'{stuck[0]['title']}' 문제를 {len(by_problem[stuck[0]['id']])}번 제출했지만 아직 통과하지 못했어요."
+        elif len(done) >= 2 and not alone:
+            state, why = "weak", f"{len(done)}문제를 통과했지만 도움 없이 푼 문제가 아직 없어요(힌트·튜터·해설을 썼거나 제출이 많았어요). 도움 없이 한 문제를 다시 풀어 보세요."
         else:
             own_line = f" 등록한 문제 {sum(pid in solved for pid in own_by_theme[key])}개를 풀었어요." if own_by_theme[key] else ""  # 등록 문제의 통과는 따로 말한다(제출 수와 기준을 맞춘다)
             state, why = "progress", f"기본 문제 {len(mine)}문제 중 {len(done)}문제를 풀었어요.{own_line}" + (f" 다음은 {todo['level']}단계예요." if todo else " 모두 풀었어요.")

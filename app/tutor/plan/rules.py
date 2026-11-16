@@ -5,7 +5,7 @@ from dataclasses import replace
 
 from ..common.scope import KNOWN
 from ..common.solution import body_lines, frame_flags
-from ..common.talk_rules import hint_problems
+from ..common.talk_rules import hint_problems, repeated_hints
 from ..state import BLOCK_KINDS, Block, ErrorInfo
 
 
@@ -29,10 +29,14 @@ def check_blocks(blocks: list[Block], algorithm: str) -> ErrorInfo | None:
 def hint_faults(blocks: list[Block], problem: str) -> dict[str, list[str]]:
     """블록 id → 그 블록의 질문이 어긴 원칙들. 어긴 것이 없는 블록은 빠진다."""
     faults = {}
+    code = "\n".join(b.reference for b in blocks)
     for index, block in enumerate(blocks):
         later = [b.name for b in blocks[index + 1 :] if b.name.strip()]
         hints = [h.strip() for h in block.hints[:3] if h.strip()]
-        found = {item for n, h in enumerate(hints) for item in hint_problems(h, problem=problem, reference=block.reference, later_names=later, clue=(n == 1))}
+        found = {item for n, h in enumerate(hints)
+                 for item in hint_problems(h, problem=problem, reference=block.reference, later_names=later, clue=(n == 1), code=code)}
+        if repeated_hints(hints):
+            found.add("같은 질문 되풀이")
         if found:
             faults[block.id] = sorted(found)
     return faults
