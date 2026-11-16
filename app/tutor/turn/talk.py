@@ -40,7 +40,7 @@ def speak_messages(state: MainState, turn: TurnContext, move: MovePlan, system: 
                   f"판정: 아직 넘어가지 않는다. 이 코드가 해내지 못한 것: {move.missing_signal}. 다음 질문은 이것 하나만 겨눈다. 다른 것을 묻지 않는다."]
     replying = turn.event == "message" and bool(turn.text) and not aside
     # 가이드는 사용자 말에 답할 때 그 말을 겨눈다(reply). 의자는 유형 지시 뒤에 개념·까닭을 물으면 먼저 답하라는 지시를 붙인다
-    step = steps.get("reply", f"{steps[move.move]} {CONCEPT_FIRST}") if replying else steps[move.move]
+    step = steps.get("reply", f"{steps[move.move]} {CONCEPT_FIRST}") if replying and move.move != "verify" else steps[move.move]  # verify: 맞는지 물은 말에만 쓰는 지시
     hidden = masked_terms(state)
     if hidden:
         lines.append(f"참고: 사용자가 먼저 말하기 전에는 되도록 쓰지 않을 낱말: {', '.join(hidden)}")

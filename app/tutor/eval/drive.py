@@ -187,7 +187,7 @@ class Session:
         _, row = self.call("turn", lambda: self.tutor.turn(self.scenario.id, self.mode, "message", text=text), event="message", user=text)
         self._reply_row(row)
         if row["status"] == 200:
-            yes = row["advance"] or row.get("move") in ("basis", "recap", "run", "write")
+            yes = row["advance"] or row.get("move") in ("basis", "recap", "run", "write", "verify")
             # 다시 짜기(replan)와 마침 말(close)은 찾음·못 찾음 판정이 아니다
             row["decision"] = None if row.get("move") in ("replan", "close") else ("찾음" if yes else "못 찾음")
             row["judged"] = judged
