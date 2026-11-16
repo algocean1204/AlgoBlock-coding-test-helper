@@ -2258,7 +2258,8 @@ def learning_report(t) -> dict:
             state, why = "progress", f"기본 문제 {len(mine)}문제 중 {len(done)}문제를 풀었어요.{own_line}" + (f" 다음은 {todo['level']}단계예요." if todo else " 모두 풀었어요.")
         theme_rows_.append({"key": key, "name": theme_name(key), "solved": len(done), "total": len(mine), "level_reached": max((row["level"] for row in done), default=0),
                             "unaided": len(alone), "submissions": len(mine_subs), "first_try": first_try, "fails": fails, "hints": sum(study["hints_seen"] for study in studies.values()),
-                            "solution_before_pass": early, "state": state, "why": why, "next": {"id": todo["id"], "title": todo["title"], "level": todo["level"]} if todo else None,
+                            "solution_before_pass": early, "early_problems": [{"id": row["id"], "title": row["title"]} for row in mine if studies[row["id"]]["solution_before_pass"]],
+                            "state": state, "why": why, "next": {"id": todo["id"], "title": todo["title"], "level": todo["level"]} if todo else None,
                             "review": {"id": review["id"], "title": review["title"], "level": review["level"]} if review else None,
                             # 이 주제를 고른 등록 문제 가운데 풀이 계획의 유형이 다른 것(둘을 나란히 보인다)
                             "plan_differs": [{"id": pid, "title": PROBLEMS[pid].title, "planned": theme_name(differ[pid])} for pid in own_by_theme[key] if pid in differ]})

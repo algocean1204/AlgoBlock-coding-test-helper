@@ -2283,6 +2283,23 @@ console.log(JSON.stringify([focusTail({ next: { id: "a" } }, t), focusTail({ nex
     assert "focusTail(focus, target)" in js and "sideNext(x, target)" in js and 'href="#/p/${esc(focus.next.id)}"' not in js
 
 
+def early_solution_report() -> None:
+    """통과하기 전에 해설을 연 문제는 학습 보고서의 주제 줄(early_problems)과 ‘해설을 먼저 본 문제’ 칸에 보인다(해설 확인 창이 그렇게 알린다)."""
+    with server.tutor() as t:
+        before = t.store.study(PID)
+        t.store.set_study(PID, solution_at=server.now(), solution_before_pass=True)
+    try:
+        rows = {row["key"]: row for row in call("/api/report")[1]["themes"]}
+        mine = rows[FIRST["theme"]]
+        assert {"id": PID, "title": FIRST["title"]} in mine["early_problems"] and mine["solution_before_pass"] >= 1, mine
+    finally:
+        with server.tutor() as t:
+            t.store.set_study(PID, solution_at=before["solution_at"], solution_before_pass=before["solution_before_pass"])
+    js = (HERE / "app.js").read_text(encoding="utf-8")
+    assert "<h2>해설을 먼저 본 문제</h2>" in js and "d.themes.flatMap((t) => t.early_problems || [])" in js
+    assert "학습 보고서에 ‘해설을 먼저 봄’으로 남아요" in js  # 알림 문구와 같은 이름으로 보인다
+
+
 def case_arg_count() -> None:
     """내 문제 넣기의 케이스 입력: 인자 수가 시작 코드(표 머리·적은 인자 이름·첫 줄)와 다르면 그 줄 아래에서 알리고, 입력 안내가 인자 목록 전체를 대괄호로 감싼다고 예와 함께 말한다(화면 코드 확인, 분기는 node로)."""
     import re
@@ -2888,6 +2905,7 @@ def main() -> None:
         settings_items()
         keyboard_gaps()
         way_info()
+        early_solution_report()
         case_arg_count()
         ai_marks()
         report_terms()
