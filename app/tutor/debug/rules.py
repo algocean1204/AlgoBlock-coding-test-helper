@@ -146,3 +146,19 @@ def leaks_fix(reply: str, fixed_line: str, code: str) -> bool:
     if len(fixed) < 5 or fixed in {_squash(line) for line in (code or "").splitlines()}:
         return False
     return fixed in _squash(reply)
+
+
+PIECE = 6  # 첫 질문에서 고친 줄의 조각으로 보는 길이(공백을 뺀 글자). 'count.get(name, 0) + 1로 바꾸면…'은 줄 전체가 아니라 조각이 샜다
+# 줄 번호의 여러 꼴: '4번째 줄', '4줄', '4행', '네 번째 줄', 'line 4'
+LINE_WORD = re.compile(r"\d+\s*(?:번째\s*)?(?:줄|행)|(?:한|두|세|네|다섯|여섯|일곱|여덟|아홉|열)\s*번째\s*(?:줄|행)|\bline\s*\d+", re.IGNORECASE)
+
+
+def leaks_piece(reply: str, fixed_line: str, code: str) -> bool:
+    """고친 줄 가운데 사용자 코드에 없는 조각(PIECE자 이상)이 말에 들어 있는가. 첫 질문에서만 쓴다(뒤 단계는 줄을 짚고 고칠 곳을 묻는다)."""
+    fixed, mine, said = _squash(fixed_line), _squash(code), _squash(reply)
+    return any(fixed[i:i + PIECE] in said and fixed[i:i + PIECE] not in mine for i in range(len(fixed) - PIECE + 1))
+
+
+def names_line(reply: str) -> bool:
+    """말이 줄 번호를 어떤 꼴로든 말하는가."""
+    return bool(LINE_WORD.search(reply or ""))

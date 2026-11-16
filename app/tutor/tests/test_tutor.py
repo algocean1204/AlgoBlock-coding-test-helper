@@ -392,7 +392,11 @@ class TutorTest(unittest.TestCase):
             self.assertIn("[check]A", fakes.prompt(fake, "debug.judge"))
         finally:
             tutor.close()
-        for n, opening in enumerate(("4번째 줄에서 count에 무엇이 들어가나요?", "count[name] = count.get(name, 0) + 1 로 바꾸면 될까요?", "", "두 번째 tom을 보세요.")):
+        leaked = ("4번째 줄에서 count에 무엇이 들어가나요?", "count[name] = count.get(name, 0) + 1 로 바꾸면 될까요?", "", "두 번째 tom을 보세요.",
+                  # 고친 줄의 조각, 줄 번호의 다른 꼴도 첫 질문에서는 막는다
+                  "count.get(name, 0) + 1로 바꾸면 두 번째 tom은 어떻게 될까요?", "4줄에서 count에 1을 넣지 말고 무엇을 넣어야 할까요?",
+                  "네 번째 줄에서 count에 하나를 더해야 하지 않을까요?", "4행을 보면 무엇이 보이나요?", "line 4에서 count는 몇이 되나요?")
+        for n, opening in enumerate(leaked):
             tutor, fake = self.tutor({"debug.locate": [{**self.FOUND, "opening": opening}]})
             try:
                 got = tutor.debug("p1", f"{self.BUGGY}  # {n}", self.FAILED).body["messages"][-1]["text"]  # 코드가 달라야 새로 진단한다

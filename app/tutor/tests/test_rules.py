@@ -697,6 +697,23 @@ class ToldAnswerTest(unittest.TestCase):
         self.assertIn("답을 말함", reply_problems("벨트 위 무게 합과 맨 앞 상자 번호는 0이에요.", move="open", problem=problem, reference=start))  # 지울 수 없으면 대체 질문
 
 
+class DebugOpeningRuleTest(unittest.TestCase):
+    def test_line_forms_pieces_and_expected_answer(self):
+        from ..debug.rules import leaks_piece, names_line
+        from ..turn.moves import rule_verdict
+
+        for said in ("4번째 줄", "4줄에서", "12행", "네 번째 줄", "열 번째 행", "line 4", "Line 12"):
+            self.assertTrue(names_line(f"{said} count는 몇인가요?"), said)
+        for said in ("한 줄씩 따라가 보면 어디서 달라질까요?", "코드 첫 줄부터 따라가 보면 어떨까요?", "두 번째 tom을 만나면 count는 몇인가요?"):
+            self.assertFalse(names_line(said), said)
+        code = "for name in a:\n    count[name] = 1"
+        self.assertTrue(leaks_piece("count.get(name, 0) + 1로 바꾸면?", "count[name] = count.get(name, 0) + 1", code))
+        self.assertFalse(leaks_piece("두 번째 tom에서 count[name]은 몇이 되나요?", "count[name] = count.get(name, 0) + 1", code))  # 사용자 코드에 있던 조각
+        for text in ("기대 답 보여줘", "예상 답 알려 주세요"):  # 기대한 값을 묻는 말은 답 요청이 아니다
+            self.assertNotEqual(getattr(rule_verdict(text), "aside", ""), "A", text)
+        self.assertEqual(rule_verdict("답 알려 주세요").aside, "A")
+
+
 class DebugSaidLineTest(unittest.TestCase):
     def test_line_named_in_reply_is_marked(self):
         """말로 '7번째 줄'을 짚었는데 결과의 line이 비어 편집기에 표시가 없었다."""
