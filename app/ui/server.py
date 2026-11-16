@@ -692,9 +692,20 @@ def labels_of(t, p, marks: dict | None = None) -> dict:
             "check": {key: check[key] for key in ("hidden", "efficiency", "tiers", "calls", "why", "doubts") if key in check}}
 
 
+def unaided_ids(t, passed: set) -> set:
+    """통과한 기본 문제 가운데 도움 없이 푼 것(학습 보고서와 같은 기준 unaided_pass). 문제 목록의 '다음'이 홈·보고서와 같은 기준을 쓰게 한다."""
+    by_problem: dict[str, list] = defaultdict(list)
+    for sub in t.store.submissions():
+        if sub["problem_id"] in passed and sub["status"] != "toolchain_missing":
+            by_problem[sub["problem_id"]].append(sub)
+    talked = {row["problem_id"]: row["at"] for row in t.store.conn.execute("SELECT problem_id, MIN(at) AS at FROM message GROUP BY problem_id")}
+    return {pid for pid, subs in by_problem.items() if unaided_pass(subs, t.store.study(pid), talked.get(pid))}
+
+
 def problem_rows(t) -> list[dict]:
     done, mine, guessed, marks = counts(t), touched(t), planned_themes(t), t.store.labels()
     chosen = {row["id"]: row["language"] for row in t.store.conn.execute("SELECT id, language FROM problem").fetchall()}  # 사용자가 고른 언어
+    alone = unaided_ids(t, {pid for pid, (passed, _) in done.items() if passed and pid in BUILTIN})
     rows = []
     for p in PROBLEMS.values():
         passed, total = done.get(p.id, (0, 0))
@@ -702,14 +713,15 @@ def problem_rows(t) -> list[dict]:
         shown = p.theme_name or (theme_name(guessed[p.id]) if not p.sample and guessed.get(p.id) else "")
         # 등급: 통과 2회마다 한 등급, 8회 이상 5등급
         rows.append({"id": p.id, "title": p.title, "language": chosen.get(p.id, p.language), "sample": p.sample, "builtin": p.builtin,
-                     "theme": p.theme, "theme_name": shown, "level": p.level, "passed": passed, "submitted": total, "solved": passed > 0,
+                     "theme": p.theme, "theme_name": shown, "level": p.level, "passed": passed, "submitted": total, "solved": passed > 0, "unaided": p.id in alone,
                      "touched": p.id in mine, "grade": min(5, 1 + min(passed, 10) // 2), **labels_of(t, p, marks)})
     return rows
 
 
 def next_up(mine: list[dict], solved: set):
-    """한 주제(단계 순서)에서 다음에 풀 문제: 위에 못 푼 단계가 남은 통과 단계 가운데 가장 높은 것 바로 위의 못 푼 단계(3·5단계를 통과했으면 4단계).
-    통과한 단계 위에 못 푼 것이 없으면 가장 낮은 못 푼 단계. 다 풀었으면 None."""
+    """한 주제(단계 순서)에서 다음에 풀 문제: 위에 못 푼 단계가 남은 푼 단계 가운데 가장 높은 것 바로 위의 못 푼 단계(3·5단계를 풀었으면 4단계).
+    푼 단계 위에 못 푼 것이 없으면 가장 낮은 못 푼 단계. 다 풀었으면 None. 보고서는 solved에 '도움 없이 푼' 문제만 넘겨,
+    도움을 받아 통과한 단계는 다시 풀 후보로 남는다."""
     todo = [row for row in mine if row["id"] not in solved]
     for top in sorted({row["level"] for row in mine if row["id"] in solved}, reverse=True):
         above = [row for row in todo if row["level"] > top]
@@ -724,7 +736,7 @@ def theme_rows(rows: list[dict]) -> list[dict]:
     for key in ALGORITHMS:
         mine = [row for row in rows if row["builtin"] and row["theme"] == key]
         if mine:
-            todo = next_up(mine, {row["id"] for row in mine if row["solved"]})
+            todo = next_up(mine, {row["id"] for row in mine if row["unaided"]})  # 도움 없이 푼 단계가 기준(보고서와 같다)
             out.append({"key": key, "name": theme_name(key), "total": len(mine), "solved": sum(row["solved"] for row in mine),
                         "next": {"id": todo["id"], "title": todo["title"]} if todo else None})
     return out
@@ -1900,6 +1912,15 @@ def own_starter(p, language: str) -> str:
     return stub({"params": [{"name": name, "type": typ} for name, typ in zip(names, types)], "returns": returns}, language)
 
 
+def efficiency_message(report: dict) -> str:
+    """답은 맞고 효율성 테스트에서만 실패했을 때의 안내. 큰 입력에서 실행 오류(재귀가 너무 깊음, 메모리 부족 등)로 멈췄으면 시간이 모자란 것이 아니다."""
+    crashed = next((case for case in report["cases"] if case["kind"] == "efficiency" and case["status"] == "runtime_error"), None)
+    if crashed:
+        hint = error_hint(crashed["error"], report.get("language", ""))
+        return f"답은 맞아요. 다만 아주 큰 입력에서 실행 중 오류가 났어요. {hint or '결과의 효율성 테스트에서 오류 이름을 확인해 보세요.'}"
+    return "답은 맞아요. 다만 입력이 아주 클 때 시간이 모자라요. 제한사항의 입력 크기를 보고, 같은 것을 되풀이해 세거나 찾는 곳이 없는지 살펴보세요."
+
+
 DEBUG_DONE = "고친 코드가 통과했어요. 기록으로 남기려면 제출해 주세요."
 
 
@@ -2169,7 +2190,8 @@ def learning_report(t) -> dict:
                풀기 전에 해설을 연 문제가 없다.
     - weak     아래 가운데 하나: 두 문제 이상에 걸쳐 제출이 3번 이상인데 60% 이상이 통과하지 못했다(한 문제에서 여러 번 틀리고 푼 것은 약점이 아니다) /
                두 문제 이상에서 답은 맞았지만 큰 입력에서 시간이 모자랐다(fail_kind의 slow) /
-               풀기 전에 해설을 연 문제가 2개 이상이다 / 3번 넘게 제출하고도 아직 못 푼 문제가 있다.
+               풀기 전에 해설을 연 문제가 2개 이상이다 / 3번 넘게 제출하고도 아직 못 푼 문제가 있다 /
+               서로 다른 문제 2개 이상을 통과했는데 도움 없이 푼 문제가 하나도 없다.
     - progress 그 밖(풀고 있는 중).
     """
     subs = [sub for sub in t.store.submissions() if sub["status"] != "toolchain_missing"]  # 도구가 없어 채점하지 못한 예전 기록은 제출이 아니다
@@ -2209,7 +2231,7 @@ def learning_report(t) -> dict:
         slow = {sub["problem_id"] for sub in mine_subs if fail_kind(sub) == "slow"}
         stuck = [row for row in tried + own_tried if row["id"] not in solved and len(by_problem[row["id"]]) > 3]
         failed = sum(fails.values())
-        todo = next_up(mine, solved)
+        todo = next_up(mine, {row["id"] for row in alone})  # 도움 없이 푼 단계가 기준이다(도움 받아 통과한 것은 다시 풀 후보)
         # 해설을 먼저 본 문제: 그 뒤의 통과 제출이 한 번 이하면 힌트·해설 없이 다시 풀었는지 가릴 수 없어 다시 권한다
         review = next((row for row in mine if studies[row["id"]]["solution_before_pass"]
                        and sum(sub["ok"] and stamp(sub["at"]) >= stamp(studies[row["id"]]["solution_at"]) for sub in by_problem.get(row["id"], [])) <= 1), None)
@@ -2229,6 +2251,8 @@ def learning_report(t) -> dict:
             state, why = "weak", f"풀기 전에 해설을 먼저 연 문제가 {early}개예요. 힌트까지만 보고 한 번 더 버텨 보세요."
         elif stuck:
             state, why = "weak", f"'{stuck[0]['title']}' 문제를 {len(by_problem[stuck[0]['id']])}번 제출했지만 아직 통과하지 못했어요."
+        elif len(done) >= 2 and not alone:
+            state, why = "weak", f"{len(done)}문제를 통과했지만 도움 없이 푼 문제가 아직 없어요(힌트·튜터·해설을 썼거나 제출이 많았어요). 도움 없이 한 문제를 다시 풀어 보세요."
         else:
             own_line = f" 등록한 문제 {sum(pid in solved for pid in own_by_theme[key])}개를 풀었어요." if own_by_theme[key] else ""  # 등록 문제의 통과는 따로 말한다(제출 수와 기준을 맞춘다)
             state, why = "progress", f"기본 문제 {len(mine)}문제 중 {len(done)}문제를 풀었어요.{own_line}" + (f" 다음은 {todo['level']}단계예요." if todo else " 모두 풀었어요.")
@@ -2265,6 +2289,8 @@ def learning_report(t) -> dict:
         if key and (root := prereq_root(key, basic)) != key:
             row = next((row for row in theme_rows_ if row["key"] == root), {})
             target, name, why = row.get("next"), row.get("name", ""), f"먼저 익힐 주제예요({theme_name(key)}의 선수 주제)"
+        if target and target["id"] in solved and not why.startswith("해설을"):  # 도움을 받아 통과한 문제: 이어서 푸는 것이 아니라 다시 푸는 것
+            why = f"도움 없이 다시 풀기('처음부터' 뒤 {REPEAT_GAP_HOURS}시간이 지나 다시 풀면 인정)"
         if target and target["id"] not in picked and len(todo_rows) < 5:
             picked.add(target["id"])
             todo_rows.append({"id": target["id"], "title": target["title"], "theme_name": name, "level": target["level"], "why": why})
@@ -2566,8 +2592,7 @@ def handle(path: str, body: dict) -> tuple[int, dict]:
                     return 200, {"passed": True, "judged": judged or result_body(report), "messages": debug_closed(t, pid, str(body.get("text") or "").strip())}
                 if report["cases"] and all(case["status"] == "passed" for case in report["cases"] if case["kind"] != "efficiency"):
                     # 답은 맞고 큰 입력에서만 걸렸다: 틀린 줄을 찾을 일이 아니라 방법을 바꿀 일이다(큰 입력은 모델에 넘기지 않는다)
-                    return 200, {"passed": False, "efficiency_only": True, "judged": judged or result_body(report),
-                                 "message": "답은 맞아요. 다만 입력이 아주 클 때 시간이 모자라요. 제한사항의 입력 크기를 보고, 같은 것을 되풀이해 세거나 찾는 곳이 없는지 살펴보세요."}
+                    return 200, {"passed": False, "efficiency_only": True, "judged": judged or result_body(report), "message": efficiency_message(report)}
                 seen = tutor_view(report)
                 lines = [{**case, "line": raw.get("line")} for case, raw in zip(seen["cases"], report["cases"]) if raw["kind"] != "efficiency"] or seen["cases"]  # 채점기가 준 오류 줄을 같이 넘긴다
                 out = t.debug(pid, code, {**seen, "compile_line": report.get("compile_line"), "cases": lines},

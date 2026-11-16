@@ -6,11 +6,12 @@ from ..common.solution import solution_lines
 from ..llm import cached_user
 from ..common.progress_view import active_plan
 from ..common.scope import algorithm_line
-from ..common.talk_prompts import CONCEPT_FIRST, learner_lines
+from ..common.talk_prompts import CONCEPT_FIRST, HARD_STEP, learner_lines
 from ..common.talk_rules import FALLBACK, kind_word, note_fallback, repair, reply_problems
 from ..knowledge.ontology import hidden_terms
 from ..request_check.nodes import mode_messages
 from ..state import MainState, MovePlan, TurnContext
+from .moves import hard
 
 LOG = logging.getLogger("graph.talk")  # 대체 질문이 나간 이유(평가기가 모은다)
 
@@ -30,6 +31,7 @@ def speak_messages(state: MainState, turn: TurnContext, move: MovePlan, system: 
     recent = turn.recent if move.target == turn.index else []
     lines += [f"물을 블록:{block.name} ({kind_word(block.kind)})", f"이 블록에서 정할 것:{block.goal}", "이 블록의 최근 대화:", *(recent or ["없음"])]
     aside = getattr(state.get("verdict"), "aside", "")
+    aside = "" if aside == "W" else aside  # 뜻을 묻는 말은 그 말을 받아 답한다(term)
     if turn.text and not aside:
         lines.append(f"사용자 말:{turn.text}")
     if aside:  # 그 말에는 답하지 않는다. 안내 문장은 엔진이 앞에 붙인다
@@ -38,9 +40,11 @@ def speak_messages(state: MainState, turn: TurnContext, move: MovePlan, system: 
     if turn.event == "block_filled" and move.target == turn.index:  # 코드 확인 턴은 말 턴과 다르다(코드를 질문으로 읽었다)
         lines += [f"사용자가 방금 이 블록의 코드를 확인받았다. 질문을 한 것이 아니다. 적은 코드:\n{state['request'].code or ''}",
                   f"판정: 아직 넘어가지 않는다. 이 코드가 해내지 못한 것: {move.missing_signal}. 다음 질문은 이것 하나만 겨눈다. 다른 것을 묻지 않는다."]
-    replying = turn.event == "message" and bool(turn.text) and not aside
+    replying = turn.event == "message" and bool(turn.text) and not aside and move.move != "term"
     # 가이드는 사용자 말에 답할 때 그 말을 겨눈다(reply). 의자는 유형 지시 뒤에 개념·까닭을 물으면 먼저 답하라는 지시를 붙인다
-    step = steps.get("reply", f"{steps[move.move]} {CONCEPT_FIRST}") if replying else steps[move.move]
+    step = steps.get("reply", f"{steps[move.move]} {CONCEPT_FIRST}") if replying and move.move != "verify" else steps[move.move]  # verify: 맞는지 물은 말에만 쓰는 지시
+    if replying and move.target == turn.index and hard(turn.text):
+        step += f" {HARD_STEP}"
     hidden = masked_terms(state)
     if hidden:
         lines.append(f"참고: 사용자가 먼저 말하기 전에는 되도록 쓰지 않을 낱말: {', '.join(hidden)}")
