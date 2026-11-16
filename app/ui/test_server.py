@@ -315,7 +315,9 @@ def report() -> None:
     assert body["summary"]["solved"] == 1 and body["summary"]["total"] == len(ROWS) and body["summary"]["languages"]["python"] >= 5
     assert body["recent"][0]["id"] == PID and len(body["recent"]) <= 10
     assert [group["key"] for group in body["signals"]] == ["hash"] and body["signals"][0]["items"][0]["title"] == FIRST["title"]  # 푼 문제의 신호만
-    assert 1 <= len(body["next"]) <= 5 and all(row["id"] != PID for row in body["next"])
+    assert 1 <= len(body["next"]) <= 5 and body["readiness"]["solved"] == 0
+    again = [row for row in body["next"] if row["id"] == PID]  # PID는 해설을 먼저 보고 통과해서 도움 없이 푼 것이 아니다: 다시 풀 후보로 권하되 '이어서 풀기'라 하지 않는다
+    assert all(row["why"].startswith("도움 없이 다시 풀기(") for row in again), again
     others = [theme for theme in body["themes"] if theme["key"] != "hash"]
     assert all(theme["state"] == "new" for theme in others)
     # 약점 규칙: 한 주제의 두 문제에서 답은 맞았지만 큰 입력에서 시간이 모자라면 약한 주제다. 한 문제에서 여러 번, 정확성 케이스의 시간 초과, 세부가 없는 예전 기록은 아니다
@@ -351,13 +353,14 @@ BANNED = ("준비됐", "합격", "약해요", "부족해요", "%")  # 준비도�
 EARLY, LATE = "2000-01-01T00:00:00+09:00", "2999-01-01T00:00:00+09:00"
 
 
-def history(*steps) -> dict:
-    """빈 기록 파일에 steps(t를 받는 함수)를 넣고 학습 보고서를 받는다(다른 시험의 기록과 섞이지 않는다)."""
+def history(*steps, listed: bool = False) -> dict:
+    """빈 기록 파일에 steps(t를 받는 함수)를 넣고 학습 보고서를 받는다(다른 시험의 기록과 섞이지 않는다). listed면 문제 목록의 주제별 '다음'을 보고서의 themes에 겹쳐 돌려준다."""
     with tempfile.TemporaryDirectory() as folder, patch.object(server, "DB", Path(folder) / "report.db"):
         with server.tutor() as t:
             for step in steps:
                 step(t)
-        return call("/api/report")[1]
+        body = call("/api/report")[1]
+        return {**body, "listed": {row["key"]: row["next"] for row in call("/api/problems")[1]["themes"]}} if listed else body
 
 
 def at(when: str):
@@ -529,6 +532,18 @@ def readiness() -> None:
     assert hashed(history(*[solve(pid, talk=EARLY) for pid in hash5[:3]]))["state"] == "weak"  # 강점이 아니고, 도움에만 기댄 통과라 약한 주제
     assert hashed(history(*[solve(pid) for pid in hash5[:3]]))["state"] == "strong"
     assert hashed(history(*[solve(pid, fails=5 if n == 0 else 0) for n, pid in enumerate(hash5)]))["state"] != "weak"
+    # 다음 문제는 도움 없이 푼 단계가 기준이다: 모두 도움을 받아 1~4단계를 통과했으면 5단계가 아니라 가장 낮은 단계부터. 모두 도움 없이 풀었으면 5단계(그대로)
+    nxt = lambda body: next(row for row in body["themes"] if row["key"] == "hash")["next"]["id"]  # noqa: E731
+    assert nxt(history(*[solve(pid, helped=EARLY) for pid in hash5[:4]])) == hash5[0]
+    assert nxt(history(*[solve(pid) for pid in hash5[:4]])) == hash5[4]
+    assert nxt(history(solve(hash5[0]), solve(hash5[1]), solve(hash5[2], helped=EARLY))) == hash5[2]  # 도움 받은 3단계는 다시 풀 후보
+    assert nxt(history(solve(hash5[0], helped=EARLY))) == hash5[0] and nxt(history(solve(hash5[0]))) == hash5[1]  # 기록이 아주 적을 때
+    # 도움 받아 통과한 문제를 다시 권할 때는 사실대로 말한다(이어서 풀기가 아니다). 문제 목록의 '다음'도 보고서와 같다
+    aided = history(*[solve(pid, helped=EARLY) for pid in hash5[:4]], listed=True)
+    assert [row["why"] for row in aided["next"] if row["id"] == hash5[0]][0].startswith("도움 없이 다시 풀기(") and aided["listed"]["hash"]["id"] == hash5[0]
+    assert all(row["why"] != "이어서 풀기" for row in aided["next"] if row["id"] in hash5)
+    plain = history(*[solve(pid) for pid in hash5[:4]], listed=True)
+    assert plain["listed"]["hash"]["id"] == hash5[4] == nxt(plain)
     # 도움에 기대 통과한 주제는 약한 주제다: 서로 다른 두 문제를 모두 도움을 받아 통과 → 약함, 도움 없이 푼 문제가 하나라도 있으면 아님, 한 문제만이면 판정하지 않는다
     assert hashed(history(*[solve(pid, helped=EARLY) for pid in hash5[:2]]))["state"] == "weak"
     assert hashed(history(*[solve(pid, hints_seen=1, helped=EARLY) for pid in hash5[:4]]))["state"] == "weak"
