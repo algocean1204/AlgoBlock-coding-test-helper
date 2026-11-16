@@ -1132,6 +1132,15 @@ def language_switch_state() -> None:
         t.adopt(pid, FIRST["ready"])  # 튜터가 새 언어의 계획을 만든 것으로 본다
     assert [b["seen"] for b in call("/api/hint", id=pid, peek=True)[1]["blocks"]] == [0, 0]
     assert call("/api/hint", id=pid)[1]["seen"] == 1  # 새 계획의 첫 힌트부터
+    assert call("/api/hint", id=pid)[1]["seen"] == 2  # 새 언어에서 둘 이상 봐도 쌓인 수로 다시 나누지 않는다
+    assert [b["seen"] for b in call("/api/hint", id=pid, peek=True)[1]["blocks"]] == [2, 0]
+    assert call("/api/hint", id=pid)[1]["step"] == 3  # 다음 힌트도 같은 블록의 다음 것
+    assert [b["seen"] for b in call("/api/hint", id=pid, peek=True)[1]["blocks"]] == [3, 0]
+    assert call("/api/state", id=pid)[1]["problem"]["study"]["hints_seen"] == 3  # 화면의 수도 블록별 표시와 같다
+    call("/api/language", id=pid, language="python")  # 원래 언어로 돌아와도 어긋나지 않는다
+    assert [b["seen"] for b in call("/api/hint", id=pid, peek=True)[1]["blocks"]] == [0, 0]
+    assert call("/api/state", id=pid)[1]["problem"]["study"]["hints_seen"] == 0
+    call("/api/language", id=pid, language="javascript")
     with server.tutor() as t:
         sub = t.store.add_submission(pid, "x", False, language="python")
         t.store.conn.execute("INSERT INTO feedback(problem_id, submission_id, body_json) VALUES(?, ?, ?)", (pid, sub, json.dumps({"submission_id": sub, "analysis": "a"})))

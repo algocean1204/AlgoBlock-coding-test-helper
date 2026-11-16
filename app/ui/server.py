@@ -1865,7 +1865,8 @@ def hint_counts(study: dict, rows: list[dict], saved, language: str | None = Non
     seen = saved.get("seen") if isinstance(saved, dict) and saved.get("from") == study["hints_at_reset"] else None
     if isinstance(seen, dict):
         got = {n: seen.get(str(n), 0) for n in sizes}
-        if all(isinstance(k, int) and 0 <= k <= sizes[n] for n, k in got.items()) and sum(got.values()) == hints_now(study, rows):
+        # 언어를 적어 둔 기록은 그 언어에서 센 것이라 누적 수(다른 언어에서 본 것도 든다)와 합이 같지 않다. 언어 없는 예전 기록만 합으로 맞춘다
+        if all(isinstance(k, int) and 0 <= k <= sizes[n] for n, k in got.items()) and (bool(language and saved.get("lang") == language) or sum(got.values()) == hints_now(study, rows)):
             return got
     left, out = hints_now(study, rows), {}
     for n, size in sizes.items():
@@ -2000,7 +2001,7 @@ def state_body(t, p, body: dict) -> dict:
                         "theme": p.theme, "theme_name": p.theme_name or (theme_name(planned) if planned else ""), "level": p.level, **labels_of(t, p, ctx.language),
                         "languages": row["languages"] if row else list(check_judge().LANGUAGES), "starter": row["starters"].get(ctx.language, "") if row else own_starter(p, ctx.language),
                         "examples": examples, "cases": {kind: kinds.get(kind, 0) for kind in KINDS},
-                        "study": {"hints_seen": hints_now(study, hint_rows(t, pid)), "hints_total": len(hint_rows(t, pid)), "solution_seen": bool(study["solution_at"]),
+                        "study": {"hints_seen": sum(hint_counts(study, hint_rows(t, pid), read_json(HINTS_FILE, {}).get(pid), None if row else ctx.language).values()), "hints_total": len(hint_rows(t, pid)), "solution_seen": bool(study["solution_at"]),
                                   "solution_open": passed > 0 or bool(study["solution_at"]), "has_guide": row is not None or ctx.solution is not None,
                                   "passed_now": passed_now,
                                   "unaided_open": unaided_open(p, problem_subs(t, pid), study, talked, passed_now)},
