@@ -149,8 +149,9 @@ def leaks_fix(reply: str, fixed_line: str, code: str) -> bool:
 
 
 PIECE = 6  # 첫 질문에서 고친 줄의 조각으로 보는 길이(공백을 뺀 글자). 'count.get(name, 0) + 1로 바꾸면…'은 줄 전체가 아니라 조각이 샜다
-# 줄 번호의 여러 꼴: '4번째 줄', '3번 줄', '4줄', '4행', '네 번째 줄', 'line 4'
-LINE_WORD = re.compile(r"\d+\s*(?:번째|번)?\s*(?:줄|행)|(?:한|두|세|네|다섯|여섯|일곱|여덟|아홉|열)\s*번째\s*(?:줄|행)|\bline\s*\d+", re.IGNORECASE)
+# 줄 번호의 여러 꼴: '4번째 줄', '3번 줄', '4줄', '4행', '3번 라인', '첫 번째 줄', 'line 4'
+_UNIT = r"(?:줄(?!어|여|였|었|이면|이려|이는|이고|인)|행(?![렬동위])|라인)"  # '2번 줄이면', '3번 줄어들면', '2번 행렬', '1번 행동'은 줄 번호가 아니다
+LINE_WORD = re.compile(rf"\d+\s*(?:번째|번)?\s*{_UNIT}|(?:한|두|세|네|첫|다섯|여섯|일곱|여덟|아홉|열)\s*번째\s*{_UNIT}|\bline\s*\d+", re.IGNORECASE)
 
 
 def leaks_piece(reply: str, fixed_line: str, code: str) -> bool:
