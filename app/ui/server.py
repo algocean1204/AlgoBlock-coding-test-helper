@@ -692,9 +692,20 @@ def labels_of(t, p, marks: dict | None = None) -> dict:
             "check": {key: check[key] for key in ("hidden", "efficiency", "tiers", "calls", "why", "doubts") if key in check}}
 
 
+def unaided_ids(t, passed: set) -> set:
+    """통과한 기본 문제 가운데 도움 없이 푼 것(학습 보고서와 같은 기준 unaided_pass). 문제 목록의 '다음'이 홈·보고서와 같은 기준을 쓰게 한다."""
+    by_problem: dict[str, list] = defaultdict(list)
+    for sub in t.store.submissions():
+        if sub["problem_id"] in passed and sub["status"] != "toolchain_missing":
+            by_problem[sub["problem_id"]].append(sub)
+    talked = {row["problem_id"]: row["at"] for row in t.store.conn.execute("SELECT problem_id, MIN(at) AS at FROM message GROUP BY problem_id")}
+    return {pid for pid, subs in by_problem.items() if unaided_pass(subs, t.store.study(pid), talked.get(pid))}
+
+
 def problem_rows(t) -> list[dict]:
     done, mine, guessed, marks = counts(t), touched(t), planned_themes(t), t.store.labels()
     chosen = {row["id"]: row["language"] for row in t.store.conn.execute("SELECT id, language FROM problem").fetchall()}  # 사용자가 고른 언어
+    alone = unaided_ids(t, {pid for pid, (passed, _) in done.items() if passed and pid in BUILTIN})
     rows = []
     for p in PROBLEMS.values():
         passed, total = done.get(p.id, (0, 0))
@@ -702,7 +713,7 @@ def problem_rows(t) -> list[dict]:
         shown = p.theme_name or (theme_name(guessed[p.id]) if not p.sample and guessed.get(p.id) else "")
         # 등급: 통과 2회마다 한 등급, 8회 이상 5등급
         rows.append({"id": p.id, "title": p.title, "language": chosen.get(p.id, p.language), "sample": p.sample, "builtin": p.builtin,
-                     "theme": p.theme, "theme_name": shown, "level": p.level, "passed": passed, "submitted": total, "solved": passed > 0,
+                     "theme": p.theme, "theme_name": shown, "level": p.level, "passed": passed, "submitted": total, "solved": passed > 0, "unaided": p.id in alone,
                      "touched": p.id in mine, "grade": min(5, 1 + min(passed, 10) // 2), **labels_of(t, p, marks)})
     return rows
 
@@ -725,7 +736,7 @@ def theme_rows(rows: list[dict]) -> list[dict]:
     for key in ALGORITHMS:
         mine = [row for row in rows if row["builtin"] and row["theme"] == key]
         if mine:
-            todo = next_up(mine, {row["id"] for row in mine if row["solved"]})
+            todo = next_up(mine, {row["id"] for row in mine if row["unaided"]})  # 도움 없이 푼 단계가 기준(보고서와 같다)
             out.append({"key": key, "name": theme_name(key), "total": len(mine), "solved": sum(row["solved"] for row in mine),
                         "next": {"id": todo["id"], "title": todo["title"]} if todo else None})
     return out
@@ -2253,6 +2264,8 @@ def learning_report(t) -> dict:
     queue += [(row["next"], row["name"], "한 단계 더") for row in theme_rows_ if row["state"] == "strong" and row["next"]]
     todo_rows, picked = [], set()
     for target, name, why in queue:
+        if target and target["id"] in solved and not why.startswith("해설을"):  # 도움을 받아 통과한 문제: 이어서 푸는 것이 아니라 다시 푸는 것
+            why = f"도움 없이 다시 풀기('처음부터' 뒤 {REPEAT_GAP_HOURS}시간이 지나 다시 풀면 인정)"
         if target and target["id"] not in picked and len(todo_rows) < 5:
             picked.add(target["id"])
             todo_rows.append({"id": target["id"], "title": target["title"], "theme_name": name, "level": target["level"], "why": why})
