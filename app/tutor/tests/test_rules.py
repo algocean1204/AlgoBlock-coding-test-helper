@@ -900,6 +900,14 @@ class UnsaidCreditTest(unittest.TestCase):
         self.assertEqual(many_asks_line("이름별로 세면 될 것 같아요. k는 왜 있나요?"), [])
         self.assertTrue(many_asks_line("세면 되나요?\nk는 왜 있죠?")[0].startswith("사용자 말에 물음이 2개 있다."))
 
+    def test_agreeing_lead_on_a_restated_assumption_is_caught(self):
+        from ..common.talk_rules import unsaid_credit
+
+        said = "Map.get이 0을 돌려줄 것 같아요"
+        self.assertTrue(unsaid_credit("말씀하신 대로 처음에는 counts.get(title)이 0이라고 가정하셨네요. 값이 없을 때는 무엇을 돌려줄까요?", said))
+        self.assertTrue(unsaid_credit("그렇죠. 그럼 키가 없으면요?", said))
+        self.assertEqual(unsaid_credit("처음에는 get이 0을 돌려준다고 보셨네요. 값이 없을 때는 무엇을 돌려줄까요?", said), [])
+
     def test_unanswered_ask_is_carried_to_the_next_turn(self):
         from ..common.talk_rules import many_asks_line
 
