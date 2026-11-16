@@ -1834,6 +1834,12 @@ def own_way(pid: str, on: bool) -> None:
     write_json(OWN_FILE, {**rows, pid: True} if on else rows)
 
 
+def feedback_language(t, body):
+    """피드백이 본 제출의 언어를 얹는다. 언어를 바꿔도 피드백은 남아, 화면 부제가 지금 고른 언어를 적으면 다른 언어의 코드에 붙는다."""
+    row = isinstance(body, dict) and t.store.conn.execute("SELECT language FROM submission WHERE id=?", (body.get("submission_id"),)).fetchone()
+    return {**body, "language": row["language"]} if row else body
+
+
 def hints_now(study: dict, rows: list) -> int:
     """이번 풀이(처음, 또는 마지막 '처음부터' 뒤)에서 본 힌트 수."""
     return min(max(0, study["hints_seen"] - study["hints_at_reset"]), len(rows))
@@ -1849,10 +1855,13 @@ def hint_rows(t, pid: str) -> list[dict]:
             for n, block in enumerate(blocks, 1) for k, hint in enumerate(block["hints"][:3], 1)]
 
 
-def hint_counts(study: dict, rows: list[dict], saved) -> dict[int, int]:
+def hint_counts(study: dict, rows: list[dict], saved, language: str | None = None) -> dict[int, int]:
     """블록마다 이번 풀이에서 본 힌트 수 {블록 번호: 수}. 남겨 둔 수가 이번 풀이의 것이고 합이 본 힌트 수와 같을 때만 쓴다.
-    아니면(예전 기록, '처음부터' 뒤, 계획이 바뀜) 본 수를 블록 1부터 차례로 나눈다(블록마다 고르기 전과 같은 결과)."""
+    아니면(예전 기록, '처음부터' 뒤, 계획이 바뀜) 본 수를 블록 1부터 차례로 나눈다(블록마다 고르기 전과 같은 결과).
+    language: 언어마다 계획이 다른 문제(직접 넣은 문제)에서 지금 언어. 다른 언어에서 남긴 수는 이 계획의 힌트를 본 것이 아니라 모두 0이다."""
     sizes = Counter(row["block"] for row in rows)
+    if language and isinstance(saved, dict) and saved.get("lang", language) != language:
+        return {n: 0 for n in sizes}
     seen = saved.get("seen") if isinstance(saved, dict) and saved.get("from") == study["hints_at_reset"] else None
     if isinstance(seen, dict):
         got = {n: seen.get(str(n), 0) for n in sizes}
@@ -2514,7 +2523,8 @@ def handle(path: str, body: dict) -> tuple[int, dict]:
             if not rows:
                 raise Refuse("이 문제에는 미리 만들어 둔 힌트가 없어요. 튜터를 연결하면 질문으로 도와드려요.", 404, "not_found")
             study = t.store.study(pid)
-            by_block = hint_counts(study, rows, read_json(HINTS_FILE, {}).get(pid))
+            by_lang = None if row else language  # 기본 문제의 힌트는 모든 언어가 같다. 직접 넣은 문제는 언어마다 계획이 달라 본 수도 언어마다 센다
+            by_block = hint_counts(study, rows, read_json(HINTS_FILE, {}).get(pid), by_lang)
             sizes = Counter(row["block"] for row in rows)
             want = body.get("block")  # 막힌 블록의 힌트부터 연다(1부터). 주지 않으면 아직 다 보지 않은 첫 블록
             if want is not None and (type(want) is not int or want not in sizes):
@@ -2529,7 +2539,7 @@ def handle(path: str, body: dict) -> tuple[int, dict]:
                 seen += 1
                 t.store.set_study(pid, hints_seen=study["hints_seen"] + 1)  # 본 힌트 수는 누적이다(도움으로 센다)
                 t.store.mark_help(pid)
-                write_json(HINTS_FILE, {**read_json(HINTS_FILE, {}), pid: {"from": study["hints_at_reset"], "seen": {str(n): k for n, k in by_block.items()}}})
+                write_json(HINTS_FILE, {**read_json(HINTS_FILE, {}), pid: {"from": study["hints_at_reset"], "seen": {str(n): k for n, k in by_block.items()}, **({"lang": by_lang} if by_lang else {})}})
             body_now = view()
             opened = next((row for row in reversed(body_now["shown"]) if row["block"] == block), None)
             return 200, {**(opened or {}), **body_now}
@@ -2592,7 +2602,7 @@ def handle(path: str, body: dict) -> tuple[int, dict]:
             return 200, result_body(judge(t, p, language, need_code(body)))
         if path == "/api/feedback/get":
             saved = t.feedback_get(pid)
-            return saved.status, saved.body
+            return saved.status, feedback_language(t, saved.body)
         with LOCKS[pid]:
             if path in ("/api/turn", "/api/followup", "/api/fill", "/api/explain", "/api/feedback", "/api/debug"):
                 t.store.mark_help(pid)  # 튜터 기능을 쓴 시각(학습 보고서가 도움 없이 푼 문제를 가린다)
@@ -2630,7 +2640,7 @@ def handle(path: str, body: dict) -> tuple[int, dict]:
                 return out.status, {**out.body, "judged": judged}
             else:
                 raise Refuse("찾지 못했어요.", 404, "not_found")
-            return out.status, out.body
+            return out.status, feedback_language(t, out.body) if path == "/api/feedback" else out.body
 
 
 class Handler(BaseHTTPRequestHandler):

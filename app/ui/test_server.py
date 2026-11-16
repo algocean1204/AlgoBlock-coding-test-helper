@@ -1120,6 +1120,25 @@ def hint_by_block() -> None:
         assert t.store.study(pid)["hints_seen"] == 5 and t.store.study(pid)["help_first_at"]
 
 
+def language_switch_state() -> None:
+    """언어를 바꾸면 언어마다 계획이 다른 문제(직접 넣은 문제)의 본 힌트는 새 계획에서 0이고, 피드백은 본 제출의 언어를 싣는다(되돌리면 실패)."""
+    pid = server.register({"title": FIRST["title"], "text": FIRST["text"], "cases": [{"input": e["input"], "expected": e["expected"]} for e in FIRST["examples"]]})["id"]
+    with server.tutor() as t:
+        t.adopt(pid, FIRST["ready"])
+    call("/api/hint", id=pid, block=1)
+    call("/api/hint", id=pid, block=1)
+    call("/api/language", id=pid, language="javascript")
+    with server.tutor() as t:
+        t.adopt(pid, FIRST["ready"])  # 튜터가 새 언어의 계획을 만든 것으로 본다
+    assert [b["seen"] for b in call("/api/hint", id=pid, peek=True)[1]["blocks"]] == [0, 0]
+    assert call("/api/hint", id=pid)[1]["seen"] == 1  # 새 계획의 첫 힌트부터
+    with server.tutor() as t:
+        sub = t.store.add_submission(pid, "x", False, language="python")
+        t.store.conn.execute("INSERT INTO feedback(problem_id, submission_id, body_json) VALUES(?, ?, ?)", (pid, sub, json.dumps({"submission_id": sub, "analysis": "a"})))
+        t.store.conn.commit()
+    assert call("/api/feedback/get", id=pid)[1]["language"] == "python" and call("/api/state", id=pid)[1]["problem"]["language"] == "javascript"
+
+
 def no_tool() -> None:
     """언어 도구가 없어 채점하지 못한 것은 제출로 세지 않는다(새 제출도, 예전에 저장된 기록도)."""
     before = (next(row for row in call("/api/problems")[1]["problems"] if row["id"] == PID)["submitted"], call("/api/report")[1]["summary"]["submissions"])
@@ -3243,6 +3262,7 @@ def main() -> None:
         menu_and_title_note()
         hidden_cases()
         hint_by_block()
+        language_switch_state()
         assert not fake.calls, fake.calls  # 고치기·지우기도 모델을 부르지 않는다
         checks()
         http()
