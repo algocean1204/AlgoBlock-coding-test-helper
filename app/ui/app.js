@@ -521,7 +521,7 @@ async function showReport() {
   </li>`).join("")}</ul>`);
   const cards = [failAll ? `<section class="card side"><h2>통과하지 못한 제출</h2><ul class="bars">${fails.map(([kind, n]) => `<li><span>${FAIL_WORD[kind]}</span><span class="bar" aria-hidden="true"><i class="${kind}" style="width:${Math.round(100 * n / failMax)}%"></i></span><b>${n}</b></li>`).join("")}</ul>
       <p class="hint">${failTip(fails)}</p></section>` : "",
-    d.pitfalls.length ? `<section class="card side"><h2>되풀이한 실수</h2><ul class="points plain">${d.pitfalls.map((x) => `<li><strong>${esc(x.name)}</strong><span>${x.count}번</span>${x.problems.length ? `<span class="pit-from muted">${x.problems.map((p) => `<a href="#/p/${esc(p.id)}">${esc(p.title)}</a>`).join(" · ")}</span>` : ""}</li>`).join("")}</ul></section>` : ""].filter(Boolean);
+    `<section class="card side"><h2>되풀이한 실수</h2>${d.pitfalls.length ? "" : `<p class="hint">같은 실수를 두 번 이상 하면 여기에 모여요. ‘틀린 곳 같이 찾기’를 쓰면 쌓여요(제출이 틀린 것만으로는 쌓이지 않아요).</p>`}<ul class="points plain">${d.pitfalls.map((x) => `<li><strong>${esc(x.name)}</strong><span>${x.count}번</span>${x.problems.length ? `<span class="pit-from muted">${x.problems.map((p) => `<a href="#/p/${esc(p.id)}">${esc(p.title)}</a>`).join(" · ")}</span>` : ""}</li>`).join("")}</ul></section>`].filter(Boolean);
   if (cards.length) html += `<div class="sides">${cards.join("")}</div>`;
   if (d.signals.length) html += fold("실전 신호 모음", `${d.signals.reduce((n, g) => n + g.items.length, 0)}개`, `<p class="hint">통과한 문제에서 모았어요. 실전에서 이런 표현을 보면 이 방법을 떠올려요.</p>
     ${d.signals.map((g) => `<details class="signal-group"><summary>${ico("i-caret")}${esc(g.name)} <span class="muted">${g.items.length}개</span></summary><ul class="signals">${g.items.map((x) => `<li class="signal"><q>${esc(x.phrase)}</q><span>${esc(x.means)}</span><small>${esc(x.title)}</small></li>`).join("")}</ul></details>`).join("")}`);
@@ -2647,7 +2647,7 @@ const TOUR = [
   ["어떻게 풀지 골라요", "문제를 열면 오른쪽에서 푸는 방식을 골라요. ‘혼자 풀기’는 튜터 없이 풀고 막히면 힌트를 봐요. ‘튜터의 질문으로’는 답 대신 질문만 하고, ‘튜터와 차례로’는 풀이를 블록으로 나눠 하나씩 열어 줘요. 카드의 ⓘ를 누르면 자세한 설명이 나와요."],
   ["결과 바로 아래에 다음 할 일", "제출하면 결과 아래에 할 일이 하나 나와요. 틀리면 ‘틀린 곳 같이 찾기’나 ‘풀이 힌트 보기’, 통과하면 ‘다음 문제’예요. 통과한 문제는 실전 신호가 열려 비슷한 문제를 알아보는 눈을 길러요."],
   ["내 문제 넣기는 세 걸음", "글을 붙여 넣거나 사진·PDF를 넣고(1 글 넣기), 읽은 글과 자동으로 채운 예시를 확인한 뒤(2 확인하기), 등록해요(3 등록). 등록한 문제도 같은 방식으로 채점해요."],
-  ["학습 보고서로 약한 곳을 찾아요", "제출 기록에서 강한 주제와 더 공부할 주제, 자주 하는 실수를 모아 보여 주고, 더 공부할 문제를 바로 열어 줘요."],
+  ["학습 보고서로 약한 곳을 찾아요", "제출 기록에서 강한 주제와 더 공부할 주제를 모아 보여 주고, 더 공부할 문제를 바로 열어 줘요. ‘틀린 곳 같이 찾기’를 쓰면 되풀이한 실수도 모아 줘요."],
   ["AI 연결은 선택이에요", "튜터는 언어 모델로 움직여요. 쓰려면 오른쪽 위 ‘설정’의 ‘AI 연결’에서 Claude나 OpenAI 키를 넣거나 ChatGPT로 로그인해요. 키는 이 기기에만 저장해요."],
 ];
 let tourAt = 0;
