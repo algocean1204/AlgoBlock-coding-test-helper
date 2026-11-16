@@ -796,6 +796,17 @@ class UnsaidCreditTest(unittest.TestCase):
         self.assertEqual(many_asks_line("이름별로 세면 될 것 같아요. k는 왜 있나요?"), [])
         self.assertTrue(many_asks_line("세면 되나요?\nk는 왜 있죠?")[0].startswith("사용자 말에 물음이 2개 있다."))
 
+    def test_unanswered_ask_is_carried_to_the_next_turn(self):
+        from ..common.talk_rules import many_asks_line
+
+        two = "사용자: 세면 되나요? 그리고 k는 왜 필요한가요?"
+        carried = many_asks_line("모르겠어요", [two, "튜터: k를 먼저 볼게요. 무엇일까요?"])
+        self.assertEqual(len(carried), 1)
+        self.assertIn("k는 왜 필요한가요", carried[0])
+        self.assertEqual(many_asks_line("모르겠어요", ["사용자: 세면 되나요?", "튜터: 네?"]), [])  # 지난 말의 물음이 하나면 돌아올 것이 없다
+        self.assertEqual(len(many_asks_line("a는 뭔가요? b는 뭔가요?", [two])), 2)
+        self.assertIn("답·고칠 곳은 말하지 않는다", many_asks_line("a는 뭔가요? b는 뭔가요?")[0])  # 답을 먼저 주지 않는 원칙은 그대로
+
     def test_rule_reaches_every_talking_prompt(self):
         from ..common.talk_prompts import NOT_SAID
         from ..chair.prompts import SYSTEM as CHAIR

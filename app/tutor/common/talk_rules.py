@@ -62,10 +62,17 @@ def asked_count(text: str) -> int:
     return sum(bool(_ASKED.search(part)) for part in parts)
 
 
-def many_asks_line(text: str) -> list[str]:
-    """사용자 말에 물음이 여럿이면 질문 프롬프트에 넣을 지시 한 줄(둘 가운데 하나만 받았다)."""
+def many_asks_line(text: str, recent: list[str] | None = None) -> list[str]:
+    """사용자 말에 물음이 여럿이면 질문 프롬프트에 넣을 지시. 둘 가운데 하나만 받았다.
+    답을 먼저 주지 않는 원칙은 그대로다: 받는다는 것은 개념을 풀어 주거나 볼 곳을 좁혀 주는 것이다.
+    지난 사용자 말에 물음이 여럿이었다면(recent의 '사용자: …') 아직 받지 못한 물음으로 돌아오게 한다(대화 기록이 곧 상태다)."""
     n = asked_count(text)
-    return [f"사용자 말에 물음이 {n}개 있다. 모두 짧게 받거나, 하나만 받을 때는 그 하나를 먼저 본다고 한 구절로 말한다."] if n > 1 else []
+    lines = [f"사용자 말에 물음이 {n}개 있다. 물음마다 한 구절씩 받는다(개념을 풀어 주거나 볼 곳을 좁혀 준다. 답·고칠 곳은 말하지 않는다). "
+             "하나만 받을 때는 그 하나를 먼저 본다고 말하고, 나머지 물음은 다음에 보겠다고 한 구절로 남긴다."] if n > 1 else []
+    last = next((m.split(": ", 1)[1] for m in reversed(recent or []) if m.startswith("사용자: ")), "")
+    if asked_count(last) > 1:
+        lines.append(f"지난번 사용자 말에도 물음이 여럿이었다: {last!r}. 앞의 튜터 말이 받지 못한 물음이 있으면 이번에 그 물음으로 돌아와 한 구절로 받는다.")
+    return lines
 
 
 OPEN_LEAD = "다음 블록을 열었어요. "  # 이음말

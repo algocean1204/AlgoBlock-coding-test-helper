@@ -122,7 +122,7 @@ def speak_messages(state: MainState) -> list[dict]:
                      "그 말에 대해서는 아무 말도 하지 않고, 이번 질문 지시대로 질문만 쓴다.")
     elif state["request"].text:
         lines.append(f"사용자 말:{state['request'].text}")
-        lines += many_asks_line(state["request"].text)
+        lines += many_asks_line(state["request"].text, draft["recent"])
     lines += [f"이번 질문 지시: {STEP_TEXT[draft['step_name']]}", "출력: 말풍선 글만. 따옴표, 머리말, JSON 없이."]
     # 같은 코드의 디버그 턴마다 코드·채점·진단까지는 같다(바뀌는 것은 대화부터). 캐시 경계를 그 뒤에 둔다
     return [{"role": "system", "content": SPEAK_SYSTEM}, cached_user(lines, len(stable))]

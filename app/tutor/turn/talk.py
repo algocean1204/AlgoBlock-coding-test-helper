@@ -34,7 +34,7 @@ def speak_messages(state: MainState, turn: TurnContext, move: MovePlan, system: 
     aside = "" if aside == "W" else aside  # 뜻을 묻는 말은 그 말을 받아 답한다(term)
     if turn.text and not aside:
         lines.append(f"사용자 말:{turn.text}")
-        lines += many_asks_line(turn.text)
+        lines += many_asks_line(turn.text, recent)
     if aside:  # 그 말에는 답하지 않는다. 안내 문장은 엔진이 앞에 붙인다
         lines.append(f"사용자가 방금 {'답을 달라고 했다' if aside == 'A' else '문제와 무관한 말을 했다'}. 안내 문장은 앞에 따로 붙는다. "
                      "이 말이나 앞 대화의 부탁에 대해서는 아무 말도 하지 않고, 지금 블록을 겨눈 질문 한 문장만 쓴다.")
