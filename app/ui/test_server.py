@@ -2352,9 +2352,9 @@ def stages() -> None:
     rows = {row["key"]: row for row in call("/api/accounts")[1]["themes"]}
     assert list(rows) == ["read", "guide", "blocks", "talk", "judge", "explain", "feedback", "debug"]
     assert {key: (row["default_tier"], row["default_effort"]) for key, row in rows.items()} == {
-        "read": ("middle", "high"), "guide": ("middle", "high"), "blocks": ("middle", "high"), "talk": ("small", "low"),
+        "read": ("middle", "high"), "guide": ("small", "high"), "blocks": ("small", "high"), "talk": ("small", "low"),
         "judge": ("small", "low"), "explain": ("small", "medium"), "feedback": ("small", "medium"), "debug": ("small", "medium")}
-    assert (rows["guide"]["model"], rows["guide"]["model_label"], rows["talk"]["model_label"]) == ("claude/claude-sonnet-5-5", "Sonnet 5.5", "Haiku 5.5")
+    assert (rows["read"]["model"], rows["read"]["model_label"], rows["guide"]["model_label"]) == ("claude/claude-sonnet-5-5", "Sonnet 5.5", "Haiku 5.5")
     assert [tier["label"] for tier in call("/api/accounts")[1]["tiers"]] == ["Haiku 5.5", "Sonnet 5.5", "Opus 5.5"]
     got = call("/api/theme", theme="talk", tier="middle", effort="medium")[1]
     assert {row["key"]: (row["tier"], row["effort"], row["model"]) for row in got["themes"]}["talk"] == ("middle", "medium", "claude/claude-sonnet-5-5")
@@ -2423,7 +2423,7 @@ def newest_models() -> None:
         with patch.object(messages, "models", listing):
             call("/api/accounts"), wait()
             body = call("/api/accounts")[1]  # 같은 프로세스에서는 다시 받지 않는다
-            assert len(asked) == 2 and {row["key"]: row["model_label"] for row in body["themes"]}["guide"] == "Sonnet 5.6", asked
+            assert len(asked) == 2 and {row["key"]: row["model_label"] for row in body["themes"]}["read"] == "Sonnet 5.6", asked
             assert {row["key"]: row["model_label"] for row in body["themes"]}["talk"] == "Haiku 5.5"  # 날짜 붙은 이름은 건너뛴다
             saved = server.read_json(server.MODELS_FILE, {})["claude"]
             assert saved["names"]["sonnet"] == "claude-sonnet-5-6"

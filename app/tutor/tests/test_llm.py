@@ -94,7 +94,8 @@ class ThemeTest(unittest.TestCase):
         self.assertEqual([themes.theme_of(task) for task in ("chair.ask", "debug.ask", "새로운.작업", None)], ["talk"] * 4)
         clean = {"ANTHROPIC_API_KEY": "k", "ALGOBLOCK_LLM_PROVIDER": "", "ALGOBLOCK_LLM_MODEL": "", "ALGOBLOCK_THEME_EXPLAIN": "", "ALGOBLOCK_THEME_FEEDBACK": "", "ALGOBLOCK_THEME_INGEST": "", "ALGOBLOCK_THEME_GUIDE": ""}
         with mock.patch.dict(os.environ, clean):
-            self.assertEqual(themes.pick("plan.solve"), ("claude/claude-sonnet-5-5", "high"))  # 문제 넣기는 가운데 급(지금 동작과 같다)
+            self.assertEqual(themes.pick("plan.solve"), ("claude/claude-haiku-5-5", "high"))  # 풀이 가이드는 작은 급·high(채점과 대조가 확인한다)
+            self.assertEqual(themes.pick("ingest.transcribe"), ("claude/claude-sonnet-5-5", "high"))  # 문제 읽기는 가운데 급
             self.assertEqual(themes.pick("chair.ask"), ("claude/claude-haiku-5-5", "low"))
             self.assertEqual(themes.pick("explain.write"), ("claude/claude-haiku-5-5", "medium"))
             os.environ["ALGOBLOCK_THEME_EXPLAIN"] = "claude/claude-sonnet-5-5:low"  # 측정용 환경 변수. 예전 이름 EXPLAIN은 해설·피드백 둘에 간다
@@ -115,7 +116,7 @@ class ThemeTest(unittest.TestCase):
             themes.choose({"talk": {"tier": "middle", "effort": "medium"}, "guide": {"tier": "", "effort": "low"}, "blocks": {"tier": "large"},
                            "judge": {"tier": "아주 큼", "effort": "아주 높음"}, "없는 과정": {"tier": "small"}})
             self.assertEqual(themes.pick("chair.ask"), ("claude/claude-sonnet-5-5", "medium"))
-            self.assertEqual(themes.pick("plan.solve"), ("claude/claude-sonnet-5-5", "low"))
+            self.assertEqual(themes.pick("plan.solve"), ("claude/claude-haiku-5-5", "low"))  # 급은 기본값(작음), 정도만 고른 값
             self.assertEqual(themes.pick("plan.draft_blocks"), ("claude/claude-opus-5-5", "high"))  # 큼은 기본값이 아니지만 고를 수 있다
             self.assertEqual(themes.pick("chair.judge"), ("claude/claude-haiku-5-5", "low"))
             self.assertNotIn("없는 과정", themes.CHOSEN)
@@ -143,9 +144,9 @@ class ThemeTest(unittest.TestCase):
                  "claude-sonnet-5-6-preview", "gpt-6-luna", "gpt-6.1-terra", "gpt-6.2-terra-2027-01-01", "gpt-6-astra", 3]
         self.assertEqual(themes.newest(names), {"haiku": "claude-haiku-5-5", "sonnet": "claude-sonnet-5-6", "opus": "claude-opus-5", "luna": "gpt-6-luna", "terra": "gpt-6.1-terra"})
         with mock.patch.dict(os.environ, {"ANTHROPIC_API_KEY": "k", "ALGOBLOCK_LLM_PROVIDER": "", "ALGOBLOCK_LLM_MODEL": "", "ALGOBLOCK_THEME_INGEST": "", "ALGOBLOCK_THEME_GUIDE": ""}):
-            self.assertEqual(themes.pick("plan.solve")[0], "claude/claude-sonnet-5-5")  # 목록을 받지 못했다: 표의 이름
+            self.assertEqual(themes.pick("ingest.transcribe")[0], "claude/claude-sonnet-5-5")  # 목록을 받지 못했다: 표의 이름
             themes.NEWEST["claude"] = themes.newest(names)
-            self.assertEqual(themes.pick("plan.solve")[0], "claude/claude-sonnet-5-6")
+            self.assertEqual(themes.pick("ingest.transcribe")[0], "claude/claude-sonnet-5-6")
             self.assertEqual(themes.pick("chair.ask")[0], "claude/claude-haiku-5-5")
         self.assertEqual([themes.label(name) for name in ("claude/claude-sonnet-5-5", "claude/claude-opus-5", "openai/gpt-6.1-terra", "chatgpt/gpt-6-luna")],
                          ["Sonnet 5.5", "Opus 5", "Terra (GPT-6.1)", "Luna (GPT-6)"])
@@ -167,7 +168,7 @@ class ThemeTest(unittest.TestCase):
                 (Path(folder) / "chatgpt.json").write_text(json.dumps({"refresh_token": "r", "scopes": ["openid"]}))  # 요금제 사용을 허락받지 않음
                 self.assertEqual(themes.provider(), "claude")
                 (Path(folder) / "chatgpt.json").write_text(json.dumps({"refresh_token": "r", "scopes": ["chatgpt.tokens.use.direct", "openid"]}))
-                self.assertEqual(themes.pick("plan.draft_blocks"), ("chatgpt/gpt-6.1-terra", "high"))
+                self.assertEqual(themes.pick("ingest.transcribe"), ("chatgpt/gpt-6.1-terra", "high"))
                 os.environ["ANTHROPIC_API_KEY"] = "k"  # Claude 키가 있으면 Claude가 먼저
                 self.assertEqual(themes.provider(), "claude")
                 os.environ["ALGOBLOCK_LLM_PROVIDER"] = "chatgpt"

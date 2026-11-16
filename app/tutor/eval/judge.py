@@ -14,7 +14,7 @@ from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from contextvars import copy_context
 
-from ..llm import llm
+from ..llm import llm, themes
 
 JUDGE_MODEL_ENV = "ALGOBLOCK_EVAL_JUDGE_MODEL"
 LABELS = ("pass", "fail", "na")
@@ -153,7 +153,7 @@ def judge(item: dict, k: int = 3, model: str | None = None) -> dict:
     """같은 입력을 k번 따로 묻는다(병렬). 모델 오류 표는 무효로 센다."""
     import os
 
-    name = model or os.environ.get(JUDGE_MODEL_ENV) or None
+    name = model or os.environ.get(JUDGE_MODEL_ENV) or themes.model_of("middle")  # 튜터의 판정(작음)보다 센 모델이어야 평가를 믿는다
     messages = judge_messages(item)
 
     def one(_):

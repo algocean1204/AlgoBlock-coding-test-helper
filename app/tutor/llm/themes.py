@@ -5,7 +5,7 @@
 그래서 연결을 바꿔도 고른 급이 그대로 간다.
 - read     문제 읽기(이미지에서 글).
 - guide    풀이 가이드(뼈대, 채점 기준, 풀이).
-- blocks   블록 설계와 힌트(같은 구조 판정 포함). 평가기 eval.judge도 여기다(튜터의 판정보다 센 모델이어야 평가를 믿는다).
+- blocks   블록 설계와 힌트(같은 구조 판정 포함). 평가기 eval.judge의 추론 정도도 여기서 온다(모델은 따로 정하지 않으면 '가운데' 급. tutor/eval/judge.py).
 - talk     대화. 매 턴 나가는 말(질문, 꼬리질문, 블록 채우기, 디버그 질문). 빠른 응답이 먼저다.
 - judge    판정. 한 줄 [check].
 - explain  해설.
@@ -35,11 +35,12 @@ KNOWN = {"haiku": "claude-haiku-5-5", "sonnet": "claude-sonnet-5-5", "opus": "cl
 NAME_FORMS = (re.compile(r"claude-(haiku|sonnet|opus)-(\d+)(?:-(\d{1,2}))?"), re.compile(r"gpt-(\d+)(?:\.(\d+))?-(luna|terra|sol)"))
 NEWEST: dict[str, dict[str, str]] = {}  # 공급자 목록에서 고른 시리즈마다 최신 이름 {연결: {시리즈: 이름}}. 서버가 채운다
 
-# 과정 → (화면 이름, 기본 급, 기본 추론 정도). 문제 넣기 세 과정은 정확도를 먼저 보아 '중간'·high, 나머지는 측정으로 정했다. '큼'은 기본값으로 쓰지 않는다
+# 과정 → (화면 이름, 기본 급, 기본 추론 정도). 문제 읽기는 정확도를 먼저 보아 '가운데'·high다. 풀이 가이드·블록 설계는 '작음'·high다:
+# 풀이 가이드는 채점과 대조로 확인되고, 다르면 가운데 급과 큰 급으로 다시 푼다(plan/nodes.py의 cross_check). 나머지는 측정으로 정했다. '큼'은 기본값으로 쓰지 않는다
 THEMES = {
     "read": ("문제 읽기", "middle", "high"),
-    "guide": ("풀이 가이드", "middle", "high"),
-    "blocks": ("블록 설계와 힌트", "middle", "high"),
+    "guide": ("풀이 가이드", "small", "high"),
+    "blocks": ("블록 설계와 힌트", "small", "high"),
     "talk": ("대화", "small", "low"),
     "judge": ("판정", "small", "low"),
     "explain": ("해설", "small", "medium"),

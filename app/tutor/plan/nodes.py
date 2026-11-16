@@ -179,7 +179,9 @@ def cross_check(state: MainState, got: Solved, passed: bool | None, report: dict
         retry = "\n".join([f"코드:\n{got.code}", "문제 정의를 그대로 옮긴 느린 풀이와 결과가 다른 입력이 있다(느린 풀이가 틀렸을 수도 있으니 문제 글로 다시 따진다).",
                            f"입력: {found.get('input')}", f"이 코드의 결과: {found.get('got')}", f"느린 풀이의 결과: {found.get('want')}"])
         try:
-            again: Solved = llm(model_name() if tier == "middle" else themes.model_of("large")).use(solve_messages(state, retry), solved_schema(state), task="plan.solve")
+            # 가운데 급 다시 풀기는 풀이 가이드 과정의 급이 그보다 낮으면(기본값 '작음') 가운데 급으로 올린다: 같은 급으로 다시 풀지 않는다
+            stronger = model_name() if tier == "middle" and themes.chosen("guide")[0] != "small" else themes.model_of(tier)
+            again: Solved = llm(stronger).use(solve_messages(state, retry), solved_schema(state), task="plan.solve")
         except LlmError:
             break
         verdict["calls"] += 1

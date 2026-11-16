@@ -506,7 +506,7 @@ class TutorTest(unittest.TestCase):
             self.assertEqual(tutor.prepare("p1").status, 200)
             self.assertEqual(fakes.tasks(fake), ["plan.solve", "plan.brute", "plan.cases", "plan.solve", "plan.solve", "plan.draft_blocks"])
             models = [c["params"]["model"] for c in fake.calls if c["task"] == "plan.solve"]
-            self.assertEqual([("opus" in m, "sonnet" in m) for m in models], [(False, True), (False, True), (True, False)])  # 큰 급은 한 번
+            self.assertEqual([next(s for s in ("haiku", "sonnet", "opus") if s in m) for m in models], ["haiku", "sonnet", "opus"])  # 기본(작음) → 가운데 급 한 번 → 큰 급 한 번
             self.assertIn('입력: [["a", "b"], ["b"]]', fake.calls[3]["messages"][-1]["content"])  # 다른 입력과 두 결과를 보여 준다
             self.assertIn('느린 풀이의 결과: "a"', fake.calls[3]["messages"][-1]["content"])
             done = seen["done"][0]
