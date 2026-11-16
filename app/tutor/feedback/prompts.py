@@ -46,6 +46,7 @@ def system(blocks: bool) -> str:
         f"3. 생각을 닫는 말({', '.join(BANNED)})을 쓰지 않는다.",
         "힌트와 조언에 코드와 코드 블록을 쓰지 않는다. 사용자 코드를 고쳐 쓰지 않는다.",
         "analysis와 advice는 원인과 어디를 볼지까지만 말한다. 고치는 순서, 지울 줄, 어떤 줄부터 새로 짜라는 말은 하지 않는다.",
+        "제출 코드에 실제로 있는 것만 말한다. 코드에 없는 변수·구조를 있다고 하거나, 코드에 있는 것을 '하지 않고'처럼 없다고 하지 않는다. 확인할 수 없으면 말하지 않는다.",
         BLOCK_WORD if blocks else SOLO_WORD,
     )
 
@@ -153,7 +154,7 @@ def analyze_messages(state: MainState) -> list[dict]:
         lines.append(algorithm)
     lines += [WAY_TEXT[way] for way in ways(state["ctx"])]
     if plan and blocks:
-        lines.append("블록(정석 흐름 순서):")
+        lines.append(f"블록(정석 흐름 순서). 이 사용자가 연 블록은 블록 {min(state["ctx"].open_count, len(plan.blocks))}까지다. 그 뒤 블록 번호는 말하지 않는다:")
         lines += [f"블록 {n}: {b.name} ({kind_word(b.kind)}) — {b.goal}" for n, b in enumerate(plan.blocks, 1)]
     ctx = state["ctx"]
     weak = weak_pitfalls(ctx)

@@ -242,7 +242,7 @@ def trap_in_code(trap: dict, code: str) -> bool:
 def trap_candidates(traps: list[dict], report: dict, code: str) -> list[dict]:
     """채점 결과와 코드로 고른 언어 함정 후보(TRAP_PICKS개까지). 통과했거나 자료가 없으면 빈 목록.
     같은 케이스에서 같은 상태로 떨어졌고 코드가 그 함정의 꼴이어야 한다(trap_in_code). 틀린 답(failed)은 돌려준 값까지 증명과 같아야 한다(outs):
-    상태만으로는 같은 케이스에서 틀리는 다른 버그와 가를 수 없다. 실행 오류·시간 초과는 상태만 본다.
+    상태만으로는 같은 케이스에서 틀리는 다른 버그와 가를 수 없다. 케이스에 견줄 꼴(out)이 있으면 그것을 쓴다(큰 입력은 내 결과를 줄여 넘긴다). 실행 오류·시간 초과는 상태만 본다.
     결과가 정해지지 않은 동작(varies)은 케이스 목록이 없어 통과하지 못했다는 것만 본다."""
     failed = {str(case.get("id")): case for case in report.get("cases") or [] if case.get("status") != "passed"}
     if not failed or report.get("status") == "passed":
@@ -252,7 +252,7 @@ def trap_candidates(traps: list[dict], report: dict, code: str) -> list[dict]:
         case = failed.get(str(cid))
         if case is None or case.get("status") != TRAP_STATUS.get(want, want):
             return False
-        return want != "failed" or (trap.get("outs") or {}).get(str(cid)) == out_key(case.get("got"))
+        return want != "failed" or (trap.get("outs") or {}).get(str(cid)) == (case.get("out") or out_key(case.get("got")))
 
     hit = lambda trap: trap.get("varies") or any(same(trap, cid, want) for cid, want in (trap.get("fails") or {}).items())
     return [trap for trap in traps if hit(trap) and trap_in_code(trap, code)][:TRAP_PICKS]

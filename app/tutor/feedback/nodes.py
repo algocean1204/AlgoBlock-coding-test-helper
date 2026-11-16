@@ -6,7 +6,7 @@ from ..common.scope import algorithm_name
 from ..debug.rules import trap_in_code, trap_of
 from ..llm import llm, model_name
 from ..state import Analysis, MainState
-from .prompts import analyze_messages, record_lines
+from .prompts import analyze_messages, record_lines, used_blocks
 from .rules import check_feedback as check_rule
 
 
@@ -27,7 +27,8 @@ def check_feedback(state: MainState) -> dict:
     written: Analysis = state["draft"]
     plan = active_plan(state)
     record = "\n".join(record_lines(state["ctx"], plan))
-    fields, error = check_rule(written.analysis, written.similar_hint, written.advice, algorithm_name(plan.algorithm if plan else ""), record)
+    fields, error = check_rule(written.analysis, written.similar_hint, written.advice, algorithm_name(plan.algorithm if plan else ""), record,
+                                opened=state["ctx"].open_count if used_blocks(state["ctx"]) else 0)
     if error:
         return {"error": error, "draft": None}
     sub = state["ctx"].latest_submission

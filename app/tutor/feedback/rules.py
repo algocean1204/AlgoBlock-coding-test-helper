@@ -3,7 +3,7 @@
 import re
 from difflib import SequenceMatcher
 
-from ..common.talk_rules import BANNED
+from ..common.talk_rules import BANNED, sentences
 from ..state import ErrorInfo
 
 MARKS = ("[확실]", "[가능성 높음]", "[추측]")
@@ -78,16 +78,35 @@ def mark_claims(analysis: str, record: str = "") -> str:
     return " ".join(out)
 
 
+_NUMS = r"\d+(?:\s*(?:[·,~-]|와|과|및)\s*\d+)*"
+_BLOCK_REF = re.compile(rf"블록\s*({_NUMS})|({_NUMS})\s*번\s*블록")
+_CODE_BLOCK = re.compile(r"(?:for|if|while|else|코드|try)\s*블록")  # 코드 구조 말('for 블록 안에서')은 블록 방식과 무관하다
+UNOPENED_FALLBACK = "제출한 코드를 처음부터 따라가 보면 어떤 입력에서 달라질까요?"
+
+
+def drop_unopened(text: str, opened: int) -> str:
+    """열지 않은 블록 번호를 말한 문장을 지운다(opened: 사용자가 연 블록 수. 0이면 블록 방식을 쓰지 않았으니 번호 있는 블록 말 모두).
+    블록 번호는 기록과 열린 수로 가릴 수 있어 모델에게 다시 쓰라 하지 않고 문장째 뺀다. 번호 없는 '블록'은 블록 방식이 아닐 때만 지운다."""
+    def unopened(part: str) -> bool:
+        part = _CODE_BLOCK.sub("", part)
+        nums = [int(n) for hit in _BLOCK_REF.finditer(part) for n in re.findall(r"\d+", hit.group(1) or hit.group(2))]
+        return any(n > opened for n in nums) or (opened == 0 and "블록" in part)
+    return " ".join(part for part in sentences(text) if not unopened(part))
+
+
 def strip_banned(text: str) -> str:
     for word in BANNED:
         text = text.replace(word, "")
     return re.sub(r"\s{2,}", " ", text).strip()
 
 
-def check_feedback(analysis: str, hint: str, advice: str, algorithm_name: str, record: str = "") -> tuple[dict, ErrorInfo | None]:
+def check_feedback(analysis: str, hint: str, advice: str, algorithm_name: str, record: str = "", opened: int | None = None) -> tuple[dict, ErrorInfo | None]:
     if "```" in (hint or "") or "```" in (advice or ""):
         return {}, ErrorInfo("invalid_output", "힌트에 코드 펜스가 있습니다.")
     hint = strip_banned(hint or "")
+    if opened is not None:
+        analysis = drop_unopened(analysis or "", opened) or UNOPENED_FALLBACK
+        advice = drop_unopened(advice or "", opened)
     if algorithm_name and not hint.startswith(f"{algorithm_name}:"):
         hint = f"{algorithm_name}: {hint}"
     return {"analysis": mark_claims(strip_banned(analysis or ""), record), "similar_hint": hint, "advice": strip_banned(advice or "")}, None

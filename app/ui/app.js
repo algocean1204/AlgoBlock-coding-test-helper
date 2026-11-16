@@ -1290,11 +1290,10 @@ function renderSteps(stage, el) {
   $("steps").innerHTML = STEPS.map((name, i) => `<li${i === at ? ' class="now" aria-current="step"' : ""}><span class="step-no" aria-hidden="true">${i + 1}</span>${name}${i === at && doing ? `<span class="step-do"> · ${esc(doing)}</span>` : ""}</li>`).join("");
 }
 
-/** 답은 맞고 큰 입력에서만 걸렸다. */
 /** 효율성 테스트에서 실행 오류(재귀가 너무 깊음, 메모리 부족 등)로 실패한 첫 케이스. 시간이 모자란 것이 아니라 큰 입력에서 코드가 멈춘 것이다. */
-const slowHead = (r) => (effCrash(r) ? "답은 맞지만 큰 입력에서 오류가 나요" : "답은 맞지만 느려요");
 const effCrash = (r) => r.cases.find((c) => c.kind === "efficiency" && c.status === "runtime_error");
-const slowOnlyOf = (r) => !r.ok && !r.run && r.cases.length > 0 && !!r.score && r.score.accuracy[0] === r.score.accuracy[1] && r.score.efficiency[1] > 0;
+/** 답은 맞고 큰 입력에서 시간만 모자랐다(돌리지 않은 테스트는 앞선 시간 초과 탓). 큰 입력에서 답이 다르거나 오류가 났으면 틀린 곳이 있다. */
+const slowOnlyOf = (r) => !r.ok && !r.run && r.cases.length > 0 && r.cases.every((c) => c.status === "passed" || (c.kind === "efficiency" && (c.status === "timeout" || c.status === "skipped")));
 /** '끝까지 내 방식으로 쓰기'가 지금 보이는 튜터 차례(가이드)에 켜져 있다. */
 /** 이번 풀이에서 이미 통과했다: 풀던 중의 실패 말과 '끝까지 쓰는 중' 안내를 지금 상태처럼 보이지 않는다. */
 const passedNow = () => !!(S.problem && S.problem.study.passed_now);
@@ -1858,11 +1857,11 @@ function failGuide(r, slowOnly) {
   if (r.run) return "";
   if (examplesOk && hidden.some(stuck)) return "숨은 테스트에서 시간 초과가 났어요. 어떤 입력에서 반복이 끝나지 않거나 아주 오래 도는지 확인해 보세요.";
   if (examplesOk && hidden.some((c) => c.status !== "passed")) return "예시는 통과했지만 숨은 테스트에서 틀렸어요. 가장 작은 입력, 같은 값이 여러 개인 입력, 가장 큰 입력을 직접 만들어 확인해 보세요.";
-  if (slowOnly) { // 답은 맞고 효율성만 실패했다. 틀린 곳이 아니라 큰 입력에서 일어난 일이라 ‘틀린 곳 같이 찾기’는 없다
-    const crash = effCrash(r), why = connected() ? " 답이 맞아서 ‘틀린 곳 같이 찾기’는 열지 않아요." : "";
-    return crash ? `답은 모두 맞아요. 아주 큰 입력에서 실행 중 오류가 났어요: ${esc(errText(crash))}.${crash.hint ? ` ${inline(crash.hint)}` : " 아래 효율성 테스트의 오류를 보세요."}${why}`
-      : `답은 모두 맞아요. 입력이 아주 클 때 시간이 모자라요. 제한사항의 입력 크기를 보고, 같은 것을 되풀이해 세거나 찾는 곳이 없는지 살펴보세요.${why}`;
-  }
+  if (slowOnly) // 답은 맞고 큰 입력에서 시간만 모자랐다. 틀린 곳이 아니라 방법의 문제라 ‘틀린 곳 같이 찾기’는 없다
+    return `답은 모두 맞아요. 입력이 아주 클 때 시간이 모자라요. 제한사항의 입력 크기를 보고, 같은 것을 되풀이해 세거나 찾는 곳이 없는지 살펴보세요.${connected() ? " 답이 맞아서 ‘틀린 곳 같이 찾기’는 열지 않아요." : ""}`;
+  const crash = effCrash(r); // 작은 입력은 다 맞고 큰 입력에서 틀렸다: 시간 이야기가 아니다
+  if (examplesOk && crash) return `작은 입력은 모두 맞았지만 아주 큰 입력에서 실행 중 오류가 났어요: ${esc(errText(crash))}.${crash.hint ? ` ${inline(crash.hint)}` : " 아래 효율성 테스트의 오류를 보세요."}`;
+  if (examplesOk && r.cases.some((c) => c.kind === "efficiency" && c.status === "failed")) return "작은 입력은 모두 맞았지만 아주 큰 입력에서 답이 달라요. 값이나 입력이 아주 커질 때 코드가 어떻게 되는지 따라가 보세요.";
   return "";
 }
 
@@ -1887,14 +1886,14 @@ function renderResult() {
   const finding = S.debug && S.debug.open;
   const score = r.score || { accuracy: [0, 0], efficiency: [0, 0] };
   const counts = `정확성 ${score.accuracy[0]}/${score.accuracy[1]}${unrun(r, false)}${score.efficiency[1] ? ` · 효율성 ${score.efficiency[0]}/${score.efficiency[1]}${unrun(r, true)}` : ""}`;
-  const slowOnly = !r.ok && !r.run && total && score.accuracy[0] === score.accuracy[1] && score.efficiency[1] > 0; // 답은 맞고 큰 입력에서만 걸렸다
+  const slowOnly = slowOnlyOf(r);
   const hidden = p.cases.accuracy + p.cases.efficiency > 0; // 숨은 테스트가 있는가(등록한 문제는 '숨김'을 켠 케이스)
   const skipped = r.cases.filter((c) => c.status === "skipped").length, near = r.cases.find((c) => c.near);
   let html = "";
   if (r.run) html += r.ok ? `<p class="verdict pass"><span class="badge">${ico("i-check")}</span>예시 통과 <small>공개 예시 ${total}개를 맞혔어요. ${hidden ? "제출하면 숨은 테스트까지 채점해요" : "제출하면 기록으로 남아요"}</small></p>`
     : total ? `<p class="verdict ${r.many ? "unsure" : "fail"}"><span class="badge">${ico(r.many ? "i-warn" : "i-x")}</span>${r.many ? MANY_HEAD : "예시에서 틀려요"} <small>공개 예시 ${total}개 중 ${score.accuracy[0]}개 통과</small></p>` : "";
   else if (r.ok) html += `<p class="verdict pass"><span class="badge">${ico("i-check")}</span>통과 <small>${counts}${hidden ? "" : ` · 공개 예시 ${total}개로만 채점했어요`}</small></p>`;
-  else if (total) html += `<p class="verdict ${r.many ? "unsure" : "fail"}"><span class="badge">${ico(r.many ? "i-warn" : "i-x")}</span>${r.many ? MANY_HEAD : slowOnly ? slowHead(r) : "아직 틀려요"} <small>${counts}${hidden ? "" : ` · 공개 예시 ${total}개로만 채점했어요`}</small></p>`;
+  else if (total) html += `<p class="verdict ${r.many ? "unsure" : "fail"}"><span class="badge">${ico(r.many ? "i-warn" : "i-x")}</span>${r.many ? MANY_HEAD : slowOnly ? "답은 맞지만 느려요" : "아직 틀려요"} <small>${counts}${hidden ? "" : ` · 공개 예시 ${total}개로만 채점했어요`}</small></p>`;
   if (!total) html += judgeFail(r);
   const ai = connected(), learn = p.study.has_guide && (r.ok || p.passed > 0);
   const tutorSide = ai && tutorWay(S.mode), talked = tutorSide && S.session[S.mode].length > 0; // 튜터 방식: 도움도 그 안에서(방식을 말없이 바꾸지 않는다)
@@ -2366,7 +2365,7 @@ function judgedLine(j) {
   const score = j.score || { accuracy: [0, 0], efficiency: [0, 0] };
   if (j.ok) return "통과";
   if (!j.cases.length) return "실행하지 못했어요";
-  return `${j.many ? MANY_HEAD : slowOnlyOf(j) ? slowHead(j) : "아직 틀려요"} · 정확성 ${score.accuracy[0]}/${score.accuracy[1]}${score.efficiency[1] ? ` · 효율성 ${score.efficiency[0]}/${score.efficiency[1]}` : ""}`;
+  return `${j.many ? MANY_HEAD : slowOnlyOf(j) ? "답은 맞지만 느려요" : "아직 틀려요"} · 정확성 ${score.accuracy[0]}/${score.accuracy[1]}${score.efficiency[1] ? ` · 효율성 ${score.efficiency[0]}/${score.efficiency[1]}` : ""}`;
 }
 
 async function debugCall(text) {

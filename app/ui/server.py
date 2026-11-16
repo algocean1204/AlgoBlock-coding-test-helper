@@ -50,6 +50,7 @@ from tutor.eval.drive import check_judge  # noqa: E402
 from tutor.common.scope import ALGORITHMS, algorithm_name  # noqa: E402
 from tutor.common.solution import composed_parts  # noqa: E402
 from tutor.common.talk_rules import MANY_ANSWERS  # noqa: E402
+from tutor.debug.rules import out_key  # noqa: E402
 from tutor.turn.code_check import compile_easy  # noqa: E402
 from tutor.save.respond import blocks_body, shown_count  # noqa: E402
 from tutor.ingest import IngestError, ocr_doubts, read_pages, reread  # noqa: E402
@@ -369,14 +370,22 @@ def notice_of(raw: dict) -> str:
 LIMIT_WORDS = {"output_limit": "출력이 너무 많아 멈췄어요(끝나지 않는 반복일 수 있어요)", "memory_limit": "메모리를 너무 많이 써서 멈췄어요"}
 
 
+BIG_SHOWN = 60  # 큰 입력(효율성 케이스)의 기대값·내 결과는 이 길이까지만 엔진에 넘긴다(튜터의 말에 그대로 실린다. 잘린 값에는 앞부분만이라고 붙인다)
+
+
+def clipped(text: str) -> str:
+    return text if len(text) <= BIG_SHOWN else text[:BIG_SHOWN] + "…(앞부분만)"
+
+
 def tutor_view(report: dict) -> dict:
-    """채점 결과를 튜터 엔진이 읽는 모양으로: 큰 입력(효율성 케이스)은 글을 싣지 않고, 엔진이 모르는 상태는 실행 오류로 바꾼다."""
+    """채점 결과를 튜터 엔진이 읽는 모양으로: 큰 입력(효율성 케이스)은 입력을 싣지 않고 기대값·내 결과는 줄여 싣는다. 엔진이 모르는 상태는 실행 오류로 바꾼다.
+    out: 내 결과를 견줄 꼴(줄이기 전의 값으로. 언어 함정이 증명된 결과와 같은지 엔진이 본다)."""
     cases = []
     for case in report["cases"]:
-        limit = LIMIT_WORDS.get(case["status"])
+        limit, big = LIMIT_WORDS.get(case["status"]), case["kind"] == "efficiency"
         status = "runtime_error" if limit else "timeout" if case["status"] == "skipped" else case["status"]  # 돌리지 않은 케이스는 앞선 시간 초과 탓이다
-        cases.append({"id": case["id"], "kind": case["kind"], "input": "(아주 큰 입력)" if case["kind"] == "efficiency" else case["input"], "expected": case["expected"],
-                      "got": "" if case["kind"] == "efficiency" else case["got"], "error": limit or case["error"], "status": status, "line": case.get("line")})
+        cases.append({"id": case["id"], "kind": case["kind"], "input": "(아주 큰 입력)" if big else case["input"], "expected": clipped(case["expected"]) if big else case["expected"],
+                      "got": clipped(case["got"]) if big else case["got"], "out": out_key(case["got"]), "error": limit or case["error"], "status": status, "line": case.get("line")})
     status = report["status"] if not cases else next((case["status"] for case in cases if case["status"] != "passed"), "passed")
     return {"status": status, "cases": cases, "compile": report["compile"], "compile_line": report.get("compile_line")}  # 줄은 채점기가 알려 준 오류의 줄(이어 붙인 프로그램의 줄)
 
@@ -1956,13 +1965,13 @@ def own_starter(p, language: str) -> str:
     return stub({"params": [{"name": name, "type": typ} for name, typ in zip(names, types)], "returns": returns}, language)
 
 
-def efficiency_message(report: dict) -> str:
-    """답은 맞고 효율성 테스트에서만 실패했을 때의 안내. 큰 입력에서 실행 오류(재귀가 너무 깊음, 메모리 부족 등)로 멈췄으면 시간이 모자란 것이 아니다."""
-    crashed = next((case for case in report["cases"] if case["kind"] == "efficiency" and case["status"] == "runtime_error"), None)
-    if crashed:
-        hint = error_hint(crashed["error"], report.get("language", ""))
-        return f"답은 맞아요. 다만 아주 큰 입력에서 실행 중 오류가 났어요. {hint or '결과의 효율성 테스트에서 오류 이름을 확인해 보세요.'}"
-    return "답은 맞아요. 다만 입력이 아주 클 때 시간이 모자라요. 제한사항의 입력 크기를 보고, 같은 것을 되풀이해 세거나 찾는 곳이 없는지 살펴보세요."
+def slow_only(report: dict) -> bool:
+    """정확성 케이스는 모두 맞고 효율성 케이스는 시간 초과로만 떨어졌다(돌리지 않은 것은 앞선 시간 초과 탓).
+    큰 입력에서 답이 다르거나(정수 넘침 등) 실행 오류(재귀가 너무 깊음 등)로 멈췄으면 시간 문제가 아니라 틀린 곳이 있다."""
+    return bool(report["cases"]) and all(case["status"] == "passed" or case["kind"] == "efficiency" and case["status"] in ("timeout", "skipped") for case in report["cases"])
+
+
+SLOW_MESSAGE = "답은 맞아요. 다만 입력이 아주 클 때 시간이 모자라요. 제한사항의 입력 크기를 보고, 같은 것을 되풀이해 세거나 찾는 곳이 없는지 살펴보세요."
 
 
 DEBUG_DONE = "고친 코드가 통과했어요. 기록으로 남기려면 제출해 주세요."
@@ -2637,12 +2646,13 @@ def handle(path: str, body: dict) -> tuple[int, dict]:
                     judged = {**result_body(report), "unsaved": True}
                 if report["status"] == "passed":  # 엔진을 부르지 않는다: 내 말(있으면)과 맺음말만 디버그 대화에 남긴다
                     return 200, {"passed": True, "judged": judged or result_body(report), "messages": debug_closed(t, pid, str(body.get("text") or "").strip())}
-                if report["cases"] and all(case["status"] == "passed" for case in report["cases"] if case["kind"] != "efficiency"):
-                    # 답은 맞고 큰 입력에서만 걸렸다: 틀린 줄을 찾을 일이 아니라 방법을 바꿀 일이다(큰 입력은 모델에 넘기지 않는다)
-                    return 200, {"passed": False, "efficiency_only": True, "judged": judged or result_body(report), "message": efficiency_message(report)}
+                if slow_only(report):  # 답은 맞고 큰 입력에서 시간만 모자랐다: 틀린 줄을 찾을 일이 아니라 방법을 바꿀 일이다
+                    return 200, {"passed": False, "efficiency_only": True, "judged": judged or result_body(report), "message": SLOW_MESSAGE}
                 seen = tutor_view(report)
-                lines = [{**case, "line": raw.get("line")} for case, raw in zip(seen["cases"], report["cases"]) if raw["kind"] != "efficiency"] or seen["cases"]  # 채점기가 준 오류 줄을 같이 넘긴다
-                out = t.debug(pid, code, {**seen, "compile_line": report.get("compile_line"), "cases": lines},
+                small = [case for case in seen["cases"] if case["kind"] != "efficiency"]
+                # 작은 입력에서 틀렸으면 그것만 본다. 작은 입력이 다 맞으면 큰 입력에서 틀린 답·실행 오류를 본다(같이 난 시간 초과는 빼서 시간 이야기로 새지 않게)
+                lines = small if any(case["status"] != "passed" for case in small) else [case for case in seen["cases"] if case["status"] != "timeout"]
+                out = t.debug(pid, code, {**seen, "status": next((case["status"] for case in lines if case["status"] != "passed"), seen["status"]), "cases": lines},
                               text=str(body.get("text") or "").strip() or None)
                 return out.status, {**out.body, "judged": judged}
             else:
