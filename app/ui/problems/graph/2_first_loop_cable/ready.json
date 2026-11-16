@@ -19,9 +19,9 @@
     "장비 이름마다 부모를 적을 해시 표 parent를 만든다 — 각 장비가 어느 묶음에 속하는지 기억하려고",
     "find 함수 안에서 처음 보는 이름이면 자기 자신을 부모로 등록한다 — 새 장비는 처음에 혼자 한 묶음이므로",
     "부모가 자기 자신이 될 때까지 따라 올라가며, 지나가는 칸의 부모를 부모의 부모로 바꿔 경로를 줄이고 대표를 돌려준다 — 다음 찾기를 빠르게 하려고",
-    "케이블을 1번부터 순서대로 보며 두 장비의 대표 root_x, root_y를 구한다 — 같은 묶음인지 비교하려고",
+    "케이블을 1번부터 순서대로 보며 두 장비의 대표를 구한다 — 같은 묶음인지 비교하려고",
     "두 대표가 같으면 지금 케이블 번호를 return 한다 — 이미 신호가 오가던 두 장비를 다시 이어 처음으로 고리가 생겼으므로",
-    "대표가 다르면 root_y의 부모를 root_x로 바꿔 두 묶음을 합친다 — 이제 이 케이블로 신호가 오가게 되었으므로",
+    "대표가 다르면 한쪽 대표의 부모를 다른 쪽 대표로 바꿔 두 묶음을 합친다 — 이제 이 케이블로 신호가 오가게 되었으므로",
     "모든 케이블을 다 봐도 고리가 없으면 -1을 return 한다"
    ],
    "code": "def solution(cables):\n    parent = {}\n\n    def find(x):\n        if x not in parent:\n            parent[x] = x\n        while parent[x] != x:\n            parent[x] = parent[parent[x]]  # 경로 압축\n            x = parent[x]\n        return x\n\n    for order, (x, y) in enumerate(cables, 1):\n        root_x = find(x)\n        root_y = find(y)\n        if root_x == root_y:\n            return order\n        parent[root_y] = root_x\n    return -1",

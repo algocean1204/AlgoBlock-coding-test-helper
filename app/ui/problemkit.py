@@ -192,6 +192,20 @@ def ready_bound(ready: dict) -> list[str]:
     return [f"ready{path}에 한 언어에만 있는 낱말 {hit.group(0)!r}: 언어와 상관없는 말로 쓴다" for path, text in texts(ready, "") for hit in [LANGUAGE_BOUND.search(text)] if hit]
 
 
+GUIDE_NAME = re.compile(_L + r"(?:[A-Za-z0-9]+(?:_[A-Za-z0-9]+)+|True|False|None)" + _R)  # 풀이 가이드가 부르는 코드 이름: 밑줄 이름(snake_case)과 파이썬 전용 값
+GUIDE_LANGS = ("python", "java", "cpp", "javascript", "rust")
+
+
+def guide_names(problem: dict, ready: dict) -> list[str]:
+    """풀이 가이드(approach·steps·clues)가 부르는 코드 이름이 문제 글(글·제한·인자 이름)에 있거나 다섯 언어 풀이 모두에 있는지 본다. 걸린 글의 목록(비면 통과)."""
+    solution = ready.get("solution") or {}
+    statement = problem["statement"] + "\n" + "\n".join(problem["limits"]) + "\n" + " ".join(p["name"] for p in problem["params"])
+    codes = [problem["files"].get(f"solution.{EXT[lang]}", "") for lang in GUIDE_LANGS]
+    rows = [("approach", solution.get("approach") or "")] + [(f"steps[{n}]", t) for n, t in enumerate(solution.get("steps") or [])] + [(f"clues[{n}]", t) for n, t in enumerate(solution.get("clues") or [])]
+    return [f"ready.solution.{key}의 이름 {name!r}이 문제 글이나 다섯 언어 풀이에 없다: 문제 글의 말로 쓴다" for key, text in rows for name in dict.fromkeys(GUIDE_NAME.findall(text))
+            if name in ("True", "False", "None") or (name not in statement and not all(name in code for code in codes))]
+
+
 def check(folder, langs: bool = False) -> list[str]:
     """문제 하나를 검사한다. 걸린 것의 목록(비면 통과)."""
     found: list[str] = []
@@ -223,7 +237,8 @@ def check(folder, langs: bool = False) -> list[str]:
     found += language_bound(problem)
     saved = problem["dir"] / "ready.json"  # 풀이 가이드·블록(모델이 만들었거나 손으로 고친 것)도 같은 규칙을 지킨다
     if saved.exists():
-        found += ready_bound(json.loads(saved.read_text(encoding="utf-8")).get("ready") or {})
+        ready = json.loads(saved.read_text(encoding="utf-8")).get("ready") or {}
+        found += ready_bound(ready) + guide_names(problem, ready)
     for name in ("solution.py", "brute.py", "gen.py"):
         if name not in files:
             found.append(f"{name}가 없다")
