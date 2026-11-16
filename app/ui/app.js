@@ -558,7 +558,7 @@ const caseCells = (row) => [...row.querySelectorAll(".case-val"), row.querySelec
 /** 푸는 방식에 맞춘 케이스 안내. 방식을 바꾸면 적던 값은 그대로 새 꼴의 줄로 옮긴다. */
 function caseHelp() {
   const stdin = $("new-mode").value === "program";
-  $("case-help").textContent = stdin ? "입력은 프로그램의 표준 입력에 그대로 넣어요." : "넣을 값은 solution에 넘길 값을 순서대로 대괄호 안에 적어요.";
+  $("case-help").textContent = stdin ? "입력은 프로그램의 표준 입력에 그대로 넣어요." : "넣을 값은 인자 목록 전체를 대괄호로 감싸 적어요. 인자가 둘이면 [1, 2], 리스트 하나가 인자면 [[1, 2, 3]]처럼 한 번 더 감싸요.";
   $("case-fill-ask").textContent = stdin ? "지금 적힌 케이스를 예제의 것으로 바꿀까요?" : "지금 적힌 케이스를 표의 것으로 바꿀까요?";
 }
 
@@ -581,13 +581,32 @@ function setCaseMode() {
 }
 
 /** 케이스 줄의 '넣을 값'이 풀이 함수에 어떻게 넘어가는지 그 아래에 보여 준다(JSON 목록으로 읽힐 때만). */
+/* case-pure:start 넣을 값의 인자 수 안내(node로도 시험한다). expected: 시작 코드의 인자 수(모르면 null) */
+const argNote = (count, expected) => (expected === null || count === expected ? ""
+  : `인자가 ${expected}개인데 ${count}개로 읽혀요. ${expected === 1 ? "리스트 하나를 인자로 넘기려면 [[1, 2]]처럼 인자 목록 전체를 대괄호로 한 번 더 감싸요." : "인자 목록 전체를 대괄호로 한 번만 감싸 [1, 2]처럼 적어요."}`);
+/* case-pure:end */
+/** 이 줄이 기대하는 인자 수: 표 머리·직접 적은 인자 이름이 있으면 그 수, 없으면 첫 줄의 수(줄마다 다르면 알린다). */
+function expectedArgs(row) {
+  const typed = $("case-names-field").hidden ? [] : $("case-names").value.split(",").map((x) => x.trim()).filter(Boolean);
+  if (NAMES) return NAMES.length;
+  if (typed.length) return typed.length;
+  for (const other of document.querySelectorAll("#case-rows .case-row")) { // 첫 줄로 읽히는 줄이 기준. 이 줄이 그 줄이면 견줄 것이 없다
+    try { const args = JSON.parse(other.querySelector(".case-val").value); if (Array.isArray(args)) return other === row ? null : args.length; } catch (e) { /* 읽히지 않는 줄은 건너뛴다 */ }
+  }
+  return null;
+}
 function showCall(input) {
   const row = input.closest(".case-row"), out = row.querySelector(".case-call");
   if (!out) return void row.querySelectorAll("textarea").forEach(grow); // 표준 입출력은 입력을 그대로 넣는다. 칸 높이만 글에 맞춘다
   let args = null;
   try { args = JSON.parse(input.value); } catch (e) { /* 아직 읽히지 않는다 */ }
+  const note = Array.isArray(args) ? argNote(args.length, expectedArgs(row)) : "";
   out.textContent = Array.isArray(args) ? `→ ${callText(input.value)}` : "";
+  out.classList.toggle("warn", !!note);
+  if (note) out.textContent += ` — ${note}`;
 }
+/** 모든 줄의 안내를 다시 맞춘다(인자 이름이나 다른 줄이 바뀌면 이 줄의 기대 수도 바뀐다). */
+const showCalls = () => document.querySelectorAll("#case-rows .case-row").forEach((r) => { const first = r.querySelector(".case-val"); if (first) showCall(first); });
 
 /* 입출력 예 표에서 케이스 채우기: 표 찾기는 서버가 규칙으로 한다(모델 0회). 글이 바뀌면 잠깐 멈췄을 때 다시 찾아 단추를 보이거나 숨긴다.
    NAMES: 표 머리의 인자 이름(채웠을 때만 등록·수정에 같이 보내 시작 코드의 인자 이름이 된다) */
@@ -622,6 +641,7 @@ function titleNote() {
 }
 function syncForm() {
   titleNote();
+  showCalls();
   const rows = formCases();
   $("case-float").hidden = $("new-mode").value === "program" || !rows.some((x) => hasFloat(x.input) || hasFloat(x.expected));
   $("case-names-field").hidden = $("new-mode").value === "program" || !!NAMES; // 표 머리에서 이름을 얻지 못한 함수 문제만: 글의 이름을 직접 적을 수 있다

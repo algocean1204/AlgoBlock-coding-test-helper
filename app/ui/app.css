@@ -437,6 +437,7 @@ a.ladder-next:hover { background: var(--fill); }
 .case-row textarea.case-val { white-space: pre; overflow-x: auto; line-height: 1.5; }
 .case-call { grid-column: 2 / -1; margin-top: -4px; font-family: var(--mono); font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
 .case-call:empty { display: none; }
+.case-call.warn { color: var(--warning); } /* 인자 수가 시작 코드와 다르다 */
 .case-diff { grid-column: 2 / -1; margin-top: -4px; font-size: 12px; font-weight: 600; color: var(--warning); }
 .case-diff[hidden] { display: none; }
 #new-submit { justify-self: start; min-height: 40px; padding: 0 18px; }

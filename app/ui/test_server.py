@@ -2283,6 +2283,24 @@ console.log(JSON.stringify([focusTail({ next: { id: "a" } }, t), focusTail({ nex
     assert "focusTail(focus, target)" in js and "sideNext(x, target)" in js and 'href="#/p/${esc(focus.next.id)}"' not in js
 
 
+def case_arg_count() -> None:
+    """내 문제 넣기의 케이스 입력: 인자 수가 시작 코드(표 머리·적은 인자 이름·첫 줄)와 다르면 그 줄 아래에서 알리고, 입력 안내가 인자 목록 전체를 대괄호로 감싼다고 예와 함께 말한다(화면 코드 확인, 분기는 node로)."""
+    import re
+    import shutil
+    js, html = (HERE / "app.js").read_text(encoding="utf-8"), (HERE / "index.html").read_text(encoding="utf-8")
+    assert "인자 목록 전체를 대괄호로 감싸 적어요. 인자가 둘이면 [1, 2], 리스트 하나가 인자면 [[1, 2, 3]]처럼 한 번 더 감싸요." in html and html.count("[[1, 2, 3]]") == 1
+    assert "showCalls();" in js and "argNote(args.length, expectedArgs(row))" in js and ".case-call.warn" in (HERE / "app.css").read_text(encoding="utf-8")
+    node = shutil.which("node")
+    if not node:
+        return print("node가 없어 인자 수 안내 시험은 건너뜀")
+    source = re.search(r"/\* case-pure:start.*?\*/(.*?)/\* case-pure:end \*/", js, re.S).group(1)
+    script = source + "console.log(JSON.stringify([argNote(2, 2), argNote(4, 2), argNote(3, 1), argNote(1, 2), argNote(5, null)]));"
+    same, many, wrap, few, unknown = json.loads(subprocess.run([node, "-e", script], capture_output=True, text=True, check=True).stdout)
+    assert same == "" and unknown == ""  # 맞거나 기준이 없으면 말하지 않는다
+    assert "인자가 2개인데 4개로 읽혀요." in many and "[1, 2]처럼" in many and "[[1, 2]]" not in many
+    assert "인자가 1개인데 3개로 읽혀요." in wrap and "[[1, 2]]처럼 인자 목록 전체를 대괄호로 한 번 더 감싸요." in wrap and "인자가 2개인데 1개로" in few
+
+
 def way_info() -> None:
     """푸는 방식 설명: 네 방식이 한 자료에서 나오고, ⓘ는 눌러 펴며(키보드·Esc), 잠긴 방식도 글이 읽히고 ⓘ가 열린다. 브라우저 동작은 화면 확인으로 본다."""
     import re
@@ -2839,6 +2857,7 @@ def main() -> None:
         settings_screen()
         settings_items()
         way_info()
+        case_arg_count()
         ai_marks()
         report_terms()
         new_draft()
