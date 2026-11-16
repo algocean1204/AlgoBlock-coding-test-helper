@@ -3189,6 +3189,44 @@ document.addEventListener("keydown", (e) => {
 });
 
 $("more").addEventListener("toggle", () => { if (!$("more").open) { $("reset-confirm").hidden = true; $("reset").hidden = false; } }); // 메뉴를 닫으면 처음부터의 물음도 접는다
+/* ── 키보드 초점 ── */
+const focusable = (x) => !!x && !x.disabled && !x.closest("[hidden]") && !!x.offsetParent;
+/** 키보드로 누른 단추가 다시 그리며 사라지거나 새로 그려져 초점이 문서 맨 위(body)로 떨어지면, 같은 단추나 그 일이 이어지는 자리로 돌려 놓는다.
+    기다림(모델·채점)이 끝난 뒤에 한 번 본다. 그 사이 사용자가 초점을 옮겼으면 건드리지 않는다. */
+function focusAfter(el) {
+  const own = [...el.attributes].filter((a) => a.name.startsWith("data-") && a.name !== "data-model").map((a) => `[${a.name}="${CSS.escape(a.value)}"]`)[0];
+  const block = el.dataset.check || el.dataset.fill || el.dataset.skip || el.dataset.own;
+  const next = [el.id ? `#${el.id}` : own, el.id === "start" && "#say", block && `textarea[data-block="${CSS.escape(block)}"]`, "#p-title"].filter(Boolean); // 같은 단추 → 이어서 할 칸 → 문제 제목
+  const t0 = Date.now();
+  let waited = false;
+  const look = () => {
+    const now = document.activeElement, lost = !now || now === document.body || !now.isConnected;
+    if (!lost && now !== el) return; // 사용자(또는 그 일 자체)가 다른 곳으로 옮겼다
+    if (lost && !S.busy) { // 기다림 동안 잠겨 있던 단추가 풀린 뒤에 돌려 놓는다
+      const hit = next.map((q) => document.querySelector(`#view-code ${q}`)).find(focusable);
+      return void (hit && hit.focus());
+    }
+    waited = waited || !!S.busy;
+    if (S.busy ? Date.now() - t0 < 120000 : !waited && Date.now() - t0 < 1500) setTimeout(look, 100); // 기다림이 끝날 때까지(기다림이 없으면 1.5초만) 본다
+  };
+  setTimeout(look, 60);
+}
+document.addEventListener("click", (e) => {
+  const el = e.detail === 0 && e.target.closest("#view-code button");
+  if (el) focusAfter(el);
+}, true); // 앞서 받아 둔다(다른 처리기가 단추를 다시 그리면 이 단추는 문서에서 빠져 ‘어느 화면의 단추’인지 알 수 없다)
+/** 건너뛰기 링크: 주소(#main)를 바꾸면 화면이 홈으로 가므로, 주소는 두고 지금 화면의 본문 제목으로 초점을 옮긴다. */
+document.addEventListener("click", (e) => {
+  if (!e.target.closest("a.skip")) return;
+  e.preventDefault();
+  const head = [...$("main").querySelectorAll("h1[tabindex]")].find(focusable) || $("main");
+  head.focus();
+  head.scrollIntoView({ block: "start" });
+});
+/** 코드 칸에서 Tab은 들여쓰기라, 칸에 초점이 있는 동안 나가는 길(Esc 다음 Tab)을 눈에 보이게 알린다. */
+const codeCell = (t) => !!t && t.tagName === "TEXTAREA" && (t.id === "code" || t.dataset.block !== undefined);
+document.addEventListener("focusin", (e) => $("tab-hint").classList.toggle("on", codeCell(e.target)));
+
 document.addEventListener("click", (e) => {
   const summary = e.target.closest("details.case-fold > summary");
   if (summary) S.casesOpen = !summary.parentElement.open;
