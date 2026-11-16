@@ -37,7 +37,7 @@ def solution_lines(state, code: bool = False) -> list[str]:
 _FRAME_PY = re.compile(r"def (?:solution|main)\b.*:|class Solution\b.*:|import \S.*|from \S+ import .+|\w+ = sys\.stdin(?:\.buffer)?\.read(?:line)?"
                        r"|if __name__ == .+:|main\(\)")
 _FRAME = re.compile(
-    r"import\b.*|#include\b.*|using\s.+;|use\s.+;|package\s.+|\"[\w./-]+\"|\)"  # 머리말(go의 여러 줄 import 포함)
+    r"import\b.*|#include\b.*|using\s.+;|use\s.+;|package\s.+|\"[\w./-]+\"|\)"  # 머리말
     r"|(public\s+)?class (?:Solution|Main)\b.*\{|[\w<>\[\],:&*\s]*\b(?:solution|main)\s*\([^;]*\)[^;=]*\{|\}\s*;?"  # 머리의 반환형은 'std::vector<int>&'처럼 적어도 된다
     r"|(?:const|let|var)\s+(?:solution|main)\s*=\s*(?:function(?:\s+[A-Za-z_$][\w$]*)?\s*\([^;]*\)|\([^;]*\)\s*=>|[A-Za-z_$][\w$]*\s*=>)\s*\{"  # js의 함수 식·화살표 함수로 적은 진입 함수 머리(async는 뜻이 달라 뺀다)
     r"|(?:const|let|var) .+ = require\([\"']fs[\"']\)(?:\.readFileSync\(.*)?;?"  # js의 표준 입력 전체 읽기
@@ -257,10 +257,8 @@ def _params(inside: list[str], language: str) -> list[tuple[str, str, str]]:
             names = [t for t in seg if _NAME.fullmatch(t) and t != "self"]
             if language == "python" and names:
                 out.append((names[0], "param", ""))
-            elif language == "go" and names:  # Go 'a, b int', 'parent []int': 이름이 앞
-                out.append((names[0], "param", _type_text(seg[seg.index(names[0]) + 1:])))
             elif (at := next((i for i, t in enumerate(seg) if t == ":" and ":" not in seg[i - 1:i] + seg[i + 1:i + 2]), None)) is not None and names:
-                # Kotlin·Rust·TypeScript·Swift 'name: Type'(이름은 ':' 바로 앞. Rust 'mut a: T'의 mut은 이름이 아니다. '::'는 경로라 이름표가 아니다)
+                # Rust·TypeScript·Swift 'name: Type'(이름은 ':' 바로 앞. Rust 'mut a: T'의 mut은 이름이 아니다. '::'는 경로라 이름표가 아니다)
                 out.append((([t for t in seg[:at] if _NAME.fullmatch(t)] or names)[-1], "param", _type_text(seg[at + 1:])))
             elif names:  # C·C++·Java: 이름은 타입 다음의 마지막 낱말('std::vector<int>& nums', 'const string &s', 'int[] arr')
                 out.append((names[-1], "param", _type_text(seg[:len(seg) - 1 - seg[::-1].index(names[-1])])))
@@ -274,7 +272,7 @@ def _declared(toks: list[str]) -> list[tuple[str, str, str]]:
     """중괄호 언어 한 줄의 선언 (이름, 꼴, 타입): 타입 꼴 뒤에 오고 그 뒤가 = ; , : 인 이름(초기값 없는 선언 포함), ':=' 왼쪽, for 머리의 반복 변수."""
     out, depth, start, typed, loop, head = [], 0, 0, None, toks[:1] == ["for"], False
     word = next((w for w in ("in", "of") if w in toks), "")
-    if loop and toks[1:2] == ["("] and word:  # Kotlin·JavaScript 'for (x in xs)', 'for (const x of xs)', 'for ((i, v) in …)'
+    if loop and toks[1:2] == ["("] and word:  # JavaScript 'for (x in xs)', 'for (const x of xs)', 'for ((i, v) in …)'
         return [(t, "loop", "") for t in toks[2:toks.index(word)] if _NAME.fullmatch(t) and t not in _LOOSE]
     for i, tok in enumerate(toks):
         if tok in ";{}":
@@ -334,35 +332,6 @@ def _rhs_after(toks: list[str], at: int) -> list[str]:
     return out
 
 
-def _go_made(toks: list[str]) -> list[tuple]:
-    """Go 한 줄의 선언: 'for i, p := range xs {', 'a, b := …', 'var a, b T', 'var x = …'."""
-    loop = toks[:1] == ["for"]
-    if ":=" in toks:
-        at = toks.index(":=")
-        names = [t for t in toks[int(loop):at] if _NAME.fullmatch(t)]
-        rhs = toks[at + 1:]
-        if loop and "range" in rhs:
-            rhs = rhs[rhs.index("range") + 1:]
-            rhs = rhs[:-1] if rhs[-1:] == ["{"] else rhs
-            return [(n, "loop", "", ("range", tuple(rhs), i)) for i, n in enumerate(names) if n != "_"]
-        if loop:  # for i := 0; i < n; i++ {
-            return [(n, "loop", "", ("for", tuple(toks[1:]))) for n in names if n != "_"]
-        pieces = _split_top(_rhs_after(toks, at) if len(names) == 1 else rhs)
-        return [(n, "var", "", ("=", tuple(pieces[i] if len(pieces) == len(names) else rhs), i)) for i, n in enumerate(names) if n != "_"]
-    if toks[:1] == ["var"]:
-        names, i = [], 1
-        while i < len(toks) and _NAME.fullmatch(toks[i]):
-            names.append(toks[i])
-            i += 2 if toks[i + 1:i + 2] == [","] else 1
-            if toks[i - 1:i] != [","]:
-                break
-        rest = toks[i:]
-        typ = _type_text(rest[:rest.index("=")] if "=" in rest else rest)
-        shape = ("=", tuple(rest[rest.index("=") + 1:])) if "=" in rest else ("type", typ)
-        return [(n, "var", typ, shape) for n in names if n != "_"]
-    return []
-
-
 def made_statements(code: str, language: str, program: bool = False) -> list[tuple]:
     """코드(틀 줄은 뺀다)가 새로 만드는 이름 [(이름, 꼴, 타입 글, 만드는 문장), …](처음 나온 차례).
     만드는 문장: ('=', 오른쪽 식 낱말, 자리) / ('in'·':'·'range', 도는 대상, 자리) / ('for', 반복 머리) / ('type', 타입) / None(매개변수).
@@ -373,7 +342,7 @@ def made_statements(code: str, language: str, program: bool = False) -> list[tup
     for line in body_lines(code, language, program):
         toks = _TOKEN.findall(line)
         found = (_DEF_PY if language == "python" else _DEF).match(line)
-        if found and not (language == "go" and ":=" in toks):
+        if found:
             at = toks.index("(", toks.index(found.group(1)))
             depth, end = 0, at
             for end in range(at, len(toks)):
@@ -381,9 +350,6 @@ def made_statements(code: str, language: str, program: bool = False) -> list[tup
                 if depth == 0:
                     break
             out += [(*item, None) for item in _params(toks[at + 1:end], language)]
-            continue
-        if language == "go":
-            out += _go_made(toks)
             continue
         if language != "python":
             for name, kind, typ in _declared(toks):
@@ -481,7 +447,7 @@ def frame_of(reference: str, language: str, program: bool = False) -> dict:
     return {"indent": indent, "head": head if any(row.strip() for row in head) else [], "tail": tail if any(row.strip() for row in tail) else [],
             "outer": sorted({_lead(row) for row, s in zip(rows, skip) if not s and _lead(row) < indent}),
             "braces": _brace_count(rows[start:max(end, start)]),  # 머리·꼬리 사이 전부(앞 블록의 반복을 닫는 '}'도 알맹이다)
-            "tab": first.startswith("\t"),  # 계획이 탭으로 들여 썼다(Go)
+            "tab": first.startswith("\t"),  # 계획이 탭으로 들여 썼다
             # 화면이 적은 코드 맨 앞의 틀 줄·가져오기 줄을 엔진과 같은 식으로 가른다
             "frame_re": (_FRAME_PY if language == "python" else _FRAME).pattern, "import_re": _IMPORT.pattern, "mark": "#" if language == "python" else "//"}
 
@@ -522,7 +488,7 @@ def placed(lines: list[str], indent: int, outer: list[int], unit: int = 0, tab: 
     첫 줄보다 얕은 줄은 가까운 단계부터 계획의 바깥 단계(outer의 뒤에서부터)에 놓는다. outer가 모자라면 첫 줄과의 차만큼 내어 쓴다.
     unit > 0(Python)이면 첫 줄 이상 들여쓴 줄은 단계로 놓는다: 앞 공백 값의 쌓임 깊이 × unit(2칸·탭으로 적어도 계획의 단위로).
     반복 몸통(8칸)에서 시작해 반복 밖(4칸)에서 끝나는 블록은 가장 얕은 줄을 indent에 놓아 어떻게 적어도 바깥 줄을 놓을 수 없었다.
-    tab: 계획이 탭으로 들여 쓴 언어(Go)는 앞 공백을 탭 글자로 놓는다('공백 1칸 + 탭'이 섞였다).
+    tab: 계획이 탭으로 들여 쓴 경우는 앞 공백을 탭 글자로 놓는다('공백 1칸 + 탭'이 섞였다).
     한계: 괄호 안에서 이어지는 줄과 여러 줄 문자열의 줄도 단계로 다시 놓인다(실행은 같다. 여러 줄 문자열의 내용은 바뀔 수 있다)."""
     pad = "\t" if tab else " "
     rows = [row for row in lines if row.strip()]
@@ -546,7 +512,7 @@ def placed(lines: list[str], indent: int, outer: list[int], unit: int = 0, tab: 
     return [at(row) if row.strip() else "" for row in lines]
 
 
-# 가져오기 줄(Python import·from, Java·Kotlin·Go import, C++ #include·using namespace, Rust use, JavaScript require). 화면이 같은 식을 받아 쓴다(frame_of)
+# 가져오기 줄(Python import·from, Java import, C++ #include·using namespace, Rust use, JavaScript require). 화면이 같은 식을 받아 쓴다(frame_of)
 _IMPORT = re.compile(r"import\b.*|from\s+\S+\s+import\b.*|#include\b.*|using\s+namespace\b.*|use\s+.+;|(?:const|let|var)\s+.+=\s*require\(.*")
 
 
@@ -603,22 +569,20 @@ _NOTE = r"//[^\n]*|/\*[\s\S]*?\*/"
 _LEXED = {
     "python": (r"(?<!\w)[rRbBuUfF]{0,2}(?:\"\"\"[\s\S]*?\"\"\"|'''[\s\S]*?'''|" + _DQ + "|" + _SQ + ")", r"#[^\n]*"),
     "javascript": (r"`(?:\\[\s\S]|[^`\\])*`|" + _DQ + "|" + _SQ, _NOTE),
-    "kotlin": (r'"""[\s\S]*?"""|' + _DQ + "|" + _CHAR, _NOTE),
     "java": (r'"""[\s\S]*?"""|' + _DQ + "|" + _CHAR, _NOTE),
     "rust": (r'(?<!\w)b?r#*"[\s\S]*?"#*|(?<!\w)b?"(?:\\[\s\S]|[^"\\])*"|(?<!\w)b?' + _CHAR, _NOTE),
-    "go": (r"`[^`]*`|" + _DQ + "|" + _CHAR, _NOTE),
     "cpp": (r'(?<!\w)(?:u8|[uUL])?R"\([\s\S]*?\)"|(?<!\w)(?:u8|[uUL])?' + _DQ + "|" + _CHAR, _NOTE),
 }
 _LEX = {lang: re.compile(rf"(?P<s>{s})|(?P<c>{c})|(?P<n>[A-Za-z_]\w*)|(?P<d>\d\w*)|(?P<o>[()\[\]{{}}])") for lang, (s, c) in _LEXED.items()}
 _KEYWORD = re.compile(r"\s*=(?!=)")  # 이름 뒤의 '='(==가 아니다)
 _WORD = re.compile(r"(?<![\w.])[A-Za-z_]\w*")
-_MEMBER = {"cpp": ("->", "::"), "java": ("::",), "kotlin": ("::",), "rust": ("::",)}  # 이 앞에 오는 이름은 멤버·경로다(Python의 '[::k]'는 변수라 뺀다. Java·Kotlin의 '->'는 람다라 뺀다)
+_MEMBER = {"cpp": ("->", "::"), "java": ("::",), "rust": ("::",)}  # 이 앞에 오는 이름은 멤버·경로다(Python의 '[::k]'는 변수라 뺀다. Java의 '->'는 람다라 뺀다)
 
 
 def swap_names(code: str, names: dict[str, str], language: str) -> str:
     """이름 바꾸기 {계획 이름: 사용자 이름}. 이름인 자리만 바꾼다(언어의 문법으로 가른다):
-    점 뒤 이름(속성·메서드), C++의 '->' 뒤와 C++·Java·Kotlin·Rust의 '::' 뒤 이름(멤버·경로), 문자열·문자 글자, Python·Kotlin의 키워드 인자 이름(호출 괄호 안의 '이름=')은 그대로 둔다.
-    문자열 안에서는 끼워 넣기 자리만 바꾼다: Python f-문자열의 {…}, Kotlin의 $이름·${…}, JavaScript 백틱의 ${…}.
+    점 뒤 이름(속성·메서드), C++의 '->' 뒤와 C++·Java·Rust의 '::' 뒤 이름(멤버·경로), 문자열·문자 글자, Python의 키워드 인자 이름(호출 괄호 안의 '이름=')은 그대로 둔다.
+    문자열 안에서는 끼워 넣기 자리만 바꾼다: Python f-문자열의 {…}, JavaScript 백틱의 ${…}.
     주석 안의 낱말은 바꾼다(돌지 않는 글이라 코드와 같은 이름으로 읽히게. 주석 안의 따옴표는 문자열로 보지 않는다)."""
     if not names:
         return code
@@ -632,7 +596,7 @@ def swap_names(code: str, names: dict[str, str], language: str) -> str:
         elif kind == "c":
             text = _WORD.sub(lambda word: names.get(word.group(0), word.group(0)), text)
         elif kind == "n" and text in names and code[start - 1:start] != "." and code[start - 2:start] not in _MEMBER.get(language, ()) and not (
-                language in ("python", "kotlin") and stack[-1:] == ["("] and _KEYWORD.match(code, end)):
+                language == "python" and stack[-1:] == ["("] and _KEYWORD.match(code, end)):
             text = names[text]
         elif kind == "o" and text in "([{":
             stack.append("def" if text == "(" and recent[-2:-1] == ["def"] else text)  # def 머리의 '이름=기본값'은 매개변수다
@@ -704,8 +668,8 @@ def _filled(text: str, names: dict[str, str], language: str) -> str:
         if "f" not in pre.lower():
             return text
         quote = 3 if text[len(pre):len(pre) + 3] in ('"""', "'''") else 1
-    elif (language == "kotlin" and text.startswith('"')) or (language == "javascript" and text.startswith("`")):
-        pre, quote = "", 3 if text.startswith('"""') else 1
+    elif language == "javascript" and text.startswith("`"):
+        pre, quote = "", 1
     else:
         return text
     head, tail = len(pre) + quote, len(text) - quote
@@ -713,7 +677,7 @@ def _filled(text: str, names: dict[str, str], language: str) -> str:
 
 
 def _holes(body: str, names: dict[str, str], language: str) -> str:
-    """문자열 안의 끼워 넣기 자리만 바꾼다. Python은 {…}({{·}}는 글자), Kotlin은 $이름과 ${…}, JavaScript는 ${…}('\\'로 막은 글자는 그대로)."""
+    """문자열 안의 끼워 넣기 자리만 바꾼다. Python은 {…}({{·}}는 글자), JavaScript는 ${…}('\\'로 막은 글자는 그대로)."""
     out, i = [], 0
     while i < len(body):
         if (language != "python" and body[i] == "\\") or (language == "python" and body[i:i + 2] in ("{{", "}}")):
@@ -729,11 +693,6 @@ def _holes(body: str, names: dict[str, str], language: str) -> str:
             inner = body[i + len(lead):end]
             out.append(lead + (_py_field(inner, names) if language == "python" else swap_names(inner, names, language)) + "}")
             i = end + 1
-            continue
-        word = re.compile(r"\$([A-Za-z_]\w*)").match(body, i) if language == "kotlin" else None
-        if word:
-            out.append("$" + names.get(word.group(1), word.group(1)))
-            i = word.end()
             continue
         out.append(body[i])
         i += 1
@@ -881,16 +840,13 @@ def defined_function(code: str, language: str, program: bool = False) -> str:
     return found[0] if len(found) == 1 else ""
 
 
-_START_IMPORT = ("python", "java", "kotlin", "cpp")  # 같은 가져오기를 두 번 적어도 오류가 아닌 언어. Go·Rust·JavaScript는 언어마다 고른다(아래)
+_START_IMPORT = ("python", "java", "cpp")  # 같은 가져오기를 두 번 적어도 오류가 아닌 언어. Rust·JavaScript는 언어마다 고른다(아래)
 
 
 def starter_imports(rows: list[str], starter: str, language: str) -> list[str]:
     """시작 코드의 가져오기 줄 가운데 rows에 아직 없는 것. 시작 코드의 'import java.util.*;'를 믿고 쓴 코드가 이어 붙인 프로그램에서도 돌게 한다.
-    Go·Rust·JavaScript는 그대로 더하면 오류가 나는 꼴이 있어 고른다: Go는 쓰지 않은 가져오기가 컴파일 오류라 프로그램이 'fmt.'처럼 쓰는데 들여오지 않은 꾸러미만,
-    Rust는 같은 이름을 두 번 들여오면 오류라 프로그램의 use·항목에 없는 이름만(쓰지 않은 use는 경고뿐이고 트레이트는 이름 없이 메서드로 쓰인다),
+    Rust·JavaScript는 그대로 더하면 오류가 나는 꼴이 있어 고른다: Rust는 같은 이름을 두 번 들여오면 오류라 프로그램의 use·항목에 없는 이름만(쓰지 않은 use는 경고뿐이고 트레이트는 이름 없이 메서드로 쓰인다),
     JavaScript는 같은 이름의 두 번 선언이 오류라 require 선언 가운데 프로그램이 쓰는데 선언하지 않은 이름만 더한다."""
-    if language == "go":
-        return _go_lead("\n".join(rows), starter or "")
     if language == "rust":
         return _rust_lead("\n".join(rows), starter or "")
     if language == "javascript":
@@ -911,33 +867,15 @@ def _code_only(text: str, language: str) -> str:
     return _LEX[language].sub(lambda m: " " if m.lastgroup in ("s", "c") else m.group(0), text)
 
 
-def _names_used(text: str, language: str, dotted: bool = False) -> set[str]:
-    """문자열·주석 밖에서 쓴 이름(점 뒤의 속성 이름은 뺀다). JavaScript 백틱의 ${…} 안도 센다. dotted면 바로 뒤에 '.'이 오는 이름만(Go의 'fmt.')."""
+def _names_used(text: str, language: str) -> set[str]:
+    """문자열·주석 밖에서 쓴 이름(점 뒤의 속성 이름은 뺀다). JavaScript 백틱의 ${…} 안도 센다."""
     found = set()
     for m in _LEX[language].finditer(text):
         if m.lastgroup == "s" and language == "javascript" and m.group(0).startswith("`"):
-            found |= _names_used(" ".join(re.findall(r"\$\{([^`]*?)\}", m.group(0))), language, dotted)
-        elif m.lastgroup == "n" and text[m.start() - 1:m.start()] != "." and (not dotted or text[m.end():m.end() + 1] == "."):
+            found |= _names_used(" ".join(re.findall(r"\$\{([^`]*?)\}", m.group(0))), language)
+        elif m.lastgroup == "n" and text[m.start() - 1:m.start()] != ".":
             found.add(m.group(0))
     return found
-
-
-_GO_SPEC = re.compile(r'(?:([A-Za-z_]\w*|[._])\s+)?"([^"\n]+)"')
-
-
-def _go_specs(text: str) -> list[tuple[str, str]]:
-    """Go import 선언(한 줄 꼴과 'import ( … )' 꼴)의 (꾸러미 이름, 적은 글). 이름은 별칭, 없으면 경로의 끝 마디."""
-    return [(spec.group(1) or spec.group(2).rsplit("/", 1)[-1], spec.group(0))
-            for m in re.finditer(r"(?m)^\s*import\s*(\([^)]*\)|.*)$", text) for spec in _GO_SPEC.finditer(m.group(1))]
-
-
-def _go_lead(text: str, starter: str) -> list[str]:
-    have, used, out = {name for name, _ in _go_specs(text)}, _names_used(text, "go", dotted=True), []
-    for name, spec in _go_specs(starter):
-        if name in used and name not in have and name not in ("_", "."):  # '_'·'.' 가져오기는 쓰임을 이름으로 알 수 없다
-            have.add(name)
-            out.append(f"import {spec}")
-    return out
 
 
 _RUST_USE = re.compile(r"\buse\s+([^;]+);")
@@ -1076,20 +1014,15 @@ def _close_quote(text: str, at: int) -> int:
 def import_end(rows: list[str], language: str) -> int:
     """맨 앞 가져오기 줄(그 사이 빈 줄·주석 포함) 가운데 마지막 줄의 바로 뒤 자리(없으면 0). 시작 코드에서 더하는 가져오기 줄은 여기에 넣는다.
     맨 위에 놓은 'using namespace std;'가 '#include' 앞에 와 GCC에서 오류였고, Python 'from __future__' 앞에 놓인 줄은 SyntaxError다.
-    Go는 맨 앞의 'package' 줄과 여러 줄 'import ( … )'도 머리말이다(import는 package 뒤에만 올 수 있다).
     Rust는 맨 앞의 내부 속성('#![…]')과 내부 문서 주석('//!', '/*! … */')도 머리말이다(그 앞이나 안에 use가 오면 컴파일 오류다. _rust_inner_end)."""
     at = _rust_inner_end(rows) if language == "rust" else 0
-    group = False
     for i, row in enumerate(rows[at:], at):
         plain = _plain(row, language)
         if not plain:
             continue
-        if group or (language == "go" and plain.startswith("package ")):
-            group, at = group and plain != ")", i + 1
-            continue
         if not _IMPORT.fullmatch(plain):
             break
-        group, at = language == "go" and plain.startswith("import") and plain.endswith("("), i + 1
+        at = i + 1
     return at
 
 

@@ -7,7 +7,7 @@
 const fs = require("fs"), path = require("path"), assert = require("assert");
 const { tokens, lines, same, LANGS } = require("./highlight.js");
 
-const EXT = { python: "py", javascript: "js", java: "java", cpp: "cpp", go: "go", kotlin: "kt", rust: "rs" };
+const EXT = { python: "py", javascript: "js", java: "java", cpp: "cpp", rust: "rs" };
 assert.deepStrictEqual([...LANGS].sort(), Object.keys(EXT).sort());
 
 // 1. 기본 풀이 전부
@@ -32,7 +32,7 @@ for (const [lang, ext] of Object.entries(EXT)) {
     count++;
   }
 }
-assert.ok(count >= 500, `기본 풀이가 ${count}개뿐이다`);
+assert.ok(count >= 375, `기본 풀이가 ${count}개뿐이다`);
 
 // 2. 대표 토큰: 종류가 있는 토큰만 '종류:글'로 잇는다
 const CASES = [
@@ -45,14 +45,11 @@ const CASES = [
   ["java", 'String t = """\n  x\n  """; long n = 1_000_000_007L; System.out.println(Math.max(n, 2.5f));', 't:String|s:"""\n  x\n  """|t:long|n:1_000_000_007L|t:System|f:println|t:Math|f:max|n:2.5f'],
   ["cpp", '#include <vector>\n#define MAXN 100\nauto s = R"x(a"b)x"; char c = \'"\'; /* a\n b */ vector<int> v; std::cout << u8"x" << endl;', 'k:#include|s: <vector>|k:#define|v:MAXN|n:100|k:auto|s:R"x(a"b)x"|t:char|s:\'"\'|c:/* a\n b */|t:vector|t:int|b:std|b:cout|s:u8"x"|b:endl'],
   ["cpp", '#include "a.h"\nlong long f(unsigned x) { return x >> 1; }', 'k:#include|s:"a.h"|t:long|t:long|f:f|t:unsigned|k:return|n:1'],
-  ["go", "func (r *T) Name() int { s := `a\nb`; fmt.Println(int64(3)); var x []string = nil; return len(s) }", "k:func|v:T|f:Name|t:int|s:`a\nb`|f:Println|t:int64|n:3|k:var|t:string|v:nil|k:return|b:len"],
-  ["kotlin", 'fun f(a: Int): String { val s = """x\ny"""; return "a$s" }\nfun <T> g() = listOf(1L)', 'k:fun|f:f|t:Int|t:String|k:val|s:"""x\ny"""|k:return|s:"a$s"|k:fun|v:T|f:g|b:listOf|n:1L'],
   ["rust", 'fn f<\'a>(x: &\'a str) -> usize { let c = \'x\'; let s = r#"a"b"#; println!("{}", s); if a!=b { 1_000u64 } else { 0 } }', 'k:fn|f:f|t:str|t:usize|k:let|s:\'x\'|k:let|s:r#"a"b"#|b:println!|s:"{}"|k:if|n:1_000u64|k:else|n:0'],
   ["rust", 'let v: Vec<i64> = Vec::new(); let b = b"xy"; let o = Some(x.0); /* c */', 'k:let|t:Vec|t:i64|t:Vec|f:new|k:let|s:b"xy"|k:let|v:Some|n:0|c:/* c */'],
-  // 삼중 따옴표 안의 \"""는 문자열을 끝내지 않는다(Python·Java). Kotlin의 """에는 이스케이프가 없다
+  // 삼중 따옴표 안의 \"""는 문자열을 끝내지 않는다(Python·Java).
   ["python", 's = """a \\""" b"""\nx = 1', 's:"""a \\""" b"""|n:1'],
   ["java", 'String q = """\nx \\""" y"""; int n;', 't:String|s:"""\nx \\""" y"""|t:int'],
-  ["kotlin", 'val q = """a\\"""; val n = 1', 'k:val|s:"""a\\"""|k:val|n:1'],
   // 정규식 리터럴 안의 백틱이 뒤를 문자열로 물들이지 않는다. 나눗셈은 정규식이 아니다
   ["javascript", 's = t.replace(/`[a/]\\//g, ""); const h = a / 2 / b;\nlet z = 1;', 'f:replace|s:/`[a/]\\//g|s:""|k:const|n:2|k:let|n:1'],
 ];

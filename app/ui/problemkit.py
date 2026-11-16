@@ -33,7 +33,7 @@ from casegen import LIMIT, STEP, Rng, limit_of, seed  # noqa: E402  (LIMIT: 효�
 
 JUDGE_DIR = HERE.parent / "judge"
 BASES = ("int", "long", "double", "bool", "string")
-EXT = {"python": "py", "java": "java", "javascript": "js", "cpp": "cpp", "go": "go", "kotlin": "kt", "rust": "rs"}
+EXT = {"python": "py", "java": "java", "javascript": "js", "cpp": "cpp", "rust": "rs"}
 ROUNDS = 300
 SMALL = (12, 20)  # 정확성 케이스 수
 SMALL_CHARS = 2000  # 정확성 케이스 하나의 인자 JSON 길이 상한(화면에 보여 줄 수 있는 크기)
@@ -79,7 +79,7 @@ def load(folder) -> dict:
     folder = Path(folder).resolve()
     problem = json.loads((folder / "problem.json").read_text(encoding="utf-8"))
     problem["dir"] = folder
-    problem["files"] = {path.name: path.read_text(encoding="utf-8") for path in sorted(folder.iterdir()) if path.is_file() and path.suffix in (".py", ".java", ".js", ".cpp", ".go", ".kt", ".rs")}
+    problem["files"] = {path.name: path.read_text(encoding="utf-8") for path in sorted(folder.iterdir()) if path.is_file() and path.suffix in (".py", ".java", ".js", ".cpp", ".rs")}
     return problem
 
 

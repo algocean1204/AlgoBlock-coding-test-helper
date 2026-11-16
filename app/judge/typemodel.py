@@ -56,25 +56,6 @@ def java_type(text):
     return Type(base, dims)
 
 
-KOTLIN_ARRAY = {"IntArray": "int", "LongArray": "long", "DoubleArray": "double", "BooleanArray": "bool"}
-KOTLIN_BASE = {"Int": "int", "Long": "long", "Double": "double", "Boolean": "bool", "String": "string"}
-
-
-def kotlin_type(text):
-    raw = _strip(text)
-    dims = 0
-    while raw.startswith("Array<") and raw.endswith(">"):
-        raw, dims = raw[6:-1], dims + 1
-    if raw in KOTLIN_ARRAY:
-        raw, dims = raw, dims + 1
-        base = KOTLIN_ARRAY[raw]
-    else:
-        base = KOTLIN_BASE.get(raw)
-    if base is None or dims > 2:
-        raise Unsupported(text)
-    return Type(base, dims)
-
-
 CPP_BASE = {"int": "int", "long": "long", "longlong": "long", "int64_t": "long", "double": "double", "float": "double",
             "bool": "bool", "string": "string"}
 
@@ -190,23 +171,6 @@ def _java_inner(value, typ):
     return "{" + ", ".join(_java_inner(v, Type(typ.base, typ.dims - 1)) for v in value) + "}"
 
 
-def kotlin(value, typ):
-    _check(value, typ)
-    if typ.dims == 0:
-        return {"int": lambda: str(value), "long": lambda: f"{value}L", "double": lambda: _float(value),
-                "bool": lambda: "true" if value else "false",
-                "string": lambda: json.dumps(value).replace("$", "\\$")}[typ.base]()
-    inner = Type(typ.base, typ.dims - 1)
-    items = ", ".join(kotlin(v, inner) for v in value)
-    if typ.dims == 1:
-        maker = {"int": "intArrayOf", "long": "longArrayOf", "double": "doubleArrayOf", "bool": "booleanArrayOf",
-                 "string": "arrayOf<String>"}[typ.base]
-        return f"{maker}({items})"
-    element = {"int": "IntArray", "long": "LongArray", "double": "DoubleArray", "bool": "BooleanArray",
-               "string": "Array<String>"}[typ.base]
-    return f"arrayOf<{element}>({items})"
-
-
 def cpp_name(typ):
     base = {"int": "int", "long": "long long", "double": "double", "bool": "bool", "string": "std::string"}[typ.base]
     for _ in range(typ.dims):
@@ -222,27 +186,6 @@ def cpp(value, typ):
                 "string": lambda: f"std::string({_c_string(value)})"}[typ.base]()
     inner = Type(typ.base, typ.dims - 1)
     return f"{cpp_name(typ)}{{" + ", ".join(cpp(v, inner) for v in value) + "}"
-
-
-def go_name(typ):
-    base = {"int": "int", "long": "int64", "double": "float64", "bool": "bool", "string": "string"}[typ.base]
-    return "[]" * typ.dims + base
-
-
-def go(value, typ):
-    _check(value, typ)
-    if typ.dims == 0:
-        return {"int": lambda: str(value), "long": lambda: f"int64({value})", "double": lambda: f"float64({_float(value)})",
-                "bool": lambda: "true" if value else "false", "string": lambda: json.dumps(value)}[typ.base]()
-    inner = Type(typ.base, typ.dims - 1)
-    return f"{go_name(typ)}{{" + ", ".join(_go_inner(v, inner) for v in value) + "}"
-
-
-def _go_inner(value, typ):
-    if typ.dims == 0:
-        return go(value, typ)
-    _check(value, typ)
-    return "{" + ", ".join(_go_inner(v, Type(typ.base, typ.dims - 1)) for v in value) + "}"
 
 
 def rust(value, typ):
@@ -262,7 +205,7 @@ def rust(value, typ):
 # 큰 인자
 
 BIG = 4000  # JSON으로 이보다 긴 인자는 호출 코드에 리터럴로 박지 않고 파일로 넘긴다
-# (Java·Kotlin은 큰 리터럴을 컴파일하지 못하고(code too large), C++·Rust는 컴파일이 수십 초 걸린다. 잰 값)
+# (Java는 큰 리터럴을 컴파일하지 못하고(code too large), C++·Rust는 컴파일이 수십 초 걸린다. 잰 값)
 
 
 def _deep(value, typ):

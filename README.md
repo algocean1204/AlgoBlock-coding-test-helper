@@ -9,7 +9,7 @@ $\bf{\large{\color{#6580DD} AlgoBlock }}$
 
 </div>
 
-<p align="center"><b>풀이를 블록으로 나눠, 생각하는 순서를 익히는 코딩테스트 연습 앱입니다.</b> 내 컴퓨터에서 7개 언어로 문제를 풀고 바로 채점받을 수 있습니다. AI 튜터를 연결하면 풀이를 블록으로 나눠 하나씩 열어 주거나, 답 대신 질문으로 다음 블록을 스스로 찾게 이끕니다.</p>
+<p align="center"><b>풀이를 블록으로 나눠, 생각하는 순서를 익히는 코딩테스트 연습 앱입니다.</b> 내 컴퓨터에서 5개 언어로 문제를 풀고 바로 채점받을 수 있습니다. AI 튜터를 연결하면 풀이를 블록으로 나눠 하나씩 열어 주거나, 답 대신 질문으로 다음 블록을 스스로 찾게 이끕니다.</p>
 
 <p align="center">
   <a href="https://github.com/algocean1204/AlgoBlock-coding-test-helper/actions/workflows/ci.yml"><img src="https://github.com/algocean1204/AlgoBlock-coding-test-helper/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
@@ -44,7 +44,7 @@ $\bf{\large{\color{#6580DD} AlgoBlock }}$
 
 ### 풀고 채점받기
 
-기본 문제 75개(주제 15개 × 5단계)를 Python, Java, JavaScript, C++, Go, Kotlin, Rust로 풉니다. 예시를 실행해 보고 제출하면 정확성 테스트와 효율성 테스트로 채점합니다. 숨은 테스트는 통과 여부만 보입니다. 이 기능은 모델을 부르지 않아서 키가 없어도 기기 안에서 돌아갑니다.
+기본 문제 75개(주제 15개 × 5단계)를 Python, Java, JavaScript, C++, Rust로 풉니다. 예시를 실행해 보고 제출하면 정확성 테스트와 효율성 테스트로 채점합니다. 숨은 테스트는 통과 여부만 보입니다. 이 기능은 모델을 부르지 않아서 키가 없어도 기기 안에서 돌아갑니다.
 
 ### 혼자 풀기
 
@@ -94,7 +94,7 @@ AI를 연결하면 튜터가 풀이 코드를 줄 범위로 나누어 블록을 
 
 | | |
 | --- | --- |
-| 채점 언어 | Python, Java, JavaScript, C++, Go, Kotlin, Rust로 채점합니다. 기기에 해당 언어의 도구가 있어야 합니다 |
+| 채점 언어 | Python, Java, JavaScript, C++, Rust로 채점합니다. 기기에 해당 언어의 도구가 있어야 합니다 |
 | AI 연결 | Claude API 키, OpenAI API 키, ChatGPT 로그인 가운데 하나를 연결합니다(선택) |
 | 모델 | 과정마다 급을 고릅니다. Claude는 Haiku·Sonnet·Opus, OpenAI는 Luna·Terra·Sol 시리즈의 최신 버전을 씁니다 |
 
@@ -181,7 +181,7 @@ uv run --no-project --python 3.12 --with langgraph --with pypdf python ui/server
 - 실행 도구나 케이스가 없거나 채점기가 인자 형을 다루지 못하면 AI가 코드를 읽고 블록을 판단합니다. 이때 통과 판정은 '확인 전'으로 두고 거절 판정은 틀린 수에 넣지 않은 채 실행하지 못했다고 알립니다. 공개 예시만 있는 문제를 통과하면 '예시 통과'로 보이고 '공개 예시로만 확인했어요'라고 알려 줍니다.
 - 예제 구역은 다음 제목이나 빈 줄이 두 줄 이어지는 곳에서 끊습니다. 기대 출력 안에 빈 줄이 있으면 알리기만 하고, 빈 줄 없이 붙은 설명 글은 구분하지 못합니다.
 - 블록 1의 진입 함수 선언부를 시작 코드와 다른 형태(화살표 함수 등)로 적으면 이어 돌린 실행이 실패할 수 있습니다.
-- Go·Rust·JavaScript에서는 이어 붙인 프로그램에 시작 코드의 가져오기 줄을 넣지 않습니다. 그래서 시작 코드의 가져오기에 의존하는 올바른 블록도 '이어지지 않아요'로 보일 수 있습니다.
+- Rust·JavaScript에서는 이어 붙인 프로그램에 시작 코드의 가져오기 줄을 넣지 않습니다. 그래서 시작 코드의 가져오기에 의존하는 올바른 블록도 '이어지지 않아요'로 보일 수 있습니다.
 
 ## 라이선스
 

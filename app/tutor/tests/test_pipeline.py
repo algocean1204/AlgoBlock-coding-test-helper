@@ -895,16 +895,12 @@ class BlockCheckEntryAndGroupTest(unittest.TestCase):
         return out, states
 
     def test_entry_line_after_comment_is_head(self):
-        """주석 뒤의 진입 함수 줄이 머리말이다. 알맹이만 적은 블록 1을 이어도 그 줄이 있다(Python, Go)."""
+        """주석 뒤의 진입 함수 줄이 머리말이다. 알맹이만 적은 블록 1을 이어도 그 줄이 있다(Python)."""
         from ..common.solution import frame_of, spliced
 
         py = ["# 재귀 대신 스택으로 돈다\n# 두 줄 주석\ndef solution(parent, files, limit):\n    n = len(parent)", "    return n"]
         self.assertEqual(frame_of(py[0], "python")["head"][-1], "def solution(parent, files, limit):")
         self.assertIn("def solution(parent, files, limit):\n    sz = len(parent)", spliced(py, 0, "sz = len(parent)", "python"))
-        go = ["package main\n\n// 주석 한 줄\nfunc solution(parent []int, files []int, limit int) int {\n\tn := len(parent)", "\treturn n\n}"]
-        program = spliced(go, 0, "sz := len(parent)", "go")
-        self.assertIn("func solution(parent []int, files []int, limit int) int {\n\tsz := len(parent)", program)  # 탭 들여쓰기도 탭으로
-        self.assertEqual(spliced(go, 0, "package main\n\n// 내 주석\nfunc solution(parent []int, files []int, limit int) int {\n\tsz := len(parent)", "go").count("func solution"), 1)
 
     def test_entry_head_in_other_forms_is_head(self):
         """블록 1의 진입 함수 머리를 시작 코드와 다른 같은 뜻의 꼴로 적어도 머리로 떼고 계획의 머리로 잇는다:
@@ -1265,10 +1261,6 @@ class BraceCheckTest(unittest.TestCase):
         cases = {  # 언어: (반복을 여는 계획 블록, 반복을 닫고 이어 가는 계획 블록, 내가 닫아 적은 반복, 내가 이어 적은 블록)
             "java": ("for (int i = 0; i < n; i++) {\n    sum += i;", "}\nfor (int j = 0; j < n; j++) {\n    sum -= j;",
                      "for (int i = 0; i < n; i++) {\n    sum += i;\n}", "for (int j = 0; j < n; j++) {\n    sum -= j;"),
-            "kotlin": ("for (i in 0 until n) {\n    sum += i", "}\nfor (j in 0 until n) {\n    sum -= j",
-                       "for (i in 0 until n) {\n    sum += i\n}", "for (j in 0 until n) {\n    sum -= j"),
-            "go": ("for i := 0; i < n; i++ {\n    sum += i", "}\nfor j := 0; j < n; j++ {\n    sum -= j",
-                   "for i := 0; i < n; i++ {\n    sum += i\n}", "for j := 0; j < n; j++ {\n    sum -= j"),
         }
         for language, (loop, rest, closed, mine) in cases.items():
             with self.subTest(language=language):
@@ -1278,21 +1270,21 @@ class BraceCheckTest(unittest.TestCase):
                 self.assertTrue(brace_note(closed, fakes.block(1, "반복", loop, "loop"), language, False).startswith("튜터의 풀이는 이 블록에서 연 괄호("))
 
 
-KOTLIN_BLOCKS = [fakes.block(1, "세기 준비", "fun solution(heights: IntArray, limit: Int): Int {\n    var count = 0", hints=list(fakes.HINTS1)),
-                 fakes.block(2, "세기", "    for (h in heights) {\n        if (h > limit) count++\n    }", "loop", hints=list(fakes.HINTS2)),
-                 fakes.block(3, "돌려주기", "    return count\n}", "var_during", hints=list(fakes.HINTS2))]
-KOTLIN_CODE = "\n".join(b.reference for b in KOTLIN_BLOCKS)
+CPP_BLOCKS = [fakes.block(1, "세기 준비", "int solution(vector<int> heights, int limit) {\n    int count = 0;", hints=list(fakes.HINTS1)),
+                 fakes.block(2, "세기", "    for (int h : heights) {\n        if (h > limit) count++;\n    }", "loop", hints=list(fakes.HINTS2)),
+                 fakes.block(3, "돌려주기", "    return count;\n}", "var_during", hints=list(fakes.HINTS2))]
+CPP_CODE = "\n".join(b.reference for b in CPP_BLOCKS)
 
 
 class HonestCheckTest(unittest.TestCase):
     """실행으로 뒷받침하지 못한 판정은 그렇다고 말한다: 검증되지 않은 풀이와는 이어 돌리지 않고, 실행하지 못한 통과·예시로만 본 통과는 그 말을 붙이며,
     문항의 방식은 넘겨받는다(Python이 아닌 함수 방식, 표준 입출력 방식의 문제 글로)."""
 
-    def kotlin(self, code, block_id="b1", states=None, verified=True, check=None, scripts=None):
+    def cpp(self, code, block_id="b1", states=None, verified=True, check=None, scripts=None):
         """verified: True(검증된 풀이 가이드), False(예시를 통과하지 못함), "unrun"(채점하지 못해 확인하지 못함), None(가이드를 만들지 못해 없음).
         code가 None이면 '이 블록 채우기'."""
-        guide = None if verified is None else Solution("세어 돌려준다.", ["센다"], KOTLIN_CODE, None if verified == "unrun" else verified)
-        ctx = fakes.context(problem_text=fakes.KOTLIN_PROBLEM, language="kotlin", plan=fakes.planned(KOTLIN_BLOCKS), open_count=int(block_id[1:]),
+        guide = None if verified is None else Solution("세어 돌려준다.", ["센다"], CPP_CODE, None if verified == "unrun" else verified)
+        ctx = fakes.context(problem_text=fakes.CPP_PROBLEM, language="cpp", plan=fakes.planned(CPP_BLOCKS), open_count=int(block_id[1:]),
                             guide=[fakes.service("빈칸?", int(block_id[1:]) - 1)], block_states=states or {}, solution=guide, canonical=guide)
         state = (fakes.make_state("fill", ctx, guide=False, block_id=block_id) if code is None else
                  fakes.make_state("turn", ctx, guide=False, mode="guide", event="block_filled", block_id=block_id, code=code))
@@ -1303,14 +1295,14 @@ class HonestCheckTest(unittest.TestCase):
         seen = []
         check = lambda pid, code, quick=False: seen.append(code) or {"status": "passed" if "return count" in code and "count++" in code else "failed",  # noqa: E731
                                                                    "cases": [{"kind": "accuracy", "status": "passed"}]}  # 끝까지 쓴 프로그램만 통과한다
-        for code in ("fun solution(heights: IntArray, limit: Int): Int {\n    var total = 0", KOTLIN_BLOCKS[0].reference):
+        for code in ("int solution(vector<int> heights, int limit) {\n    int total = 0;", CPP_BLOCKS[0].reference):
             seen.clear()
-            done, fake = self.kotlin(code, verified=None, check=check)
+            done, fake = self.cpp(code, verified=None, check=check)
             self.assertEqual((fake.calls, done["block_check"].verdict, done["result"]["reply"].startswith(UNVERIFIED), done["open_count"]), ([], "?", True, 2))
             self.assertEqual(len(seen), 1)  # 튜터의 코드와 이은 프로그램은 돌리지 않고, 내 블록만 이은 것을 한 번 돌린다
             self.assertNotIn("count++", seen[0])
         seen.clear()
-        done, fake = self.kotlin(KOTLIN_BLOCKS[0].reference, verified=True, check=check)  # 검증된 가이드가 있으면 그대로 통과한다
+        done, fake = self.cpp(CPP_BLOCKS[0].reference, verified=True, check=check)  # 검증된 가이드가 있으면 그대로 통과한다
         self.assertEqual((seen, done["block_check"].verdict), ([], "Y"))
 
     def test_fill_says_what_it_could_not_run(self):
@@ -1319,43 +1311,43 @@ class HonestCheckTest(unittest.TestCase):
 
         seen = []
         passed = lambda pid, code, quick=False: seen.append(code) or {"status": "passed", "cases": [{"kind": "accuracy", "status": "passed"}] * 2}  # noqa: E731
-        done, fake = self.kotlin(None, "b2", check=passed)
+        done, fake = self.cpp(None, "b2", check=passed)
         self.assertEqual((done["block_check"].verdict, "note" in done["result"], len(seen)), ("Y", False, 1))  # 실행으로 통과했다
-        done, fake = self.kotlin(None, "b2")
+        done, fake = self.cpp(None, "b2")
         self.assertEqual(done["block_check"].verdict, "?")
         self.assertIn("확인 전이에요", done["result"]["note"])
         for status, why in (("toolchain_missing", "이 기기에 이 언어를 실행할 도구가 없어요"), ("no_cases", "이 문제에 돌려 볼 케이스가 없어요"), ("unknown_status", "이 코드를 돌리지 못했어요")):
-            done, fake = self.kotlin(None, "b2", check=lambda pid, code, quick=False, status=status: {"status": status, "cases": []})
+            done, fake = self.cpp(None, "b2", check=lambda pid, code, quick=False, status=status: {"status": status, "cases": []})
             self.assertEqual((done["block_check"].verdict, why in done["result"]["note"]), ("?", True), done["result"]["note"])
         for verified in (False, None):  # 가이드가 예시를 통과하지 못했거나 없다: 채우지 않고 그렇다고 말한다(없는 이름이나 빈 자리를 넣지 않는다. 돌리지도 않는다)
             seen.clear()
-            done, fake = self.kotlin(None, "b2", verified=verified, check=passed)
+            done, fake = self.cpp(None, "b2", verified=verified, check=passed)
             self.assertEqual((done["error"].code, done["error"].message, "block_check" in done, seen), ("fill_unavailable", FILL_REFUSED, False, []))
-        mine = {"b1": BlockState("b1", "fun solution(heights: IntArray, limit: Int): Int {\n    var count = 0", "x", "Y"),
-                "b3": BlockState("b3", "    return count\n}", "y", "Y")}
-        done, fake = self.kotlin(None, "b2", states=mine, verified="unrun", check=passed)  # 다른 블록이 모두 내 코드면 계획 코드가 끼지 않는다: 돌린다
+        mine = {"b1": BlockState("b1", "int solution(vector<int> heights, int limit) {\n    int count = 0;", "x", "Y"),
+                "b3": BlockState("b3", "    return count;\n}", "y", "Y")}
+        done, fake = self.cpp(None, "b2", states=mine, verified="unrun", check=passed)  # 다른 블록이 모두 내 코드면 계획 코드가 끼지 않는다: 돌린다
         self.assertEqual((done["block_check"].verdict, len(seen)), ("Y", 1))
         examples = lambda pid, code, quick=False: {"status": "passed", "cases": [{"kind": "example", "status": "passed"}] * 2}  # noqa: E731
-        done, fake = self.kotlin(None, "b2", check=examples)
+        done, fake = self.cpp(None, "b2", check=examples)
         self.assertEqual((done["block_check"].verdict, done["result"]["note"]), ("Y", EXAMPLES_ONLY))
 
     def test_unverified_plan_is_not_spliced(self):
         seen = []
         check = lambda pid, code, quick=False: seen.append(code) or {"status": "passed" if "return total" in code else "failed",  # noqa: E731
                                                                    "cases": [{"kind": "accuracy", "status": "passed"}]}  # 끝까지 쓴 프로그램만 통과한다
-        done, fake = self.kotlin("fun solution(heights: IntArray, limit: Int): Int {\n    var total = 0", verified=False, check=check)
+        done, fake = self.cpp("int solution(vector<int> heights, int limit) {\n    int total = 0;", verified=False, check=check)
         self.assertEqual((fake.calls, len(seen), done["block_check"].verdict, done["block_check"].tries, done["result"]["reply"].startswith(UNVERIFIED), done["open_count"]),
                          ([], 1, "?", 1, True, 2))  # 모델로 넘기지 않고, 튜터의 코드와 이은 것은 돌리지 않고(내 블록만 이은 것 하나), '확인 전'으로 두고 넘어간다(틀린 수는 0)
         self.assertNotIn("count++", seen[0])
         seen.clear()
-        done, fake = self.kotlin(KOTLIN_BLOCKS[0].reference, verified=False, check=check)  # 계획 코드와 글자가 같아도 검증되지 않은 코드라 통과의 근거가 아니다
+        done, fake = self.cpp(CPP_BLOCKS[0].reference, verified=False, check=check)  # 계획 코드와 글자가 같아도 검증되지 않은 코드라 통과의 근거가 아니다
         self.assertEqual((len(seen), done["block_check"].verdict, done["result"]["reply"].startswith(UNVERIFIED)), (1, "?", True))
         seen.clear()
         # 다른 블록이 모두 내 코드면 계획 코드가 끼지 않는다: 돌린다
-        mine = {"b2": BlockState("b2", "for (h in heights) {\n    if (h > limit) total++\n}", "x", "Y"), "b3": BlockState("b3", "return total\n}", "y", "Y")}
-        done, fake = self.kotlin("fun solution(heights: IntArray, limit: Int): Int {\n    var total = 0", states=mine, verified=False, check=check)
+        mine = {"b2": BlockState("b2", "for (int h : heights) {\n    if (h > limit) total++;\n}", "x", "Y"), "b3": BlockState("b3", "return total;\n}", "y", "Y")}
+        done, fake = self.cpp("int solution(vector<int> heights, int limit) {\n    int total = 0;", states=mine, verified=False, check=check)
         self.assertEqual((len(seen), done["block_check"].verdict), (1, "Y"))
-        self.assertIn("var total = 0\n    for (h in heights) {", seen[0])
+        self.assertIn("int total = 0;\n    for (int h : heights) {", seen[0])
         self.assertEqual(done["block_check"].tries, 1)
 
     def test_unrunnable_guide_is_not_called_a_failed_one(self):
@@ -1365,26 +1357,26 @@ class HonestCheckTest(unittest.TestCase):
         for status, why in (("toolchain_missing", "이 기기에 이 언어를 실행할 도구가 없어요"), ("unsupported_signature", "이 문제의 인자 형은 아직 돌릴 수 없어요")):
             seen = []
             check = lambda pid, code, quick=False, status=status: seen.append(code) or {"status": status, "cases": []}  # noqa: E731
-            for mine in ("fun solution(heights: IntArray, limit: Int): Int {\n    var total = 0", KOTLIN_BLOCKS[0].reference):  # 계획 코드와 같아도 실행 없이 통과시키지 않는다
-                done, fake = self.kotlin(mine, verified="unrun", check=check, scripts={"guide.check_code": ["[check]Y"]})
+            for mine in ("int solution(vector<int> heights, int limit) {\n    int total = 0;", CPP_BLOCKS[0].reference):  # 계획 코드와 같아도 실행 없이 통과시키지 않는다
+                done, fake = self.cpp(mine, verified="unrun", check=check, scripts={"guide.check_code": ["[check]Y"]})
                 said = done["result"]["reply"]
                 self.assertTrue(said.startswith(f"이 블록은 실행하지 못해서({why}) 코드를 읽고 본 판단이에요."), said)
                 self.assertNotIn("예시", said)
                 self.assertEqual((done["block_check"].verdict, done["open_count"], "설치하면" in said), ("?", 2, status == "toolchain_missing"))
-            done, fake = self.kotlin("var total = 0", verified="unrun", check=check, scripts={"guide.check_code": ["[check]N1"], "guide.lead": ["어떻게 될까요?"]})
+            done, fake = self.cpp("int total = 0;", verified="unrun", check=check, scripts={"guide.check_code": ["[check]N1"], "guide.lead": ["어떻게 될까요?"]})
             self.assertTrue(done["result"]["reply"].startswith(f"이 블록은 실행하지 못해서({why})"), done["result"]["reply"])
             self.assertEqual((done["block_check"].verdict, done["block_check"].tries, done["open_count"]), ("N", 0, 1))  # 읽고 낸 거절: '확인 전'이고 넘기지 않지만 틀린 수에는 넣지 않는다
-            done, fake = self.kotlin(None, "b2", verified="unrun", check=check)
+            done, fake = self.cpp(None, "b2", verified="unrun", check=check)
             self.assertEqual(done["block_check"].verdict, "?")
             self.assertIn(why, done["result"]["note"])
             self.assertNotEqual(done["result"]["note"], FILL_REFUSED)
         # 그 사이 도구를 설치했다면 가이드를 지금 돌려 본다: 통과하면 믿고 이어 돌리고, 통과하지 못하면 예시를 통과하지 못한 가이드와 같다
         seen = []
         check = lambda pid, code, quick=False: seen.append(code) or {"status": "passed", "cases": [{"kind": "accuracy", "status": "passed"}]}  # noqa: E731
-        done, fake = self.kotlin("var total = 0", verified="unrun", check=check)
-        self.assertEqual((done["block_check"].verdict, len(seen), seen[0]), ("Y", 2, KOTLIN_CODE))  # 가이드를 한 번, 이어 붙인 프로그램을 한 번
+        done, fake = self.cpp("int total = 0;", verified="unrun", check=check)
+        self.assertEqual((done["block_check"].verdict, len(seen), seen[0]), ("Y", 2, CPP_CODE))  # 가이드를 한 번, 이어 붙인 프로그램을 한 번
         check = lambda pid, code, quick=False: {"status": "failed", "cases": [{"kind": "accuracy", "status": "failed"}]}  # noqa: E731
-        done, fake = self.kotlin("var total = 0", verified="unrun", check=check)
+        done, fake = self.cpp("int total = 0;", verified="unrun", check=check)
         self.assertTrue(done["result"]["reply"].startswith(UNVERIFIED))
 
     def test_unrun_pass_is_said_and_shown_unchecked(self):
@@ -1392,17 +1384,17 @@ class HonestCheckTest(unittest.TestCase):
 
         for status, why in (("toolchain_missing", "이 기기에 이 언어를 실행할 도구가 없어요"), ("unsupported_signature", "이 문제의 인자 형은 아직 돌릴 수 없어요")):
             check = lambda pid, code, quick=False, status=status: {"status": status, "cases": []}  # noqa: E731
-            done, fake = self.kotlin("    var total = 0", check=check, scripts={"guide.check_code": ["[check]Y"]})
+            done, fake = self.cpp("    int total = 0;", check=check, scripts={"guide.check_code": ["[check]Y"]})
             said = done["result"]["reply"]
             self.assertTrue(said.startswith(f"이 블록은 실행하지 못해서({why}) 코드를 읽고 본 판단이에요."), said)
             self.assertEqual("설치하면" in said, status == "toolchain_missing")  # 사용자가 고칠 수 있는 까닭만 할 일을 말한다
             self.assertEqual((done["block_check"].verdict, done["open_count"], done["result"]["unsure"]), ("?", 2, True))  # '확인 전'으로 보이고 진행은 한다
-            body = body_for(done["request"], done["result"], fakes.context(plan=fakes.planned(KOTLIN_BLOCKS), open_count=2))
+            body = body_for(done["request"], done["result"], fakes.context(plan=fakes.planned(CPP_BLOCKS), open_count=2))
             self.assertTrue(body["unsure"])
 
     def test_examples_only_pass_says_so(self):
         example = lambda pid, code, quick=False: {"status": "passed", "cases": [{"kind": "example", "status": "passed"}] * 2}  # noqa: E731
-        done, fake = self.kotlin("    var total = 0", check=example)
+        done, fake = self.cpp("    int total = 0;", check=example)
         self.assertEqual((done["block_check"].verdict, fake.calls), ("Y", []))
         self.assertTrue(done["result"]["reply"].startswith(EXAMPLES_ONLY + " "), done["result"]["reply"])
 
@@ -1426,8 +1418,8 @@ class HonestCheckTest(unittest.TestCase):
         starter = "fun solution(heights: IntArray, limit: Int): Int {\n    var answer = 0\n    return answer\n}"
         other = "fun solution(h: IntArray, k: Int): Int {\n    return h.count { it > k }\n}"
         solved = lambda code: {"clues": [], "approach": "센다.", "steps": ["센다"], "code": code}  # noqa: E731
-        ctx = fakes.context(problem_text=fakes.KOTLIN_PROBLEM, language="kotlin", starter=starter)
-        for scripts, want, runs in (([solved(other), solved(KOTLIN_CODE)], (KOTLIN_CODE, True), 1), ([solved(other)] * 3, (other, False), 0)):
+        ctx = fakes.context(problem_text=fakes.CPP_PROBLEM, language="cpp", starter=starter)
+        for scripts, want, runs in (([solved(other), solved(CPP_CODE)], (CPP_CODE, True), 1), ([solved(other)] * 3, (other, False), 0)):
             seen, fake = [], FakeLlm({"plan.solve": scripts})
             with use_llm(fake):
                 got = solve({"ctx": ctx, "strategy": "fresh"}, {"configurable": {"check": lambda pid, code, quick=False: seen.append(code) or {"status": "passed"}}})
@@ -1442,20 +1434,20 @@ class HonestCheckTest(unittest.TestCase):
         from ..state import Abstract, LabeledSolved
 
         fact = Abstract(spec="격자", tags=["grid_move", "bfs"], level=2)
-        solved = lambda tags, level: {"clues": [], "approach": "센다.", "steps": ["센다"], "code": KOTLIN_CODE, "tags": tags, "level": level}  # noqa: E731
-        ctx = fakes.context(problem_text=fakes.KOTLIN_PROBLEM, language="kotlin")
+        solved = lambda tags, level: {"clues": [], "approach": "센다.", "steps": ["센다"], "code": CPP_CODE, "tags": tags, "level": level}  # noqa: E731
+        ctx = fakes.context(problem_text=fakes.CPP_PROBLEM, language="cpp")
         check = {"configurable": {"check": lambda pid, code, quick=False: {"status": "passed"}}}
         for strategy, reply, want in (("fresh", solved(["grid_move", "rule_follow"], 1), (["grid_move", "rule_follow"], 1)),
                                       ("fresh", solved(None, "2"), (["grid_move", "bfs"], 2)),
                                       ("fresh", solved("rule_follow", 1.0), (["rule_follow"], 1)),
                                       ("fresh", solved(["없는 낱말", 3], None), (["grid_move", "bfs"], 2)),
                                       ("fresh", solved([], 9), (["grid_move", "bfs"], 2)),
-                                      ("fresh", {"clues": [], "approach": "센다.", "steps": ["센다"], "code": KOTLIN_CODE}, (["grid_move", "bfs"], 2)),
+                                      ("fresh", {"clues": [], "approach": "센다.", "steps": ["센다"], "code": CPP_CODE}, (["grid_move", "bfs"], 2)),
                                       ("keep_flow", solved(["rule_follow"], 1), None)):
             fake = FakeLlm({"plan.solve": [reply]})
             with use_llm(fake):
                 got = solve({"ctx": replace(ctx, direct_code="x"), "strategy": strategy, "abstract": fact}, check)
-            self.assertEqual(got["solution"].code, KOTLIN_CODE, reply)  # 가이드는 살아남는다
+            self.assertEqual(got["solution"].code, CPP_CODE, reply)  # 가이드는 살아남는다
             self.assertEqual((got["abstract"].tags, got["abstract"].level) if "abstract" in got else None, want, reply)
             asked = strategy == "fresh"
             self.assertEqual(("기법 목록" in fakes.prompt(fake, "plan.solve"), fake.calls[0]["schema"] is LabeledSolved), (asked, asked), strategy)
@@ -1469,8 +1461,8 @@ class HonestCheckTest(unittest.TestCase):
         from ..state import Abstract
 
         fact = Abstract(spec="격자", tags=["grid_move", "bfs"], level=2)
-        reply = {"clues": [], "approach": "센다.", "steps": ["센다"], "code": KOTLIN_CODE, "tags": ["rule_follow"], "level": 1}
-        ctx = fakes.context(problem_text=fakes.KOTLIN_PROBLEM, language="kotlin")
+        reply = {"clues": [], "approach": "센다.", "steps": ["센다"], "code": CPP_CODE, "tags": ["rule_follow"], "level": 1}
+        ctx = fakes.context(problem_text=fakes.CPP_PROBLEM, language="cpp")
         failed = {"configurable": {"check": lambda pid, code, quick=False: {"status": "failed", "cases": []}}}
         differ = SimpleNamespace(mode=lambda pid: "function", run=lambda *a: {"status": "differ", "input": "[1]"}, done=lambda pid, verdict: None)
         passed = {"configurable": {"check": lambda pid, code, quick=False: {"status": "passed"}, "cross": differ}}
@@ -1532,8 +1524,8 @@ class HonestCheckTest(unittest.TestCase):
         """실린 정답 풀이를 이 기기에서 확인한 결과: 통과, 통과하지 못함, 채점하지 못함(도구·케이스가 없거나 채점기가 없음)."""
         from ..plan.nodes import _given_guide
 
-        fixed = {"code": KOTLIN_CODE, "approach": "센다.", "steps": ["센다"], "clues": ["단서"]}
-        ctx = fakes.context(problem_text=fakes.KOTLIN_PROBLEM, language="kotlin")
+        fixed = {"code": CPP_CODE, "approach": "센다.", "steps": ["센다"], "clues": ["단서"]}
+        ctx = fakes.context(problem_text=fakes.CPP_PROBLEM, language="cpp")
         graded = lambda status: (lambda pid, code, quick=False: {"status": status, "cases": []})  # noqa: E731
         for check, want in ((graded("passed"), True), (graded("failed"), False), (graded("timeout"), False), (graded("toolchain_missing"), None),
                             (graded("unsupported_signature"), None), (lambda pid, code, quick=False: None, None), (None, None)):  # 케이스 없음, 채점기 없음
@@ -1927,24 +1919,16 @@ class StarterFrameTest(unittest.TestCase):
         first = next(s for s in spans if s["whose"] == "this")
         self.assertEqual(text.splitlines()[first["first"] - 1].strip(), "int total = new ArrayList<Integer>().size();")  # 줄 번호는 더한 줄만큼 밀린다
         self.assertEqual(spliced(refs, 0, "int total = 0;", "java", {}, None, False, starter).count("import java.util.*;"), 1)
-        for language in ("go", "rust", "javascript"):  # 쓰지 않은 가져오기·같은 이름의 두 번 선언이 오류가 되는 언어는 더하지 않는다
+        for language in ("rust", "javascript"):  # 쓰지 않은 가져오기·같은 이름의 두 번 선언이 오류가 되는 언어는 더하지 않는다
             self.assertNotIn("fmt", spliced(["func solution() int {\n    x := 1", "    return x\n}"], 0, "x := 1", language, {}, None, False, 'import "fmt"'))
         blocks = [fakes.block(1, "준비", refs[0]), fakes.block(2, "끝", refs[1])]
         parts = composed_parts(blocks, {"b1": {"code": "int total = 0;"}, "b2": {"code": "return total;"}}, "java", starter=starter)
         self.assertTrue(parts[0][1].startswith("import java.util.ArrayDeque;\nimport java.util.*;"), parts[0][1])
 
-    def test_starter_imports_follow_go_rust_javascript_rules(self):
-        """Go·Rust·JavaScript도 시작 코드의 가져오기에 기댄 블록이 이어 돌게 한다. 언어의 규칙을 지킨다:
-        Go는 쓰는 꾸러미만 package·import 뒤에, Rust는 아직 들여오지 않은 이름만, JavaScript는 쓰는데 선언하지 않은 이름만(표준 입력은 두 번 읽지 않는다)."""
+    def test_starter_imports_follow_rust_javascript_rules(self):
+        """Rust·JavaScript도 시작 코드의 가져오기에 기댄 블록이 이어 돌게 한다. 언어의 규칙을 지킨다:
+        Rust는 아직 들여오지 않은 이름만, JavaScript는 쓰는데 선언하지 않은 이름만(표준 입력은 두 번 읽지 않는다)."""
         from ..common.solution import spliced, starter_imports
-
-        go = ['package main\n\nimport (\n\t"bufio"\n\t"fmt"\n\t"os"\n)\n\nfunc main() {\n\treader := bufio.NewReader(os.Stdin)\n\tvar n int\n\tfmt.Fscan(reader, &n)', "\tfmt.Println(n)\n}"]
-        go_starter = 'package main\n\nimport (\n\t"fmt"\n\t"strconv"\n\tst "strings"\n\t"sort"\n)\n'
-        text = spliced(go, 1, "\tfmt.Println(strconv.Itoa(n) + st.Repeat(\"!\", 1))\n}", "go", {}, None, True, go_starter)
-        self.assertIn(')\nimport "strconv"\nimport st "strings"\n\nfunc main() {', text)  # 쓰는 것만, import 묶음 뒤에(fmt는 이미 있고 sort는 쓰지 않는다)
-        self.assertNotIn("sort", text)
-        self.assertEqual(spliced(['package main\n\nfunc main() {\n\tvar n int', '\tfmt.Println("strconv.", n)\n}'], 1, '\tfmt.Println("strconv.", n)\n}', "go", {}, None, True,
-                                 go_starter).split("\n")[:3], ["package main", 'import "fmt"', ""])  # package 바로 뒤. 문자열 안의 'strconv.'는 쓰임이 아니다
 
         rust_starter = "use std::io::{self, Read};\n\nfn main() {\n}\n"
         self.assertEqual(starter_imports(["use std::io::{self, BufRead};"], rust_starter, "rust"), ["use std::io::Read;"])  # io는 이미 있다: 없는 이름만 한 줄씩

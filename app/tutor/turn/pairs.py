@@ -42,14 +42,14 @@ def writes(code: str, language: str, program: bool = False) -> list[str]:
             elif toks[i + 1:i + 3] in (["+", "+"], ["-", "-"]) or (i >= 2 and toks[i - 2:i] in (["+", "+"], ["-", "-"])):
                 out.append(tok)
         text = " ".join(toks)
-        for pattern in (r"\bsort \( (\w+) \. begin", r"\bArrays \. sort \( (\w+)", r"\bsort \. (?:Ints|Strings|Float64s|Slice) \( (\w+)", r"\breverse \( (\w+) \. begin"):
+        for pattern in (r"\bsort \( (\w+) \. begin", r"\bArrays \. sort \( (\w+)", r"\breverse \( (\w+) \. begin"):
             out += re.findall(pattern, text)
     return list(dict.fromkeys(out))
 
 
 def _typed(toks: list[str]) -> tuple[list[int], range] | None:
     """'val|var|let|const [mut] 이름[, 이름…] … =' 선언 줄이면 (선언한 이름의 자리, 이름 뒤부터 '=' 앞까지 = 형의 자리). 아니면 None.
-    Kotlin·Rust·Swift의 '이름: 형 ='과 Go의 '이름 형 ='이 같은 문법이다('&str', '[3]int', '*Node', 'map[string]int'). 이름이 없으면('let [a, b] =') 선언으로 보지 않는다."""
+    Rust·Swift의 '이름: 형 ='이 같은 문법이다('&str', 'Vec<i32>'). 이름이 없으면('let [a, b] =') 선언으로 보지 않는다."""
     if toks[:1] not in (["val"], ["var"], ["let"], ["const"]) or "=" not in toks:
         return None
     start = at = 1 + (toks[1:2] == ["mut"])

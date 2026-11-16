@@ -36,11 +36,11 @@ from ..common.verdict import FOUND_RULE, ask_verdict
 from ..state import BlockState, MainState, Verdict
 
 USER_FAULT = ("failed", "timeout", "runtime_error", "compile_error")  # 사용자 코드 탓으로 끝난 채점
-TRY_SECONDS = 6  # 첫 실행부터 이만큼 지나면 새 짝 시도를 시작하지 않는다(Python은 여러 번, Kotlin은 한두 번 돈다)
+TRY_SECONDS = 6  # 첫 실행부터 이만큼 지나면 새 짝 시도를 시작하지 않는다(Python은 여러 번, 컴파일이 느린 언어는 한두 번 돈다)
 now = time.monotonic  # 시험이 바꿔 끼우는 시계
-# 없는 이름 오류: Python(뒤에서 대입하는 이름은 UnboundLocalError), Java, Kotlin, C++(gcc·clang), Go, Rust, JavaScript
-_MISSING = re.compile(r"NameError: name '(\w+)' is not defined|local variable '(\w+)'|symbol:\s+variable (\w+)|Unresolved reference:? '?(\w+)"
-                      r"|[‘'](\w+)[’'] was not declared|undeclared identifier '(\w+)'|undefined: (\w+)|cannot find value `(\w+)`"
+# 없는 이름 오류: Python(뒤에서 대입하는 이름은 UnboundLocalError), Java, C++(gcc·clang), Rust, JavaScript
+_MISSING = re.compile(r"NameError: name '(\w+)' is not defined|local variable '(\w+)'|symbol:\s+variable (\w+)"
+                      r"|[‘'](\w+)[’'] was not declared|undeclared identifier '(\w+)'|cannot find value `(\w+)`"
                       r"|ReferenceError: (\w+) is not defined|Cannot access '(\w+)' before initialization")
 SHOWN = 80  # 말에 싣는 값의 최대 길이(오류 원문은 자르지 않는다)
 # 짝을 못 찾은 것을 '이 블록에서 만들어 주세요'(코드가 틀렸다는 말)로 말해, 그 말대로 하면 코드가 틀려지기도 했다. 짝을 못 찾았다는 사실과 할 수 있는 일을 말한다

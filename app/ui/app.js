@@ -16,8 +16,8 @@ const KIND = {
 };
 const KIND_BY_LABEL = Object.fromEntries(Object.entries(KIND).map(([key, [label]]) => [label, key]));
 const NEXT_BLOCK = /^다음은 '([^']+)' 블[록럭]이에요\./; // 새 블록의 첫 말은 종류를 알리며 시작한다
-const LANG = { python: "Python", java: "Java", javascript: "JavaScript", cpp: "C++", go: "Go", kotlin: "Kotlin", rust: "Rust" };
-const TOOL = { python: "Python 3", java: "JDK(javac와 java)", javascript: "Node.js", cpp: "g++ 또는 clang++", go: "Go", kotlin: "Kotlin 컴파일러(kotlinc)와 Java", rust: "Rust(rustc)" };
+const LANG = { python: "Python", java: "Java", javascript: "JavaScript", cpp: "C++", rust: "Rust", go: "Go", kotlin: "Kotlin" }; // go·kotlin은 지원을 접었다. 예전 제출 기록의 언어 이름을 보이려고만 둔다
+const TOOL = { python: "Python 3", java: "JDK(javac와 java)", javascript: "Node.js", cpp: "g++ 또는 clang++", rust: "Rust(rustc)" };
 // 푸는 방식 넷의 설명 한 곳. 방식 카드, ⓘ로 펴는 설명, 튜터 시작 칸이 모두 여기서 읽는다.
 // 엔진의 이름은 solo·guide(가이드)·chair(생각하는 의자). explain은 튜터의 해설(혼자 풀기의 해설 칸에서 간다)
 const WAY_INFO = {
@@ -81,7 +81,7 @@ const JUDGE_STATE = {
 const JUDGE_PROGRAM = { entry_missing: ["프로그램의 시작점을 찾지 못했어요", "시작 코드처럼 main(Java는 public class Main 안의 main)에서 표준 입력을 읽어 주세요."] }; // 표준 입출력 문제에서 다른 말을 쓰는 것
 const program = () => !!(S.problem && S.problem.mode === "program"); // 지금 문제가 표준 입출력(프로그램 방식)인가
 // 코드가 어느 언어처럼 보이는가(고른 언어와 다르면 알린다). 앞에서부터 처음 맞는 것. C++의 class Solution { public: 은 #include가 없으면 Java로 보일 수 있다
-const LOOKS = [["cpp", /#include/], ["kotlin", /\bfun solution\b/], ["go", /\bfunc solution\b/], ["rust", /\bfn solution\b/], ["python", /\bdef solution\b/], ["javascript", /\bfunction solution\b/], ["java", /\bclass Solution\b[\s\S]*\bpublic\b/]];
+const LOOKS = [["cpp", /#include/], ["rust", /\bfn solution\b/], ["python", /\bdef solution\b/], ["javascript", /\bfunction solution\b/], ["java", /\bclass Solution\b[\s\S]*\bpublic\b/]];
 const looksLike = (code) => (LOOKS.find(([, re]) => re.test(code)) || [null])[0];
 const ERR = {
   llm_timeout: "튜터 응답이 너무 오래 걸려 멈췄어요. 한 번 더 보내 주세요.",
@@ -412,7 +412,7 @@ async function showHome() {
     ${next ? `<p class="today-title">${esc(next.title)}</p><p class="today-why">${lvBadge(next.level)}${next.theme_name ? `<span>${esc(next.theme_name)}</span>` : ""}<span>${fresh ? "첫 문제예요." : esc(next.why)}</span></p>
       <div class="today-do"><a class="btn primary big" href="#/p/${esc(next.id)}">${fresh ? "첫 문제 풀기" : "이어서 풀기"}</a>${fresh ? "" : '<a class="link" href="#/list">다른 문제 고르기</a>'}</div>`
     : '<p class="today-title">기본 문제를 모두 풀었어요</p><div class="today-do"><a class="btn primary big" href="#/list">문제 목록에서 고르기</a></div>'}</section>`;
-  const more = fresh ? `<ol class="steps3"><li><strong>1 문제를 읽고 코드를 써요</strong><span>일곱 언어로 풀 수 있어요.</span></li>
+  const more = fresh ? `<ol class="steps3"><li><strong>1 문제를 읽고 코드를 써요</strong><span>다섯 언어로 풀 수 있어요.</span></li>
       <li><strong>2 제출하면 바로 채점해요</strong><span>AI를 연결하지 않아도 돼요.</span></li>
       <li><strong>3 막히면 힌트나 튜터</strong><span>힌트는 미리 만들어 둔 것이고, 튜터는 AI를 연결하면 써요.</span></li></ol>
     <p class="home-links"><a class="link" href="#/list">다른 문제 고르기</a> · <a class="link" href="#/new">가진 문제 넣기</a> · <button type="button" class="link-btn" id="note-conn">AI 연결하기</button> · <button type="button" class="link-btn" id="tour-open2">1분 사용법 보기</button></p>`
@@ -1451,7 +1451,7 @@ function braceMarks(text) {
   }
   return out;
 }
-const BRACE_LANGS = new Set(["java", "kotlin", "cpp", "go", "rust", "javascript"]);
+const BRACE_LANGS = new Set(["java", "cpp", "rust", "javascript"]);
 /** 모은 코드의 중괄호 수가 맞지 않으면 살펴볼 블록 번호(1부터): 처음으로 닫는 괄호가 더 많아지는 블록, 없으면 마지막으로 열린 채 남은 블록. 맞으면(또는 Python이면) 0. */
 function braceGap(composedList) {
   if (!BRACE_LANGS.has(S.problem.language)) return 0;
@@ -2859,7 +2859,7 @@ async function chatgptLogin() {
 }
 
 /* ── 글상자: Tab 들여쓰기, Enter 때 들여쓰기 잇기 ── */
-// 들여쓰기 한 단계: 그 줄이 탭으로 들여 쓰였으면(줄이 들여 쓰이지 않았으면 탭으로 들여 쓴 줄이 있는 파일이면) 탭 하나, 아니면 공백 4칸(Go 시작 코드는 탭)
+// 들여쓰기 한 단계: 그 줄이 탭으로 들여 쓰였으면(줄이 들여 쓰이지 않았으면 탭으로 들여 쓴 줄이 있는 파일이면) 탭 하나, 아니면 공백 4칸
 const indentUnit = (ta, line) => (/^\t/.test(line) || (!/^\s/.test(line) && /^\t/m.test(ta.value)) ? "\t" : "    ");
 function codeKeys(e) {
   const ta = e.target;
