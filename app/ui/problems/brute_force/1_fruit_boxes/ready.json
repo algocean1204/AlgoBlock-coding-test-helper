@@ -20,7 +20,7 @@
     "size를 low부터 high까지 하나씩 대 보는 반복문을 시작한다 — 후보가 최대 10만 개라 전부 확인해도 충분히 빠르다",
     "left에 apples % size + pears % size를 담는다 — 사과와 배를 섞지 않으므로 나머지를 따로 구해 더한다",
     "left가 best_left보다 작거나 같으면 best_size와 best_left를 바꾼다 — 같을 때도 바꿔야 남는 수가 같은 후보 중 가장 큰 size가 남는다",
-    "[best_size, apples // best_size + pears // best_size]를 돌려준다 — 고른 size로 사과 상자 수와 배 상자 수를 몫으로 구해 더한다"
+    "[best_size, (apples ÷ best_size의 몫) + (pears ÷ best_size의 몫)]를 돌려준다 — 고른 size로 사과 상자 수와 배 상자 수를 몫으로 구해 더한다"
    ],
    "code": "def solution(apples, pears, low, high):\n    best_size = low\n    best_left = apples + pears + 1  # 어떤 size보다도 많이 남는 값에서 시작한다\n    for size in range(low, high + 1):  # 상자 크기를 하나씩 대 본다\n        left = apples % size + pears % size  # 사과와 배는 섞지 않으므로 따로 남는다\n        if left <= best_left:  # 같을 때도 바꾸면 더 큰 size가 남는다\n            best_size = size\n            best_left = left\n    return [best_size, apples // best_size + pears // best_size]",
    "verified": true,
