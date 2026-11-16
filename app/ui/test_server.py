@@ -2215,6 +2215,15 @@ def new_draft() -> None:
     assert js.count("sessionStorage.removeItem(DRAFT)") >= 2 and "restoreDraft();" in js  # 비우면 지우고, 처음 열 때 되살린다
 
 
+def menu_and_title_note() -> None:
+    """더 보기 메뉴와 내 문제 넣기의 제목 안내(화면 코드 확인): 닫힌 메뉴는 클릭을 받지 않고 Tab으로 나가면 닫히며, 제목 칸 안내는 실제로 채웠을 때만 '첫 줄에서 채웠어요'라고 한다."""
+    js, css, html = (HERE / "app.js").read_text(encoding="utf-8"), (HERE / "app.css").read_text(encoding="utf-8"), (HERE / "index.html").read_text(encoding="utf-8")
+    assert ".more:not([open]) > .more-menu { display: none; }" in css
+    assert '$("more").addEventListener("focusout"' in js and "!$(\"more\").contains(e.relatedTarget)" in js
+    assert "function titleNote()" in js and js.count("titleNote();") >= 2 and "제목을 찾지 못했어요. 문제 이름을 직접 적어 주세요." in js
+    assert '<small id="new-title-note" class="hint">글의 첫 줄에서 채웠어요' not in html  # 처음 글에는 채웠다고 말하지 않는다
+
+
 def pane_widths() -> None:
     """칸 너비: /api/prefs로 세 칸의 몫을 적고, 어긋난 값은 거절한다. 없으면(null) 기본 배치. 다른 설정은 지우지 않는다."""
     import re
@@ -2705,6 +2714,7 @@ def main() -> None:
         settings_items()
         way_info()
         new_draft()
+        menu_and_title_note()
         hidden_cases()
         hint_by_block()
         assert not fake.calls, fake.calls  # 고치기·지우기도 모델을 부르지 않는다

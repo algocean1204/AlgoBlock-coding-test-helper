@@ -944,6 +944,7 @@ a.lv.done:hover { background: var(--lvc); color: var(--on-lv); filter: brightnes
 .more { position: relative; }
 .more > summary { list-style: none; } .more > summary::-webkit-details-marker { display: none; }
 .more[open] > summary { background: var(--fill); color: var(--text); }
+.more:not([open]) > .more-menu { display: none; } /* 닫힌 메뉴의 단추가 그 자리에서 클릭을 받지 않게(절대 위치 요소는 details의 숨김을 피해 갈 수 있다) */
 .more-menu { position: absolute; right: 0; top: calc(100% + 6px); z-index: 6; display: grid; gap: 2px; min-width: 220px; padding: 6px; background: var(--surface); border-radius: var(--r-md); box-shadow: var(--shadow-float); }
 .more-menu .code-tools, .more-menu .own-tools { display: grid; gap: 2px; justify-content: stretch; }
 .more-menu .code-tools { padding-bottom: 4px; margin-bottom: 2px; border-bottom: 1px solid var(--line); }
