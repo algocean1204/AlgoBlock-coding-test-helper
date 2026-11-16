@@ -692,9 +692,20 @@ def labels_of(t, p, marks: dict | None = None) -> dict:
             "check": {key: check[key] for key in ("hidden", "efficiency", "tiers", "calls", "why", "doubts") if key in check}}
 
 
+def unaided_ids(t, passed: set) -> set:
+    """통과한 기본 문제 가운데 도움 없이 푼 것(학습 보고서와 같은 기준 unaided_pass). 문제 목록의 '다음'이 홈·보고서와 같은 기준을 쓰게 한다."""
+    by_problem: dict[str, list] = defaultdict(list)
+    for sub in t.store.submissions():
+        if sub["problem_id"] in passed and sub["status"] != "toolchain_missing":
+            by_problem[sub["problem_id"]].append(sub)
+    talked = {row["problem_id"]: row["at"] for row in t.store.conn.execute("SELECT problem_id, MIN(at) AS at FROM message GROUP BY problem_id")}
+    return {pid for pid, subs in by_problem.items() if unaided_pass(subs, t.store.study(pid), talked.get(pid))}
+
+
 def problem_rows(t) -> list[dict]:
     done, mine, guessed, marks = counts(t), touched(t), planned_themes(t), t.store.labels()
     chosen = {row["id"]: row["language"] for row in t.store.conn.execute("SELECT id, language FROM problem").fetchall()}  # 사용자가 고른 언어
+    alone = unaided_ids(t, {pid for pid, (passed, _) in done.items() if passed and pid in BUILTIN})
     rows = []
     for p in PROBLEMS.values():
         passed, total = done.get(p.id, (0, 0))
@@ -702,14 +713,15 @@ def problem_rows(t) -> list[dict]:
         shown = p.theme_name or (theme_name(guessed[p.id]) if not p.sample and guessed.get(p.id) else "")
         # 등급: 통과 2회마다 한 등급, 8회 이상 5등급
         rows.append({"id": p.id, "title": p.title, "language": chosen.get(p.id, p.language), "sample": p.sample, "builtin": p.builtin,
-                     "theme": p.theme, "theme_name": shown, "level": p.level, "passed": passed, "submitted": total, "solved": passed > 0,
+                     "theme": p.theme, "theme_name": shown, "level": p.level, "passed": passed, "submitted": total, "solved": passed > 0, "unaided": p.id in alone,
                      "touched": p.id in mine, "grade": min(5, 1 + min(passed, 10) // 2), **labels_of(t, p, marks)})
     return rows
 
 
 def next_up(mine: list[dict], solved: set):
-    """한 주제(단계 순서)에서 다음에 풀 문제: 위에 못 푼 단계가 남은 통과 단계 가운데 가장 높은 것 바로 위의 못 푼 단계(3·5단계를 통과했으면 4단계).
-    통과한 단계 위에 못 푼 것이 없으면 가장 낮은 못 푼 단계. 다 풀었으면 None."""
+    """한 주제(단계 순서)에서 다음에 풀 문제: 위에 못 푼 단계가 남은 푼 단계 가운데 가장 높은 것 바로 위의 못 푼 단계(3·5단계를 풀었으면 4단계).
+    푼 단계 위에 못 푼 것이 없으면 가장 낮은 못 푼 단계. 다 풀었으면 None. 보고서는 solved에 '도움 없이 푼' 문제만 넘겨,
+    도움을 받아 통과한 단계는 다시 풀 후보로 남는다."""
     todo = [row for row in mine if row["id"] not in solved]
     for top in sorted({row["level"] for row in mine if row["id"] in solved}, reverse=True):
         above = [row for row in todo if row["level"] > top]
@@ -724,7 +736,7 @@ def theme_rows(rows: list[dict]) -> list[dict]:
     for key in ALGORITHMS:
         mine = [row for row in rows if row["builtin"] and row["theme"] == key]
         if mine:
-            todo = next_up(mine, {row["id"] for row in mine if row["solved"]})
+            todo = next_up(mine, {row["id"] for row in mine if row["unaided"]})  # 도움 없이 푼 단계가 기준(보고서와 같다)
             out.append({"key": key, "name": theme_name(key), "total": len(mine), "solved": sum(row["solved"] for row in mine),
                         "next": {"id": todo["id"], "title": todo["title"]} if todo else None})
     return out
@@ -2100,18 +2112,27 @@ def left(key: str, level: int, levels: list, fresh: list, after: list) -> dict:
     return {"key": key, "name": theme_name(key), "level": level, "solved": len(levels), "top": top, "more": more, "todo": todo, "after": after}
 
 
+def mastered(unaided: dict, key: str, level: int) -> bool:
+    """주제를 익혔는가: 도움 없이 MASTER_COUNT문제 이상 풀었고 그중 가장 높은 단계가 level 이상."""
+    return len(unaided.get(key, [])) >= MASTER_COUNT and max(unaided[key]) >= level
+
+
+def prereq_root(key: str, basic: dict) -> str:
+    """key의 선수 주제 가운데 기초를 못 익힌 것이 있으면 그쪽으로 거슬러 올라간 첫 주제(없으면 key). 준비도 칸과 추천 큐가 같이 쓴다."""
+    while any(not basic[p] for p in PREREQS[key]):
+        key = next(p for p in PREREQS[key] if not basic[p])
+    return key
+
+
 def readiness(unaided: dict, started: set, fresh: dict) -> dict:
     """준비도와 다음 단계까지 남은 주제(학습 지도 순서). unaided: 주제 → 도움 없이 푼 기본 문제의 단계들, fresh: 주제 → 아직 통과하지 않은 기본 문제의 단계들."""
-    def mastered(key: str, level: int) -> bool:
-        return len(unaided.get(key, [])) >= MASTER_COUNT and max(unaided[key]) >= level
-
-    basic = {key: mastered(key, BASIC_LEVEL) for key in PREREQS}
+    basic = {key: mastered(unaided, key, BASIC_LEVEL) for key in PREREQS}
     solved = sum(len(levels) for levels in unaided.values())
     need = {key: BASIC_LEVEL for key in ESSENTIAL if not basic[key]}
     if need:
         stage = "hold" if solved < READY_MIN else "building"
     else:
-        need = {key: REAL_LEVEL for key in ESSENTIAL if not mastered(key, REAL_LEVEL)} | {key: BASIC_LEVEL for key in FREQUENT if not basic[key]}
+        need = {key: REAL_LEVEL for key in ESSENTIAL if not mastered(unaided, key, REAL_LEVEL)} | {key: BASIC_LEVEL for key in FREQUENT if not basic[key]}
         stage = "easy" if need else "practice"
     line = {"hold": f"아직 판단하기에 기록이 적어요. 도움 없이 {READY_MIN}문제를 풀면 알려 드릴게요(지금 {solved}문제).",
             "building": f"도움 없이 {solved}문제를 풀었어요. 쉬운 코딩테스트 도전까지 필수 주제 {len(need)}개가 남았어요.",
@@ -2122,8 +2143,7 @@ def readiness(unaided: dict, started: set, fresh: dict) -> dict:
     # 다음에 배울 주제: 남은 것 가운데 먼저 익힐 주제를 모두 익힌 것(필수 → 자주, 시작한 주제, 지도 순서). 없으면 첫 주제의 못 익힌 선수 주제로 거슬러 간다
     order = sorted(need, key=lambda key: (key not in ESSENTIAL, key not in started, MAP_ORDER[key]))
     focus = next((key for key in order if all(basic[p] for p in PREREQS[key])), order[0] if order else None)
-    while focus and any(not basic[p] for p in PREREQS[focus]):
-        focus = next(p for p in PREREQS[focus] if not basic[p])
+    focus = prereq_root(focus, basic) if focus else None
     return {"stage": stage, "label": STAGES[stage], "line": line, "solved": solved, "focus": focus,
             "goal": STAGES["practice" if stage == "easy" else "easy"] if need else None,  # 남은 것이 향하는 단계
             "remaining": [left(key, need[key], unaided.get(key, []), fresh.get(key, []), [theme_name(p) for p in PREREQS[key] if not basic[p]])
@@ -2161,7 +2181,8 @@ def learning_report(t) -> dict:
                풀기 전에 해설을 연 문제가 없다.
     - weak     아래 가운데 하나: 두 문제 이상에 걸쳐 제출이 3번 이상인데 60% 이상이 통과하지 못했다(한 문제에서 여러 번 틀리고 푼 것은 약점이 아니다) /
                두 문제 이상에서 답은 맞았지만 큰 입력에서 시간이 모자랐다(fail_kind의 slow) /
-               풀기 전에 해설을 연 문제가 2개 이상이다 / 3번 넘게 제출하고도 아직 못 푼 문제가 있다.
+               풀기 전에 해설을 연 문제가 2개 이상이다 / 3번 넘게 제출하고도 아직 못 푼 문제가 있다 /
+               서로 다른 문제 2개 이상을 통과했는데 도움 없이 푼 문제가 하나도 없다.
     - progress 그 밖(풀고 있는 중).
     """
     subs = [sub for sub in t.store.submissions() if sub["status"] != "toolchain_missing"]  # 도구가 없어 채점하지 못한 예전 기록은 제출이 아니다
@@ -2201,7 +2222,7 @@ def learning_report(t) -> dict:
         slow = {sub["problem_id"] for sub in mine_subs if fail_kind(sub) == "slow"}
         stuck = [row for row in tried + own_tried if row["id"] not in solved and len(by_problem[row["id"]]) > 3]
         failed = sum(fails.values())
-        todo = next_up(mine, solved)
+        todo = next_up(mine, {row["id"] for row in alone})  # 도움 없이 푼 단계가 기준이다(도움 받아 통과한 것은 다시 풀 후보)
         # 해설을 먼저 본 문제: 그 뒤의 통과 제출이 한 번 이하면 힌트·해설 없이 다시 풀었는지 가릴 수 없어 다시 권한다
         review = next((row for row in mine if studies[row["id"]]["solution_before_pass"]
                        and sum(sub["ok"] and stamp(sub["at"]) >= stamp(studies[row["id"]]["solution_at"]) for sub in by_problem.get(row["id"], [])) <= 1), None)
@@ -2221,6 +2242,8 @@ def learning_report(t) -> dict:
             state, why = "weak", f"풀기 전에 해설을 먼저 연 문제가 {early}개예요. 힌트까지만 보고 한 번 더 버텨 보세요."
         elif stuck:
             state, why = "weak", f"'{stuck[0]['title']}' 문제를 {len(by_problem[stuck[0]['id']])}번 제출했지만 아직 통과하지 못했어요."
+        elif len(done) >= 2 and not alone:
+            state, why = "weak", f"{len(done)}문제를 통과했지만 도움 없이 푼 문제가 아직 없어요(힌트·튜터·해설을 썼거나 제출이 많았어요). 도움 없이 한 문제를 다시 풀어 보세요."
         else:
             own_line = f" 등록한 문제 {sum(pid in solved for pid in own_by_theme[key])}개를 풀었어요." if own_by_theme[key] else ""  # 등록 문제의 통과는 따로 말한다(제출 수와 기준을 맞춘다)
             state, why = "progress", f"기본 문제 {len(mine)}문제 중 {len(done)}문제를 풀었어요.{own_line}" + (f" 다음은 {todo['level']}단계예요." if todo else " 모두 풀었어요.")
@@ -2241,17 +2264,24 @@ def learning_report(t) -> dict:
     last = {pid: max(str(stamps.get(pid) or ""), by_problem[pid][-1]["at"] if pid in by_problem else "") for pid in PROBLEMS}
     writing = sorted((pid for pid in PROBLEMS if pid not in solved and (pid in by_problem or pid in mine_code or pid in stamps)), key=lambda pid: last[pid], reverse=True)
     queue = [({"id": pid, "title": PROBLEMS[pid].title, "level": PROBLEMS[pid].level}, PROBLEMS[pid].theme_name or (theme_name(theme_of[pid]) if theme_of.get(pid) else ""),
-              "쓰던 문제예요.") for pid in writing[:1]]
+              "쓰던 문제예요.", None) for pid in writing[:1]]  # 키가 None이면 선수 주제를 보지 않는다(쓰던 문제·해설을 먼저 본 문제는 그대로)
     for row in weak:
-        queue += [(row["review"], row["name"], "해설을 먼저 본 문제예요. 힌트 없이 다시 풀어 보세요.")] if row["review"] else []
-        queue += [(row["next"], row["name"], "약한 주제예요: " + row["why"])]
+        queue += [(row["review"], row["name"], "해설을 먼저 본 문제예요. 힌트 없이 다시 풀어 보세요.", None)] if row["review"] else []
+        queue += [(row["next"], row["name"], "약한 주제예요: " + row["why"], row["key"])]
     # 까닭에는 주제·단계를 다시 적지 않는다(화면이 '해시 3단계 · '를 앞에 붙인다)
-    queue += [(row["next"], row["name"], "이어서 풀기") for row in theme_rows_ if row["state"] == "progress" and row["next"] and row["key"] in started]
-    queue += [(row["next"], row["name"], "새 주제 시작") for row in sorted(theme_rows_, key=lambda row: MAP_ORDER[row["key"]])  # 학습 지도 순서
+    queue += [(row["next"], row["name"], "이어서 풀기", row["key"]) for row in theme_rows_ if row["state"] == "progress" and row["next"] and row["key"] in started]
+    queue += [(row["next"], row["name"], "새 주제 시작", row["key"]) for row in sorted(theme_rows_, key=lambda row: MAP_ORDER[row["key"]])  # 학습 지도 순서
               if row["state"] == "new" or (row["state"] == "progress" and row["key"] not in started)]
-    queue += [(row["next"], row["name"], "한 단계 더") for row in theme_rows_ if row["state"] == "strong" and row["next"]]
+    queue += [(row["next"], row["name"], "한 단계 더", row["key"]) for row in theme_rows_ if row["state"] == "strong" and row["next"]]
+    basic = {key: mastered(unaided, key, BASIC_LEVEL) for key in PREREQS}
     todo_rows, picked = [], set()
-    for target, name, why in queue:
+    for target, name, why, key in queue:
+        # 선수 주제를 못 익힌 주제의 문제는 준비도 칸과 같은 규칙으로 선수 주제의 다음 문제로 바꾼다
+        if key and (root := prereq_root(key, basic)) != key:
+            row = next((row for row in theme_rows_ if row["key"] == root), {})
+            target, name, why = row.get("next"), row.get("name", ""), f"먼저 익힐 주제예요({theme_name(key)}의 선수 주제)"
+        if target and target["id"] in solved and not why.startswith("해설을"):  # 도움을 받아 통과한 문제: 이어서 푸는 것이 아니라 다시 푸는 것
+            why = f"도움 없이 다시 풀기('처음부터' 뒤 {REPEAT_GAP_HOURS}시간이 지나 다시 풀면 인정)"
         if target and target["id"] not in picked and len(todo_rows) < 5:
             picked.add(target["id"])
             todo_rows.append({"id": target["id"], "title": target["title"], "theme_name": name, "level": target["level"], "why": why})

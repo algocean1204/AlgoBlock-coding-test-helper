@@ -116,6 +116,7 @@ python3 ui/problemkit.py check ui/problems/<주제>/<단계>_<이름>  # 문제 
 - `examples`는 3개. 작고, 서로 다른 경우를 보여 준다. 반복 횟수가 10억인 예시처럼 `brute.py`·`slow_*.py`가 끝내지 못하는 예시를 꼭 보여 주고 싶으면 그 예시에 `"big": true`를 적는다(그 예시는 두 풀이 대조에서 빠진다. 답을 `note`에서 손으로 따질 수 있어야 한다). 기대 결과는 적지 않는다(`solution.py`가 정한다).
 - `signals`는 2~4개. `phrase`는 본문이나 제한사항에 **글자 그대로** 있어야 한다. `means`는 답을 통째로 말하지 않고, "이 표현 → 이 도구·이 생각"을 가르친다. 효율이 걸린 문제는 입력 크기 표현도 신호로 넣는다.
 - `pitfalls`의 실수가 `wrong_*.py`로 있어야 한다.
+- `signals.means`·`pattern`·`learn`·`pitfalls`·`ladder`는 사용자가 고른 언어와 상관없이 같은 글로 보인다. 한 언어에만 있는 낱말(예외 이름, `dict`·딕셔너리·`heapq` 같은 내장 이름)을 쓰지 않는다. '해시 표', '우선순위 큐'처럼 개념으로 쓴다. 검사(`problemkit.language_bound`)가 걸러 낸다.
 
 ### 문제 글 규칙
 
