@@ -292,6 +292,12 @@ class GuideTest(unittest.TestCase):
         said = messages_body([ChatMessage(id="1", role="user", text="말", at="", move="check"), ChatMessage(id="2", role="service", text=WRITE_TIP, at="", move="write")])
         self.assertEqual([m["move"] for m in said], [None, "write"])  # 화면은 튜터 말의 차례만 받는다(write면 블록 코드 확인을 권한다)
         self.assertNotIn("근거 수준", fakes.prompt(fake, "guide.judge"))
+        asked, fake = fakes.go(self.guide("이름마다 세면 되나요?"), {"guide.judge": ["[check]Y"], "guide.lead": ["owl, tide, owl이면 owl은 몇이 되나요?"]})
+        self.assertEqual((asked["result"]["move"], asked["result"]["advance"], fakes.tasks(fake)), ("verify", False, ["guide.judge", "guide.lead"]))
+        self.assertEqual(asked["result"]["reply"], "owl, tide, owl이면 owl은 몇이 되나요?")  # 물음에는 고정 말이 아니라 그 물음을 받는 질문
+        lead = fakes.prompt(fake, "guide.lead")
+        self.assertIn("맞다·틀리다를 말하지 않고", lead)
+        self.assertNotIn("맞는 부분과 빠진 부분", lead)  # 사용자 말에 답하는 일반 지시(빠진 것을 찾게 한다)가 아니다
 
     def code_turn(self, code, open_count=1):
         blocks = [fakes.block(1, "준비", "def solution(a):\n    count = {}  # 센다", checks=["이름별로 센다"]),

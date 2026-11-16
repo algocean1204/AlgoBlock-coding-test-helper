@@ -120,3 +120,15 @@ class GuideMoveTest(unittest.TestCase):
         self.assertEqual(last.saved, WRITE_TIP_LAST)  # 마지막 블록에는 '다음 블록이 열려요'라고 하지 않는다
         filled = pick_move("guide", PLAN, turn(event="block_filled", text=""), Verdict(True))  # 코드 확인이 통과해야 연다
         self.assertEqual((filled.move, filled.advance, filled.target), ("blank", True, 1))
+
+    def test_right_idea_asked_as_question_is_not_write_tip(self):
+        """맞는 생각을 물음으로 냈다: 코드로 적으라는 고정 말(물음에 답하지 않는다) 대신 모델이 스스로 확인할 질문을 짓는다. 맞다고 말하지 않는다."""
+        for text in ("처음부터 끝까지 range로 돌려야 하나요?", "이름마다 세면 될까", "count에 1을 더하면 되죠"):
+            got = self.pick(Verdict(True), text=text, used=["blank"])
+            self.assertEqual((got.move, got.advance, got.saved), ("verify", False, None), text)
+        said = self.pick(Verdict(True), text="이름마다 1씩 더해서 세요", used=["blank"])  # 말로 맞힌 생각은 그대로 코드로 적게 한다
+        self.assertEqual((said.move, said.saved), ("write", WRITE_TIP))
+        traced = self.pick(Verdict(False), text="owl이 2가 돼요", used=["blank", "verify"])  # 확인 질문에 답했다: 처음 생각이 맞았으니 코드로 적게 한다
+        self.assertEqual((traced.move, traced.saved), ("write", WRITE_TIP))
+        again = self.pick(Verdict(False), text="모르겠어요", used=["blank", "verify"])
+        self.assertEqual(again.saved, fakes.HINTS1[1])  # 내용 없는 답은 전과 같이 저장 힌트
