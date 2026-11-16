@@ -2189,6 +2189,24 @@ class BlockCheckTextTest(unittest.TestCase):
             far = {**mine, "rows": ["다른 줄"] * len(mine["rows"])}  # 그 줄의 글이 내 글과 다르면 줄 번호로 말하지 않는다
             self.assertEqual(_place(report, [far])[0], "other")
 
+    def test_syntax_error_where_my_block_meets_the_next_is_my_block(self):
+        from ..common.solution import spliced_view
+        from ..turn.code_check import _place, failure_verdict
+
+        for language, refs, code, bad in (
+                ("python", ["def f(s):\n    n = 0", "    for c in s:\n        if c == 'a':\n            n += 1", "        elif c == 'b':\n            n -= 1", "    return n"],
+                 "    for c in s:\n        if c == 'a':\n            n += 1\n        else:\n            n -= 1", "elif"),
+                ("java", ["int n = 0;", "for (char c : s) {\n    if (c == 'a') {\n        n++;", "    } else if (c == 'b') {\n        n--;\n    }\n}"],
+                 "for (char c : s) {\n    if (c == 'a') {\n        n++;\n    } else {\n        n--;\n    }\n}", "else if")):
+            text, spans = spliced_view(refs, 1, code, language, {}, None, False, "")
+            line = next(i for i, row in enumerate(text.split("\n"), 1) if bad in row)  # 이어 붙인 줄에서 오류가 난 줄(튜터 덩이의 첫 줄)
+            report = {"status": "compile_error", "compile_line": line, "compile_output": "SyntaxError: invalid syntax"}
+            place = _place(report, spans)
+            self.assertEqual((place[0], place[1:3]), ("join", (2, 1)), (language, place))
+            said = failure_verdict(report, spans, False, "", False).seen
+            self.assertIn("내 2번 블록의 마지막 줄", said)
+            self.assertNotIn("튜터의 코드(3번 블록 자리)에서", said)
+
     def test_other_code_wording(self):
         from ..turn.code_check import failure_verdict
 
