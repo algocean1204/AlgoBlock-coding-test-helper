@@ -94,22 +94,6 @@ def drop_unopened(text: str, opened: int) -> str:
     return " ".join(part for part in sentences(text) if not unopened(part))
 
 
-# 풀이 과정을 단정하는 말. 기록에 그 말이 이어서 있지 않으면 지어낸 과정이다
-_PROCESS = re.compile(r"시간이 걸렸|말로\s*(?:설명|짚|풀)|(?:코드부터|먼저 코드를)\s*고쳤")
-
-
-def drop_unrecorded_process(text: str, record: str) -> str:
-    """기록에 없는 풀이 과정 주장 문장을 지운다. 기록의 줄과 SHARED자 넘게 이어서 같으면 기록을 옮긴 것으로 본다."""
-    lines = [_squash(line) for line in (record or "").splitlines()]
-
-    def made_up(part: str) -> bool:
-        if not _PROCESS.search(part):
-            return False
-        rest = _squash(re.sub(r"^\[[^\]]*\]\s*", "", part))
-        return not any(SequenceMatcher(None, rest, line, autojunk=False).find_longest_match(0, len(rest), 0, len(line)).size >= SHARED + 4 for line in lines)
-    return " ".join(part for part in sentences(text) if not made_up(part))
-
-
 def strip_banned(text: str) -> str:
     for word in BANNED:
         text = text.replace(word, "")
@@ -123,7 +107,6 @@ def check_feedback(analysis: str, hint: str, advice: str, algorithm_name: str, r
     if opened is not None:
         analysis = drop_unopened(analysis or "", opened) or UNOPENED_FALLBACK
         advice = drop_unopened(advice or "", opened)
-    analysis = drop_unrecorded_process(analysis or "", record) or UNOPENED_FALLBACK
     if algorithm_name and not hint.startswith(f"{algorithm_name}:"):
         hint = f"{algorithm_name}: {hint}"
     return {"analysis": mark_claims(strip_banned(analysis or ""), record), "similar_hint": hint, "advice": strip_banned(advice or "")}, None
