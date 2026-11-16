@@ -100,6 +100,14 @@ class OntologyTest(unittest.TestCase):
         self.assertNotIn("콜론", " ".join(o.pattern_context(list(o.PATTERNS), "java")))
         self.assertTrue(dfs)
 
+    def test_context_lines_drop_pitfalls_the_language_lacks(self):
+        """문자열 만들기 단서의 '자주 틀리는 것'에서 C++에는 없는 실수(문자열 글자 바꾸기)가 빠진다. 다른 언어에는 남는다."""
+        build = [pid for pid, (_, tech, _, _) in o.PATTERNS.items() if tech == "string_build"]
+        self.assertTrue(build)
+        name = o.pitfall_text("str_immutable", "java")[0]
+        self.assertIn(name, " ".join(o.pattern_context(build, "java")))
+        self.assertNotIn(name, " ".join(o.pattern_context(build, "cpp")))
+
 
 class PlanExampleTest(unittest.TestCase):
     def test_example_code_follows_the_language(self):

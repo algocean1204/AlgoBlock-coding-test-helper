@@ -428,6 +428,38 @@ def fail(pid: str, status: str, detail: dict | None, language: str = "python"):
     return step
 
 
+def labels_follow_language() -> None:
+    """기본 문제의 태그와 되풀이한 실수 이름은 사용자가 고른 언어의 낱말이다(문제에 저장된 언어는 기본 문제가 모두 python이다)."""
+    from tutor.knowledge.ontology import PATTERNS
+    pid = ROWS[0]["id"]
+    counting = next(key for key, (_, tech, _, _) in PATTERNS.items() if tech == "count_map")
+    with patch.dict(server.BUILTIN[pid], {"ready": {"fact": {"patterns": [counting]}}, "languages": ["python", "java", "cpp", "javascript", "rust"]}):
+        labels_checked(pid)
+
+
+def labels_checked(pid: str) -> None:
+    for language, word in (("java", "HashMap"), ("cpp", "map"), ("javascript", "Map"), ("python", "딕셔너리")):
+        call("/api/language", id=pid, language=language)
+        shown = next(row for row in call("/api/problems")[1]["problems"] if row["id"] == pid)
+        assert shown["language"] == language and f"개수 세기({word})" in shown["tags"], (language, shown["tags"])  # 목록
+        screen = call("/api/state", id=pid)[1]["problem"]
+        assert f"개수 세기({word})" in screen["tags"], (language, screen["tags"])  # 문제 화면
+    one, two = ROWS[0]["id"], ROWS[1]["id"]
+    with server.tutor() as t:
+        for pid_ in (one, two):
+            t.store.put_problem(pid_, "python", "글", title=pid_)
+            t.store.conn.execute("INSERT INTO pitfall_hit(problem_id, pitfall, code_hash, at) VALUES(?, 'pop_front', ?, 't')", (pid_, pid_))
+        t.store.conn.commit()
+    call("/api/language", id=one, language="python")
+    assert [x["name"] for x in call("/api/report")[1]["pitfalls"]] == ["리스트 앞에서 꺼내기"]  # 마지막으로 고른 언어
+    call("/api/language", id=one, language="java")
+    assert [x["name"] for x in call("/api/report")[1]["pitfalls"]] == ["배열 앞에서 꺼내기"]
+    call("/api/language", id=one, language="python")
+    with server.tutor() as t:
+        t.store.conn.execute("DELETE FROM pitfall_hit")
+        t.store.conn.commit()
+
+
 def pitfalls_repeated() -> None:
     """되풀이한 실수는 두 번 이상 나온 것만, 나온 문제와 함께 온다. 뜻이 겹치는 함정은 한 줄로 합친다."""
     one, two = ROWS[0]["id"], ROWS[1]["id"]
@@ -2903,6 +2935,7 @@ def main() -> None:
         compose()
         report()
         pitfalls_repeated()
+        labels_follow_language()
         home()
         aid_note()
         own_theme()
