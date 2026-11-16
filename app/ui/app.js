@@ -1237,6 +1237,9 @@ function renderSteps(stage, el) {
 }
 
 /** 답은 맞고 큰 입력에서만 걸렸다. */
+/** 효율성 테스트에서 실행 오류(재귀가 너무 깊음, 메모리 부족 등)로 실패한 첫 케이스. 시간이 모자란 것이 아니라 큰 입력에서 코드가 멈춘 것이다. */
+const slowHead = (r) => (effCrash(r) ? "답은 맞지만 큰 입력에서 오류가 나요" : "답은 맞지만 느려요");
+const effCrash = (r) => r.cases.find((c) => c.kind === "efficiency" && c.status === "runtime_error");
 const slowOnlyOf = (r) => !r.ok && !r.run && r.cases.length > 0 && !!r.score && r.score.accuracy[0] === r.score.accuracy[1] && r.score.efficiency[1] > 0;
 /** '끝까지 내 방식으로 쓰기'가 지금 보이는 튜터 차례(가이드)에 켜져 있다. */
 /** 이번 풀이에서 이미 통과했다: 풀던 중의 실패 말과 '끝까지 쓰는 중' 안내를 지금 상태처럼 보이지 않는다. */
@@ -1351,8 +1354,10 @@ function renderBlocks() {
     if (opened.at === at && s.open_count > opened.n) { const now = list.querySelector('[aria-current="step"]') || list.querySelectorAll(".block:not(.is-locked)")[s.open_count - 1]; if (now) now.scrollIntoView({ block: "nearest" }); }
     list._opened = { at, n: s.open_count };
   }
+  // 튜터의 질문으로: 블록을 찾기 전에는 블록 칸이 없다. 코드를 먼저 쓰고 싶은 사람이 ‘코드 전체’ 탭을 찾아 헤매지 않게 길을 보인다
+  const nocell = S.talk === "chair" && !s.blocks.some((b, i) => blockState(b, i) === "found") ? '<div class="note" role="status">블록은 찾는 대로 하나씩 열려요. 먼저 코드를 써 보고 싶으면 ‘코드 전체’ 칸에 쓸 수 있어요. <button type="button" class="btn quiet small" data-tab="direct">코드 전체 칸 열기</button></div>' : "";
   const own = ownWayOn() && !passedNow() ? `<div class="note" role="status">내 방식으로 끝까지 쓰는 중이에요. 블록마다 확인하지 않고, 다 쓴 뒤 ‘모아서 실행’으로 확인해요. <button type="button" class="btn quiet small" data-own-off>튜터 차례로 돌아가기</button></div>` : "";
-  $("blocks-note").innerHTML = (S.busy && S.busy.where === "blocks" ? `<div class="note">${waitLine("blocks")}</div>` : "") + own + noteHtml(S.note.blocks);
+  $("blocks-note").innerHTML = (S.busy && S.busy.where === "blocks" ? `<div class="note">${waitLine("blocks")}</div>` : "") + nocell + own + noteHtml(S.note.blocks);
 }
 
 /** '블록 코드 확인' 단추를 보이는가: 가이드의 지금 블록, 의자에서 찾은 블록, 가이드의 앞 블록 가운데 칸 글이 저장된 글과 다르거나 '확인 전'(stale)인 것.
@@ -1799,7 +1804,11 @@ function failGuide(r, slowOnly) {
   if (r.run) return "";
   if (examplesOk && hidden.some(stuck)) return "숨은 테스트에서 시간 초과가 났어요. 어떤 입력에서 반복이 끝나지 않거나 아주 오래 도는지 확인해 보세요.";
   if (examplesOk && hidden.some((c) => c.status !== "passed")) return "예시는 통과했지만 숨은 테스트에서 틀렸어요. 가장 작은 입력, 같은 값이 여러 개인 입력, 가장 큰 입력을 직접 만들어 확인해 보세요.";
-  if (slowOnly) return "답은 모두 맞아요. 입력이 아주 클 때 시간이 모자라요. 제한사항의 입력 크기를 보고, 같은 것을 되풀이해 세거나 찾는 곳이 없는지 살펴보세요.";
+  if (slowOnly) { // 답은 맞고 효율성만 실패했다. 틀린 곳이 아니라 큰 입력에서 일어난 일이라 ‘틀린 곳 같이 찾기’는 없다
+    const crash = effCrash(r), why = connected() ? " 답이 맞아서 ‘틀린 곳 같이 찾기’는 열지 않아요." : "";
+    return crash ? `답은 모두 맞아요. 아주 큰 입력에서 실행 중 오류가 났어요: ${esc(errText(crash))}.${crash.hint ? ` ${inline(crash.hint)}` : " 아래 효율성 테스트의 오류를 보세요."}${why}`
+      : `답은 모두 맞아요. 입력이 아주 클 때 시간이 모자라요. 제한사항의 입력 크기를 보고, 같은 것을 되풀이해 세거나 찾는 곳이 없는지 살펴보세요.${why}`;
+  }
   return "";
 }
 
@@ -1807,7 +1816,7 @@ function failGuide(r, slowOnly) {
 function passActions(ai, learn) {
   const nx = S.nextUp, way = tutorWay(S.mode);
   return `<a id="result-next" class="btn" href="${nx ? `#/p/${esc(nx.id)}` : "#/list"}"${nx ? ` title="${esc(nx.title)}"` : ""}>${nx ? "다음 문제" : "문제 목록으로"}</a>${nx ? `<span class="hint next-title">${esc(nx.title)}</span>` : ""}
-      ${ai ? '<button type="button" id="to-feedback" class="btn quiet" data-model>피드백 받기</button>' : ""}${learn ? `<button type="button" id="result-learn" class="btn quiet"${way ? ' title="푸는 방식이 혼자 풀기로 바뀌어요"' : ""}>실전 신호 보기${way ? " · 혼자 풀기로 바뀌어요" : ""}</button>` : ""}`;
+      ${ai ? '<button type="button" id="to-feedback" class="btn quiet" data-model>피드백 받기</button>' : ""}${learn ? `<button type="button" id="result-learn" class="btn quiet"${way ? ' title="오른쪽 칸이 튜터 대화에서 해설로 바뀌어요. 튜터 대화는 그대로 남아요"' : ""}>실전 신호 보기${way ? " · 오른쪽 칸이 해설로 바뀌어요" : ""}</button>` : ""}`;
 }
 
 function renderResult() {
@@ -1831,7 +1840,7 @@ function renderResult() {
   if (r.run) html += r.ok ? `<p class="verdict pass"><span class="badge">${ico("i-check")}</span>예시 통과 <small>공개 예시 ${total}개를 맞혔어요. ${hidden ? "제출하면 숨은 테스트까지 채점해요" : "제출하면 기록으로 남아요"}</small></p>`
     : total ? `<p class="verdict ${r.many ? "unsure" : "fail"}"><span class="badge">${ico(r.many ? "i-warn" : "i-x")}</span>${r.many ? MANY_HEAD : "예시에서 틀려요"} <small>공개 예시 ${total}개 중 ${score.accuracy[0]}개 통과</small></p>` : "";
   else if (r.ok) html += `<p class="verdict pass"><span class="badge">${ico("i-check")}</span>통과 <small>${counts}${hidden ? "" : ` · 공개 예시 ${total}개로만 채점했어요`}</small></p>`;
-  else if (total) html += `<p class="verdict ${r.many ? "unsure" : "fail"}"><span class="badge">${ico(r.many ? "i-warn" : "i-x")}</span>${r.many ? MANY_HEAD : slowOnly ? "답은 맞지만 느려요" : "아직 틀려요"} <small>${counts}${hidden ? "" : ` · 공개 예시 ${total}개로만 채점했어요`}</small></p>`;
+  else if (total) html += `<p class="verdict ${r.many ? "unsure" : "fail"}"><span class="badge">${ico(r.many ? "i-warn" : "i-x")}</span>${r.many ? MANY_HEAD : slowOnly ? slowHead(r) : "아직 틀려요"} <small>${counts}${hidden ? "" : ` · 공개 예시 ${total}개로만 채점했어요`}</small></p>`;
   if (!total) html += judgeFail(r);
   const ai = connected(), learn = p.study.has_guide && (r.ok || p.passed > 0);
   const tutorSide = ai && tutorWay(S.mode), talked = tutorSide && S.session[S.mode].length > 0; // 튜터 방식: 도움도 그 안에서(방식을 말없이 바꾸지 않는다)
@@ -1842,7 +1851,7 @@ function renderResult() {
     const finds = ai && !slowOnly && (!r.run || tutorSide); // 튜터 방식이면 예시 실행에서 틀렸을 때도 틀린 곳 같이 찾기가 먼저다
     if (finds) acts += '<button type="button" id="debug-start" class="btn" data-model>틀린 곳 같이 찾기</button>';
     if (talked) acts += `<button type="button" id="result-tutor-hint" class="btn quiet" data-model title="튜터가 지금 블록의 다음 힌트를 말해요">${ico("i-bulb")}이 블록 힌트 받기</button>`;
-    else if (S.solo && S.solo.total) acts += `<button type="button" id="result-hint" class="btn${finds ? " quiet" : ""}" title="${tutorWay(S.mode) ? "푸는 방식이 혼자 풀기로 바뀌고, 풀이를 처음부터 하나씩 짚는 힌트를 열어요" : "풀이를 처음부터 하나씩 짚는 힌트예요"}">${ico("i-bulb")}풀이 힌트 보기${tutorWay(S.mode) ? " · 혼자 풀기로 바뀌어요" : ""}</button>`;
+    else if (S.solo && S.solo.total) acts += `<button type="button" id="result-hint" class="btn${finds ? " quiet" : ""}" title="${tutorWay(S.mode) ? "오른쪽 칸이 튜터 대화에서 힌트로 바뀌어요(풀이를 처음부터 하나씩 짚어요). 튜터 대화는 그대로 남아요" : "풀이를 처음부터 하나씩 짚는 힌트예요"}">${ico("i-bulb")}풀이 힌트 보기${tutorWay(S.mode) ? " · 오른쪽 칸이 힌트로 바뀌어요" : ""}</button>`;
     if (!r.run && ai) acts += '<button type="button" id="to-feedback" class="btn quiet" data-model>피드백 받기</button>';
   }
   if (acts) html += `<div class="result-actions">${acts}</div>${!r.ok && total && ai ? aidNote() : ""}`; // 틀린 곳 같이 찾기·힌트를 누르기 전에
@@ -2289,7 +2298,7 @@ function judgedLine(j) {
   const score = j.score || { accuracy: [0, 0], efficiency: [0, 0] };
   if (j.ok) return "통과";
   if (!j.cases.length) return "실행하지 못했어요";
-  return `${j.many ? MANY_HEAD : slowOnlyOf(j) ? "답은 맞지만 느려요" : "아직 틀려요"} · 정확성 ${score.accuracy[0]}/${score.accuracy[1]}${score.efficiency[1] ? ` · 효율성 ${score.efficiency[0]}/${score.efficiency[1]}` : ""}`;
+  return `${j.many ? MANY_HEAD : slowOnlyOf(j) ? slowHead(j) : "아직 틀려요"} · 정확성 ${score.accuracy[0]}/${score.accuracy[1]}${score.efficiency[1] ? ` · 효율성 ${score.efficiency[0]}/${score.efficiency[1]}` : ""}`;
 }
 
 async function debugCall(text) {

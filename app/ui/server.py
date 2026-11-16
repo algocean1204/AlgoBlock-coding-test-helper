@@ -1912,6 +1912,15 @@ def own_starter(p, language: str) -> str:
     return stub({"params": [{"name": name, "type": typ} for name, typ in zip(names, types)], "returns": returns}, language)
 
 
+def efficiency_message(report: dict) -> str:
+    """답은 맞고 효율성 테스트에서만 실패했을 때의 안내. 큰 입력에서 실행 오류(재귀가 너무 깊음, 메모리 부족 등)로 멈췄으면 시간이 모자란 것이 아니다."""
+    crashed = next((case for case in report["cases"] if case["kind"] == "efficiency" and case["status"] == "runtime_error"), None)
+    if crashed:
+        hint = error_hint(crashed["error"], report.get("language", ""))
+        return f"답은 맞아요. 다만 아주 큰 입력에서 실행 중 오류가 났어요. {hint or '결과의 효율성 테스트에서 오류 이름을 확인해 보세요.'}"
+    return "답은 맞아요. 다만 입력이 아주 클 때 시간이 모자라요. 제한사항의 입력 크기를 보고, 같은 것을 되풀이해 세거나 찾는 곳이 없는지 살펴보세요."
+
+
 DEBUG_DONE = "고친 코드가 통과했어요. 기록으로 남기려면 제출해 주세요."
 
 
@@ -2583,8 +2592,7 @@ def handle(path: str, body: dict) -> tuple[int, dict]:
                     return 200, {"passed": True, "judged": judged or result_body(report), "messages": debug_closed(t, pid, str(body.get("text") or "").strip())}
                 if report["cases"] and all(case["status"] == "passed" for case in report["cases"] if case["kind"] != "efficiency"):
                     # 답은 맞고 큰 입력에서만 걸렸다: 틀린 줄을 찾을 일이 아니라 방법을 바꿀 일이다(큰 입력은 모델에 넘기지 않는다)
-                    return 200, {"passed": False, "efficiency_only": True, "judged": judged or result_body(report),
-                                 "message": "답은 맞아요. 다만 입력이 아주 클 때 시간이 모자라요. 제한사항의 입력 크기를 보고, 같은 것을 되풀이해 세거나 찾는 곳이 없는지 살펴보세요."}
+                    return 200, {"passed": False, "efficiency_only": True, "judged": judged or result_body(report), "message": efficiency_message(report)}
                 seen = tutor_view(report)
                 lines = [{**case, "line": raw.get("line")} for case, raw in zip(seen["cases"], report["cases"]) if raw["kind"] != "efficiency"] or seen["cases"]  # 채점기가 준 오류 줄을 같이 넘긴다
                 out = t.debug(pid, code, {**seen, "compile_line": report.get("compile_line"), "cases": lines},
