@@ -2776,6 +2776,13 @@ def neutral_notes() -> None:
     import problemkit
     found = [f"{row['id']}: {line}" for row in ROWS for line in problemkit.language_bound(row)]
     assert not found, found
+    for saved in sorted((HERE / "problems").glob("*/*/ready.json")):  # 풀이 가이드·블록 힌트도 같다(FIRST의 ready는 아래에서 손으로 바뀌므로 파일을 읽는다)
+        found += [f"{saved.parent.name}: {line}" for line in problemkit.ready_bound(json.loads(saved.read_text(encoding="utf-8"))["ready"])]
+    assert not found, found
+    for word in ("steps 딕셔너리에 담는다", "빈 리스트를 만든다", "mid // 2로 나눈다", "heapq에서 꺼낸다"):
+        assert problemkit.ready_bound({"solution": {"steps": [word], "code": "d = {}"}, "plan": {"blocks": [{"hints": [], "reference": "x // 2"}]}}), word
+        assert problemkit.ready_bound({"plan": {"blocks": [{"hints": [word]}]}}), word
+    assert not problemkit.ready_bound({"solution": {"code": "x = dict()  # 딕셔너리"}, "plan": {"blocks": [{"reference": "a // b"}]}})  # 코드 칸은 보지 않는다
     bad = {"learn": "x", "pattern": "x", "ladder": "x", "pitfalls": ["count[k] += 1에서 KeyError가 난다"], "signals": [{"means": "딕셔너리에 넣는다"}]}
     assert len(problemkit.language_bound(bad)) == 2  # 걸러야 할 글은 실제로 걸린다
     for word in ("KeyError가 난다", "heapq에서 꺼낸다", "dict로 센다", "int에 담는다", "IndexError가 난다", "long으로 더한다"):  # 한글 조사가 붙은 낱말도 걸린다

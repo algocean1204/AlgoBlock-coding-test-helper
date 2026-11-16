@@ -15,13 +15,13 @@
    "size": 50000
   },
   "solution": {
-   "approach": "날짜를 '1년 1월 1일부터 며칠째인가'라는 번호로 바꾸면 두 날짜 사이의 날 수와 요일을 쉽게 구할 수 있습니다. 해마다 1월 1일이 몇 번째 날인지는 처음에 한 번만 구해 두고, 날짜를 바꿀 때는 그 값에 지나간 달의 날 수와 일을 더합니다. 다닌 기간의 평일 수는 7일 묶음 개수에 5를 곱하고, 남은 6일 이하만 하나씩 요일을 확인해 셉니다. 이렇게 하면 직원 한 명을 빠르게 처리할 수 있습니다. 부서별 합은 딕셔너리에 모으고, 마지막에 부서 이름을 정렬해 담습니다.",
+   "approach": "날짜를 '1년 1월 1일부터 며칠째인가'라는 번호로 바꾸면 두 날짜 사이의 날 수와 요일을 쉽게 구할 수 있습니다. 해마다 1월 1일이 몇 번째 날인지는 처음에 한 번만 구해 두고, 날짜를 바꿀 때는 그 값에 지나간 달의 날 수와 일을 더합니다. 다닌 기간의 평일 수는 7일 묶음 개수에 5를 곱하고, 남은 6일 이하만 하나씩 요일을 확인해 셉니다. 이렇게 하면 직원 한 명을 빠르게 처리할 수 있습니다. 부서별 합은 해시 표에 모으고, 마지막에 부서 이름을 정렬해 담습니다.",
    "steps": [
     "달별 날 수 표와 윤년 판정 함수 is_leap를 만든다 — 해의 길이와 2월의 날 수를 정하는 규칙이다.",
     "1년부터 9999년까지 돌며 각 해 1월 1일이 몇 번째 날인지 year_start에 쌓아 둔다 — 날짜마다 1년부터 다시 더하지 않기 위해서다.",
     "day_number로 날짜를 '-'로 쪼갠다. 그해 시작 번호에 지나간 달의 날 수(윤년이면 2월에 하루 더)와 일-1을 더해 번호로 만든다 — 0번이 월요일이 되도록 맞춘다.",
     "weekdays로 두 번호 사이의 평일 수를 센다. 날 수를 7로 나눈 몫마다 5일을 더하고, 남은 날은 번호%7이 5보다 작은지 하나씩 본다 — 긴 기간도 빠르게 셀 수 있다.",
-    "today를 번호로 바꾼다. 직원마다 퇴사일이 \"-\"이면 today 번호를, 아니면 퇴사일 번호를 끝으로 잡아 평일 수를 부서별 딕셔너리에 더한다 — 부서별 합을 모은다.",
+    "today를 번호로 바꾼다. 직원마다 퇴사일이 \"-\"이면 today 번호를, 아니면 퇴사일 번호를 끝으로 잡아 평일 수를 부서별 해시 표에 더한다 — 부서별 합을 모은다.",
     "부서 이름을 정렬하고 그 순서대로 점수를 배열에 담아 돌려준다 — 사전 순서로 내라는 요구다."
    ],
    "code": "MONTH_DAYS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]\n\n\ndef is_leap(year):\n    if year % 400 == 0:\n        return True\n    if year % 100 == 0:\n        return False\n    return year % 4 == 0\n\n\ndef solution(staff, today):\n    # 해마다 '1년 1월 1일부터 그해 1월 1일까지 며칠인가'를 한 번만 구해 둔다\n    year_start = {}\n    days = 0\n    for year in range(1, 10000):\n        year_start[year] = days\n        days += 366 if is_leap(year) else 365\n\n    def day_number(date):\n        # \"YYYY-MM-DD\" → 1년 1월 1일이 0, 그다음 날이 1, …\n        year, month, day = map(int, date.split(\"-\"))\n        number = year_start[year]\n        for m in range(1, month):  # 그해에 지나간 달의 날 수\n            number += MONTH_DAYS[m - 1]\n            if m == 2 and is_leap(year):\n                number += 1\n        return number + day - 1\n\n    def weekdays(first, last):\n        # first일째부터 last일째까지(둘 다 셈) 평일 수. 0일째가 월요일이므로 (일 번호 % 7) < 5이면 평일\n        total = last - first + 1\n        weeks = total // 7\n        count = weeks * 5  # 7일 묶음마다 평일 5일\n        for number in range(first + weeks * 7, last + 1):  # 남은 6일 이하는 하나씩 본다\n            if number % 7 < 5:\n                count += 1\n        return count\n\n    today_number = day_number(today)\n    points = {}\n    for team, start, end in staff:\n        last = today_number if end == \"-\" else day_number(end)\n        points[team] = points.get(team, 0) + weekdays(day_number(start), last)\n    return [points[team] for team in sorted(points)]",
@@ -30,7 +30,7 @@
     "'1년 1월 1일은 월요일입니다.' → 1년 1월 1일을 0번으로 하여 날짜마다 며칠째인지 번호를 매긴다. 번호를 7로 나눈 나머지가 5보다 작으면 평일이다.",
     "'연도가 400으로 나누어떨어지면 윤년입니다. 그렇지 않고 100으로 나누어떨어지면 평년입니다. 그렇지 않고 4로 나누어떨어지면 윤년입니다.' → 윤년 판정 함수를 만든다. 이것으로 해마다 1월 1일이 몇 번째 날인지 미리 쌓아 두고, 2월에 하루를 더할지도 정한다.",
     "'staff의 행의 수는 1 이상 50,000 이하입니다.' → 날짜가 9999년까지라서 직원 한 명이 다닌 날이 수백만 일이 될 수 있다. 하루씩 세면 시간 안에 끝나지 않으므로 7일 묶음마다 평일 5일로 한 번에 센다.",
-    "'부서 이름의 사전 순서대로 담은 배열' → 딕셔너리에 부서별로 점수를 더한다. 끝에 부서 이름을 정렬해 그 순서대로 담는다."
+    "'부서 이름의 사전 순서대로 담은 배열' → 해시 표에 부서별로 점수를 더한다. 끝에 부서 이름을 정렬해 그 순서대로 담는다."
    ]
   },
   "plan": {
@@ -129,7 +129,7 @@
      "reference": "\n    today_number = day_number(today)\n    points = {}\n    for team, start, end in staff:\n        last = today_number if end == \"-\" else day_number(end)\n        points[team] = points.get(team, 0) + weekdays(day_number(start), last)",
      "checks": [
       "퇴사일이 \"-\"이면 today를, 아니면 퇴사일을 끝 날로 잡는다",
-      "부서 이름별로 평일 수를 딕셔너리에 더해 간다",
+      "부서 이름별로 평일 수를 해시 표에 더해 간다",
       "today는 반복 밖에서 한 번만 번호로 바꾼다"
      ],
      "hints": [
