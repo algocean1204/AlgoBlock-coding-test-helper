@@ -26,10 +26,12 @@ def gather(state: MainState) -> dict:
         "recent": [f"{'튜터' if m.role == 'service' else '사용자'}: {m.text}" for m in said][-4:],
         "last_question": service[-1].text if service else "없음",
         "candidates": pitfall_candidates(ctx.patterns, [pid for pid, _ in ctx.frequent_pitfalls], ctx.language),
+        # 이 문제·언어의 증명된 언어 함정 가운데 이 실패와 맞을 수 있는 것(모델 없이 거른다). 같은 코드면 다시 고르지 않는다
+        "traps": [] if saved is not None else rules.trap_candidates(ctx.traps, req.report or {}, req.code or ""),
         "found": False,
     }
     if saved is not None:
-        draft.update(kind=saved.kind, line=saved.line, cause=saved.cause, fixed_line=saved.fixed_line, pitfall=saved.pitfall)
+        draft.update(kind=saved.kind, line=saved.line, cause=saved.cause, fixed_line=saved.fixed_line, pitfall=saved.pitfall, trap=saved.trap)
     return {"draft": draft}
 
 
@@ -37,9 +39,15 @@ def locate(state: MainState) -> dict:
     """locate: 진단(보이지 않음). 채점 결과로 알 수 있는 것(문법 오류, 오류 줄)은 모델 답보다 먼저다."""
     draft, report = dict(state["draft"]), state["request"].report or {}
     messages = locate_messages(state)
+    hint = []
     if draft["candidates"]:
-        hint = ["pitfall: 아래 초보자 함정 목록(참고용 분류표)에서 이 원인에 해당하는 id 하나. 맞는 것이 없으면 빈 글로 둔다(억지로 고르지 않는다). 진단은 코드와 채점 결과로 한다.",
-                *pitfall_lines(draft["candidates"], state["ctx"].language)]
+        hint += ["pitfall: 아래 초보자 함정 목록(참고용 분류표)에서 이 원인에 해당하는 id 하나. 맞는 것이 없으면 빈 글로 둔다(억지로 고르지 않는다). 진단은 코드와 채점 결과로 한다.",
+                 *pitfall_lines(draft["candidates"], state["ctx"].language)]
+    traps = draft.get("traps") or []
+    if traps:  # 실패마다 달라지는 글이라 캐시 앞부분 뒤(메시지 끝)에 붙는다
+        hint += ["trap: 아래는 이 문제와 언어에서 실제로 틀리는 것이 확인된 실수다. 이 실패의 원인이 그 가운데 하나와 같을 때만 그 id를 적는다. 아니면 빈 글로 둔다(억지로 고르지 않는다).",
+                 *(f"- {trap['id']}: {trap['what']}" for trap in traps)]
+    if hint:
         messages[-1] = {**messages[-1], "content": messages[-1]["content"] + "\n" + "\n".join(hint)}
     got: Diagnosis = llm(model_name()).use(messages, Diagnosis, task="debug.locate")
     total = len((state["request"].code or "").splitlines())
@@ -47,7 +55,8 @@ def locate(state: MainState) -> dict:
     reported = rules.error_line(report) if kind != "logic" else None  # 오류가 난 줄은 채점 결과가 안다. 모델이 짐작한 줄보다 먼저다
     line = reported if reported and reported <= total else got.line if 1 <= got.line <= total else 0
     draft.update(kind=kind, line=line, cause=got.cause.strip(), fixed_line=got.fixed_line.rstrip(),  # 들여쓰기가 고침일 수 있어 앞 공백은 둔다
-                 pitfall=got.pitfall if got.pitfall in PITFALLS else "", opening=(got.opening or "").strip().strip('"“”'))
+                 pitfall=got.pitfall if got.pitfall in PITFALLS else "", trap=got.trap if rules.trap_of(traps, got.trap) else "",  # 내놓은 후보에 없는 id는 버린다
+                 opening=(got.opening or "").strip().strip('"“”'))
     return {"draft": draft}
 
 
@@ -106,8 +115,11 @@ def check_reply(state: MainState) -> dict:
         text = rules.symptom_question(report) if bad else f"{rules.symptom(report)} {text}"
     elif bad:
         text = rules.fallback(name, draft["line"])
+    trap = rules.trap_of(state["ctx"].traps, draft.get("trap") or "")
+    if trap and name == "cause" and draft["previous"] != draft["step"]:  # 원인 설명 단계에 처음 왔을 때만, 무슨 일이 일어나는지(what)만. 고치는 법(fix)은 사용자가 찾는다
+        text = f"{trap['what']} {text}"
     text = LEADS.get(draft.get("aside") or "", "") + text
     record = DebugState(code_hash=draft["hash"], kind=draft["kind"], line=draft["line"], cause=draft["cause"],
-                        fixed_line=draft["fixed_line"], step=draft["step"], pitfall=draft.get("pitfall") or "")
+                        fixed_line=draft["fixed_line"], step=draft["step"], pitfall=draft.get("pitfall") or "", trap=draft.get("trap") or "")
     line = (draft["line"] if name in rules.SHOWS_LINE and draft["line"] else None) or rules.said_line(text, req.code or "")
     return {"result": {"reply": text, "move": name, "line": line, "kind": draft["kind"]}, "debug_state": record, "draft": None}

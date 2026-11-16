@@ -2947,6 +2947,9 @@ def lang_traps() -> None:
         mine = (row.get("traps") or {}).get("python", [])
         assert set(row.get("traps") or {}) <= {"python"} and [trap["id"] for trap in mine] == [trap["trap"] for trap in frozen], row["id"]
         assert all(trap["what"] == text[trap["id"]]["what"] and trap["fix"] == text[trap["id"]]["fix"] and (trap.get("fails") or trap.get("varies")) for trap in mine), row["id"]
+        # 튜터가 후보를 거르는 이름: 증명 검사와 같게 흔한 낱말과 한 글자는 뺀다
+        assert all(trap[key] == [term for term in text[trap["id"]][key] if problemkit.anchor(term)] for trap in mine for key in ("code", "right")), row["id"]
+        assert all(isinstance(trap["right_base"], int) and (trap["code"] or trap.get("varies") or trap["right_base"] > 0) for trap in mine), row["id"]  # 정답 풀이에 고친 꼴의 이름이 있다
         shipped += len(mine)
     assert shipped >= 5, shipped
     for language, rows in listed.items():  # 결과가 정해지지 않은 동작의 함정은 떨어진 케이스 목록을 얼리지 않는다
@@ -3041,6 +3044,7 @@ def solution_traps() -> None:
              "javascript": [{"id": "javascript.c", "what": "`c`를 쓰면", "fix": "d", "varies": True}]}
     with patch.dict(server.BUILTIN[PID], {"traps": traps}):
         assert call("/api/solution", id=PID, force=True)[1]["traps"] == [{"what": "`a`를 쓰면", "fix": "b", "at": ["제목이 같으면 같은 책입니다"]}]
+        assert (server.problem_shape(PID, "python")["traps"], server.problem_shape(PID, "rust")["traps"]) == (traps["python"], [])  # 튜터 엔진은 그 언어의 것만 받는다
         call("/api/language", id=PID, language="javascript")
         try:
             assert call("/api/solution", id=PID, force=True)[1]["traps"] == [{"what": "`c`를 쓰면", "fix": "d"}]
@@ -3049,6 +3053,7 @@ def solution_traps() -> None:
     with patch.dict(server.BUILTIN[PID]):
         server.BUILTIN[PID].pop("traps", None)
         assert call("/api/solution", id=PID, force=True)[1]["traps"] == []  # 증명이 없는 문제
+        assert server.problem_shape(PID, "python")["traps"] == []
     js, css = (HERE / "app.js").read_text(encoding="utf-8"), (HERE / "app.css").read_text(encoding="utf-8")
     assert '<div class="traps"><h5>이 언어로 풀 때 조심할 것</h5>' in js and js.index('class="traps"') < js.index('<pre class="code"><code>${esc(sol.code') and ".traps {" in css
     change = js[js.index("async function changeLanguage"):js.index("function wantLanguage")]

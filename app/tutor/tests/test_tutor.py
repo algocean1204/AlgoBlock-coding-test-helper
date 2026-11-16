@@ -366,6 +366,59 @@ class TutorTest(unittest.TestCase):
         finally:
             tutor.close()
 
+    KEY_TRAP = {"id": "python.missing_key", "what": "없는 키를 읽으면 멈춰요.", "fix": "`get(키, 0)`으로 읽어요.", "code": [], "right": [".get("], "fails": {"1": "failed"}}
+    ROWS_TRAP = {"id": "python.shared_rows", "what": "모든 줄이 같은 목록이에요.", "fix": "줄마다 새 목록을 만들어요.", "code": [], "right": ["for _ in range"], "fails": {"9": "failed"}}
+
+    def test_debug_picks_lang_trap_and_feedback_follows(self):
+        """증명된 언어 함정: 실패와 맞는 것만 후보로 내놓고(캐시 앞부분 밖), 모델이 고른 것을 원인 설명 단계에서 무슨 일이 일어나는지(what)만 말한다.
+        피드백은 디버그가 고른 것을 받는다: 실패한 제출엔 what만, 통과한 뒤에는 고치는 법(fix)까지. 모델 호출 수는 그대로다."""
+        analysis = {"analysis": "같은 이름이 둘이면요?", "similar_hint": "센다", "advice": "센 값을 보세요."}
+        fake = FakeLlm({**DRAFT, "debug.locate": [{**self.FOUND, "trap": "python.missing_key"}], "debug.judge": ["[check]N"] * 4,
+                        "debug.ask": ["count는 어떻게 바뀌나요?", "그 줄은 무엇을 하나요?", "그 줄을 어떻게 바꿀까요?", "다시 볼까요?"],
+                        "feedback.assess": ["[check]30 Y"] * 3, "feedback.analyze": [analysis] * 3})
+        tutor = Tutor(self.path, client=fake, shape=lambda _pid, _language: {"traps": [self.KEY_TRAP, self.ROWS_TRAP]})
+        try:
+            tutor.store.put_problem("p1", "python", fakes.PROBLEM, title="추천 서가에 꽂히는 책")
+            tutor.store.put_fact("p1", "문자열 배열 둘, 남는 원소 하나", [])
+            tutor.debug("p1", self.BUGGY, self.FAILED)
+            locate = [c for c in fake.calls if c["task"] == "debug.locate"][0]["messages"][-1]
+            self.assertIn("- python.missing_key: 없는 키를 읽으면 멈춰요.", locate["content"])
+            self.assertNotIn("python.shared_rows", locate["content"])  # 떨어진 케이스가 다르다
+            self.assertGreater(locate["content"].index("trap:"), locate["cache_prefix"])  # 실패마다 다른 글은 캐시 앞부분 밖
+            self.assertEqual(tutor.store.load("p1").debug_state.trap, "python.missing_key")
+            said = [tutor.debug("p1", self.BUGGY, self.FAILED, text="모르겠어요").body["messages"][-1]["text"] for _ in range(4)]  # trace, line, cause, cause
+            self.assertEqual([text.startswith("없는 키를 읽으면 멈춰요.") for text in said], [False, False, True, False])  # 원인 설명에 처음 왔을 때만
+            self.assertFalse(any("get(키, 0)" in text for text in said))  # 고치는 법은 말하지 않는다
+            self.assertEqual(fakes.tasks(fake).count("debug.locate"), 1)
+
+            tutor.store.add_submission("p1", self.BUGGY, False)
+            self.assertEqual(tutor.feedback("p1").body["advice"], "센 값을 보세요. 없는 키를 읽으면 멈춰요.")
+            tutor.store.add_submission("p1", CODE + "\n    return []", False)  # 고친 꼴의 이름이 있으면 그 함정은 이 실패의 원인이 아니다
+            self.assertEqual(tutor.feedback("p1").body["advice"], "센 값을 보세요.")
+            tutor.store.add_submission("p1", CODE, True)
+            self.assertEqual(tutor.feedback("p1").body["advice"], "센 값을 보세요. 없는 키를 읽으면 멈춰요. `get(키, 0)`으로 읽어요.")
+            self.assertEqual(fakes.tasks(fake).count("feedback.analyze"), 3)
+            self.assertNotIn("없는 키", fakes.prompt(fake, "feedback.analyze"))  # 글은 엔진이 붙인다
+        finally:
+            tutor.close()
+
+    def test_debug_drops_unlisted_trap_and_stays_off_without_data(self):
+        """모델이 내놓지 않은 id를 고르면 버린다. 자료가 없거나 맞는 후보가 없으면 프롬프트는 그대로다."""
+        listed = {"traps": [self.KEY_TRAP, self.ROWS_TRAP]}
+        other = {"traps": [{**self.KEY_TRAP, "fails": {"1": "runtime_error"}}]}  # 같은 케이스, 다른 상태
+        for n, (shape, trap) in enumerate(((listed, "python.shared_rows"), (other, "python.missing_key"), ({"traps": []}, "python.missing_key"), (None, "python.missing_key"))):
+            fake = FakeLlm({"debug.locate": [{**self.FOUND, "trap": trap}]})
+            tutor = Tutor(str(Path(self.dir.name) / f"off{n}.db"), client=fake, shape=None if shape is None else lambda _pid, _language, s=shape: s)
+            try:
+                tutor.store.put_problem("p1", "python", fakes.PROBLEM)
+                tutor.store.put_fact("p1", "문자열 배열 둘, 남는 원소 하나", [])
+                tutor.debug("p1", self.BUGGY, self.FAILED)
+                self.assertEqual(tutor.store.load("p1").debug_state.trap, "", (shape, trap))
+            finally:
+                tutor.close()
+            if shape != listed:  # 맞는 후보가 없으면 프롬프트에 후보 줄이 없다
+                self.assertNotIn("trap:", fakes.prompt(fake, "debug.locate"))
+
     def test_debug_candidates_follow_the_language(self):
         """진단 후보 목록에 파이썬에만 있는 실수(콜론 빠짐)가 다른 언어로 풀 때 들어가지 않는다. 파이썬에는 그대로 들어간다."""
         tutor, fake = self.tutor({"debug.locate": [self.FOUND, self.FOUND]})
@@ -806,7 +859,7 @@ class TutorTest(unittest.TestCase):
                     store.close()
 
             with ThreadPoolExecutor(max_workers=4) as pool:
-                self.assertEqual(list(pool.map(open_one, range(4))), [10] * 4)
+                self.assertEqual(list(pool.map(open_one, range(4))), [11] * 4)
 
     def test_old_database_migrates(self):
         conn = sqlite3.connect(self.path)
@@ -819,7 +872,7 @@ class TutorTest(unittest.TestCase):
         conn.close()
         tutor = Tutor(self.path, client=FakeLlm({}))
         try:
-            self.assertEqual(tutor.store.conn.execute("PRAGMA user_version").fetchone()[0], 10)
+            self.assertEqual(tutor.store.conn.execute("PRAGMA user_version").fetchone()[0], 11)
             # 버전 8: 판정 '?'(확인 전)를 담는다. 옛 블록 상태는 그대로 옮겨진다(짝은 기본값)
             self.assertEqual([tuple(row) for row in tutor.store.conn.execute("SELECT code, verdict, renames_json FROM block_state")], [("x = 1", "Y", "[]")])
             tutor.store.conn.execute("UPDATE block_state SET verdict='?'")

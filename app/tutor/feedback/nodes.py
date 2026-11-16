@@ -3,6 +3,7 @@
 from ..common.assess import assess_node, pick_strategy_node
 from ..common.progress_view import active_plan
 from ..common.scope import algorithm_name
+from ..debug.rules import trap_in_code, trap_of
 from ..llm import llm, model_name
 from ..state import Analysis, MainState
 from .prompts import analyze_messages, record_lines
@@ -30,9 +31,23 @@ def check_feedback(state: MainState) -> dict:
     if error:
         return {"error": error, "draft": None}
     sub = state["ctx"].latest_submission
+    note = trap_note(state["ctx"], sub)
+    if note:
+        fields["advice"] = f"{fields['advice']} {note}".strip()
     # 통과한 제출에는 전략을 넘기지 않는다: 화면이 전략 제목('정석 순서로 다시 짜 보기')이 아니라 기본 제목을 쓴다
     strategy = None if sub is not None and sub.ok else state.get("strategy")
     return {
         "result": {"submission_id": None if sub is None else sub.id, **fields, "strategy": strategy, "score": state.get("score")},
         "draft": None,
     }
+
+
+def trap_note(ctx, sub) -> str:
+    """디버그가 고른 언어 함정의 정해진 글(모델이 다시 쓰지 않는다). 저장된 제출에는 케이스별 결과가 없어 피드백이 스스로 고르지 않는다.
+    통과한 제출이면 무슨 일이 일어나는지(what)와 고치는 법(fix), 실패한 제출이면 그 코드가 아직 그 함정의 꼴일 때만 what. 고른 것이 없으면 빈 글."""
+    trap = trap_of(ctx.traps, ctx.debug_state.trap if ctx.debug_state is not None else "")
+    if trap is None or sub is None:
+        return ""
+    if sub.ok:
+        return f"{trap['what']} {trap['fix']}"
+    return trap["what"] if trap_in_code(trap, sub.source) else ""

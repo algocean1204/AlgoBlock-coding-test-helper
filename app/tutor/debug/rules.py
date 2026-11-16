@@ -168,3 +168,63 @@ def leaks_piece(reply: str, fixed_line: str, code: str) -> bool:
 def names_line(reply: str) -> bool:
     """말이 줄 번호를 어떤 꼴로든 말하는가."""
     return bool(LINE_WORD.search(reply or ""))
+
+
+# 언어 함정: 이 문제·언어에서 실제로 틀리는 것이 증명된 실수(묶음의 traps). 모델에 내놓기 전에 규칙으로 거른다(맞을 수 없는 후보는 보이지 않는다)
+TRAP_PICKS = 3  # 내놓는 후보 수
+# 튜터가 받는 채점 결과는 메모리·출력 초과를 실행 오류로 바꿔 둔다. 증명의 떨어진 상태도 같게 본다
+TRAP_STATUS = {"memory_limit": "runtime_error", "output_limit": "runtime_error"}
+
+
+def _term(term: str) -> re.Pattern:
+    """이름의 꼴. 낱말 글자로 시작·끝나는 이름은 다른 낱말의 일부(print 속의 int)로 세지 않는다."""
+    edge = r"[A-Za-z0-9_]"
+    return re.compile((rf"(?<!{edge})" if re.match(r"\w", term[:1]) else "") + re.escape(term) + (rf"(?!{edge})" if re.match(r"\w", term[-1:]) else ""))
+
+
+def has_term(term: str, code: str) -> bool:
+    return _term(term).search(code or "") is not None
+
+
+# 주석(문자열 안의 #·//는 주석이 아니다). 문자열은 지우지 않는다: 실수한 코드의 이름에 따옴표가 든 것이 있다(== ")
+_COMMENT = {"python": re.compile(r"""("(?:\\.|[^"\\\n])*"|'(?:\\.|[^'\\\n])*')|#[^\n]*"""),
+            "other": re.compile(r"""("(?:\\.|[^"\\\n])*"|'(?:\\.|[^'\\\n])*')|//[^\n]*|/\*.*?\*/""", re.S)}
+
+
+def without_comments(code: str, language: str) -> str:
+    return _COMMENT["python" if language == "python" else "other"].sub(lambda m: m.group(1) or " ", code or "")
+
+
+def right_count(trap: dict, code: str) -> int:
+    """코드(주석 밖)에 고친 꼴의 이름(right)이 나오는 횟수의 합. 묶을 때 정답 풀이에서 센 값(right_base)과 견준다."""
+    code = without_comments(code, trap.get("id", "").split(".")[0])
+    return sum(len(_term(term).findall(code)) for term in trap.get("right") or [])
+
+
+def trap_in_code(trap: dict, code: str) -> bool:
+    """코드가 그 함정의 꼴인가. 주석은 보지 않는다(주석에 적은 'Reverse로 감싸면…'). 이름 목록은 묶을 때 흔한 낱말과 한 글자를 뺀 것이다.
+    - code가 있으면: 실수한 코드에 나타나는 이름(code)이 있다.
+    - code가 없는 함정(지우는 꼴의 실수): 고친 꼴의 이름(right)이 그 언어 정답 풀이보다 적게 나온다. 하나만 바꾼 실수(// 하나를 /로)도 잡고,
+      정답 풀이만큼 쓴 다른 실수 풀이는 거른다. 결과가 정해지지 않은 동작(varies)이나 정답 풀이의 수(right_base)가 없으면 하나도 없어야 한다."""
+    if trap.get("code"):
+        code = without_comments(code, trap.get("id", "").split(".")[0])
+        return any(has_term(term, code) for term in trap["code"])
+    if not trap.get("right"):
+        return False
+    base = 1 if trap.get("varies") or not isinstance(trap.get("right_base"), int) else trap["right_base"]
+    return right_count(trap, code) < base
+
+
+def trap_candidates(traps: list[dict], report: dict, code: str) -> list[dict]:
+    """채점 결과와 코드로 고른 언어 함정 후보(TRAP_PICKS개까지). 통과했거나 자료가 없으면 빈 목록.
+    같은 케이스에서 같은 상태로 떨어졌고 코드가 그 함정의 꼴이어야 한다(trap_in_code).
+    결과가 정해지지 않은 동작(varies)은 케이스 목록이 없어 통과하지 못했다는 것만 본다."""
+    failed = {str(case.get("id")): case.get("status") for case in report.get("cases") or [] if case.get("status") != "passed"}
+    if not failed or report.get("status") == "passed":
+        return []
+    same = lambda trap: trap.get("varies") or any(failed.get(str(cid)) == TRAP_STATUS.get(want, want) for cid, want in (trap.get("fails") or {}).items())
+    return [trap for trap in traps if same(trap) and trap_in_code(trap, code)][:TRAP_PICKS]
+
+
+def trap_of(traps: list[dict], trap_id: str) -> dict | None:
+    return next((trap for trap in traps if trap_id and trap.get("id") == trap_id), None)

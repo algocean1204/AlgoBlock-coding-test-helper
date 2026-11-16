@@ -153,6 +153,8 @@ UPDATE study SET help_first_at = CASE
   ELSE MIN(solution_at, COALESCE((SELECT MIN(at) FROM message WHERE message.problem_id = study.problem_id), solution_at)) END;
 UPDATE study SET help_after_reset_at = help_first_at;
 """,
+    # 11: 디버그 진단이 고른 언어 함정(피드백이 이어 받는다)
+    "ALTER TABLE debug_state ADD COLUMN trap TEXT NOT NULL DEFAULT '';",
 ]
 
 
