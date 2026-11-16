@@ -16,6 +16,11 @@ def _row(mode, thread, role, text, block_index, quote_id, move=None) -> dict:
             "quote_id": quote_id, "move": move, "at": now()}
 
 
+def _said(role, text, block_index, move) -> tuple:
+    """같은 말인지 견주는 열쇠. 서비스 말의 move(사다리 차례)는 같은 말이어도 달라질 수 있어 사용자 글의 판정 표시만 본다."""
+    return role, text, block_index, move if role == "user" else None
+
+
 def collect(state: MainState) -> dict:
     """N1 저장할 것 모으기."""
     request, ctx, result = state["request"], state["ctx"], state.get("result") or {}
@@ -32,6 +37,11 @@ def collect(state: MainState) -> dict:
         if result.get("found"):  # 의자에서 말로 찾은 블록의 안내는 그 블록의 말로, 다음 블록의 첫 질문과 나눠 남긴다
             rows.append(_row(mode, "main", "service", result["found"], current_index(state), None, "found"))
         rows.append(_row(mode, "main", "service", result.get("reply", ""), move.target if move else None, None, result.get("move")))
+        # 같은 블록 코드를 다시 확인해 같은 판정·같은 말이 나왔다: 대화에 같은 짝을 또 쌓지 않는다(바뀌지 않은 코드를 거듭 확인하면 같은 말이 줄줄이 쌓였다)
+        chat = ctx.chair if mode == "chair" else ctx.guide
+        if request.event == "block_filled" and len(chat) >= len(rows) and [_said(m.role, m.text, m.block_index, m.move) for m in chat[-len(rows):]] == [
+                _said(r["role"], r["text"], r["block_index"], r["move"]) for r in rows]:
+            rows, result = [], {**result, "repeated": True}
     elif request.kind == "followup":
         mode, thread = request.mode or "chair", f"quote:{request.quote_id}"
         rows += [_row(mode, thread, "user", request.text or "", None, request.quote_id),
@@ -55,7 +65,7 @@ def collect(state: MainState) -> dict:
         "block_check": [item for item in [state.get("block_check"), *(state.get("block_fixes") or [])] if item is not None],
         "solution": state.get("solution"),
     }
-    return {"changes": changes}
+    return {"changes": changes, "result": result}
 
 
 def save(state: MainState, config) -> dict:
