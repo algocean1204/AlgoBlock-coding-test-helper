@@ -791,6 +791,8 @@ class UnsaidCreditTest(unittest.TestCase):
         self.assertEqual(asked_count("`a > b ? a : b` 꼴은 뭔가요"), 1)  # 코드 속 '?'는 세지 않고, '뭔가요'는 센다
         self.assertEqual(asked_count("이거 맞나\n변수가 뭐야"), 2)
         self.assertEqual(asked_count("같은 이름이 또 나오니까 하나 더해요"), 0)
+        self.assertEqual(asked_count("끝까지 봐야 하니까"), 0)  # '~니까'는 물음 어미가 아니다
+        self.assertEqual(asked_count("x = a ? b : c 에서 ? 는 뭐죠?"), 1)  # 코드 모양 줄도 남기고, 공백 뒤의 '?'는 문장 끝이 아니다
         self.assertEqual(many_asks_line("이름별로 세면 될 것 같아요. k는 왜 있나요?"), [])
         self.assertTrue(many_asks_line("세면 되나요?\nk는 왜 있죠?")[0].startswith("사용자 말에 물음이 2개 있다."))
 

@@ -49,13 +49,16 @@ def unsaid_credit(text: str, user: str = "") -> list[str]:
             if (_VERDICT.search(part) and not part.rstrip().endswith(("?", "？"))) or (empty and _CREDIT.search(part))]
 
 
-# 물음 어미: 물음표, '~나요', '~까(요)', '~(인·는·건·은·한·뭔)가요', '~죠', 뜻 묻기('뭐예요', '뭐야', '뭔데'), 반말 '~나'('맞나'. '하나'·'그러나'는 빼고)
-_ASKED = re.compile(r"(?:[?？]|나요|까요?|(?:인|는|건|은|한|뭔)가요|죠|뭐예요|뭐에요|뭐야|뭔데|(?<!하)(?<!그러)나)\s*$")
+# 물음 어미: 물음표, '~나요', '~까(요)'('~니까'는 빼고), '~(인·는·건·은·한·뭔)가요', '~죠', 뜻 묻기('뭐예요', '뭐야', '뭔데'), 반말 '~나'('맞나'. '하나'·'그러나'는 빼고)
+_ASKED = re.compile(r"(?:[?？]|나요|(?<!니)까요?|(?:인|는|건|은|한|뭔)가요|죠|뭐예요|뭐에요|뭐야|뭔데|(?<!하)(?<!그러)나)\s*$")
 
 
 def asked_count(text: str) -> int:
     """사용자 말 속 물음의 수(문장·줄마다 물음표나 물음 어미로 끝나는가)."""
-    parts = [part.strip() for part in re.split(r"(?<=[.?!？])\s+|\n", without_code(text or "")) if part.strip()]  # 코드 속 '?'(삼항 연산 등)는 세지 않는다
+    # 백틱·펜스 코드 구간만 뺀다(코드 모양 줄을 통째로 지우면 'x = a ? b : c 에서 ? 는 뭐죠?'가 0개였다).
+    # 문장 끝은 글자 바로 뒤의 문장 부호다: 앞에 공백이 있는 '?'(코드 속 삼항 연산, '? 는')는 문장을 끊지 않는다
+    plain = _CODE_SPAN.sub(" ", text or "")
+    parts = [part.strip() for part in re.split(r"(?<=[^\s][.?!？])\s+|\n", plain) if part.strip()]
     return sum(bool(_ASKED.search(part)) for part in parts)
 
 
