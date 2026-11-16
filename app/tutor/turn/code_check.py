@@ -78,8 +78,8 @@ def _easy(row: str) -> str:
 
 def compile_easy(text: str) -> str:
     """컴파일 오류 글의 첫 오류를 쉬운 말 한 줄로(없는 이름·멤버·클래스, 형이 맞지 않음). 흔하지 않은 오류는 빈 글."""
-    row = _error_row(text, first=True, whole=True, easy=False)
-    return _easy(row) or (TYPE_MISMATCH if _MISMATCH.search(row) else "")
+    row = _error_row(text, first=True, whole=True)  # 쉬운 말로 바뀐 줄이면 그대로(백틱이 '로 바뀌기 전에 _easy가 본다), 아니면 형 불일치만 본다
+    return row if row.endswith(EASY_END) else TYPE_MISMATCH if _MISMATCH.search(row) else ""
 
 
 SHOWN = 80  # 말에 싣는 값의 최대 길이(오류 원문은 자르지 않는다)

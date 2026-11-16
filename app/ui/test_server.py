@@ -1129,6 +1129,13 @@ def compile_hints() -> None:
     assert "값의 형이 맞지 않아요" in server.compile_hint("error[E0308]: mismatched types\n --> main.rs:3:5", "rust")
     assert "문법에 맞지 않는" in server.compile_hint("  File \"solution.py\", line 2\nSyntaxError: invalid syntax", "python")
     assert server.compile_hint("Solution.java:2: error: ';' expected\n1 error", "java") == ""
+    # 실제 컴파일러가 낸 글(rustc·javac·g++): Rust의 백틱 이름도 쉬운 말이 붙는다
+    for text, language, name in (("error[E0425]: cannot find value `x` in this scope\n --> a.rs:1:42\n  |\n1 | fn main(){ println!(\"{}\", x); }\n", "rust", "x"),
+                                 ("error[E0599]: no method named `lenght` found for struct `Vec<{integer}>` in the current scope\n --> b.rs:1:44\n", "rust", "lenght"),
+                                 ("error[E0425]: cannot find type `HashMap` in this scope\n --> c.rs:1:19\n", "rust", "HashMap"),
+                                 ("Solution.java:1: error: cannot find symbol\npublic class Solution { int f(){ return foo; } }\n                                        ^\n  symbol:   variable foo\n  location: class Solution\n1 error\n", "java", "foo"),
+                                 ("m.cpp:1:21: error: use of undeclared identifier 'bar'\n    1 | int main(){ int a = bar; return a; }\n      |                     ^~~\n", "cpp", "bar")):
+        assert f"`{name}`" in server.compile_hint(text, language) and "찾지 못했어요" in server.compile_hint(text, language), (language, name)
     body = server.result_body({"status": "compile_error", "reason": "", "compile": java, "cases": [], "language": "java"})
     assert "`add`라는" in body["compile_hint"] and server.result_body({**{"status": "failed", "reason": "", "compile": "", "cases": [], "language": "java"}})["compile_hint"] == ""
 
