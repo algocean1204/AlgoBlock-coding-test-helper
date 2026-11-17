@@ -108,17 +108,15 @@ def defer_ask(text: str, user: str) -> str:
 
 
 def deferred_user(said) -> list[str]:
-    """블록이 바뀌는 첫 차례용: 가장 나중 튜터 말 바로 앞이 학습자 말이면 그 말을 recent 꼴로 돌려준다(저장 상태 없이 대화 기록에서 읽는다).
+    """블록이 바뀌는 차례용: 답을 받은 가장 나중 학습자 말을 recent 꼴로 돌려준다(저장 상태 없이 대화 기록에서 읽는다).
     물음이 여럿이었는지는 many_asks_line이 본다(엔진이 미룸 문장을 붙였든 모델이 스스로 미뤘든 같다).
-    블록 코드 확인의 짝(판정 표시가 붙은 학습자 글과 그 뒤 튜터 말)은 건너뛴다. 그 뒤 튜터 말이 하나라도 생기면(새 블록의 첫 질문) 더는 넘기지 않는다."""
-    talk, checking = [], False
-    for m in said:
-        if m.role == "user":
-            checking = (m.move or "").startswith(CHECKED)
-        if not checking:
-            talk.append(m)
-    last = next((i for i in range(len(talk) - 1, -1, -1) if talk[i].role == "service"), -1)
-    return [f"사용자: {talk[last - 1].text}"] if last > 0 and talk[last - 1].role == "user" and talk[last - 1].text else []
+    블록 코드 확인 글(판정 표시)은 학습자 말로 치지 않는다. 그 말 뒤에 다른 블록의 튜터 말(새 블록의 첫 질문)이 있으면 이미 넘긴 것이라 넘기지 않는다."""
+    said = list(said)
+    k = next((i for i in range(len(said) - 2, -1, -1) if said[i].role == "user" and not (said[i].move or "").startswith(CHECKED)
+              and said[i + 1].role == "service"), -1)
+    if k < 0 or not said[k].text or any(m.role == "service" and m.block_index != said[k].block_index for m in said[k + 1:]):
+        return []
+    return [f"사용자: {said[k].text}"]
 
 
 def many_asks_line(text: str, recent: list[str] | None = None) -> list[str]:

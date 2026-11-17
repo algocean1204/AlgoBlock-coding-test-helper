@@ -16,6 +16,11 @@ from .moves import hard
 LOG = logging.getLogger("graph.talk")  # 대체 질문이 나간 이유(평가기가 모은다)
 
 
+def carries_deferred(state: MainState) -> bool:
+    """블록이 바뀌는 차례에 지난 말의 못 받은 물음을 넘길 것이 있다. 그러면 저장 힌트 대신 모델이 열기 말을 쓴다(그 물음으로 돌아오게)."""
+    return bool(many_asks_line("", deferred_user(mode_messages(state))))
+
+
 def speak_messages(state: MainState, turn: TurnContext, move: MovePlan, system: str, steps: dict) -> list[dict]:
     """묻는 블록 하나만. 참고 코드와 그 뒤 블록은 넣지 않는다."""
     plan = active_plan(state)
