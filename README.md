@@ -18,7 +18,7 @@ $\bf{\large{\color{#6580DD} AlgoBlock }}$
 
 <p align="center"><a href="https://github.com/algocean1204/AlgoBlock-coding-test-helper/releases/latest"><img src="https://img.shields.io/github/v/release/algocean1204/AlgoBlock-coding-test-helper?label=%EC%B5%9C%EC%8B%A0%20%EB%B2%84%EC%A0%84&color=6580DD" alt="최신 버전"></a></p>
 
-<p align="center"><a href="https://github.com/algocean1204/AlgoBlock-coding-test-helper/releases/latest/download/AlgoBlock-macos-arm64.dmg"><b>macOS(Apple Silicon)용 내려받기</b></a> · <a href="#소스로-실행하기">소스로 실행하기</a></p>
+<p align="center"><a href="https://github.com/algocean1204/AlgoBlock-coding-test-helper/releases/latest/download/AlgoBlock-macos-arm64.dmg"><b>macOS(Apple Silicon)용 내려받기</b></a> · <a href="https://github.com/algocean1204/AlgoBlock-coding-test-helper/releases/latest/download/AlgoBlock-windows-x64.exe"><b>Windows용 내려받기(베타)</b></a> · <a href="#소스로-실행하기">소스로 실행하기</a></p>
 
 <p align="center"><img src=".github/assets/hero.png" width="880" alt="문제 글, 블록으로 나눈 코드와 채점 결과, 튜터와의 대화가 한 창에 나란히 있는 화면"></p>
 
@@ -125,8 +125,9 @@ AI를 연결하지 않아도 문제 풀기, 채점, 힌트, 학습 보고서를 
 | 운영체제 | 파일 |
 | --- | --- |
 | macOS (Apple Silicon) | [AlgoBlock-macos-arm64.dmg](https://github.com/algocean1204/AlgoBlock-coding-test-helper/releases/latest/download/AlgoBlock-macos-arm64.dmg) |
+| Windows 10·11 (x64, 베타) | [AlgoBlock-windows-x64.exe](https://github.com/algocean1204/AlgoBlock-coding-test-helper/releases/latest/download/AlgoBlock-windows-x64.exe) |
 
-내려받은 `.dmg`를 열어 앱을 `Applications`로 옮깁니다. 채점 언어의 도구는 설치 파일에 들어 있지 않습니다. 자세한 내용은 [설치](Docs/guide/install.md)에 있습니다.
+macOS는 내려받은 `.dmg`를 열어 앱을 `Applications`로 옮깁니다. Windows는 내려받은 `.exe`를 실행합니다. 채점 언어(Python, JDK, Node.js, g++/clang++, rustc)의 도구는 두 설치 파일 모두에 들어 있지 않습니다. 자세한 내용은 [설치](Docs/guide/install.md)에 있습니다.
 
 #### macOS에서 처음 열 때
 
@@ -144,7 +145,13 @@ xattr -dr com.apple.quarantine /Applications/AlgoBlock.app
 
 앱 안의 업데이트 기능으로 받은 새 버전에는 이 경고가 다시 뜨지 않습니다. 브라우저로 새 dmg를 받아 직접 바꿔 넣으면 다시 뜹니다.
 
-새 버전이 나오면 앱 상단 막대에 알림이 뜹니다. 내려받기와 '다시 시작해 업데이트' 두 단추로 업데이트합니다. Windows는 실제 PC에서 아직 확인하지 않았습니다.
+새 버전이 나오면 앱 상단 막대에 알림이 뜹니다. 내려받기와 '다시 시작해 업데이트' 두 단추로 업데이트합니다. Windows 앱도 같은 방법으로 업데이트합니다.
+
+#### Windows에서 처음 열 때
+
+실행 파일에 코드 서명이 없어서 처음 열면 Microsoft Defender SmartScreen의 'Windows의 PC 보호' 창이 뜰 수 있습니다. 앱이 망가졌다는 뜻은 아닙니다. 창에서 **'추가 정보'**를 누른 뒤 **'실행'**을 누릅니다. 이 저장소의 릴리스에서 받은 파일에만 이렇게 합니다.
+
+Windows 버전은 베타입니다. 실제 Windows PC에서 넓게 확인하지 못했으니 문제가 있으면 이슈로 알려 주세요.
 
 ### 소스로 실행하기
 
@@ -169,7 +176,7 @@ uv run --no-project --python 3.12 --with langgraph --with pypdf python ui/server
 
 - 채점할 코드(직접 적은 코드와 튜터가 만든 코드)를 격리하지 않고 사용자 권한으로 실행합니다. 자세한 내용은 [보안 구조](Docs/architecture/security.md)에 있습니다.
 - 설치 파일에 서명이 없습니다.
-- 실제 Windows PC에서 실행해 보지 않아 내려받기 표에 Windows가 없습니다.
+- Windows 버전은 베타입니다. 실제 Windows PC에서 넓게 확인하지 못했습니다. 문제가 있으면 이슈로 알려 주세요.
 - ChatGPT 연결은 OpenAI의 Sign in with ChatGPT(오픈소스 앱의 요금제 사용, 미리 보기 단계)를 쓰므로 ChatGPT 요금제의 사용 한도를 따릅니다. 실제 계정으로 끝까지 제대로 도는지는 아직 확인하지 않았습니다.
 - 튜터가 사용자 코드의 이름과 풀이 코드의 이름을 짝짓지 못하면 그 블록을 '확인 전'으로 둡니다. 이때 이름을 맞추거나 '이대로 넘어가기'를 누르라고 안내합니다.
 - '튜터와 차례로'에서는 블록을 확인할 때 튜터 코드와 이어 실행합니다. 튜터와 다른 구조(다른 자료구조, 다른 입력 읽기, 한 블록에 더 많은 일, 직접 닫은 괄호)로 쓴 올바른 블록이라도 그 자리에서는 '이어지지 않아요'나 '확인 전'이 될 수 있습니다. 틀렸다는 뜻이 아니므로 '이대로 넘어가기'로 다음 블록을 열 수 있고 코드를 끝까지 쓴 뒤에는 실행이나 제출로 확인합니다. 이때 '끝까지 내 방식으로 쓰기'로 남은 블록을 열고 다 쓴 뒤 확인해도 됩니다.
