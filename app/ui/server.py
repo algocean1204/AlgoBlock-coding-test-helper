@@ -1684,12 +1684,17 @@ def run_once(p, language: str, code: str, given: str) -> dict:
     return out | (reference(row, given, got if ran else None) if row and "python" in row["solutions"] else {})
 
 
+def kept(report: dict) -> dict:
+    """디버깅이 다시 쓸 채점 결과. 큰 입력(효율성 케이스)의 입력 글은 문제마다 수 MB인데 쓰는 곳이 없어 들고 있지 않는다(tutor_view·result_body도 싣지 않는다)."""
+    return {**report, "cases": [{**case, "input": ""} if case["kind"] == "efficiency" else case for case in report["cases"]]}
+
+
 def judge(t, p, language: str, code: str) -> dict:
     """모든 케이스로 채점하고 제출로 남긴다(언어, 결과 종류, 정확성·효율성 통과 수).
     직전 제출과 언어·코드·결과가 모두 같으면 다시 남기지 않고 repeat를 붙인다(언어나 결과가 달라졌으면 남긴다).
     이 기기에 언어 도구가 없으면(toolchain_missing) 채점하지 못한 것이라 제출로 세지 않는다."""
     report = grade(p, language, code)
-    REPORTS[p.id] = (code, report)
+    REPORTS[p.id] = (code, kept(report))
     last = t.store.conn.execute("SELECT source, ok, language, status FROM submission WHERE problem_id=? ORDER BY rowid DESC LIMIT 1", (p.id,)).fetchone()
     repeat = last is not None and (last["source"].strip(), last["language"], last["status"] or ("passed" if last["ok"] else "failed")) == (code.strip(), language, report["status"])
     if report["status"] != "toolchain_missing" and not repeat:
@@ -2642,7 +2647,7 @@ def handle(path: str, body: dict) -> tuple[int, dict]:
                 judged = None
                 if report is None or saved_code.strip() != code.strip():  # 코드를 고쳤으면 다시 채점한 결과로 본다. 제출로 남기지 않는다(예시 실행 뒤에 열린 디버그가 제출 수를 늘렸다)
                     report = grade(p, language, code)
-                    REPORTS[pid] = (code, report)
+                    REPORTS[pid] = (code, kept(report))
                     judged = {**result_body(report), "unsaved": True}
                 if report["status"] == "passed":  # 엔진을 부르지 않는다: 내 말(있으면)과 맺음말만 디버그 대화에 남긴다
                     return 200, {"passed": True, "judged": judged or result_body(report), "messages": debug_closed(t, pid, str(body.get("text") or "").strip())}
