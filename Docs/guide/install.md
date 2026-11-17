@@ -7,7 +7,7 @@
 | 운영체제 | 파일 |
 |---|---|
 | macOS (Apple Silicon) | [AlgoBlock-macos-arm64.dmg](https://github.com/algocean1204/AlgoBlock-coding-test-helper/releases/latest/download/AlgoBlock-macos-arm64.dmg) |
-| Windows 10·11 (x64, 베타) | [AlgoBlock-windows-x64.exe](https://github.com/algocean1204/AlgoBlock-coding-test-helper/releases/latest/download/AlgoBlock-windows-x64.exe) |
+| Windows (x64, 베타) | [AlgoBlock-windows-x64.exe](https://github.com/algocean1204/AlgoBlock-coding-test-helper/releases/latest/download/AlgoBlock-windows-x64.exe) |
 
 dmg를 열면 `AlgoBlock.app`과 `Applications` 바로가기가 있다. `AlgoBlock.app`을 `Applications`로 끌어다 놓는다.
 
@@ -37,7 +37,7 @@ Windows 파일은 베타다. 서명이 없고, 실제 Windows PC에서 넓게 �
 
 처음 열면 Microsoft Defender SmartScreen의 'Windows의 PC 보호' 창이 뜰 수 있다. 앱이 망가졌다는 뜻이 아니다. **'추가 정보'**를 누른 뒤 **'실행'**을 누른다. 이 저장소의 릴리스에서 받은 파일에만 이렇게 한다.
 
-채점 언어 도구는 exe에 들어 있지 않다. 쓰려는 언어의 도구(Python, JDK, Node.js, g++ 또는 clang++, rustc)를 따로 설치하고 PATH에 둔다. 아래 '언어 도구'를 본다. 앱 안 업데이트는 macOS와 같은 방법으로 된다.
+채점 언어 도구는 exe에 들어 있지 않다. 쓰려는 언어의 도구(Python, JDK, Node.js, g++ 또는 clang++, rustc)를 따로 설치하고 PATH에 둔다. 아래 '언어 도구'를 본다. 앱 안 업데이트는 macOS와 같은 두 단추로 한다.
 
 ## 업데이트
 
@@ -97,7 +97,6 @@ macOS 앱과 Windows 앱은 다음 순서로 바꾼다.
 ## 알려진 한계
 
 - 내려받기 파일은 macOS Apple Silicon용과 Windows x64용(베타)이다.
-- Windows 파일은 실제 Windows PC에서 넓게 확인하지 못했다.
 - Linux용 설치 파일은 없다.
-- 설치 파일은 서명과 공증을 하지 않았다. 처음 한 번은 위 '처음 여는 법'(Windows는 'Windows 베타')대로 연다.
+- 설치 파일은 서명과 공증을 하지 않았다. 처음 한 번은 macOS는 위 '처음 여는 법', Windows는 'Windows 베타' 절대로 연다.
 - 창을 닫으면 진행 중인 채점을 멈추는 정리가 돈다. 메뉴의 '끝내기'로 끝내면 그 정리가 안 돌 수 있다.

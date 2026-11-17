@@ -125,9 +125,9 @@ AI를 연결하지 않아도 문제 풀기, 채점, 힌트, 학습 보고서를 
 | 운영체제 | 파일 |
 | --- | --- |
 | macOS (Apple Silicon) | [AlgoBlock-macos-arm64.dmg](https://github.com/algocean1204/AlgoBlock-coding-test-helper/releases/latest/download/AlgoBlock-macos-arm64.dmg) |
-| Windows 10·11 (x64, 베타) | [AlgoBlock-windows-x64.exe](https://github.com/algocean1204/AlgoBlock-coding-test-helper/releases/latest/download/AlgoBlock-windows-x64.exe) |
+| Windows (x64, 베타) | [AlgoBlock-windows-x64.exe](https://github.com/algocean1204/AlgoBlock-coding-test-helper/releases/latest/download/AlgoBlock-windows-x64.exe) |
 
-macOS는 내려받은 `.dmg`를 열어 앱을 `Applications`로 옮깁니다. Windows는 내려받은 `.exe`를 실행합니다. 채점 언어(Python, JDK, Node.js, g++/clang++, rustc)의 도구는 두 설치 파일 모두에 들어 있지 않습니다. 자세한 내용은 [설치](Docs/guide/install.md)에 있습니다.
+macOS는 내려받은 `.dmg`를 열어 앱을 `Applications`로 옮깁니다. Windows는 내려받은 `.exe`를 실행합니다. 채점 언어(Python, JDK, Node.js, g++/clang++, rustc)의 도구는 두 설치 파일 모두에 들어 있지 않습니다. 앱 안에 든 파이썬은 앱을 돌리는 데만 쓰고, 채점은 기기에 설치한 도구로 합니다. 자세한 내용은 [설치](Docs/guide/install.md)에 있습니다.
 
 #### macOS에서 처음 열 때
 
@@ -145,13 +145,12 @@ xattr -dr com.apple.quarantine /Applications/AlgoBlock.app
 
 앱 안의 업데이트 기능으로 받은 새 버전에는 이 경고가 다시 뜨지 않습니다. 브라우저로 새 dmg를 받아 직접 바꿔 넣으면 다시 뜹니다.
 
-새 버전이 나오면 앱 상단 막대에 알림이 뜹니다. 내려받기와 '다시 시작해 업데이트' 두 단추로 업데이트합니다. Windows 앱도 같은 방법으로 업데이트합니다.
+새 버전이 나오면 앱 상단 막대에 알림이 뜹니다. 내려받기와 '다시 시작해 업데이트' 두 단추로 업데이트합니다. Windows 앱도 같은 두 단추로 업데이트합니다.
 
 #### Windows에서 처음 열 때
 
 실행 파일에 코드 서명이 없어서 처음 열면 Microsoft Defender SmartScreen의 'Windows의 PC 보호' 창이 뜰 수 있습니다. 앱이 망가졌다는 뜻은 아닙니다. 창에서 **'추가 정보'**를 누른 뒤 **'실행'**을 누릅니다. 이 저장소의 릴리스에서 받은 파일에만 이렇게 합니다.
 
-Windows 버전은 베타입니다. 실제 Windows PC에서 넓게 확인하지 못했으니 문제가 있으면 이슈로 알려 주세요.
 
 ### 소스로 실행하기
 
