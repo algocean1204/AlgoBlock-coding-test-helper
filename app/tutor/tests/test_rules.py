@@ -903,20 +903,33 @@ class UnsaidCreditTest(unittest.TestCase):
         self.assertEqual(many_asks_line("이름별로 세면 될 것 같아요. k는 왜 있나요?"), [])
         self.assertTrue(many_asks_line("세면 되나요?\nk는 왜 있죠?")[0].startswith("사용자 말에 물음이 2개 있다."))
 
-    def test_reply_that_takes_none_of_several_asks_is_caught(self):
-        from ..common.talk_rules import asks_ignored
+    def test_reply_that_takes_none_of_several_asks_gets_a_deferral_line(self):
+        from ..common.talk_rules import asks_ignored, defer_ask
 
+        lead = "물음이 둘이라 하나씩 볼게요. 다른 물음은 다음 차례에 이어 봐요. "
         two = "이름별로 세면 되나요? 그리고 k는 왜 필요한가요?"
-        self.assertTrue(asks_ignored("먼저 입력을 손으로 따라가 보면 어떨까요?", two))
-        self.assertIn("물음을 받지 않음", reply_problems("먼저 입력을 손으로 따라가 보면 어떨까요?", move="trace", problem="", user=two))
-        self.assertTrue(asks_ignored("값을 하나 골라 따라가 볼까요?", "`cnt`는 뭐죠? 반복은 왜 두 번인가요?"))
-        # 오탐: 한 물음만 다뤄도, 하나를 미뤘다고 말해도, 물음이 하나이거나 없어도, 코드만 붙여도 통과
-        self.assertFalse(asks_ignored("k는 어떤 값을 담는 변수일까요?", two))
-        self.assertFalse(asks_ignored("이름별로 세는 것은 다음 차례에 보고, 입력부터 따라가 볼까요?", two))
-        self.assertFalse(asks_ignored("먼저 입력을 따라가 보고 이어 볼까요?", two))
-        self.assertFalse(asks_ignored("입력을 손으로 따라가 볼까요?", "이름별로 세면 되나요?"))
-        self.assertFalse(asks_ignored("입력을 손으로 따라가 볼까요?", "잘 모르겠어요"))
-        self.assertFalse(asks_ignored("무엇이 먼저 실행되나요?", "```python\nx = a ? b : c\nprint(x)\n```"))
+        # 걸리면 실패(대체 질문)가 아니라 답 앞에 미룸 문장이 붙고 본문은 그대로다
+        self.assertNotIn("물음을 받지 않음", reply_problems("입력의 첫 값을 손으로 따라가 볼까요?", move="trace", problem="", user=two))
+        self.assertEqual(defer_ask("입력의 첫 값을 손으로 따라가 볼까요?", two), lead + "입력의 첫 값을 손으로 따라가 볼까요?")
+        self.assertIn("여럿이라", defer_ask("입력을 볼까요?", "가는 뭐죠? 나는 뭐죠? 다는 뭐죠?"))
+        # 걸리지 않는다: 한 물음만 다뤄도, 이미 미뤘다고 말해도(미룸 말을 겹쳐 붙이지 않는다), 물음이 하나이거나 없어도, 코드만 붙여도
+        for text, user in [("k는 어떤 값을 담는 변수일까요?", two), (lead + "입력부터 따라가 볼까요?", two),
+                           ("이름별로 세는 것은 다음 차례에 보고, 입력부터 따라가 볼까요?", two), ("입력을 손으로 따라가 볼까요?", "이름별로 세면 되나요?"),
+                           ("입력을 손으로 따라가 볼까요?", "잘 모르겠어요"), ("무엇이 먼저 실행되나요?", "```python\nx = a ? b : c\nprint(x)\n```")]:
+            self.assertEqual(defer_ask(text, user), text)
+        # 검토 예문: 바꿔 말한 답은 미룸만 붙고, 대소문자·활용형·낱말 없는 물음은 받은 것으로 본다
+        self.assertTrue(asks_ignored("이미 본 칸을 기록하는 때가 언제일까요?", "방문 표시는 언제 해야 하나요? 그리고 큐에는 뭘 넣나요?"))
+        self.assertFalse(asks_ignored("Count가 처음에 담는 값은 무엇일까요?", "count는 왜 0부터 시작하나요? 그리고 Counts 배열은 뭐예요?"))
+        self.assertFalse(asks_ignored("정렬하면 같은 값끼리 붙는데 어떨까요?", "정렬해야 하나요? 아니면 해시를 써야 하나요?"))
+        self.assertFalse(asks_ignored("입력을 손으로 따라가 볼까요?", "이거 맞나요? 다음엔 뭐 하죠?"))
+        self.assertFalse(asks_ignored("큐에 넣는 값을 볼까요?", "방문 표시는 언제 해야 하나요? 그리고 큐에는 뭘 넣나요?"))
+
+    def test_debug_check_reply_prepends_deferral_only_when_not_fallback(self):
+        two = "이름별로 세면 되나요? 그리고 k는 왜 필요한가요?"
+        text = "입력의 첫 값을 손으로 따라가 볼까요?"
+        reply, _ = DebugLineWithFixTest()._reply("trace", text, two)
+        self.assertTrue(reply.startswith("물음이 둘이라 하나씩 볼게요.") and reply.endswith(text))
+        self.assertEqual(DebugLineWithFixTest()._reply("trace", text, "이름별로 세면 되나요?")[0], text)
 
     def test_agreeing_lead_on_a_restated_assumption_is_caught(self):
         from ..common.talk_rules import unsaid_credit

@@ -1,7 +1,7 @@
 """A8 노드. N1 gather, N2 answer, N3 check_reply. 넘김(advance)은 만들지 않는다."""
 
 from ..common.progress_view import active_plan, current_index
-from ..common.talk_rules import FALLBACK, note_fallback, repair, reply_problems
+from ..common.talk_rules import FALLBACK, defer_ask, note_fallback, repair, reply_problems
 from ..llm import llm, model_name
 from ..state import MainState
 from .prompts import answer_messages, quote_context
@@ -33,4 +33,6 @@ def check_reply(state: MainState) -> dict:
     if found:
         note_fallback("followup", found, text)
         text = FALLBACK["followup"]
+    else:
+        text = defer_ask(text, draft.get("question", ""))
     return {"result": {"reply": text, "move": "followup"}, "draft": None}

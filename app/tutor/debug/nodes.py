@@ -1,6 +1,6 @@
 """디버그 노드: gather → locate/judge → pick_step → speak → check_reply(graph.py)."""
 
-from ..common.talk_rules import BACK_LEAD, agree_opening, asks_ignored, banned_in, quotes_ok, repair, unsaid_credit, without_code
+from ..common.talk_rules import BACK_LEAD, agree_opening, banned_in, defer_ask, quotes_ok, repair, unsaid_credit, without_code
 from ..common.verdict import ASIDE_RULE, FOUND_RULE, ask_verdict
 from ..knowledge.ontology import PITFALLS, pitfall_candidates, pitfall_lines
 from ..llm import llm, model_name
@@ -106,11 +106,12 @@ def check_reply(state: MainState) -> dict:
            # 문제 글·내 말에 없는 큰따옴표 인용("앞 사람 여분을 먼저 확인한다")이 나왔다
            or not quotes_ok(without_code(text), state["ctx"].problem_text, said, double=True)
            or unsaid_credit(text, req.text or "")  # 하지 않은 판단을 인정했다
-           or asks_ignored(text, req.text or "")  # 물음이 여럿인데 하나도 받지 않았다
            # 첫 질문이 원인 줄이나 고친 줄의 조각을 알려 주면 사다리가 무너진다('4줄에서…', '네 번째 줄', 'count.get(name, 0) + 1로')
            or (first and (rules.names_line(text) or rules.leaks_piece(text, draft["fixed_line"], req.code or "")))
            # 줄 번호를 알려 주지 않는 단계에서 줄 번호를 말하면 고칠 것(고친 줄의 조각)을 함께 말하지 않는다. fix·form 단계는 문법 예를 보여 준다
            or (name not in rules.SHOWS_LINE and rules.names_line(text) and rules.leaks_piece(text, draft["fixed_line"], req.code or "")))
+    if not bad:
+        text = defer_ask(text, req.text or "")  # 물음이 여럿인데 하나도 받지 않았다: 미룸 말을 앞에(답 본문은 그대로)
     if first:
         report = req.report or {}
         text = rules.symptom_question(report) if bad else f"{rules.symptom(report)} {text}"
