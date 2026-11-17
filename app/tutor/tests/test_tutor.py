@@ -56,11 +56,12 @@ class TutorTest(unittest.TestCase):
             moved = tutor.turn("p1", "chair", "message", text="문제에 제목이 같으면 같은 책이라고 해서요")
             self.assertEqual(moved.body["open_count"], 2)
             self.assertEqual([b["name"] for b in moved.body["blocks"]], ["입력받기", None])  # 찾은 블록은 이름이 열린다
-            self.assertEqual(moved.body["messages"][-1]["text"], "블록 칸에 이 블록의 코드를 적어 보세요. 다음은 '반복' 블록이에요. " + fakes.HINTS2[0])
-            self.assertEqual([m["block_index"] for m in moved.body["messages"]], [0, 0, 0, 0, 1])  # 화면 구분선은 그 말의 블록 종류
+            # 찾은 블록의 안내는 찾은 블록(0)의 말로, 다음 블록의 첫 질문은 다음 블록(1)의 말로 따로 남는다
+            self.assertEqual([m["text"] for m in moved.body["messages"][-2:]], ["블록 칸에 이 블록의 코드를 적어 보세요.", "다음은 '반복' 블록이에요. " + fakes.HINTS2[0]])
+            self.assertEqual([m["block_index"] for m in moved.body["messages"]], [0, 0, 0, 0, 0, 1])  # 화면 구분선은 그 말의 블록 종류
             rows = tutor.store.conn.execute("SELECT role, block_index, move FROM message WHERE problem_id='p1' ORDER BY id").fetchall()
             self.assertEqual([tuple(r) for r in rows], [("service", 0, "open"), ("user", 0, None), ("service", 0, "basis"),
-                                                        ("user", 0, None), ("service", 1, "open")])
+                                                        ("user", 0, None), ("service", 0, "found"), ("service", 1, "open")])
             raw = tutor.store.conn.execute("SELECT plan_json FROM tutor_session WHERE problem_id='p1'").fetchone()[0]
             self.assertIn('"algorithm": "hash"', raw)
             self.assertNotIn("reference", json.dumps(moved.body))
@@ -365,6 +366,126 @@ class TutorTest(unittest.TestCase):
         finally:
             tutor.close()
 
+    KEY_TRAP = {"id": "python.missing_key", "what": "없는 키를 읽으면 멈춰요.", "fix": "`get(키, 0)`으로 읽어요.", "code": [], "right": [".get("], "fails": {"1": "failed"}, "outs": {"1": "{'tom': 1}"}}
+    ROWS_TRAP = {"id": "python.shared_rows", "what": "모든 줄이 같은 목록이에요.", "fix": "줄마다 새 목록을 만들어요.", "code": [], "right": ["for _ in range"], "fails": {"9": "failed"}, "outs": {"9": "1"}}
+
+    def test_debug_picks_lang_trap_and_feedback_follows(self):
+        """증명된 언어 함정: 실패와 맞는 것만 후보로 내놓고(캐시 앞부분 밖), 모델이 고른 것을 원인 설명 단계에서 무슨 일이 일어나는지(what)만 말한다.
+        피드백은 디버그가 고른 것을 받는다: 실패한 제출엔 what만, 통과한 뒤에는 고치는 법(fix)까지. 모델 호출 수는 그대로다."""
+        analysis = {"analysis": "같은 이름이 둘이면요?", "similar_hint": "센다", "advice": "센 값을 보세요."}
+        fake = FakeLlm({**DRAFT, "debug.locate": [{**self.FOUND, "trap": "python.missing_key"}], "debug.judge": ["[check]N"] * 4,
+                        "debug.ask": ["count는 어떻게 바뀌나요?", "그 줄은 무엇을 하나요?", "그 줄을 어떻게 바꿀까요?", "다시 볼까요?"],
+                        "feedback.assess": ["[check]30 Y"] * 4, "feedback.analyze": [analysis] * 4})
+        tutor = Tutor(self.path, client=fake, shape=lambda _pid, _language: {"traps": [self.KEY_TRAP, self.ROWS_TRAP]})
+        try:
+            tutor.store.put_problem("p1", "python", fakes.PROBLEM, title="추천 서가에 꽂히는 책")
+            tutor.store.put_fact("p1", "문자열 배열 둘, 남는 원소 하나", [])
+            tutor.debug("p1", self.BUGGY, self.FAILED)
+            locate = [c for c in fake.calls if c["task"] == "debug.locate"][0]["messages"][-1]
+            self.assertIn("- python.missing_key: 없는 키를 읽으면 멈춰요.", locate["content"])
+            self.assertNotIn("python.shared_rows", locate["content"])  # 떨어진 케이스가 다르다
+            self.assertGreater(locate["content"].index("trap:"), locate["cache_prefix"])  # 실패마다 다른 글은 캐시 앞부분 밖
+            self.assertEqual(tutor.store.load("p1").debug_state.trap, "python.missing_key")
+            said = [tutor.debug("p1", self.BUGGY, self.FAILED, text="모르겠어요").body["messages"][-1]["text"] for _ in range(4)]  # trace, line, cause, cause
+            self.assertEqual([text.startswith("없는 키를 읽으면 멈춰요.") for text in said], [False, False, True, False])  # 원인 설명에 처음 왔을 때만
+            self.assertFalse(any("get(키, 0)" in text for text in said))  # 고치는 법은 말하지 않는다
+            self.assertEqual(fakes.tasks(fake).count("debug.locate"), 1)
+
+            tutor.store.add_submission("p1", self.BUGGY, False)
+            self.assertEqual(tutor.feedback("p1").body["advice"], "센 값을 보세요. 없는 키를 읽으면 멈춰요.")
+            tutor.store.add_submission("p1", CODE + "\n    return []", False)  # 고친 꼴의 이름이 있으면 그 함정은 이 실패의 원인이 아니다
+            self.assertEqual(tutor.feedback("p1").body["advice"], "센 값을 보세요.")
+            tutor.store.add_submission("p1", CODE, True)
+            self.assertEqual(tutor.feedback("p1").body["advice"], "센 값을 보세요. 없는 키를 읽으면 멈춰요. `get(키, 0)`으로 읽어요.")
+            tutor.store.add_submission("p1", CODE.replace("count.get(name, 0) + 1", "(count[name] if name in count else 0) + 1"), True)  # 그 꼴을 고친 흔적 없이 다른 방식으로 통과
+            self.assertEqual(tutor.feedback("p1").body["advice"], "센 값을 보세요.")
+            self.assertEqual(fakes.tasks(fake).count("feedback.analyze"), 4)
+            self.assertNotIn("없는 키", fakes.prompt(fake, "feedback.analyze"))  # 글은 엔진이 붙인다
+        finally:
+            tutor.close()
+
+    def test_debug_drops_unlisted_trap_and_stays_off_without_data(self):
+        """모델이 내놓지 않은 id를 고르면 버린다. 자료가 없거나 맞는 후보가 없으면 프롬프트는 그대로다."""
+        listed = {"traps": [self.KEY_TRAP, self.ROWS_TRAP]}
+        other = {"traps": [{**self.KEY_TRAP, "fails": {"1": "runtime_error"}}]}  # 같은 케이스, 다른 상태
+        for n, (shape, trap) in enumerate(((listed, "python.shared_rows"), (other, "python.missing_key"), ({"traps": []}, "python.missing_key"), (None, "python.missing_key"))):
+            fake = FakeLlm({"debug.locate": [{**self.FOUND, "trap": trap}]})
+            tutor = Tutor(str(Path(self.dir.name) / f"off{n}.db"), client=fake, shape=None if shape is None else lambda _pid, _language, s=shape: s)
+            try:
+                tutor.store.put_problem("p1", "python", fakes.PROBLEM)
+                tutor.store.put_fact("p1", "문자열 배열 둘, 남는 원소 하나", [])
+                tutor.debug("p1", self.BUGGY, self.FAILED)
+                self.assertEqual(tutor.store.load("p1").debug_state.trap, "", (shape, trap))
+            finally:
+                tutor.close()
+            if shape != listed:  # 맞는 후보가 없으면 프롬프트에 후보 줄이 없다
+                self.assertNotIn("trap:", fakes.prompt(fake, "debug.locate"))
+
+    def test_debug_candidates_follow_the_language(self):
+        """진단 후보 목록에 파이썬에만 있는 실수(콜론 빠짐)가 다른 언어로 풀 때 들어가지 않는다. 파이썬에는 그대로 들어간다."""
+        tutor, fake = self.tutor({"debug.locate": [self.FOUND, self.FOUND]})
+        try:
+            tutor.store.put_problem("pj", "java", fakes.PROBLEM, title="자바 문제")
+            tutor.store.put_fact("pj", "문자열 배열 둘, 남는 원소 하나", [])
+            tutor.debug("p1", self.BUGGY, self.FAILED)
+            python = fakes.prompt(fake, "debug.locate")
+            fake.calls.clear()
+            tutor.debug("pj", self.BUGGY, self.FAILED)
+            java = fakes.prompt(fake, "debug.locate")
+            self.assertIn("missing_colon: 콜론(:) 빠짐", python)
+            self.assertIn("no_return: 돌려주지 않음(None)", python)
+            self.assertNotIn("missing_colon", java)
+            self.assertNotIn("indent:", java)
+            self.assertIn("no_return: 돌려주지 않음 —", java)
+            self.assertNotIn("None", java)
+        finally:
+            tutor.close()
+
+    def test_weak_pitfalls_follow_the_language(self):
+        """다른 언어로 바꾼 사용자에게 파이썬에만 있는 실수 이름('콜론 빠짐')을 되풀이한 실수로 보여 주지 않는다."""
+        from ..common.talk_prompts import weak_pitfalls
+        for language, want in (("python", ["콜론(:) 빠짐(3번)", "돌려주지 않음(None)(2번)"]), ("java", ["돌려주지 않음(2번)"])):
+            ctx = fakes.context(language=language, frequent_pitfalls=[("missing_colon", 3), ("no_return", 2)])
+            self.assertEqual(weak_pitfalls(ctx), want, language)
+
+    def test_debug_first_question_uses_clue_and_refuses_answer(self):
+        """첫 질문이 늘 '코드 첫 줄부터 손으로 따라가 보면…'이었다. 진단이 함께 지은 첫 질문(실패 입력과 코드의 단서)을 증상 뒤에 붙인다(모델 호출은 그대로 1번).
+        '그냥 답 알려줘요'에는 거절 없이 다음 질문으로 넘어갔다: 거절과 대안(볼 곳을 좁힌다)을 분명히 말한다."""
+        from ..debug.prompts import OPENING_RULE
+        from ..debug.rules import ANSWER_LEAD, symptom, symptom_question
+
+        clue = "입력에 tom이 두 번 있는데, 두 번째 tom을 만났을 때 count에는 무엇이 들어가나요?"
+        tutor, fake = self.tutor({"debug.locate": [{**self.FOUND, "opening": clue}],
+                                  "debug.ask": ["tom이 두 번째로 나올 때 count는 어떻게 바뀌나요?", "그 값은 두 번째 tom 뒤에 어떻게 되나요?"],
+                                  "debug.judge": ["[check]A"]})
+        try:
+            start = tutor.debug("p1", self.BUGGY, self.FAILED)
+            self.assertEqual(start.body["messages"][-1]["text"], f"{symptom(self.FAILED)} {clue}")
+            self.assertEqual(fakes.tasks(fake), ["debug.locate"])  # 첫 질문은 진단과 한 번에 받는다
+            self.assertIn(OPENING_RULE, fakes.prompt(fake, "debug.locate"))
+            short = tutor.debug("p1", self.BUGGY, self.FAILED, text="그냥 답 알려줘요")
+            self.assertEqual(short.body["messages"][-1]["text"], ANSWER_LEAD + "tom이 두 번째로 나올 때 count는 어떻게 바뀌나요?")
+            self.assertEqual((short.body["step"], fakes.tasks(fake).count("debug.judge")), ("trace", 0))  # 짧은 답 요청은 규칙으로 가른다. 한 단계 좁힌다
+            ask = [c for c in fake.calls if c["task"] == "debug.ask"][-1]["messages"][-1]["content"]
+            self.assertIn("고친 코드나 답을 달라고 했다", ask)
+            self.assertNotIn("사용자 말:", ask)
+            long = tutor.debug("p1", self.BUGGY, self.FAILED, text="시간이 없어서 그러는데 고친 코드를 통째로 보여 주실 수 있나요")
+            self.assertTrue(long.body["messages"][-1]["text"].startswith(ANSWER_LEAD))  # 판정이 A로 가른 긴 요청도 같다
+            self.assertIn("[check]A", fakes.prompt(fake, "debug.judge"))
+        finally:
+            tutor.close()
+        leaked = ("4번째 줄에서 count에 무엇이 들어가나요?", "count[name] = count.get(name, 0) + 1 로 바꾸면 될까요?", "", "두 번째 tom을 보세요.",
+                  # 고친 줄의 조각, 줄 번호의 다른 꼴도 첫 질문에서는 막는다
+                  "count.get(name, 0) + 1로 바꾸면 두 번째 tom은 어떻게 될까요?", "4줄에서 count에 1을 넣지 말고 무엇을 넣어야 할까요?",
+                  "네 번째 줄에서 count에 하나를 더해야 하지 않을까요?", "4행을 보면 무엇이 보이나요?", "line 4에서 count는 몇이 되나요?")
+        for n, opening in enumerate(leaked):
+            tutor, fake = self.tutor({"debug.locate": [{**self.FOUND, "opening": opening}]})
+            try:
+                got = tutor.debug("p1", f"{self.BUGGY}  # {n}", self.FAILED).body["messages"][-1]["text"]  # 코드가 달라야 새로 진단한다
+                self.assertEqual(got, symptom_question(self.FAILED), opening)  # 줄 번호·고친 줄·질문 아님은 정해진 글로
+            finally:
+                tutor.close()
+
     def test_debug_new_code_restarts_and_syntax_shows_line(self):
         syntax = {"status": "runtime_error", "cases": [{"id": "1", "input": "[[1]]", "expected": "1", "got": "", "status": "runtime_error",
                   "error": '  File "solution.py", line 3\n    for name in a\n                 ^\nSyntaxError: expected \':\''}]}
@@ -479,7 +600,7 @@ class TutorTest(unittest.TestCase):
     MAKER = {"code": "def small():\n    return [[['a'], []]]\ndef edge():\n    return []\ndef large():\n    return []", "bounds": [{"arg": 0, "shortest": 1, "longest": 100000}]}
 
     def test_cross_check_agrees_and_keeps_the_guide(self):
-        """대조가 맞으면 가이드를 그대로 쓰고 결과(모두 통과, 숨은 케이스 수, 호출 2회, 가운데 급만)를 남긴다. 단순 풀이·생성기 코드의 울타리는 벗겨 실행기에 넘긴다."""
+        """대조가 맞으면 가이드를 그대로 쓰고 결과(모두 통과, 숨은 케이스 수, 호출 2회, 처음 풀이의 급만)를 남긴다. 단순 풀이·생성기 코드의 울타리는 벗겨 실행기에 넘긴다."""
         tutor, fake, seen = self.crossed({"plan.solve": [SOLVED], "plan.brute": [self.BRUTE], "plan.cases": [self.MAKER], **LINED},
                                          [{"status": "same", "hidden": 12, "efficiency": 2}])
         try:
@@ -489,7 +610,7 @@ class TutorTest(unittest.TestCase):
             code, brute, maker, bounds = seen["runs"][0]
             self.assertEqual((code, brute.startswith("def solution"), bounds[0].longest), (CODE, True, 100000))
             self.assertEqual({k: seen["done"][0][k] for k in ("verified", "calls", "tiers", "hidden", "efficiency")},
-                             {"verified": "all", "calls": 2, "tiers": ["middle"], "hidden": 12, "efficiency": 2})
+                             {"verified": "all", "calls": 2, "tiers": ["small"], "hidden": 12, "efficiency": 2})
             self.assertIn("정의 그대로 푸는 검산자", fakes.prompt(fake, "plan.brute") + fake.calls[1]["messages"][0]["content"])
         finally:
             tutor.close()
@@ -505,11 +626,11 @@ class TutorTest(unittest.TestCase):
             self.assertEqual(tutor.prepare("p1").status, 200)
             self.assertEqual(fakes.tasks(fake), ["plan.solve", "plan.brute", "plan.cases", "plan.solve", "plan.solve", "plan.draft_blocks"])
             models = [c["params"]["model"] for c in fake.calls if c["task"] == "plan.solve"]
-            self.assertEqual([("opus" in m, "sonnet" in m) for m in models], [(False, True), (False, True), (True, False)])  # 큰 급은 한 번
+            self.assertEqual([next(s for s in ("haiku", "sonnet", "opus") if s in m) for m in models], ["haiku", "sonnet", "opus"])  # 기본(작음) → 가운데 급 한 번 → 큰 급 한 번
             self.assertIn('입력: [["a", "b"], ["b"]]', fake.calls[3]["messages"][-1]["content"])  # 다른 입력과 두 결과를 보여 준다
             self.assertIn('느린 풀이의 결과: "a"', fake.calls[3]["messages"][-1]["content"])
             done = seen["done"][0]
-            self.assertEqual((done["verified"], done["tiers"], done["calls"]), ("none", ["middle", "middle", "large"], 4))
+            self.assertEqual((done["verified"], done["tiers"], done["calls"]), ("none", ["small", "middle", "large"], 4))
             self.assertLessEqual(done["calls"], 5)
             self.assertEqual(len(seen["runs"]), 3)
             self.assertEqual(tutor.store.load("p1").solution.code, other["code"])  # 예시를 통과한 마지막 풀이
@@ -523,9 +644,56 @@ class TutorTest(unittest.TestCase):
         try:
             self.assertEqual(tutor.prepare("p1").status, 200)
             self.assertEqual(tutor.store.load("p1").solution.code, fixed["code"])
-            self.assertEqual((seen["runs"][1][0], seen["done"][0]["verified"], seen["done"][0]["tiers"]), (fixed["code"], "all", ["middle", "middle"]))
+            self.assertEqual((seen["runs"][1][0], seen["done"][0]["verified"], seen["done"][0]["tiers"]), (fixed["code"], "all", ["small", "middle"]))
         finally:
             tutor.close()
+
+    def test_cross_check_on_the_provider_path_reads_bounds_and_climbs_tiers(self):
+        """가짜 모델이 아니라 공급자 경로(app.llm의 요청·응답 읽기)로: 생성기의 제한사항(low·high가 든 bounds)을 읽어 실행기에 넘기고,
+        대조가 계속 다르면 기본(작음) → 가운데 → 큼 차례로 Haiku → Sonnet → Opus를 부른다. 네트워크는 쓰지 않는다(전송을 바꿔 끼운다)."""
+        from dataclasses import asdict, is_dataclass
+
+        from ..llm import client
+        client._backend_session()  # 저장소 루트를 경로에 더해 app.llm을 부른다
+        from app.llm.wire import set_transport
+
+        maker = {**self.MAKER, "bounds": [{"arg": 0, "low": 1, "high": 100, "shortest": 1, "longest": 100000}]}
+        replies = {"plan.solve": [SOLVED] * 3, "plan.brute": [self.BRUTE], "plan.cases": [maker],
+                   "plan.draft_blocks": [asdict(b) if is_dataclass(b) else b for b in LINED["plan.draft_blocks"]]}
+        now, asked = {"task": ""}, []
+        backend = client._backend_use
+
+        def tracked(model, messages, schema, *, task=None, **params):
+            now["task"] = task
+            return backend(model, messages, schema, task=task, **params)
+
+        def transport(url, headers, body, timeout):
+            asked.append((now["task"], body["model"]))
+            got = replies[now["task"]]
+            return {"content": [{"type": "text", "text": json.dumps(got.pop(0) if len(got) > 1 else got[0], ensure_ascii=False)}], "stop_reason": "end_turn", "usage": {}}
+
+        seen = {"runs": [], "done": []}
+
+        def run(pid, code, brute, maker_code, bounds):
+            seen["runs"].append(bounds)
+            return {"status": "differ", "input": "[]", "got": "1", "want": "2"}
+
+        cross = mock.Mock(mode=lambda pid: "function", run=run, done=lambda pid, verdict: seen["done"].append(verdict))
+        env = {"ANTHROPIC_API_KEY": "test", "ALGOBLOCK_LLM_PROVIDER": "", "ALGOBLOCK_LLM_MODEL": "", "ALGOBLOCK_THEME_GUIDE": "", "ALGOBLOCK_THEME_INGEST": "",
+               "ALGOBLOCK_THEME_BLOCKS": "", "ALGOBLOCK_LLM_USAGE_LOG": "", "ALGOBLOCK_LLM_PROMPT_DIR": ""}
+        set_transport(transport)
+        self.addCleanup(set_transport, None)
+        with mock.patch.dict("os.environ", env), mock.patch.object(client, "_backend_use", tracked):
+            tutor = Tutor(self.path, check=lambda pid, code: {"status": "passed", "cases": []}, cross=cross)
+            try:
+                tutor.store.put_problem("p1", "python", fakes.PROBLEM, title="추천 서가에 꽂히는 책")
+                tutor.store.put_fact("p1", "문자열 배열 둘, 남는 원소 하나", [])
+                self.assertEqual(tutor.prepare("p1").status, 200)
+            finally:
+                tutor.close()
+        self.assertEqual([model for task, model in asked if task == "plan.solve"], ["claude-haiku-5-5", "claude-sonnet-5-5", "claude-opus-5-5"])
+        self.assertEqual([(b.arg, b.low, b.high, b.shortest, b.longest) for b in seen["runs"][0]], [(0, 1, 100, 1, 100000)])
+        self.assertEqual((seen["done"][0]["verified"], seen["done"][0]["tiers"]), ("none", ["small", "middle", "large"]))
 
     def test_cross_check_skips_when_examples_never_pass(self):
         """공개 예시를 끝내 통과하지 못하면 대조하지 않고(모델 0회 더) 그 예시를 '확인이 필요한 곳'으로 남긴다(문제를 잘못 읽었을 수 있다)."""
@@ -693,7 +861,7 @@ class TutorTest(unittest.TestCase):
                     store.close()
 
             with ThreadPoolExecutor(max_workers=4) as pool:
-                self.assertEqual(list(pool.map(open_one, range(4))), [10] * 4)
+                self.assertEqual(list(pool.map(open_one, range(4))), [11] * 4)
 
     def test_old_database_migrates(self):
         conn = sqlite3.connect(self.path)
@@ -706,7 +874,7 @@ class TutorTest(unittest.TestCase):
         conn.close()
         tutor = Tutor(self.path, client=FakeLlm({}))
         try:
-            self.assertEqual(tutor.store.conn.execute("PRAGMA user_version").fetchone()[0], 10)
+            self.assertEqual(tutor.store.conn.execute("PRAGMA user_version").fetchone()[0], 11)
             # 버전 8: 판정 '?'(확인 전)를 담는다. 옛 블록 상태는 그대로 옮겨진다(짝은 기본값)
             self.assertEqual([tuple(row) for row in tutor.store.conn.execute("SELECT code, verdict, renames_json FROM block_state")], [("x = 1", "Y", "[]")])
             tutor.store.conn.execute("UPDATE block_state SET verdict='?'")

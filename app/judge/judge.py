@@ -33,7 +33,7 @@ SKIPPED = "앞선 테스트에서 시간 초과가 이어져 돌리지 않았어
 GRACE = 1.3  # 효율성 케이스는 제한의 이만큼에서 끝낸다(제한을 조금 넘은 것을 끝까지 재 한 번 다시 돌려 보려고)
 NEAR = 0.8  # 통과한 효율성 케이스가 제한의 이만큼 이상 걸리면 near
 
-LANGUAGES = ("python", "java", "cpp", "kotlin", "go", "javascript", "rust")
+LANGUAGES = ("python", "java", "cpp", "javascript", "rust")
 MODES = ("function", "program")
 
 # 한글 조사(solution을, stdin으로) 앞에서도 맞게 영문·숫자 경계만 본다. \b는 한글을 글자로 봐서 놓친다.
@@ -160,7 +160,8 @@ def judge(language, source, cases, problem="", mode=None, timeout=TIMEOUT_SECOND
             compile_once = getattr(lang, "compile", common.compile_command)
             failure = compile_once(build, work)
             if failure:
-                return {**report, "status": failure["status"], "compile": failure,
+                why = "컴파일이 제한 시간 안에 끝나지 않았습니다" if failure["status"] == "timeout" else "컴파일하지 못했습니다"
+                return {**report, "status": failure["status"], "reason": why, "compile": failure,
                         "compile_line": common.error_line(language, lang.SAMPLE[chosen], source, failure["stderr"])}
         streak = 0
         for index, case in enumerate(mode_cases):

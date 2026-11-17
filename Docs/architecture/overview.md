@@ -49,7 +49,7 @@ flowchart LR
 | `app/tutor/knowledge/` | 온톨로지, 벡터 색인, 임베딩 |
 | `app/tutor/llm/` | 엔진 쪽 모델 입구, 과정 표, 시험용 가짜 모델 |
 | `app/tutor/eval/` | 측정과 평가 도구(비용 집계, 벤치) |
-| `app/judge/` | 채점기(7개 언어 실행기, 인자 형 읽기) |
+| `app/judge/` | 채점기(5개 언어 실행기, 인자 형 읽기) |
 | `app/llm/` | 공급자 연결(Claude API 키, OpenAI API 키, ChatGPT 로그인), 사용량 기록 |
 | `app/packaging/` | 설치 파일 만들기(PyInstaller, 맥·윈도 스크립트) |
 

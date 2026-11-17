@@ -1,7 +1,8 @@
 """디버그 프롬프트. 진단(보이지 않음), 원인 판정, 질문."""
 
 from ..common.scope import OUTSIDE_PROBLEMS
-from ..common.talk_rules import BANNED
+from ..common.talk_prompts import NOT_SAID
+from ..common.talk_rules import BANNED, many_asks_line
 from ..feedback.prompts import FAIL_WORD
 from ..knowledge.ontology import size_rule, skill_examples
 from ..common.solution import solution_lines
@@ -19,18 +20,21 @@ SPEAK_SYSTEM = "\n".join(
         "너는 코딩테스트 튜터의 생각하는 의자다. 사용자가 자기 코드의 틀린 곳을 스스로 찾게 디버깅을 돕는다.",
         "원칙:",
         "- 고친 코드를 대신 쓰지 않는다. 고친 줄과 무엇으로 바꿀지는 말하지 않는다. 사용자가 찾아서 직접 고친다.",
+        "- 답이 되는 조합·원소·값(어떤 것을 고르거나 빼면 된다)을 말하지 않는다. 줄 번호를 말할 때는 이 코드에서 고칠 것(함수 이름·인자·연산자)을 함께 말하지 않는다(문제와 상관없는 예로 문법을 보여 주는 것은 괜찮다).",
         "- 디버깅하는 법을 익히게 한다: 실패한 입력 하나를 고르고, 값을 한 줄씩 따라가고, 기대한 값과 실제 값을 견준다.",
         "- 사용자의 풀이 방향은 바꾸지 않는다. 지금 코드가 왜 다르게 도는지만 본다.",
         f"- 생각을 닫는 말을 쓰지 않는다: {', '.join(BANNED)}.",
         f"- {OUTSIDE_PROBLEMS}",
         "- 사용자의 말을 되풀이하거나 요약하는 문장으로 시작하지 않는다. 첫 문장부터 가정·빠진 경우·근거를 겨눈다.",
+        f"- {NOT_SAID}",
         "- 사용자가 물은 것이 있으면 먼저 한 문장으로 받는다. 정답 코드를 달라고 하면 코드는 직접 써야 손에 남는다고 짧게 말하고, 지금 질문을 더 쉽게 바꿔 묻는다.",
         "쉬운 말로 한국어 1~3문장. 상대에게 직접 하는 말만 쓰고('사용자', '여러분'이라 부르지 않는다) 물음표로 끝나는 질문 하나로 끝낸다. 코드 블록을 쓰지 않는다.",
     ]
 )
 
 STEP_TEXT = {
-    "symptom": "사용자가 방금 한 말이나 고친 것을 한마디로 받고, 지금 실패하는 입력과 기대한 값·실제 값을 알려 준 뒤, 그 입력을 코드 첫 줄부터 따라가 보게 묻는다.",
+    "symptom": "사용자가 방금 한 말이나 고친 것을 한마디로 받고, 지금 실패하는 입력과 기대한 값·실제 값을 알려 준 뒤, "
+               "그 입력과 코드에서 바로 보이는 단서 하나(입력의 어떤 값·순서, 코드에서 그 값을 다루는 부분)를 짚어 살펴보게 묻는다. 원인, 답이 되는 조합·원소, 줄 번호는 말하지 않는다.",
     "fix": "사용자가 원인을 짚었다. 그 말을 받아 주되 '맞아요' 같은 판정 낱말은 쓰지 않는다. 질문 속에 원인이 있는 줄 번호(진단의 줄)를 넣어 그 줄을 짚어 준다. 그 줄이 해야 할 일을 말로 한 문장 써 보게 하거나, 어떻게 바꿀지 묻는다. "
            "사용자가 고치는 문법을 모르겠다고 했으면 같은 문법을 이 문제와 상관없는 예(과일, 점수 등)로 한 줄 보여 준다. 고친 줄은 쓰지 않는다.",
     "trace": "실패한 입력으로, 원인 줄 근처의 변수 값이 어떻게 바뀌는지 따라가 보게 묻는다. 어떤 변수를 반복의 몇 번째에서 볼지 짚어 준다. 줄 번호와 원인은 말하지 않는다.",
@@ -40,6 +44,12 @@ STEP_TEXT = {
              "문법 오류면 그 줄에서 무엇이 빠졌거나 어긋났는지 묻고, 실행 중 오류면 그 줄에 왔을 때 관련 변수에 무엇이 들어 있는지 묻는다. 고친 줄은 쓰지 않는다.",
     "form": "같은 문법을 이 문제와 상관없는 예(과일 이름, 점수 등)로 짧게 한 줄 보여 주고, 사용자의 그 줄과 무엇이 다른지 묻는다. 사용자의 줄을 고쳐 쓰지 않는다.",
 }
+
+
+# 첫 질문을 진단과 한 번에 받는다(모델 호출을 늘리지 않는다). 늘 같던 정해진 글('코드 첫 줄부터 손으로 따라가 보면…')은 실패 입력과 코드의 단서를 쓰지 않았다
+OPENING_RULE = ("opening: 사용자에게 보일 첫 질문 한 문장. 실패한 입력과 사용자 코드에서 바로 보이는 단서 하나(입력의 어떤 값·순서·크기, 코드에서 그 값을 다루는 부분)를 짚어 "
+                "그것을 살펴보게 묻는다. 볼 범위는 하나만 짚는다. 원인, 답이 되는 조합·원소, 줄 번호, 고친 줄, 고치는 법은 말하지 않는다. 기대한 값·실제 값은 앞에 따로 붙으니 되풀이하지 않는다. "
+                "쉬운 한국어로 상대에게 직접 하는 말이고, 물음표로 끝난다.")
 
 
 def _head(state: MainState, guide: bool = False) -> list[str]:
@@ -74,7 +84,8 @@ def locate_messages(state: MainState) -> list[dict]:
         "kind: syntax(문법·들여쓰기 오류), runtime(실행 중 오류), logic(끝까지 돌지만 답이 틀림) 중 하나.",
         "line: 원인이 있는 줄 번호(위 코드에 붙인 번호). cause: 무엇이 왜 틀렸는지 한두 문장. fixed_line: 그 줄을 고친 한 줄(줄 번호 없이, 들여쓰기 공백 포함).",
         "사용자의 풀이 방향은 그대로 두고, 가장 적게 고치는 쪽으로 본다.",
-        'JSON {"kind", "line", "cause", "fixed_line"}',
+        OPENING_RULE,
+        'JSON {"kind", "line", "cause", "fixed_line", "opening"}',
     ]
     return [{"role": "system", "content": LOCATE_SYSTEM}, cached_user(lines, len(head))]
 
@@ -103,11 +114,16 @@ def speak_messages(state: MainState) -> list[dict]:
         "디버깅 대화:",
     ]
     lines = stable + (draft["recent"] or ["없음"])
-    examples = skill_examples(state["ctx"].skills)
+    examples = skill_examples(state["ctx"].skills, state["ctx"].language)
     if examples and draft["step_name"] in ("form", "fix", "cause"):
         lines += ["참고 — 문법 예(이 문제와 상관없는 변수로 쓴 것. 같은 문법을 보여 줄 때만 쓴다):", *examples]
-    if state["request"].text:
+    aside = draft.get("aside")
+    if aside:  # 그 말에는 답하지 않는다. 거절과 대안은 엔진이 앞에 붙인다(rules.ANSWER_LEAD)
+        lines.append(f"사용자가 방금 {'고친 코드나 답을 달라고 했다' if aside == 'A' else '문제와 무관한 말을 했다'}. 안내 문장은 앞에 따로 붙는다. "
+                     "그 말에 대해서는 아무 말도 하지 않고, 이번 질문 지시대로 질문만 쓴다.")
+    elif state["request"].text:
         lines.append(f"사용자 말:{state['request'].text}")
+        lines += many_asks_line(state["request"].text, draft["recent"])
     lines += [f"이번 질문 지시: {STEP_TEXT[draft['step_name']]}", "출력: 말풍선 글만. 따옴표, 머리말, JSON 없이."]
     # 같은 코드의 디버그 턴마다 코드·채점·진단까지는 같다(바뀌는 것은 대화부터). 캐시 경계를 그 뒤에 둔다
     return [{"role": "system", "content": SPEAK_SYSTEM}, cached_user(lines, len(stable))]

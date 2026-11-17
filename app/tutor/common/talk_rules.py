@@ -31,6 +31,92 @@ def agree_opening(text: str, problem: str = "") -> bool:
     head = without_problem_quotes(text, problem).lstrip()
     return head.startswith(AGREE_OPENERS) or bool(_AGREE.match(head))
 
+# 사용자가 하지 않은 판단을 인정했다('잘 모르겠어요'에 '…을 짚으셨는데, 그 판단은 맞는 방향입니다').
+# 판단을 맞다고 하는 평서문은 늘 판정이다(원칙 1). 사용자 말에 생각이 담기지 않았으면 그 말에 기대는 문장('짚으셨는데', '말씀하신 대로')도 없는 판단을 지어낸 것이다
+_VERDICT = re.compile(r"(?:판단|생각|방향|짐작|추측|짚은\s*것)[은는이가]?\s*(?:맞|옳|정확)(?!는지|은지|을지|는가|을까)"
+                      r"|(?:맞는|옳은|정확한)\s*(?:방향|판단|생각|짐작)|제대로\s*짚|잘\s*짚")
+# 판단을 받는 동사만 본다: '따라가 보셨나요?', '앞에서 찾으신 값은…?'은 한 일을 묻는 말이지 판단을 인정하는 말이 아니다
+_CREDIT = re.compile(r"(?:짚|말씀하|말하|판단하|짐작하|생각하)(?:으)?(?:셨|신)|짚었")
+# 학습자의 가정을 되짚는 문장에 붙은 동의 말('말씀하신 대로 …라고 가정하셨네요'). 되짚는 말이 맞다고 인정하는 것처럼 들린다
+# 문장 첫머리의 '말씀하신 대로 …(평서)'나 '그렇죠.' 홀로만 본다. '가정하신 대로라면 …인데 실제로는 …'처럼 가정과 실제를 견주는 조건·반박은 동의가 아니다
+_LEAN_AGREE = re.compile(r"^\s*(?:(?:말씀(?:하신)?|말하신|짚으신)\s*(?:대로|처럼)(?!\s*(?:라면|하면|이면|면))|그렇죠\s*[.!]?\s*$)")
+_NO_CLAIM = re.compile(r"모르|몰라|글쎄|헷갈|감이\s*안|막혔")
+NO_CLAIM_CHARS = 15  # 공백을 뺀 사용자 말이 이보다 짧고 막힌 말이면 인정할 판단이 없다
+
+
+def unsaid_credit(text: str, user: str = "") -> list[str]:
+    """사용자가 하지 않은 판단을 인정한 문장들. 판단을 맞다고 하는 평서문은 늘, 생각이 담기지 않은 사용자 말('잘 모르겠어요') 뒤에는 그 말에 기대는 문장도."""
+    plain = re.sub(r"\s+", "", user or "")
+    empty = not plain or (len(plain) < NO_CLAIM_CHARS and bool(_NO_CLAIM.search(plain)))
+    return [part for part in sentences(text)
+            if ((_VERDICT.search(part) or _LEAN_AGREE.search(part)) and not part.rstrip().endswith(("?", "？"))) or (empty and _CREDIT.search(part))]
+
+
+# 물음 어미: 물음표, '~나요', '~까(요)'('~니까'는 빼고), '~(인·는·건·은·한·뭔)가요', '~죠', 뜻 묻기('뭐예요', '뭐야', '뭔데'), 반말 '~나'('맞나'. '하나'·'그러나'는 빼고)
+_ASKED = re.compile(r"(?:[?？]|나요|(?<!니)까요?|(?:인|는|건|은|한|뭔)가요|죠|뭐예요|뭐에요|뭐야|뭔데|(?<!하)(?<!그러)나)\s*$")
+
+
+def _asked_parts(text: str) -> list[str]:
+    """사용자 말을 문장·줄로 나눠 물음인 것만(asked_count와 여럿 물음 검사가 같은 나눔을 쓴다)."""
+    # 백틱·펜스 코드 구간만 뺀다(코드 모양 줄을 통째로 지우면 'x = a ? b : c 에서 ? 는 뭐죠?'가 0개였다).
+    # 문장 끝은 글자 바로 뒤의 문장 부호다: 앞에 공백이 있는 '?'(코드 속 삼항 연산, '? 는')는 문장을 끊지 않는다
+    plain = _CODE_SPAN.sub(" ", text or "")
+    parts = [part.strip() for part in re.split(r"(?<=[^\s][.?!？])\s+|\n", plain) if part.strip()]
+    return [part for part in parts if _ASKED.search(part)]
+
+
+def asked_count(text: str) -> int:
+    """사용자 말 속 물음의 수(문장·줄마다 물음표나 물음 어미로 끝나는가)."""
+    return len(_asked_parts(text))
+
+
+# 물음에서 핵심 낱말을 고를 때 빼는 것: 물음 어미로 끝나는 낱말, 흔한 말
+_ASK_WORD = re.compile(r"(?:나요|까요?|가요|죠|예요|에요|뭐야|뭔데|해요|어요|아요|세요|니다)$")
+_COMMON = {"그리고", "그런데", "그러면", "그럼", "어떻게", "어떤", "무엇", "무슨", "이거", "이게", "그거", "그게", "저거", "근데", "혹시", "정말", "진짜",
+           "방법", "생각", "때문", "경우", "부분", "하나", "이것", "그것", "여기", "거기", "아니", "그냥", "이렇게", "그렇게", "어디", "언제", "누가",
+           "다음", "다음엔", "다음에", "그다음", "아니면", "뭔가", "이건", "그건", "저건"}
+_PARTICLE = re.compile(r"(?:(?<=[가-힣])(?:에는|에서|으로|에게|한테|이랑|하고|보다|부터|까지|처럼|께서|에는|엔)|(?<=[가-힣]{2})(?:은|는|이|가|을|를|에|의|도|로|와|과|만|별|마다))$")
+_DEFERRED = re.compile(r"다음\s*(?:차례|번|에)|나중에|먼저[^.?!？]*?(?:보고|볼게|보겠|살펴)")  # 하나를 미뤘다고 말한 답
+
+
+def asks_ignored(text: str, user: str) -> bool:
+    """물음이 둘 이상인 사용자 말에 답이 그 물음들의 핵심 낱말(코드 이름·백틱 조각·한글 낱말)을 하나도 다루지 않았는가.
+    하나라도 다뤘거나 하나를 미뤘다고 말한 답, 낱말을 뽑지 못한 물음은 통과한다(오탐을 피한다).
+    영문 이름은 대소문자를 무시하고, 한글 낱말은 조사를 떼고 앞 두 글자(줄기)로 견준다('정렬해야'↔'정렬하면')."""
+    if asked_count(user) < 2:
+        return False
+    parts = _asked_parts(user)
+    words = {_PARTICLE.sub("", word)[:2] for part in parts for word in re.findall(r"[가-힣]{2,}", part)
+             if word not in _COMMON and not _ASK_WORD.search(word)}
+    words |= {span.strip("` ").lower() for span in re.findall(r"`[^`\n]+`", user or "")}
+    names = {name.lower() for part in parts for name in re.findall(r"(?<![A-Za-z0-9_])[A-Za-z_][A-Za-z0-9_]*", part)}  # 'k'처럼 한 글자 이름도(낱말 경계로 찾는다)
+    words.discard("")
+    body = (text or "").lower()
+    return (bool(words) or bool(names)) and not _DEFERRED.search(body) and not any(word in body for word in words) \
+        and not any(re.search(rf"(?<![a-z0-9_]){re.escape(name)}(?![a-z0-9_])", body) for name in names)
+
+
+def defer_ask(text: str, user: str) -> str:
+    """물음이 여럿인데 답이 하나도 받지 않았으면 답 앞에 미룸 문장을 붙인다(답 본문은 그대로, 못 받은 물음은 다음 차례에 many_asks_line이 잇는다)."""
+    if not asks_ignored(text, user):
+        return text
+    many = "여럿이라" if asked_count(user) > 2 else "둘이라"
+    return f"물음이 {many} 하나씩 볼게요. 다른 물음은 다음 차례에 이어 봐요. {text}"
+
+
+def many_asks_line(text: str, recent: list[str] | None = None) -> list[str]:
+    """사용자 말에 물음이 여럿이면 질문 프롬프트에 넣을 지시. 둘 가운데 하나만 받았다.
+    답을 먼저 주지 않는 원칙은 그대로다: 받는다는 것은 개념을 풀어 주거나 볼 곳을 좁혀 주는 것이다.
+    지난 사용자 말에 물음이 여럿이었다면(recent의 '사용자: …') 아직 받지 못한 물음으로 돌아오게 한다(대화 기록이 곧 상태다)."""
+    n = asked_count(text)
+    lines = [f"사용자 말에 물음이 {n}개 있다. 물음마다 한 구절씩 받는다(개념을 풀어 주거나 볼 곳을 좁혀 준다. 답·고칠 곳은 말하지 않는다). "
+             "하나만 받을 때는 그 하나를 먼저 본다고 말하고, 나머지 물음은 다음에 보겠다고 한 구절로 남긴다."] if n > 1 else []
+    last = next((m.split(": ", 1)[1] for m in reversed(recent or []) if m.startswith("사용자: ")), "")
+    if asked_count(last) > 1:
+        lines.append(f"지난번 사용자 말에도 물음이 여럿이었다: {last!r}. 앞의 튜터 말이 받지 못한 물음이 있으면 이번에 그 물음으로 돌아와 한 구절로 받는다.")
+    return lines
+
+
 OPEN_LEAD = "다음 블록을 열었어요. "  # 이음말
 KIND_LABEL = {"var_from_problem": "문제에서 바로 오는 변수", "var_during": "풀이 중에 만드는 변수", "loop": "반복", "condition": "한 가지를 따지는 조건", "branch": "경우 나누기"}
 
@@ -86,6 +172,7 @@ EXAMPLES_ONLY = "공개 예시로만 확인했어요."  # 문제에 숨은 테�
 ANSWER_LEAD = "답 코드는 드리지 않아요. 지금 블록만 보고 싶다면 블록 칸의 '이 블록 채우기'를 쓸 수 있어요. "  # 답을 달라고 할 때 앞말
 FILL_TIP = "막히면 블록 칸의 '이 블록 채우기'로 이 블록만 볼 수 있어요. "  # 같은 블록에서 내용 없는 답이 두 번 이어졌을 때 앞말(한 블록에 한 번)
 BACK_LEAD = "지금 문제로 돌아갈게요. "  # 문제와 무관한 말일 때 앞말
+HARD_LEAD = "한 걸음 더 작게 나눠 볼게요. "  # 어렵다는 짧은 말 뒤 앞말(다음 저장 힌트가 더 작은 질문이다)
 # 가이드 마지막 블록 코드 통과(진행 안내, 묻지 않는다). 의자에서 말로만 찾아 코드 칸이 빈 블록이 있을 수 있어 어느 경우에도 맞게 쓴다
 ALL_FILLED = "블록을 끝까지 열었어요. 코드 칸이 빈 블록이 있으면 채운 뒤, 이어 붙인 코드로 실행하거나 제출해 보세요."
 
@@ -98,9 +185,10 @@ def rename_note(pairs: list[list[str]]) -> str:
     코드 이름 뒤 조사를 어림하면 틀렸다('remaining라고', 'cnt, r라고'). 이름을 괄호에 넣어 조사가 붙지 않게 쓴다."""
     if not pairs:
         return ""
-    mine, plan = ", ".join(f"`{a}`" for a, _ in pairs), ", ".join(f"`{b}`" for _, b in pairs)
-    return (f"이 블록에서 쓴 이름({mine})을 튜터의 코드는 {'차례대로 ' if len(pairs) > 1 else ''}다른 이름({plan})으로 불러요. "
-            "뒤 블록을 '이 블록 채우기'로 채우면 내 이름으로 바꿔 채워요.")
+    # '이름(`a`, `b`)을 차례대로 다른 이름(`c`, `d`)으로'는 어느 이름이 어느 이름인지 알기 어려웠다. 짝마다 화살표로 쓴다
+    shown = ", ".join(f"`{a}` → `{b}`" for a, b in pairs)
+    return (f"같은 값을 튜터의 코드는 다른 이름으로 써요(내 이름 → 튜터의 이름: {shown}). 이름이 달라도 이어서 돌아가요. "
+            "뒤 블록을 '이 블록 채우기'로 채우면 튜터의 코드를 내 이름으로 바꿔 넣어요.")
 
 FALLBACK = {
     "replan": "말한 방법에서 가장 먼저 정해야 할 것은 무엇일까요?",
@@ -115,7 +203,9 @@ FALLBACK = {
     "tool": "어떤 자료구조를 쓰면 이 빈칸이 채워질까요?",
     "shape": "이 빈칸을 말로 한 줄 써 보면 어떤 모양일까요?",
     "run": "채운 블록을 이어 예제 하나로 돌리면 무엇이 나올까요?",
+    "verify": "그 생각대로 문제 예시의 첫 입력을 손으로 따라가 보면 무엇이 나오나요?",
     "followup": "이 인용에서 어느 부분이 막혔는지 한 문장으로 말해 줄 수 있을까요?",
+    "term": "어느 낱말이 낯선지 하나만 짚어 주면, 그 뜻부터 같이 볼까요?",
     "close": "막히는 줄이 생기면 제출한 뒤 틀린 곳을 같이 찾을 수 있어요. 이제 찾은 순서대로 코드 칸에 옮겨 적고 제출해 볼까요?",
 }
 
@@ -139,6 +229,30 @@ def in_problem(phrase: str, problem: str) -> bool:
     """공백을 모두 지우고 부분 일치로 본다. '...'·'…'로 줄인 인용은 조각마다 본다(줄인 인용의 따옴표가 벗겨졌다)."""
     pieces = [_squash(piece) for piece in re.split(r"\.{3}|…", phrase or "") if _squash(piece)]
     return bool(pieces) and all(piece in _squash(problem) for piece in pieces)
+
+
+def _cut_in_word(piece: str, problem: str) -> bool:
+    """문제 글에서 이 조각이 나오는 자리가 모두 낱말 중간(앞 글자가 글자·숫자)이다. '번째로 빌려지는'('k번째로'에서 떼었다)."""
+    chars = _squash(piece)
+    if not chars:
+        return False
+    starts = [found.start() for found in re.finditer(r"\s*".join(map(re.escape, chars)), problem or "")]
+    return bool(starts) and all(at > 0 and (problem[at - 1].isalnum() or problem[at - 1] == "_") for at in starts)
+
+
+def broken_quotes(text: str, problem: str, cut: bool = False) -> list[str]:
+    """문제 글을 인용했는데 깨진 구절. 낱말 중간에서 떼어 시작했거나, cut이면 '…'로 줄인 것(저장 질문은 문장을 그대로 인용한다).
+    문제 글에 없는 인용은 quotes_ok가 본다."""
+    found = []
+    for match in _SINGLE.finditer(without_code(text or "")):
+        phrase = next(group for group in match.groups() if group is not None)
+        if not _HANGUL.search(phrase) or not in_problem(phrase, problem):
+            continue
+        whole = _squash(phrase) in _squash(problem)  # 문제 글 자체의 '…'(수열 줄임)는 줄인 인용이 아니다
+        pieces = [phrase] if whole else [piece for piece in re.split(r"\.{3}|…", phrase) if _squash(piece)]
+        if (cut and len(pieces) > 1) or any(_cut_in_word(piece, problem) for piece in pieces):
+            found.append(phrase)
+    return found
 
 
 def without_problem_quotes(text: str, problem: str) -> str:
@@ -241,7 +355,7 @@ def names_block(name: str, body: str, problem: str) -> bool:
 
 def reply_problems(
     text: str, *, move: str, problem: str, reference: str = "", later_names: list[str] = (), said: str = "", language: str = "python",
-    loose_names: bool = False,
+    loose_names: bool = False, user: str = "",
 ) -> list[str]:
     """말풍선 검사. 위반 이유 목록(비면 통과). said는 인용해도 되는 사용자 말·앞 대화(clue는 문항 글만).
     loose_names: 뒤 블록 이름을 names_block으로 좁혀 본다(가이드가 사용자 말에 답할 때. 의자는 블록 이름이 찾을 답이라 그대로)."""
@@ -272,11 +386,15 @@ def reply_problems(
         found.append("뒤 블록 이름")
     if not quotes_ok(without_code(body), problem, "" if move == "clue" else said):
         found.append("문제 글에 없는 인용")
+    if broken_quotes(body, problem):
+        found.append("깨진 인용")
     plain = without_problem_quotes(body, f"{problem}\n{said}")
     if _NOTE.search(plain):
         found.append("3인칭 메모")  # '사용자는 …하게 하자' 같은 모델 메모가 샌 것
     if _ENGLISH.search(plain):
         found.append("영어 지시문")
+    if unsaid_credit(body, user):
+        found.append("말하지 않은 판단 인정")  # user: 이번 사용자 말(인정할 판단이 있는지 본다)
     return found
 
 
@@ -348,7 +466,7 @@ def drop_told(text: str, reference: str, language: str, problem: str) -> str:
     return " ".join(rest)
 
 
-def repair(text: str, problem: str, said: str = "", move: str = "", reference: str = "", language: str = "python") -> str:
+def repair(text: str, problem: str, said: str = "", move: str = "", reference: str = "", language: str = "python", user: str = "") -> str:
     """모델을 다시 부르지 않고 고칠 수 있는 위반을 고친다. 되받는 첫 절·문장, 블록의 답을 말한 평서문, 근거 없는 따옴표는 지우고,
     마지막 물음표 뒤 글은 자르고, 뒤 세 문장만 남긴다. 근거 질문(basis)은 사용자 말을 인용해 묻는 것이 설계라 되받기를 지우지 않는다."""
 
@@ -363,6 +481,9 @@ def repair(text: str, problem: str, said: str = "", move: str = "", reference: s
     if move != "basis":
         body = drop_echo(body)
     body = drop_told(body, reference, language, problem)
+    credit = unsaid_credit(body, user)
+    if credit and _asks([part for part in sentences(body) if part not in credit]):  # 하지 않은 판단을 인정한 문장은 지운다(질문이 남을 때만)
+        body = _CONNECTIVE.sub("", " ".join(part for part in sentences(body) if part not in credit))
     last = max(body.rfind("?"), body.rfind("？"))
     if last >= 0:
         body = body[: last + 1]
@@ -374,10 +495,33 @@ def note_fallback(where: str, problems: list[str], text: str) -> None:
     print(f"[{where}] 대체 질문: {', '.join(problems)} | {' '.join((text or '').split())[:160]}", file=sys.stderr)
 
 
-def hint_problems(hint: str, *, problem: str, reference: str, later_names: list[str], clue: bool) -> list[str]:
-    """계획에 저장할 의자 질문 검사. 3문장 제한은 보지 않는다(1–2문장으로 만들게 지시)."""
+_NAME = re.compile(r"(?<![A-Za-z0-9_])[A-Za-z_][A-Za-z0-9_]+(?![A-Za-z0-9_])")
+
+
+def code_names(text: str, code: str, problem: str) -> list[str]:
+    """말에 나온 코드 이름 가운데 문제 글에 없는 것('day일까지 점검이 몇 번인지': day는 참고 코드의 인자 이름이다). 코드 구간(백틱)은 보지 않는다."""
+    names = set(_NAME.findall(code or "")) - set(_NAME.findall(problem or ""))
+    return sorted(set(_NAME.findall(without_code(text or ""))) & names)
+
+
+SAME_HINT = 0.8  # 공백을 뺀 두 질문이 이만큼 같으면 같은 질문을 되풀이한 것이다
+
+
+def repeated_hints(hints: list[str]) -> bool:
+    """한 블록의 저장 질문 가운데 거의 같은 둘이 있다(첫 질문과 다음 힌트가 같은 문장이었다)."""
+    rows = [_squash(hint) for hint in hints if _squash(hint)]
+    return any(SequenceMatcher(None, a, b, autojunk=False).ratio() >= SAME_HINT for i, a in enumerate(rows) for b in rows[i + 1 :])
+
+
+def hint_problems(hint: str, *, problem: str, reference: str, later_names: list[str], clue: bool, code: str = "") -> list[str]:
+    """계획에 저장할 의자 질문 검사. 3문장 제한은 보지 않는다(1–2문장으로 만들게 지시).
+    code: 계획의 모든 참고 코드(문제 글에 없는 코드 이름을 거른다)."""
     found = reply_problems(hint, move="clue", problem=problem, reference="", later_names=later_names)  # 저장 질문의 인용은 모두 문항 글이어야 한다
     found = [item for item in found if item != "3문장 초과"]
     if reference.strip() and reference.strip() in hint:
         found.append("참고 코드")
+    if "깨진 인용" not in found and broken_quotes(hint, problem, cut=True):
+        found.append("깨진 인용")  # 줄인 인용('…')은 저장 질문에서만 막는다(대화는 줄인 인용을 받아 왔다)
+    if code_names(hint, code or reference, problem):
+        found.append("문제 글에 없는 코드 이름")
     return found

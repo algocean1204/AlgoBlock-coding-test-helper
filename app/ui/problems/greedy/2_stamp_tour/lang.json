@@ -1,0 +1,89 @@
+{
+ "python": [
+  {
+   "file": "lang_1.py",
+   "trap": "python.missing_key",
+   "fails": {
+    "1": "runtime_error",
+    "2": "runtime_error",
+    "3": "runtime_error",
+    "4": "runtime_error",
+    "5": "runtime_error",
+    "6": "runtime_error",
+    "7": "runtime_error",
+    "8": "runtime_error",
+    "9": "runtime_error",
+    "10": "runtime_error",
+    "11": "runtime_error",
+    "12": "runtime_error",
+    "13": "runtime_error",
+    "14": "runtime_error",
+    "15": "runtime_error",
+    "16": "runtime_error",
+    "17": "runtime_error",
+    "18": "runtime_error",
+    "19": "runtime_error",
+    "20": "runtime_error",
+    "21": "runtime_error",
+    "22": "runtime_error",
+    "23": "runtime_error"
+   },
+   "source": 1908003988
+  }
+ ],
+ "javascript": [
+  {
+   "file": "lang_1.js",
+   "trap": "javascript.sort_default",
+   "at": [
+    "minutes의 원소는 1 이상 10,000 이하"
+   ],
+   "fails": {
+    "2": "failed",
+    "22": "failed",
+    "23": "failed"
+   },
+   "outs": {
+    "2": "0",
+    "22": "94387",
+    "23": "47190"
+   },
+   "source": 1287197340
+  }
+ ],
+ "rust": [
+  {
+   "file": "lang_1.rs",
+   "trap": "rust.unwrap_none",
+   "at": [
+    "서로 다른 부스가 같은 모양의 도장을 찍어 줄 수 있습니다"
+   ],
+   "fails": {
+    "1": "runtime_error",
+    "2": "runtime_error",
+    "3": "runtime_error",
+    "4": "runtime_error",
+    "5": "runtime_error",
+    "6": "runtime_error",
+    "7": "runtime_error",
+    "8": "runtime_error",
+    "9": "runtime_error",
+    "10": "runtime_error",
+    "11": "runtime_error",
+    "12": "runtime_error",
+    "13": "runtime_error",
+    "14": "runtime_error",
+    "15": "runtime_error",
+    "16": "runtime_error",
+    "17": "runtime_error",
+    "18": "runtime_error",
+    "19": "runtime_error",
+    "20": "runtime_error",
+    "21": "runtime_error",
+    "22": "runtime_error",
+    "23": "runtime_error"
+   },
+   "source": 2180251078
+  }
+ ]
+}

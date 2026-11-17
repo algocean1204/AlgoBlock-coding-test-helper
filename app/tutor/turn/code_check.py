@@ -24,6 +24,7 @@ from dataclasses import replace
 import sys
 
 from ..common.solution import (_TOKEN, body_lines, defined_function, frame_line, frame_of, guide_checked, made_statements, name_tables, open_braces, pairs_of,
+                               unclosed_row,
                                scoped_names, solution_lines, solution_of, spliced, spliced_view, swap_names)
 from ..common.talk_rules import (ALONE_LEAD, ALONE_OK, CANNOT_RUN, EXAMPLES_ONLY, MALFORMED, MANY_ANSWERS, SKIPPED, UNCHECKED_IN, UNRUN, UNRUN_FIX,
                                 UNRUN_NO, UNVERIFIED, fence, unrun_why)
@@ -35,29 +36,69 @@ from ..common.verdict import FOUND_RULE, ask_verdict
 from ..state import BlockState, MainState, Verdict
 
 USER_FAULT = ("failed", "timeout", "runtime_error", "compile_error")  # 사용자 코드 탓으로 끝난 채점
-TRY_SECONDS = 6  # 첫 실행부터 이만큼 지나면 새 짝 시도를 시작하지 않는다(Python은 여러 번, Kotlin은 한두 번 돈다)
+TRY_SECONDS = 6  # 첫 실행부터 이만큼 지나면 새 짝 시도를 시작하지 않는다(Python은 여러 번, 컴파일이 느린 언어는 한두 번 돈다)
 now = time.monotonic  # 시험이 바꿔 끼우는 시계
-# 없는 이름 오류: Python(뒤에서 대입하는 이름은 UnboundLocalError), Java, Kotlin, C++(gcc·clang), Go, Rust, JavaScript
-_MISSING = re.compile(r"NameError: name '(\w+)' is not defined|local variable '(\w+)'|symbol:\s+variable (\w+)|Unresolved reference:? '?(\w+)"
-                      r"|[‘'](\w+)[’'] was not declared|undeclared identifier '(\w+)'|undefined: (\w+)|cannot find value `(\w+)`"
+# 없는 이름 오류: Python(뒤에서 대입하는 이름은 UnboundLocalError), Java, C++(gcc·clang), Rust, JavaScript
+_MISSING = re.compile(r"NameError: name '(\w+)' is not defined|local variable '(\w+)'|symbol:\s+variable (\w+)"
+                      r"|[‘'](\w+)[’'] was not declared|undeclared identifier '(\w+)'|cannot find value `(\w+)`"
                       r"|ReferenceError: (\w+) is not defined|Cannot access '(\w+)' before initialization")
+# 없는 멤버·이름·클래스 오류의 원문은 다섯 언어 모두 쉬운 말로 알린다(이름은 위 _MISSING을 재사용한다)
+_NO_MEMBER = re.compile(r"^cannot find symbol: (?!variable |class )\w+ (\w+)$|has no attribute '(\w+)'|no member named [‘'](\w+)[’']"
+                        r"|no (?:method|field|function or associated item) named `(\w+)`|no field `(\w+)`|(\w+) is not a function")
+_NO_CLASS = re.compile(r"^cannot find symbol: class (\w+)$|cannot find type `(\w+)` in this scope")
+_NO_VAR = re.compile(r"^cannot find symbol: variable (\w+)$")
+EASY_END = "확인해 보세요."
+NO_MEMBER = "`{name}`{josa} 이름을 찾지 못했어요. 철자가 맞는지, 그 값에서 쓸 수 있는 이름인지 " + EASY_END
+NO_NAME = "`{name}`{josa} 이름을 찾지 못했어요. 만들기 전에 썼거나 철자가 다른지 " + EASY_END
+NO_CLASS = "`{name}`{josa} 이름을 찾지 못했어요. 맨 위의 가져오기(import)가 빠졌거나 철자가 다른지 " + EASY_END
+# 실행 오류의 이유(다섯 언어의 같은 실수는 같은 뜻의 말로. 화면의 풀이와 뜻을 맞춘다). 앞에서부터 찾는다: map::at의 out_of_range는 '없는 키'가 먼저다
+_RUNTIME = tuple((re.compile(pattern), said + EASY_END) for pattern, said in (
+    (r"KeyError|no entry found for key|map::at|Map\.get\(", "없는 키를 읽었어요. 처음 보는 값일 때를 따져 보고, 읽기 전에 키가 있는지 "),
+    (r"IndexError|IndexOutOfBounds|index out of bounds|out of range for slice|std::out_of_range(?!: sto)",
+     "범위를 벗어난 자리를 읽었어요. 비어 있거나 마지막 자리 다음을 읽은 건 아닌지 "),
+    (r"ZeroDivisionError|/ by zero|divide by zero|divisor of zero", "0으로 나눴어요. 나누는 값이 0이 되는 경우가 있는지 "),
+    (r"RecursionError|StackOverflowError|Maximum call stack size exceeded|overflowed its stack|stack overflow",
+     "재귀가 너무 깊어요. 끝나는 조건이 있는지, 반복문으로 바꿀 수 있는지 "),
+    (r"NullPointerException", "null인 값을 썼어요. 만들지 않은 객체나 값이 없는 변수를 쓰기 전에 null인지 "),
+    (r"Cannot read properties of (?:undefined|null)", "값이 없는(undefined, null) 걸 썼어요. 범위 밖 자리나 없는 키를 읽어 값이 없었는지 "),
+    (r"sto\w+: out of range", "숫자가 너무 커서 그 형에 담지 못했어요. 바꾸는 글자의 크기를 "),
+))
+_MISMATCH = re.compile(r"incompatible types|possible lossy conversion|cannot convert|no viable conversion|invalid conversion from|mismatched types")
+TYPE_MISMATCH = "값의 형이 맞지 않아요. 변수와 반환값의 형이 시작 코드와 같은지 " + EASY_END
+
+
+def _easy(row: str) -> str:
+    """없는 멤버·이름·클래스 오류, 흔한 실행 오류(_RUNTIME) 한 줄을 쉬운 말로. 아니면 빈 글."""
+    for pattern, said in ((_NO_CLASS, NO_CLASS), (_NO_VAR, NO_NAME), (_NO_MEMBER, NO_MEMBER), (_MISSING, NO_NAME)):
+        if found := pattern.search(row):
+            name = next(g for g in found.groups() if g)
+            return said.format(name=name, josa="이라는" if batchim(name) else "라는")
+    return next((said for pattern, said in _RUNTIME if pattern.search(row)), "")
+
+
+def compile_easy(text: str) -> str:
+    """컴파일 오류 글의 첫 오류를 쉬운 말 한 줄로(없는 이름·멤버·클래스, 형이 맞지 않음). 흔하지 않은 오류는 빈 글."""
+    row = _error_row(text, first=True, whole=True)  # 쉬운 말로 바뀐 줄이면 그대로(백틱이 '로 바뀌기 전에 _easy가 본다), 아니면 형 불일치만 본다
+    return row if row.endswith(EASY_END) else TYPE_MISMATCH if _MISMATCH.search(row) else ""
+
+
 SHOWN = 80  # 말에 싣는 값의 최대 길이(오류 원문은 자르지 않는다)
 # 짝을 못 찾은 것을 '이 블록에서 만들어 주세요'(코드가 틀렸다는 말)로 말해, 그 말대로 하면 코드가 틀려지기도 했다. 짝을 못 찾았다는 사실과 할 수 있는 일을 말한다
-HOLD_NAME = ("튜터의 뒤 코드는 값을 {names} 이름으로 이어 써요. 내 코드에서 그 값이 어느 것인지 찾지 못해 이어 돌리지 못했어요. "
-             "그 이름으로 맞추거나, 맞다고 생각하면 '이대로 넘어가기'를 눌러요.")
+HOLD_NAME = ("튜터가 채운 다음 블록 코드는 이 값을 {names}{josa} 이름으로 써요. 내 코드에서 어느 변수가 그 값인지 찾지 못해 이어 돌리지 못했어요. "
+             "내 변수 이름을 그 이름으로 바꾸거나, 맞다고 생각하면 '이대로 넘어가기'를 눌러요.")
 # 이어 붙인 프로그램에 계획 코드로 이은 블록이 있으면 그 사실을 앞말로(내 코드가 틀렸다고 단정하지 않는다)
-LEADS = {"later": "뒤 블록을 튜터의 코드로 이어 돌리면", "earlier": "앞 블록을 튜터의 코드로 이어 돌리면", "both": "다른 블록을 튜터의 코드로 이어 돌리면"}
+LEADS = {"later": "뒤 블록은 튜터의 코드로 채워서 돌리면", "earlier": "앞 블록은 튜터의 코드로 채워서 돌리면", "both": "다른 블록은 튜터의 코드로 채워서 돌리면"}
 # 이어 돌린 실행이 끝까지 돌았는데 통과하지 못했다: 앱이 아는 것은 '튜터의 코드와 이어지지 않는다'뿐이다. 틀려서인지 다른 방식이어서인지는 모른다
 NOT_JOINED = ("아직 고칠 곳이 있거나, 튜터와 다른 방식으로 써서 튜터의 코드와 맞물리지 않는 거예요. "
               "고치거나 튜터의 차례에 맞춰 써 보고, 맞다고 생각하면 '이대로 넘어가기'를 눌러요.")
 # 어림 짝을 쓴 실행: 어떻게 이었는지를 사실로 말한다. 시간이 모자라 다른 짝을 다 돌려 보지 못했으면 결론을 내지 못한 것이다(확인 전)
-GUESSED = "튜터의 코드와 이을 때 내 이름을 이렇게 알고 이어 돌렸어요(내 이름→튜터의 이름): {pairs}."
+GUESSED = "튜터의 코드와 이을 때 같은 값으로 보고 이어 돌린 이름이에요(내 이름 → 튜터의 이름): {pairs}."
 GUESSED_CUT = " 시간이 모자라 다른 짝은 다 돌려 보지 못해서 이어지지 않는 건지 확인하지 못했어요. 다르게 쓴 것이면 튜터의 이름으로 맞추거나 '이대로 넘어가기'를 눌러요."
 # 'while'을 열고 증가를 다음 블록에 두려 하면 뒤 블록(계획 코드)에 증가가 없어 끝나지 않는다
 WHILE_NOTE = "반복을 끝내는 줄(값을 늘리거나 줄이는 줄)을 뒤 블록에 두려 했다면 이 블록에 적어 주세요."
 # 도우미 함수의 매개변수 차례를 바꾼 맞는 블록을 계획의 호출 차례가 만든 오류로 거부했다. 뒤 블록이 부르는 차례를 알린다
-HOLD_PARAMS = ("튜터의 뒤 코드는 이 블록의 함수를 매개변수 차례({names})로 불러요. 내 코드의 매개변수가 그 차례의 어느 값인지 찾지 못해 이어 돌리지 못했어요. "
-               "그 차례와 이름으로 맞추거나, 맞다고 생각하면 '이대로 넘어가기'를 눌러요.")
+HOLD_PARAMS = ("튜터가 채운 다음 블록 코드는 이 블록의 함수를 {names} 차례로 넘겨 불러요. 내 함수의 매개변수가 그 차례의 어느 값인지 찾지 못해 이어 돌리지 못했어요. "
+               "내 매개변수를 그 차례와 이름으로 바꾸거나, 맞다고 생각하면 '이대로 넘어가기'를 눌러요.")
 # 반복 안에서 시작해 밖에서 끝나는 블록을 평평하게 적으면 바깥 줄도 반복 안에 놓였다(Python만)
 INDENT_NOTE = "이 블록은 앞 블록에서 연 반복이나 조건 안에서 시작해요. 그 밖에서 할 일이 있으면 그 줄을 첫 줄보다 덜 들여 써 주세요."
 KIND_WORD = {"compile_error": "컴파일 오류", "runtime_error": "실행 오류"}
@@ -73,13 +114,14 @@ def code_hash(code: str) -> str:
 
 
 def hold_name(names: list[str], params: bool = False) -> str:
-    return (HOLD_PARAMS if params else HOLD_NAME).format(names=", ".join(f"`{name}`" for name in dict.fromkeys(names)))
+    names = list(dict.fromkeys(names))
+    return (HOLD_PARAMS if params else HOLD_NAME).format(names=", ".join(f"`{name}`" for name in names), josa="이라는" if names and batchim(names[-1]) else "라는")
 
 
 def assumed(pairs: list[list[str]], cut: bool = False) -> str:
     """어림 짝 문장. pairs: [[내 이름, 계획 이름], …]. 같은 이름끼리의 짝은 말하지 않는다. cut: 다른 짝을 다 시도하지 못했다(짝 말이 비어도 그 사실은 말한다).
     둘 다 없으면 빈 글."""
-    shown = [f"`{m}`→`{p}`" for m, p in pairs if m != p]
+    shown = [f"`{m}` → `{p}`" for m, p in pairs if m != p]
     return ((GUESSED.format(pairs=", ".join(shown)) if shown else "") + (GUESSED_CUT if cut else "")).strip()
 
 
@@ -181,22 +223,30 @@ def _cut(text) -> str:
     return (head[:head.rfind(" ")] if " " in head else text[:SHOWN]) + "…"
 
 
-def _error_row(text: str, first: bool = False, whole: bool = False) -> str:
+def _error_row(text: str, first: bool = False, whole: bool = False, easy: bool = True) -> str:
     """오류 글에서 한 줄: 오류 이름이 있는 줄(컴파일 오류는 첫 줄, 실행 오류는 마지막 줄). 임시 폴더 경로는 뗀다.
     모은 파일의 '파일이름:줄(:칸): error: '는 사용자가 볼 수 없어 떼고, Java 'cannot find symbol'에는 그 이름을 붙이고,
     Python의 'Did you mean: …' 꼬리(고칠 답)는 뗀다. whole이면 자르지 않는다."""
-    rows = [re.sub(r"[^\s\"'`]*[/\\]", "", row).strip() for row in (text or "").splitlines() if row.strip()]
+    if not first:  # 실행 오류의 이유 줄을 고른다: Rust 패닉의 머리는 떼어 이유 줄이 남게 하고, 안내(note:)와 스택 줄(at …)은 건너뛴다
+        text = re.sub(r"thread '[^']*'(?: \(\d+\))? panicked at [^\n]*?\d+:\d+:\n", "", text or "")
+        text = re.sub(r"thread '[^']*'(?: \(\d+\))? panicked at '(.*)', \S+:\d+:\d+", r"\1", text)
+    rows = [re.sub(r"[^\s\"'`]+[/\\]", "", row).strip() for row in (text or "").splitlines() if row.strip()]
+    rows = rows if first else [row for row in rows if not re.match(r"(?:note|help):|stack backtrace|at |\d+: ", row)]
     named = [i for i, row in enumerate(rows) if re.search(r"error|exception", row, re.IGNORECASE)] or list(range(len(rows)))
     if not named:
         return ""
     at = named[0] if first else named[-1]
     row = re.sub(r"^[\w.-]+:\d+(?::\d+)?:\s*", "", rows[at])
     row = re.sub(r"^(?:fatal\s+)?error(?:\[\w+\])?:\s*", "", row)
+    row = re.sub(r"^Exception in thread \"[^\"]*\" ", "", row)  # Java: 머리와 패키지 이름은 떼고 예외 이름과 메시지만
+    row = re.sub(r"\b(?:[a-z_]\w*\.)+(?=[A-Z]\w*(?:Error|Exception)\b)", "", row)
     if row.startswith("cannot find symbol"):
-        symbol = next((m.group(1) for later in rows[at + 1:] if (m := re.search(r"symbol:\s+\w+\s+(\w+)", later))), "")
+        symbol = next((f"{m.group(1)} {m.group(2)}" for later in rows[at + 1:] if (m := re.search(r"symbol:\s+(\w+)\s+(\w+)", later))), "")
         row = f"cannot find symbol: {symbol}" if symbol else row
     row = re.sub(r"\.? Did you mean: .*$", "", row)
     row = re.sub(r"[ ,]*(?:on |at )?\(?\bline \d+\)?", "", row)  # 이어 붙인 프로그램의 줄 번호는 사용자가 볼 수 없다(난 곳은 따로 말한다. 'deadline 5'는 낱말이다)
+    if easy and (said := _easy(row)):
+        return said
     return " ".join(row.split()).replace("`", "'") if whole else _cut(row)
 
 
@@ -255,7 +305,7 @@ def _seen(report: dict, program: bool, lead: str) -> str:
             head = f"예시 `{_cut(call_text(case.get('input', '')))}`의 기대한 값은 {_cut(case.get('expected'))}인데"
         return (f"{head} {got}{_ga(got)} {now_('나와요', '나왔어요')}." if got
                 else f"{head} 아무것도 {now_('나오지 않아요', '나오지 않았어요')}.")
-    line = _error_row(case.get("error") or report.get("compile") or "", whole=True)
+    line = _error_row(case.get("error") or report.get("compile") or "", whole=True, easy=shown)  # 숨은 테스트는 이름만 말한다(쉬운 말에는 내 코드의 이름이 든다)
     if not shown:  # 숨은 테스트의 오류는 이름만
         name = (re.findall(r"[A-Za-z_]\w*(?:Error|Exception)", line) or [""])[-1]
         if re.search(r"(습니다|어요|에요|요)\.?$", line):
@@ -504,13 +554,17 @@ def run_verdict(state: MainState, plan, index: int, code: str, check) -> dict | 
         if loop(code, "while") and (timeout or (later and loop(refs[index], "for") and not loop(refs[index], "while"))):
             got.seen, got.hint = _add(got.seen, WHILE_NOTE), False
         # 괄호 수가 계획과 다르면 컴파일 오류에 그 사실을 덧붙인다(실행 전에 거부하면 진입 줄 꼴이 다른 맞는 코드를 막았다)
-        if status in KIND_WORD and (note := brace_note(code, plan.blocks[index], language, program)):  # 컴파일 오류, 그리고 문법 오류를 실행 오류로 알리는 언어(JavaScript)
+        earlier = [(mine[i], refs[i]) for i in sorted(mine) if i < index]  # 이 실행에 내 글로 들어간 앞 블록(괄호 수는 여기까지 이어서 센다)
+        if status in KIND_WORD and (note := brace_note(code, plan.blocks[index], language, program, earlier)):  # 컴파일 오류, 그리고 문법 오류를 실행 오류로 알리는 언어(JavaScript)
             got.seen, got.hint = _add(got.seen, note), False
     rows = [row for row in code.splitlines() if row.strip()]
     if (language == "python" and frame_of(refs[index], language, program)["outer"]
             and all(len(row) - len(row.lstrip()) >= len(rows[0]) - len(rows[0].lstrip()) for row in rows)):
         got.seen, got.hint = _add(got.seen, INDENT_NOTE), False  # 바깥으로 나가는 줄이 있는 블록인데 첫 줄보다 얕은 줄이 없다
     return {"verdict": got, "stored": [], "told": [], "fixes": []}
+
+
+_SYNTAX = re.compile(r"\b(?:SyntaxError|IndentationError|TabError)\b")
 
 
 def _place(report: dict, spans: list[dict]) -> tuple[str, int, int, str] | None:
@@ -521,8 +575,24 @@ def _place(report: dict, spans: list[dict]) -> tuple[str, int, int, str] | None:
     span = next((s for s in spans if isinstance(line, int) and s["first"] <= line <= s["last"]), None)
     if span is None:
         return None
-    n = line - span["first"] + 1 + span["cut"]
+    syntax = report.get("status") == "compile_error" or bool(case and _SYNTAX.search(case.get("error") or ""))  # Python·JavaScript의 문법 오류는 실행 오류로 온다
+    if span["whose"] == "tutor" and syntax:  # 문법 오류가 튜터 덩이의 첫 줄이고 바로 앞이 내 글이면 내 글이 끝난 자리에서 이어지지 않은 것이다
+        at = spans.index(span)
+        mine = next((s for s in reversed(spans[:at]) if s["rows"]), None)
+        if mine and mine["whose"] != "tutor" and mine["last"] == span["first"] - 1 and line == span["first"] and mine["code"].strip():
+            return "join", span["block"], mine["block"], mine["code"].rstrip().split("\n")[-1].strip()
+    gap = span.get("gap")  # 시작 코드의 가져오기 줄이 이 덩이 안에 들어갔다: 그 뒤의 줄은 넣은 수만큼 밀려 있다
+    if gap and line >= gap[0] - gap[1]:
+        if line < gap[0]:
+            return "tutor", span["block"], 0, ""
+        line -= gap[1]
+    idx = line - span["first"]
+    n = idx + 1 + span["cut"]
     rows = span["code"].rstrip().split("\n")
+    body = span.get("rows") or []
+    # 내 글의 그 줄과 실제로 난 줄의 글이 다르면 줄을 잘못 짚은 것이다: 블록의 줄 번호로 말하지 않고 다른 블록의 코드로 말한다
+    if span["whose"] != "tutor" and not (0 < n <= len(rows) and idx < len(body) and rows[n - 1].strip() == body[idx].strip()):
+        return "other", span["block"], 0, ""
     return span["whose"], span["block"], n, rows[n - 1].strip() if 0 < n <= len(rows) else ""
 
 
@@ -535,12 +605,18 @@ def failure_verdict(report: dict, spans: list[dict], program: bool, lead: str, a
     status = report.get("status")
     hint = False
     if status in KIND_WORD:
-        raw = f"`{_error_row(_raw_text(report), first=status == 'compile_error', whole=True)}`"
+        row = _error_row(_raw_text(report), first=status == "compile_error", whole=True)
+        raw = row if row.endswith(EASY_END) else f"`{row}`"  # 쉬운 말로 바꾼 줄(_easy)은 원문처럼 감싸지 않는다
         place, kind = _place(report, spans), KIND_WORD[status]
         if place is None:
             said = f"{kind}가 났는데 어느 줄에서 났는지는 알 수 없어요.\n{raw}"
         elif place[0] == "tutor":
             said = f"튜터의 코드({place[1] + 1}번 블록 자리)에서 {kind}가 났어요.\n{raw}"
+        elif place[0] == "join":  # 내 블록이 끝난 바로 뒤에서 튜터의 블록이 이어지지 않는다: 튜터의 블록 탓이라 하지 않고 내 블록의 끝을 짚는다
+            said = (f"내 {place[2] + 1}번 블록의 마지막 줄(`{_tick(place[3])}`) 뒤에 튜터의 코드({place[1] + 1}번 블록 자리)를 이으면 {kind}가 나요. "
+                    f"내 블록의 끝과 다음 블록의 시작이 문법으로 맞물리지 않아요. 내 블록을 어디서 닫았는지 보세요.\n{raw}")
+        elif place[0] == "other":
+            said = f"다른 블록의 코드에서 {kind}가 났어요.\n{raw}"
         else:
             whose = "내 블록" if place[0] == "this" else f"내 {place[1] + 1}번 블록"
             said = f"{whose} {place[2]}번째 줄(`{_tick(place[3])}`)에서 {kind}가 났어요.\n{raw}"
@@ -559,8 +635,8 @@ def failure_verdict(report: dict, spans: list[dict], program: bool, lead: str, a
 
 
 def _add(seen: str, note: str) -> str:
-    """말 뒤에 문장을 잇는다(글상자로 끝난 말 뒤에는 줄을 바꿔서)."""
-    return f"{seen}{chr(10) if seen.endswith('```') else ' '}{note}"
+    """말 뒤에 문장을 잇는다. 글상자나 오류 원문 줄(`…`)로 끝난 말 뒤에는 줄을 바꿔서(원문이 어디서 끝나는지 보이게)."""
+    return f"{seen}{chr(10) if seen.endswith(('`', EASY_END)) else ' '}{note}"
 
 
 def _tick(text: str) -> str:
@@ -574,23 +650,33 @@ def _raw_text(report: dict) -> str:
     return (case or {}).get("error") or report.get("compile") or ""
 
 
-BRACE_OPEN = "튜터의 이 블록은 괄호(`{`)를 열어 둔 채로 끝나는데 내 블록은 닫았어요. 여기서 닫으면 뒤 블록이 그 괄호 밖으로 나가요."
-BRACE_CLOSE = "내 블록은 괄호(`{`)를 열어 둔 채로 끝나는데 튜터의 이 블록은 여기서 닫아요. 그대로 이어 붙이면 괄호가 하나 남아요."
+# 괄호 경계 안내. 어느 괄호인지(그 괄호를 연 줄)를 말한다: '내 블록은 닫았어요' 다음 블록에서 '내 블록은 열어 둔 채'라고 해 서로 반대로 들렸다
+BRACE_OPEN = ("튜터의 풀이는 {opener}를 이 블록이 끝날 때도 열어 두고 뒤 블록에서 닫아요. 내 코드는 이 블록이 끝날 때 그 괄호가 열려 있지 않아서, "
+              "이어 붙이면 뒤 블록의 `}}`가 남아요. 이 블록은 그 괄호를 열어 둔 채로 끝내 보세요.")
+BRACE_CLOSE = ("내 코드는 {opener}가 이 블록이 끝날 때도 열려 있는데, 튜터의 풀이는 그 괄호를 이 블록까지 닫아요. "
+               "이어 붙이면 닫히지 않은 괄호가 남아요. 이 블록 안에서 `}}`로 닫아 보세요.")
 
 
-def brace_note(code: str, block, language: str, program: bool) -> str:
-    """중괄호 언어에서 이 블록이 열어 두는 괄호 수가 계획과 다르면 그 고정 문구(실행이 실패한 뒤의 참고 글). Python은 들여쓰기를 틀 정보가 맞춘다.
+def _opener(row: str) -> str:
+    return f"이 블록에서 연 괄호(`{_tick(row)}`)" if row else "앞에서 연 괄호(`{`)"
+
+
+def brace_note(code: str, block, language: str, program: bool, earlier: list[tuple[str, str]] = ()) -> str:
+    """중괄호 언어에서 이 블록이 끝날 때 열려 있는 괄호 수가 계획과 다르면 그 안내(실행이 실패한 뒤의 참고 글). Python은 들여쓰기를 틀 정보가 맞춘다.
     계획은 반복을 다음 블록까지 열어 두는데 '}'로 닫아 적은 블록이 통과했고, 모은 코드에 '}'가 하나 더 붙어 컴파일 오류였다.
-    중괄호 없는 한 줄 for·if는 차가 같아(0) 여기서 걸리지 않는다. 앞 블록의 괄호를 닫는 블록처럼 그 밖의 어긋남은 실행이 가른다."""
+    earlier: 이 실행에 내 글로 들어간 앞 블록 [(내 글, 계획 코드)]. 괄호 수는 블록 하나가 아니라 여기까지 이어서 견준다
+    (앞 블록에서 이미 닫은 사람에게 다음 블록마다 반대 안내를 했다). 중괄호 없는 한 줄 for·if는 차가 같아(0) 여기서 걸리지 않는다."""
     if language == "python" or not block.reference.strip():
         return ""
     # 여는 괄호가 있는 틀 줄(진입 클래스·함수 머리)이 있으면 그 수는 진입 줄 꼴을 알아보는 규칙에 기댄다: 꼴이 다르면(화살표 함수, std:: 반환형) 틀린 안내였다
-    if any("{" in row and frame_line(row, language) for text in (block.reference, code) for row in text.splitlines()):
+    texts = [block.reference, code, *(mine for mine, _ in earlier)]
+    if any("{" in row and frame_line(row, language) for text in texts for row in text.splitlines()):
         return ""
-    plan, mine = open_braces(block.reference, language, program), open_braces(code, language, program)
-    if mine < plan and plan > 0:
-        return BRACE_OPEN
-    return BRACE_CLOSE if mine > plan and mine > 0 else ""
+    count = lambda text: open_braces(text, language, program)  # noqa: E731
+    gap = count(code) - count(block.reference) + sum(count(mine) - count(ref) for mine, ref in earlier)  # 이 블록 끝에서 내 쪽이 더 열어 둔 괄호 수
+    if gap < 0:
+        return BRACE_OPEN.format(opener=_opener(unclosed_row(block.reference, language, program)))
+    return BRACE_CLOSE.format(opener=_opener(unclosed_row(code, language, program))) if gap > 0 else ""
 
 
 def _rows(text: str) -> list[str]:

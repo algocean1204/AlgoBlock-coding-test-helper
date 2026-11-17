@@ -21,7 +21,7 @@ body:
     id: language
     attributes:
       label: 풀이 언어
-      options: [Python, Java, JavaScript, C++, Go, Kotlin, Rust, 해당 없음]
+      options: [Python, Java, JavaScript, C++, Rust, 해당 없음]
     validations:
       required: true
   - type: checkboxes

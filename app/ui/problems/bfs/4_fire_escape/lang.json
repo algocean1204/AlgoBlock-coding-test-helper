@@ -1,0 +1,121 @@
+{
+ "python": [
+  {
+   "file": "lang_1.py",
+   "trap": "python.shared_rows",
+   "fails": {
+    "7": "failed",
+    "13": "failed",
+    "15": "failed",
+    "16": "failed",
+    "17": "failed",
+    "18": "failed",
+    "22": "failed",
+    "23": "failed"
+   },
+   "outs": {
+    "7": "-1",
+    "13": "-1",
+    "15": "-1",
+    "16": "-1",
+    "17": "-1",
+    "18": "-1",
+    "22": "-1",
+    "23": "-1"
+   },
+   "source": 1730305201
+  },
+  {
+   "file": "lang_2.py",
+   "trap": "python.negative_index",
+   "at": [
+    "지도 밖으로는 움직일 수 없습니다"
+   ],
+   "fails": {
+    "3": "failed",
+    "10": "failed",
+    "13": "failed",
+    "15": "failed",
+    "20": "failed",
+    "22": "failed"
+   },
+   "outs": {
+    "3": "2",
+    "10": "3",
+    "13": "1",
+    "15": "3",
+    "20": "6",
+    "22": "1043"
+   },
+   "source": 267069622
+  }
+ ],
+ "java": [
+  {
+   "file": "lang_1.java",
+   "trap": "java.string_equals",
+   "fails": {
+    "1": "failed",
+    "3": "failed",
+    "5": "failed",
+    "7": "failed",
+    "8": "failed",
+    "10": "failed",
+    "13": "failed",
+    "15": "failed",
+    "16": "failed",
+    "17": "failed",
+    "18": "failed",
+    "19": "failed",
+    "21": "failed",
+    "22": "failed",
+    "23": "failed"
+   },
+   "outs": {
+    "1": "-1",
+    "3": "-1",
+    "5": "-1",
+    "7": "-1",
+    "8": "-1",
+    "10": "-1",
+    "13": "-1",
+    "15": "-1",
+    "16": "-1",
+    "17": "-1",
+    "18": "-1",
+    "19": "-1",
+    "21": "-1",
+    "22": "-1",
+    "23": "-1"
+   },
+   "source": 717176678
+  }
+ ],
+ "javascript": [
+  {
+   "file": "lang_1.js",
+   "trap": "javascript.fill_shared",
+   "fails": {
+    "7": "failed",
+    "13": "failed",
+    "15": "failed",
+    "16": "failed",
+    "17": "failed",
+    "18": "failed",
+    "22": "failed",
+    "23": "failed"
+   },
+   "outs": {
+    "7": "-1",
+    "13": "-1",
+    "15": "-1",
+    "16": "-1",
+    "17": "-1",
+    "18": "-1",
+    "22": "-1",
+    "23": "-1"
+   },
+   "source": 4101043274
+  }
+ ]
+}

@@ -118,7 +118,7 @@ macOS에서는 `PATH` 뒤에 다음을 더한다. Finder에서 연 앱은 PATH�
 
 - `/opt/homebrew/bin`, `/usr/local/bin`
 - `~/.pyenv/shims`, `~/.local/bin`
-- `~/.cargo/bin`(Rust), `/usr/local/go/bin`, `~/go/bin`(Go)
+- `~/.cargo/bin`(Rust)
 - `/opt/homebrew/opt/openjdk*/bin`(Homebrew JDK. 있으면 이름순 마지막 것 하나)
 - `~/.nvm/versions/node/*/bin`(nvm Node. 있으면 이름순 마지막 것 하나)
 
@@ -152,7 +152,7 @@ app\packaging\dist\AlgoBlock.exe --check-embed
 
 - 코드 서명과 공증이 없다.
 - 창을 닫으면 `window.py`가 `server.stop_grading()`으로 돌던 채점 실행기를 끝낸다. 메뉴의 '끝내기'로 끝내면 `webview.start()`가 돌아오지 않아 이 정리가 돌지 않을 수 있다. 그때 남은 채점 실행기는 채점기의 CPU 시간 상한에서 멈춘다(POSIX). Windows에서는 앱 프로세스가 끝나며 채점기의 작업 객체 핸들이 닫혀 바로 끝난다.
-- 창 모드는 포트(`ALGOBLOCK_UI_PORT`, 기본 8791)를 이미 다른 프로그램이 쓰고 있으면 서버를 새로 띄우지 않고 그 주소를 그대로 연다(`window.py`의 `serve`).
+- 앱을 두 번 켜면 둘째는 데이터 폴더의 잠금(`app.lock`) 때문에 서버도 창도 띄우지 않고 알림 창만 보인다. 포트(`ALGOBLOCK_UI_PORT`, 기본 8791)를 다른 프로그램이 쓰고 있어도 같다(`window.py`의 `main`, `server.py`의 `start`).
 
 ## 버전 바꾸기
 

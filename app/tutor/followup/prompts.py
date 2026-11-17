@@ -2,6 +2,7 @@
 
 from ..common.progress_view import active_plan, current_index
 from ..common.talk_prompts import talk_system
+from ..common.talk_rules import many_asks_line
 from ..knowledge.ontology import skill_examples
 from ..common.solution import solution_lines
 from ..llm import cached_user
@@ -28,7 +29,7 @@ def quote_context(state: MainState) -> dict:
         "mode": req.mode,
         "problem": state["ctx"].problem_text,
         "guide": solution_lines(state),
-        "examples": skill_examples(state["ctx"].skills),
+        "examples": skill_examples(state["ctx"].skills, state["ctx"].language),
     }
 
 
@@ -39,6 +40,7 @@ def answer_messages(context: dict) -> list[dict]:
         lines.append(f"지금 블록:{context['block_name']}")
     lines += [
         f"질문:{context['question']}",
+        *many_asks_line(context["question"]),
         "인용한 말, 위 대화, 문제 글만 보고 답한다. 문제 글의 사실은 작은따옴표로 인용하고 (문제 글)을, 짐작은 (추론)을 붙인다. "
         "문법을 물으면(코드로 어떻게 쓰는지, 문법을 모르겠다) 피하지 않고 답한다: 그 문법을 이 문제와 상관없는 작은 예(과일 이름, 점수 등 다른 변수 이름)로 한 줄 보여 주고 뜻을 한 문장으로 푼다. "
         "이 문제의 변수 이름으로 쓴 코드와 이 블록의 답 코드는 쓰지 않는다. 코드 블록(```)은 쓰지 않는다.",

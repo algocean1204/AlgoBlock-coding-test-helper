@@ -33,7 +33,7 @@ cd app && uv run --no-project --python 3.12 --with langgraph --with pypdf python
 cd app && uv run --no-project --python 3.12 --with langgraph --with pywebview python ui/window.py
 ```
 
-같은 포트에 서버가 이미 떠 있으면 새로 띄우지 않고 그 화면을 연다.
+같은 데이터 폴더를 이미 다른 AlgoBlock이 쓰고 있으면(앱을 두 번 켠 경우) 새로 띄우지 않고 안내만 한다. 포트를 다른 프로그램이 쓰고 있어도 새로 띄우지 않는다.
 
 ## 환경 변수
 
@@ -77,7 +77,7 @@ cd app && uv run --no-project --python 3.12 --with langgraph --with pypdf --with
 | --- | --- |
 | `app/ui/` | 화면(HTML·JS·CSS), 로컬 서버, 창, 기본 문제와 케이스 도구 |
 | `app/tutor/` | LangGraph 튜터 엔진. 에이전트마다 폴더 하나 |
-| `app/judge/` | 채점기. 7개 언어 실행기와 형 모델 |
+| `app/judge/` | 채점기. 5개 언어 실행기와 형 모델 |
 | `app/llm/` | 모델 공급자 연결(Claude API 키, OpenAI API 키, ChatGPT 로그인)과 사용량 기록 |
 | `app/packaging/` | 설치 파일 만들기 |
 | `Docs/` | 공개 문서(guide, architecture, contributing) |

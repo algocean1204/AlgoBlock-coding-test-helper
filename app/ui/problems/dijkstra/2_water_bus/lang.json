@@ -1,0 +1,173 @@
+{
+ "python": [
+  {
+   "file": "lang_1.py",
+   "trap": "python.missing_key",
+   "fails": {
+    "1": "runtime_error",
+    "2": "runtime_error",
+    "3": "runtime_error",
+    "4": "runtime_error",
+    "6": "runtime_error",
+    "7": "runtime_error",
+    "8": "runtime_error",
+    "9": "runtime_error",
+    "11": "runtime_error",
+    "12": "runtime_error",
+    "13": "runtime_error",
+    "14": "runtime_error",
+    "15": "runtime_error",
+    "16": "runtime_error",
+    "17": "runtime_error",
+    "18": "runtime_error",
+    "19": "runtime_error",
+    "20": "runtime_error",
+    "21": "runtime_error",
+    "22": "runtime_error",
+    "23": "runtime_error",
+    "24": "runtime_error"
+   },
+   "source": 2267211007
+  },
+  {
+   "file": "lang_2.py",
+   "trap": "python.str_to_int",
+   "at": [
+    "공백 하나씩으로 구분한 문자열"
+   ],
+   "fails": {
+    "1": "runtime_error",
+    "2": "runtime_error",
+    "3": "runtime_error",
+    "4": "runtime_error",
+    "6": "runtime_error",
+    "7": "runtime_error",
+    "8": "runtime_error",
+    "9": "runtime_error",
+    "11": "runtime_error",
+    "12": "runtime_error",
+    "13": "runtime_error",
+    "14": "runtime_error",
+    "15": "runtime_error",
+    "16": "runtime_error",
+    "17": "runtime_error",
+    "18": "runtime_error",
+    "19": "runtime_error",
+    "20": "runtime_error",
+    "21": "runtime_error",
+    "22": "runtime_error",
+    "23": "runtime_error",
+    "24": "runtime_error"
+   },
+   "source": 2001362669
+  }
+ ],
+ "javascript": [
+  {
+   "file": "lang_1.js",
+   "trap": "javascript.string_plus",
+   "at": [
+    "공백 하나씩으로 구분한 문자열"
+   ],
+   "fails": {
+    "1": "failed",
+    "2": "failed",
+    "4": "failed",
+    "6": "failed",
+    "7": "failed",
+    "8": "failed",
+    "11": "failed",
+    "12": "failed",
+    "13": "failed",
+    "14": "failed",
+    "15": "failed",
+    "16": "failed",
+    "17": "failed",
+    "18": "failed",
+    "19": "failed",
+    "20": "failed",
+    "21": "failed",
+    "22": "failed",
+    "24": "failed"
+   },
+   "outs": {
+    "1": "\"010\"",
+    "2": "\"055\"",
+    "4": "\"01\"",
+    "6": "\"01000\"",
+    "7": "\"02\"",
+    "8": "\"011\"",
+    "11": "\"01111\"",
+    "12": "\"0100\"",
+    "13": "\"013\"",
+    "14": "\"01000\"",
+    "15": "\"0101\"",
+    "16": "\"05\"",
+    "17": "\"03\"",
+    "18": "\"01116\"",
+    "19": "\"0461231549311817473\"",
+    "20": "\"06\"",
+    "21": "\"043091\"",
+    "22": "\"065656283207470216\"",
+    "24": "-1"
+   },
+   "source": 2981387779
+  }
+ ],
+ "cpp": [
+  {
+   "file": "lang_1.cpp",
+   "trap": "cpp.max_heap",
+   "at": [
+    "가장 빨리 도착하는"
+   ],
+   "fails": {
+    "1": "failed",
+    "8": "failed",
+    "11": "failed",
+    "12": "failed",
+    "19": "failed",
+    "21": "failed",
+    "22": "failed"
+   },
+   "outs": {
+    "1": "10",
+    "8": "3",
+    "11": "50",
+    "12": "100",
+    "19": "2097",
+    "21": "220",
+    "22": "2187"
+   },
+   "source": 3170561165
+  }
+ ],
+ "rust": [
+  {
+   "file": "lang_1.rs",
+   "trap": "rust.max_heap",
+   "at": [
+    "가장 빨리 도착하는"
+   ],
+   "fails": {
+    "1": "failed",
+    "8": "failed",
+    "11": "failed",
+    "12": "failed",
+    "19": "failed",
+    "21": "failed",
+    "22": "failed"
+   },
+   "outs": {
+    "1": "10",
+    "8": "3",
+    "11": "50",
+    "12": "100",
+    "19": "2097",
+    "21": "220",
+    "22": "2187"
+   },
+   "source": 1061059793
+  }
+ ]
+}

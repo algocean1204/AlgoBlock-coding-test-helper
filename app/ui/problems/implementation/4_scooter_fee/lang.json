@@ -1,0 +1,230 @@
+{
+ "python": [
+  {
+   "file": "lang_1.py",
+   "trap": "python.missing_key",
+   "at": [
+    "rides에 나오는 회원마다"
+   ],
+   "fails": {
+    "1": "runtime_error",
+    "2": "runtime_error",
+    "3": "runtime_error",
+    "4": "runtime_error",
+    "5": "runtime_error",
+    "6": "runtime_error",
+    "7": "runtime_error",
+    "8": "runtime_error",
+    "9": "runtime_error",
+    "10": "runtime_error",
+    "11": "runtime_error",
+    "12": "runtime_error",
+    "13": "runtime_error",
+    "14": "runtime_error",
+    "15": "runtime_error",
+    "16": "runtime_error",
+    "17": "runtime_error",
+    "18": "runtime_error",
+    "19": "runtime_error",
+    "20": "runtime_error",
+    "21": "runtime_error",
+    "22": "runtime_error"
+   },
+   "source": 2738024724
+  },
+  {
+   "file": "lang_2.py",
+   "trap": "python.str_to_int",
+   "at": [
+    "낱말은 빈칸 하나로 나뉩니다"
+   ],
+   "fails": {
+    "1": "runtime_error",
+    "2": "runtime_error",
+    "3": "runtime_error",
+    "4": "runtime_error",
+    "5": "runtime_error",
+    "6": "runtime_error",
+    "7": "runtime_error",
+    "8": "runtime_error",
+    "9": "runtime_error",
+    "10": "runtime_error",
+    "11": "runtime_error",
+    "12": "runtime_error",
+    "13": "runtime_error",
+    "14": "runtime_error",
+    "15": "runtime_error",
+    "16": "runtime_error",
+    "17": "runtime_error",
+    "18": "runtime_error",
+    "19": "runtime_error",
+    "20": "runtime_error",
+    "21": "runtime_error",
+    "22": "runtime_error"
+   },
+   "source": 1041039238
+  }
+ ],
+ "java": [
+  {
+   "file": "lang_1.java",
+   "trap": "java.missing_key_null",
+   "fails": {
+    "1": "runtime_error",
+    "2": "runtime_error",
+    "3": "runtime_error",
+    "4": "runtime_error",
+    "5": "runtime_error",
+    "6": "runtime_error",
+    "7": "runtime_error",
+    "8": "runtime_error",
+    "9": "runtime_error",
+    "10": "runtime_error",
+    "11": "runtime_error",
+    "12": "runtime_error",
+    "13": "runtime_error",
+    "14": "runtime_error",
+    "15": "runtime_error",
+    "16": "runtime_error",
+    "17": "runtime_error",
+    "18": "runtime_error",
+    "19": "runtime_error",
+    "20": "runtime_error",
+    "21": "runtime_error",
+    "22": "runtime_error"
+   },
+   "source": 501232834
+  }
+ ],
+ "javascript": [
+  {
+   "file": "lang_1.js",
+   "trap": "javascript.missing_key_undefined",
+   "fails": {
+    "1": "failed",
+    "2": "failed",
+    "3": "failed",
+    "4": "failed",
+    "5": "failed",
+    "6": "failed",
+    "7": "failed",
+    "8": "failed",
+    "9": "failed",
+    "10": "failed",
+    "11": "failed",
+    "12": "failed",
+    "13": "failed",
+    "14": "failed",
+    "15": "failed",
+    "16": "failed",
+    "17": "failed",
+    "18": "failed",
+    "19": "failed",
+    "20": "failed",
+    "21": "failed",
+    "22": "failed"
+   },
+   "outs": {
+    "1": "[[15,null],[2,null]]",
+    "2": "[[7,null],[31,null],[100,null]]",
+    "3": "[[9,null],[4,null]]",
+    "4": "[[1,null]]",
+    "5": "[[5,null]]",
+    "6": "[[3,null]]",
+    "7": "[[10,null],[11,null],[8,null],[9,null]]",
+    "8": "[[4,null]]",
+    "9": "[[4,null]]",
+    "10": "[[4,null],[6,null]]",
+    "11": "[[2,null]]",
+    "12": "[[31,null],[7,null],[300,null],[4,null]]",
+    "13": "[[999999,null],[1,null]]",
+    "14": "[[12,null]]",
+    "15": "[[77,null]]",
+    "16": "#b6a5a81a5c56",
+    "17": "#29da1de72ad8",
+    "18": "#c72e2e203720",
+    "19": "[[162085,null]]",
+    "20": "#2d794360f281",
+    "21": "#1ff9272ae141",
+    "22": "#acda96dc2d2e"
+   },
+   "source": 2267355869
+  },
+  {
+   "file": "lang_2.js",
+   "trap": "javascript.string_plus",
+   "at": [
+    "꼴의 시각"
+   ],
+   "fails": {
+    "1": "failed",
+    "3": "failed",
+    "4": "failed",
+    "6": "failed",
+    "7": "failed",
+    "12": "failed",
+    "13": "failed",
+    "14": "failed",
+    "15": "failed",
+    "17": "failed",
+    "18": "failed",
+    "19": "failed",
+    "20": "failed",
+    "21": "failed",
+    "22": "failed"
+   },
+   "outs": {
+    "1": "[[15,50000],[2,7000]]",
+    "3": "[[4,59770],[9,790]]",
+    "4": "[[1,1000000]]",
+    "6": "[[3,40]]",
+    "7": "[[8,59410],[10,59410],[9,10],[11,10]]",
+    "12": "[[4,200],[7,200],[31,200],[300,200]]",
+    "13": "[[1,1000000],[999999,1000000]]",
+    "14": "[[12,1000000]]",
+    "15": "[[77,60610]]",
+    "17": "#f0a3c8ea658f",
+    "18": "#013d0c5b9dac",
+    "19": "[[162085,2280]]",
+    "20": "#1760a4544b8a",
+    "21": "#606591718652",
+    "22": "#2f9a76b8cadc"
+   },
+   "source": 1876506567
+  }
+ ],
+ "rust": [
+  {
+   "file": "lang_1.rs",
+   "trap": "rust.unwrap_none",
+   "at": [
+    "그 회원의 기록마다 구한 요금을 모두 더한 값"
+   ],
+   "fails": {
+    "1": "runtime_error",
+    "2": "runtime_error",
+    "3": "runtime_error",
+    "4": "runtime_error",
+    "5": "runtime_error",
+    "6": "runtime_error",
+    "7": "runtime_error",
+    "8": "runtime_error",
+    "9": "runtime_error",
+    "10": "runtime_error",
+    "11": "runtime_error",
+    "12": "runtime_error",
+    "13": "runtime_error",
+    "14": "runtime_error",
+    "15": "runtime_error",
+    "16": "runtime_error",
+    "17": "runtime_error",
+    "18": "runtime_error",
+    "19": "runtime_error",
+    "20": "runtime_error",
+    "21": "runtime_error",
+    "22": "runtime_error"
+   },
+   "source": 1839493067
+  }
+ ]
+}

@@ -1,0 +1,231 @@
+{
+ "python": [
+  {
+   "file": "lang_1.py",
+   "trap": "python.missing_key",
+   "at": [
+    "한 번도 적히지 않은 구역과 종의 마릿수는 0입니다"
+   ],
+   "fails": {
+    "1": "runtime_error",
+    "2": "runtime_error",
+    "3": "runtime_error",
+    "6": "runtime_error",
+    "8": "runtime_error",
+    "9": "runtime_error",
+    "10": "runtime_error",
+    "11": "runtime_error",
+    "12": "runtime_error",
+    "13": "runtime_error",
+    "14": "runtime_error",
+    "15": "runtime_error",
+    "16": "runtime_error",
+    "17": "runtime_error",
+    "18": "runtime_error",
+    "19": "runtime_error",
+    "20": "runtime_error",
+    "21": "runtime_error",
+    "22": "runtime_error",
+    "23": "runtime_error",
+    "24": "runtime_error"
+   },
+   "source": 1899545752
+  },
+  {
+   "file": "lang_2.py",
+   "trap": "python.str_to_int",
+   "at": [
+    "낱말 사이는 공백 한 칸입니다"
+   ],
+   "fails": {
+    "1": "runtime_error",
+    "2": "runtime_error",
+    "3": "runtime_error",
+    "6": "runtime_error",
+    "7": "runtime_error",
+    "8": "runtime_error",
+    "9": "runtime_error",
+    "10": "runtime_error",
+    "11": "runtime_error",
+    "12": "runtime_error",
+    "13": "runtime_error",
+    "14": "runtime_error",
+    "15": "runtime_error",
+    "16": "runtime_error",
+    "17": "runtime_error",
+    "18": "runtime_error",
+    "19": "runtime_error",
+    "20": "runtime_error",
+    "21": "runtime_error",
+    "22": "runtime_error",
+    "23": "runtime_error",
+    "24": "runtime_error"
+   },
+   "source": 287656860
+  }
+ ],
+ "java": [
+  {
+   "file": "lang_1.java",
+   "trap": "java.missing_key_null",
+   "fails": {
+    "1": "runtime_error",
+    "2": "runtime_error",
+    "3": "runtime_error",
+    "6": "runtime_error",
+    "7": "runtime_error",
+    "8": "runtime_error",
+    "9": "runtime_error",
+    "10": "runtime_error",
+    "11": "runtime_error",
+    "12": "runtime_error",
+    "13": "runtime_error",
+    "14": "runtime_error",
+    "15": "runtime_error",
+    "16": "runtime_error",
+    "17": "runtime_error",
+    "18": "runtime_error",
+    "19": "runtime_error",
+    "20": "runtime_error",
+    "21": "runtime_error",
+    "22": "runtime_error",
+    "23": "runtime_error",
+    "24": "runtime_error"
+   },
+   "source": 4017679265
+  },
+  {
+   "file": "lang_2.java",
+   "trap": "java.string_equals",
+   "fails": {
+    "1": "failed",
+    "2": "failed",
+    "3": "failed",
+    "6": "failed",
+    "7": "failed",
+    "8": "failed",
+    "9": "failed",
+    "10": "failed",
+    "11": "failed",
+    "12": "failed",
+    "13": "failed",
+    "14": "failed",
+    "15": "failed",
+    "16": "failed",
+    "17": "failed",
+    "18": "failed",
+    "19": "failed",
+    "20": "failed",
+    "21": "failed",
+    "22": "failed",
+    "23": "failed",
+    "24": "failed"
+   },
+   "outs": {
+    "1": "[0,0,0,0,0,0,0,0]",
+    "2": "[0,0,0,0,0,0,0]",
+    "3": "[0,0,0,0,0,0,0,0,0,0]",
+    "6": "[0,0,0]",
+    "7": "[0,0,0]",
+    "8": "[0,0,0,0,0]",
+    "9": "[0,0,0,0,0,0,0]",
+    "10": "[0,0,0,0,0]",
+    "11": "[0,0,0,0,0,0,0,0]",
+    "12": "[0,0,0,0,0,0,0,0]",
+    "13": "[0,0,0,0]",
+    "14": "[0,0,0,0,0,0,0,0,0,0,0]",
+    "15": "[0,0,0,0,0,0,0,0]",
+    "16": "[0,0,0,0,0,0,0]",
+    "17": "[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]",
+    "18": "#a7ef3470bd1a",
+    "19": "#05bfab4a68e9",
+    "20": "#74ffb75861d5",
+    "21": "[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]",
+    "22": "#7312547e9ebe",
+    "23": "#450b55547437",
+    "24": "#450b55547437"
+   },
+   "source": 4057082927
+  }
+ ],
+ "javascript": [
+  {
+   "file": "lang_1.js",
+   "trap": "javascript.missing_key_undefined",
+   "fails": {
+    "1": "failed",
+    "2": "failed",
+    "3": "failed",
+    "6": "failed",
+    "8": "failed",
+    "9": "failed",
+    "10": "failed",
+    "11": "failed",
+    "12": "failed",
+    "13": "failed",
+    "15": "failed",
+    "16": "failed",
+    "18": "failed",
+    "19": "failed",
+    "20": "failed",
+    "21": "failed",
+    "22": "failed",
+    "23": "failed"
+   },
+   "outs": {
+    "1": "[0,2,0,1]",
+    "2": "[0,0,0]",
+    "3": "[0,1,0,0,1,0]",
+    "6": "[1,0]",
+    "8": "[0,1]",
+    "9": "[0,0]",
+    "10": "[0,1]",
+    "11": "[1,0,1,0,0,0]",
+    "12": "[0,0,0,1]",
+    "13": "[1,0,0]",
+    "15": "[0,0,0,0]",
+    "16": "[1,0,1,0,0]",
+    "18": "#107a5a185416",
+    "19": "[0,0,0,0,0,0,0,0,0,0]",
+    "20": "#0da9209cb1f1",
+    "21": "[0,0,0,0,0,0,2,0,0]",
+    "22": "[0,1,0,1,2,3]",
+    "23": "#27278505dd63"
+   },
+   "source": 491571790
+  }
+ ],
+ "rust": [
+  {
+   "file": "lang_1.rs",
+   "trap": "rust.unwrap_none",
+   "at": [
+    "한 번도 적히지 않은 구역과 종의 마릿수는 0입니다"
+   ],
+   "fails": {
+    "1": "runtime_error",
+    "2": "runtime_error",
+    "3": "runtime_error",
+    "6": "runtime_error",
+    "8": "runtime_error",
+    "9": "runtime_error",
+    "10": "runtime_error",
+    "11": "runtime_error",
+    "12": "runtime_error",
+    "13": "runtime_error",
+    "14": "runtime_error",
+    "15": "runtime_error",
+    "16": "runtime_error",
+    "17": "runtime_error",
+    "18": "runtime_error",
+    "19": "runtime_error",
+    "20": "runtime_error",
+    "21": "runtime_error",
+    "22": "runtime_error",
+    "23": "runtime_error",
+    "24": "runtime_error"
+   },
+   "source": 2453466427
+  }
+ ]
+}

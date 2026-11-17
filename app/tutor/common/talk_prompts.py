@@ -1,6 +1,6 @@
 """의자·가이드·꼬리질문 시스템 프롬프트. 대화 원칙은 talk_rules.py 머리말과 같다."""
 
-from ..knowledge.ontology import PITFALLS
+from ..knowledge.ontology import PITFALLS, pitfall_fits, pitfall_text
 from ..llm import cached_user
 from .solution import solution_lines
 from .scope import PRINCIPLES
@@ -15,8 +15,8 @@ LEVEL_TEXT = {
 
 
 def weak_pitfalls(ctx) -> list[str]:
-    """이 사용자가 여러 문항에서 되풀이한 함정 '이름(n번)', 많아야 3개. 계획·피드백·의자·가이드가 같이 쓴다."""
-    return [f"{PITFALLS[pid][1]}({count}번)" for pid, count in ctx.frequent_pitfalls if pid in PITFALLS][:3]
+    """이 사용자가 여러 문항에서 되풀이한 함정 '이름(n번)', 많아야 3개. 지금 언어에 없는 함정은 뺀다. 계획·피드백·의자·가이드가 같이 쓴다."""
+    return [f"{pitfall_text(pid, ctx.language)[0]}({count}번)" for pid, count in ctx.frequent_pitfalls if pid in PITFALLS and pitfall_fits(pid, ctx.language)][:3]
 
 
 def learner_lines(ctx) -> list[str]:
@@ -29,6 +29,11 @@ def learner_lines(ctx) -> list[str]:
     if ctx.level in LEVEL_TEXT:
         lines.append(LEVEL_TEXT[ctx.level])
     return ["학습자:", *lines] if lines else []
+
+
+# 사용자가 하지 않은 판단을 인정했고('잘 모르겠어요'에 '그 판단은 맞는 방향'), 한 말의 두 물음 가운데 하나만 받았다. 의자·가이드·꼬리질문·디버그가 같이 쓴다
+NOT_SAID = ("사용자가 말하지 않은 생각·판단을 사용자가 했다고 하거나 맞다고 인정하지 않는다('모르겠어요'에는 인정할 판단이 없다). "
+            "사용자가 말한 것도 맞다·틀리다로 판정하지 않는다. 가정을 되짚을 때는 '말씀하신 대로'·'그렇죠'처럼 맞다는 뜻으로 읽히는 말을 붙이지 않고 '~라고 보셨네요'나 '가정하신 대로라면 …인데 실제로는 …'처럼 쓴다. 사용자 한 말에 물음이 여럿이면 물음마다 짧게 받거나(개념을 풀어 주거나 볼 곳을 좁힌다), 하나만 받을 때는 그 하나를 먼저 본다고 말하고 다음 차례에 나머지로 돌아온다.")
 
 
 def talk_system(role: str, basis: bool) -> str:
@@ -51,6 +56,7 @@ def talk_system(role: str, basis: bool) -> str:
             f"3. 생각을 닫는 말을 쓰지 않는다: {_BANNED}.",
             "금지: 참고 코드, 다음 블록의 이름, 답 코드, 코드 블록.",
             "사용자가 직접 물은 것이 있으면 그 물음부터 받는다: 그 물음을 스스로 풀 실마리를 묻는다. 물음을 못 본 척 다른 질문으로 넘어가지 않는다.",
+            NOT_SAID,
             "말은 한국어 1~3문장이고 물음표로 끝나는 질문 하나로 끝낸다. 한 번에 한 가지만 묻는다. '그리고'·'아니면'으로 질문을 잇지 않는다.",
             "상대에게 직접 하는 말만 쓴다. '사용자' 같은 3인칭, 네 계획이나 메모, 영어 문장을 쓰지 않는다.",
         ]
@@ -60,6 +66,12 @@ def talk_system(role: str, basis: bool) -> str:
 # 사용자 말에 답할 때의 지시 끝에 붙인다(가이드 MOVE_TEXT["reply"], 의자는 turn/talk.py). '왜 덱을 써야 하나요?'를 '다만 지금은…'으로 돌렸다
 CONCEPT_FIRST = ("사용자가 개념이나 까닭을 물으면 먼저 한두 문장으로 답한다(이 블록이 정하는 값·조건·코드는 말하지 않는다). "
                  "'다만', '하지만', '그런데'로 시작하지 않는다. 그다음 지금 블록을 겨눈 질문 하나를 한다.")
+
+# 낱말의 뜻을 물었을 때(turn/moves.py의 term). 의자·가이드가 같이 쓴다
+TERM_STEP = ("사용자가 최근 대화에 나온 낱말이나 개념의 뜻을 물었다. 그 낱말의 쉬운 뜻을 한 문장으로 말하고, 이 문제와 상관없는 아주 짧은 예를 하나 든다. "
+             "이 블록에서 정할 것(값, 조건, 쓸 자료구조)과 풀이의 답은 말하지 않는다. 그다음 직전 질문으로 돌아가 같은 뜻을 쉬운 말로 한 번 묻는다.")
+# 어렵다는 말에 같은 질문을 되풀이했다
+HARD_STEP = "사용자가 어렵다고 했다. 직전 질문을 되풀이하지 않고, 그 질문을 더 작은 첫 걸음 하나로 나눠 바로 답할 수 있게 묻는다(예: 작은 값 하나로 무엇이 되는지)."
 
 JUDGE_SYSTEM = "너는 코딩테스트 튜터의 판정자다. 판정만 하고 설명하지 않는다."
 

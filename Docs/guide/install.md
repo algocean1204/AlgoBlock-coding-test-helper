@@ -7,8 +7,11 @@
 | 운영체제 | 파일 |
 |---|---|
 | macOS (Apple Silicon) | [AlgoBlock-macos-arm64.dmg](https://github.com/algocean1204/AlgoBlock-coding-test-helper/releases/latest/download/AlgoBlock-macos-arm64.dmg) |
+| Windows (x64, 베타) | [AlgoBlock-windows-x64.exe](https://github.com/algocean1204/AlgoBlock-coding-test-helper/releases/latest/download/AlgoBlock-windows-x64.exe) |
 
 dmg를 열면 `AlgoBlock.app`과 `Applications` 바로가기가 있다. `AlgoBlock.app`을 `Applications`로 끌어다 놓는다.
+
+Windows는 설치 과정이 없다. 받은 `AlgoBlock-windows-x64.exe`를 원하는 폴더에 두고 실행한다. 관리자만 쓸 수 있는 폴더(Program Files 등)에 두면 앱 안 업데이트가 파일을 바꾸지 못하므로 피한다.
 
 ## 처음 여는 법
 
@@ -28,6 +31,14 @@ xattr -dr com.apple.quarantine /Applications/AlgoBlock.app
 
 macOS 14 이하에서는 앱을 우클릭 → '열기'로도 된다.
 
+## Windows 베타
+
+Windows 파일은 베타다. 서명이 없고, 실제 Windows PC에서 넓게 확인하지 못했다. 문제가 있으면 이슈로 알려 달라.
+
+처음 열면 Microsoft Defender SmartScreen의 'Windows의 PC 보호' 창이 뜰 수 있다. 앱이 망가졌다는 뜻이 아니다. **'추가 정보'**를 누른 뒤 **'실행'**을 누른다. 이 저장소의 릴리스에서 받은 파일에만 이렇게 한다.
+
+채점 언어 도구는 exe에 들어 있지 않다. 쓰려는 언어의 도구(Python, JDK, Node.js, g++ 또는 clang++, rustc)를 따로 설치하고 PATH에 둔다. 아래 '언어 도구'를 본다. 앱 안 업데이트는 macOS와 같은 두 단추로 한다.
+
 ## 업데이트
 
 자동 확인이 켜져 있으면 GitHub 릴리스에서 새 버전이 나왔는지 하루에 한 번 본다. 앱을 켤 때 마지막 확인에서 24시간이 지났으면 보고, 그 뒤 24시간마다 본다. 확인하지 못하면(인터넷이 끊기는 등) 1시간 뒤에 다시 보고, 계속 안 되면 2시간, 4시간, 6시간 간격으로 다시 본다. 새 버전이 있으면 위쪽 막대에 '새 버전 x.y.z · 업데이트'가 뜬다. 확인하는 주소와 받은 파일을 검사하는 법은 [보안 구조](../architecture/security.md#업데이트)에 있다.
@@ -40,10 +51,14 @@ macOS 앱과 Windows 앱은 다음 순서로 바꾼다.
 
 - 앱이 있는 폴더에 쓸 수 없으면(관리자만 쓸 수 있는 곳. Windows의 Program Files 등) 바꾸지 않는다. 대신 받은 파일의 위치를 보여 주고, '파일 위치 열기'로 Finder나 탐색기에서 연다. macOS는 그 dmg를 열어, Windows는 앱을 끝낸 뒤 받은 exe로 지금 exe를 바꿔 직접 바꾼다.
 - Windows에서 바꾸는 도중 컴퓨터가 꺼지는 등으로 멈춰 앱 exe가 없어지고 옆에 `.<앱 이름>.old`(옛 버전)나 `.<앱 이름>.new`(새 버전)만 남았다면, 그 파일의 이름을 앱 이름(예: `AlgoBlock.exe`)으로 바꾸면 된다.
-- '이 버전 건너뛰기'를 누르면 그 버전은 막대에 뜨지 않는다. '연결' → '더 정하기' → '업데이트'의 '지금 확인'으로 다시 볼 수 있다.
+- '이 버전 건너뛰기'를 누르면 그 버전은 막대에 뜨지 않는다. '설정' → '업데이트'의 '지금 확인'으로 다시 볼 수 있다.
 - '지금 확인'은 하루 한 번의 일정과 상관없이 바로 본다.
-- 자동 확인을 끄려면 '연결' → '더 정하기' → '업데이트'에서 '새 버전을 자동으로 확인하기'를 끈다. 끄면 켤 때도 하루마다도 묻지 않는다. '지금 확인'은 그대로 된다.
+- 자동 확인을 끄려면 '설정' → '업데이트'에서 '새 버전을 자동으로 확인하기'를 끈다. 끄면 켤 때도 하루마다도 묻지 않는다. '지금 확인'은 그대로 된다.
 - 소스로 실행하면 새 버전을 확인만 하고 받지 않는다. 저장소에서 `git pull`로 받는다.
+
+## 화면 색
+
+'설정' → '화면'에서 '시스템 설정대로', '라이트', '다크' 가운데 하나를 고른다. 고르면 바로 바뀌고 다음에 켜도 남는다. '시스템 설정대로'는 운영체제의 밝기 설정을 따른다.
 
 ## 소스로 실행하기
 
@@ -57,10 +72,8 @@ macOS 앱과 Windows 앱은 다음 순서로 바꾼다.
 |---|---|
 | Python | Python 3. macOS·Linux는 `python3` → `python`, Windows는 `python` → `py` → `python3` 순서로 찾는다 |
 | Java | JDK (`javac`, `java`) |
-| Kotlin | Kotlin 컴파일러 `kotlinc`와 `java` |
 | C++ | `g++` 또는 `clang++` 가운데 하나 (`-std=c++17 -O2`) |
 | JavaScript | Node.js (`node`) |
-| Go | Go (`go build`) |
 | Rust | Rust (`rustc --edition 2021 -O`) |
 
 도구는 있는지만 본다. 버전은 확인하지 않는다.
@@ -70,11 +83,11 @@ macOS 앱과 Windows 앱은 다음 순서로 바꾼다.
 - 채점하지 않는다. 언어 고르기 목록에 " · 도구 없음"이 붙지만 고를 수는 있다.
 - '예시 실행', '제출', '이 값으로 실행' 단추가 잠긴다.
 - 도구가 없어 채점하지 못한 제출은 제출 기록에 남지 않는다.
-- '연결' → '더 정하기' → '언어 도구'에서 언어마다 "있음" 또는 "없음"을 볼 수 있다. '다시 확인'을 누르면 다시 센다.
+- '설정' → '풀이 환경'에서 '기본 언어'를 고르면 기본 문제를 처음 열 때 그 언어로 시작한다(그 문제가 그 언어를 지원할 때. 문제 화면에서 언어를 바꿔도 기본이 바뀐다. 내 문제는 등록한 언어로 열린다). 같은 곳에서 언어마다 "있음" 또는 "없음"을 볼 수 있다. '다시 확인'을 누르면 다시 센다.
 
 묶은 macOS 앱은 기존 PATH 뒤에 다음 경로를 더해서 찾는다. Windows와 Linux에서는 PATH를 바꾸지 않는다.
 
-- `/opt/homebrew/bin`, `/usr/local/bin`, `~/.pyenv/shims`, `~/.local/bin`, `~/.cargo/bin`, `/usr/local/go/bin`, `~/go/bin`
+- `/opt/homebrew/bin`, `/usr/local/bin`, `~/.pyenv/shims`, `~/.local/bin`, `~/.cargo/bin`
 - Homebrew JDK `/opt/homebrew/opt/openjdk*/bin`과 nvm Node `~/.nvm/versions/node/*/bin`은 각각 이름 순으로 마지막 하나
 
 ## 기록이 남는 곳
@@ -83,8 +96,7 @@ macOS 앱과 Windows 앱은 다음 순서로 바꾼다.
 
 ## 알려진 한계
 
-- 내려받기 파일은 macOS Apple Silicon용 하나뿐이다.
-- Windows는 실제 Windows PC에서 확인하지 않아 설치 파일을 내려받기 표에 두지 않았다.
+- 내려받기 파일은 macOS Apple Silicon용과 Windows x64용(베타)이다.
 - Linux용 설치 파일은 없다.
-- 설치 파일은 서명과 공증을 하지 않았다. 처음 한 번은 위 '처음 여는 법'대로 연다.
+- 설치 파일은 서명과 공증을 하지 않았다. 처음 한 번은 macOS는 위 '처음 여는 법', Windows는 'Windows 베타' 절대로 연다.
 - 창을 닫으면 진행 중인 채점을 멈추는 정리가 돈다. 메뉴의 '끝내기'로 끝내면 그 정리가 안 돌 수 있다.

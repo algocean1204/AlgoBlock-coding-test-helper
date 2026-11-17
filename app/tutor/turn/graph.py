@@ -12,13 +12,13 @@ pick_move -- 생성 필요(내용 있는 말, 저장 힌트 없는 옛 계획) -
 from langgraph.graph import END, START, StateGraph
 
 from ..common.progress_view import active_plan, found_check
-from ..common.verdict import ASIDE_RULE, ask_verdict
+from ..common.verdict import ASIDE_RULE, TERM_RULE, ask_verdict
 from ..llm import llm, model_name
 from ..state import MainState, MovePlan, Verdict
 from .code_check import check_code
 from .context import prepare
 from ..common.talk_rules import OWN_WAY, WITHDRAWN, rename_note
-from .moves import pick_move, rule_verdict
+from .moves import found_tip, pick_move, rule_verdict
 from .talk import checked_reply, clean_text, speak_messages
 
 STEPS = {"N1": "prepare", "N2": "judge", "N3": "check_code", "N4": "pick_move", "N5": "speak", "N6": "check_reply"}
@@ -31,7 +31,7 @@ def turn_graph(mode: str, judge_messages, judge_rule: str, system: str, steps: d
         got = rule_verdict(state["request"].text or "")
         if got is not None:
             return {"verdict": got}
-        got = ask_verdict(judge_messages(state), judge_rule + ASIDE_RULE, f"{mode}.judge")
+        got = ask_verdict(judge_messages(state), judge_rule + ASIDE_RULE + TERM_RULE, f"{mode}.judge")
         if got is None:  # 형식 오류는 N으로 진행한다
             return {"verdict": Verdict(False, malformed=True)}
         if mode == "chair" and got.basis is None:
@@ -76,7 +76,9 @@ def turn_graph(mode: str, judge_messages, judge_rule: str, system: str, steps: d
         if withdrawn:
             reply = f"{reply} {WITHDRAWN.format(n=len(withdrawn))}"
         boxed = {"boxed": True} if filled and verdict is not None and "```" in verdict.seen else {}  # 실행에서 본 여러 줄 출력을 엔진이 글상자로 넣었다(모델의 말은 위에서 펜스를 거른다)
-        return {"result": {"reply": said + reply, "advance": move.advance, "move": move.move, **extra, **boxed}}
+        tip = found_tip(mode, state["turn"], move)
+        found = {"found": tip} if tip else {}  # 저장이 찾은 블록의 말로 따로 남긴다
+        return {"result": {"reply": said + reply, "advance": move.advance, "move": move.move, **extra, **boxed, **found}}
 
     def after_prepare(state: MainState) -> str:
         if state.get("error"):

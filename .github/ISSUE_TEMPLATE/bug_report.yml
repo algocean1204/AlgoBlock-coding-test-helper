@@ -42,7 +42,7 @@ body:
     id: language
     attributes:
       label: 풀이 언어
-      options: [해당 없음, Python, Java, JavaScript, C++, Go, Kotlin, Rust]
+      options: [해당 없음, Python, Java, JavaScript, C++, Rust]
   - type: textarea
     id: what
     attributes:

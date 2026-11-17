@@ -45,6 +45,8 @@ FIRST["languages"] = ["python", "javascript"]
 Path(os.environ["ALGOBLOCK_UI_BUILTIN"]).write_text(json.dumps(ROWS, ensure_ascii=False), encoding="utf-8")
 
 import server  # noqa: E402
+
+server.ROOT = TMP  # 저장소의 .env를 읽지 않는다(키 지우기 흐름이 load_keys를 다시 불러도 진짜 키가 환경에 올라오지 않게)
 from tutor.common.scope import ALGORITHMS  # noqa: E402
 from tutor.common.talk_rules import MANY_ANSWERS  # noqa: E402
 from dataclasses import replace  # noqa: E402
@@ -110,7 +112,7 @@ def registered() -> None:
     assert call("/api/debug", id=pid, code=right)[1]["passed"]  # 통과한 코드는 디버깅으로 가지 않는다(모델 0회)
     state = call("/api/state", id=pid, mode="chair")[1]["problem"]
     assert (state["passed"], state["submitted"], state["code"], state["language"]) == (1, 2, right, "python")  # run은 제출로 세지 않는다. 같은 코드는 한 번만 센다
-    assert len(state["languages"]) == 7 and state["starter"].startswith("def solution(a, b):") and state["cases"] == {"example": 2, "accuracy": 0, "efficiency": 0}
+    assert len(state["languages"]) == 5 and state["starter"].startswith("def solution(a, b):") and state["cases"] == {"example": 2, "accuracy": 0, "efficiency": 0}
 
     # 언어를 바꾸면 쓰던 코드는 그 언어 것으로 남고, 돌아오면 다시 나온다
     java = call("/api/language", id=pid, language="java")[1]["problem"]
@@ -206,7 +208,7 @@ def builtin(fake) -> None:
     assert (problem["builtin"], problem["theme"], problem["theme_name"], problem["level"], problem["languages"]) == (True, "hash", "해시", 1, ["python", "javascript"])
     assert problem["starter"].startswith("def solution(loans, k)") and problem["code"] == "" and len(problem["examples"]) == 3 and problem["examples"][0]["note"]
     assert problem["cases"]["example"] == 3 and problem["cases"]["accuracy"] >= 12 and problem["cases"]["efficiency"] == 2
-    assert problem["study"] == {"hints_seen": 0, "hints_total": 6, "solution_seen": False, "solution_open": False, "has_guide": True, "passed_now": False}
+    assert problem["study"] == {"hints_seen": 0, "hints_total": 6, "solution_seen": False, "solution_open": False, "has_guide": True, "passed_now": False, "unaided_open": True}
     assert len(opened["session"]["blocks"]) == 2  # 미리 만든 계획으로 바로 시작한다
     first = call("/api/turn", id=PID, mode="chair", event="start")[1]
     assert first["messages"][0]["text"] == FIRST["ready"]["plan"]["blocks"][0]["hints"][0]
@@ -252,11 +254,23 @@ def builtin(fake) -> None:
     assert timed["status"] == "timeout" and timed["score"]["accuracy"][0] == timed["score"]["accuracy"][1] and timed["score"]["efficiency"][0] < 2
     debug = call("/api/debug", id=PID, code=slow)[1]
     assert debug["efficiency_only"] and not debug["passed"]  # 틀린 줄을 찾을 일이 아니다(모델 0회)
+    assert "시간이 모자라요" in debug["message"] and "틀린 줄" not in debug["message"]
+    deep = ("def solution(loans, k):\n    count = {}\n    shelf = []\n    def go(i):\n        if i == len(loans):\n            return\n        count[loans[i]] = count.get(loans[i], 0) + 1\n"
+            "        if count[loans[i]] == k:\n            shelf.append(loans[i])\n        go(i + 1)\n    go(0)\n    return shelf\n")
+    sent = []  # 답은 맞지만 큰 입력에서 재귀가 너무 깊다(제출로 남기지 않는 채점): 시간 이야기가 아니라 틀린 곳 찾기로 그 케이스를 넘긴다
+    with patch.object(server.Tutor, "debug", lambda self, pid, code, report, text=None: sent.append(report) or SimpleNamespace(status=200, body={"messages": []})):
+        got = call("/api/debug", id=PID, code=deep)[1]
+    crashed = got["judged"]
+    assert crashed["score"]["accuracy"][0] == crashed["score"]["accuracy"][1] and any(c["kind"] == "efficiency" and c["status"] == "runtime_error" for c in crashed["cases"]), crashed
+    assert "efficiency_only" not in got and sent[0]["status"] == "runtime_error", sent
+    assert any(c["kind"] == "efficiency" and c["status"] == "runtime_error" and c["input"] == "(아주 큰 입력)" for c in sent[0]["cases"]), sent  # 큰 입력은 싣지 않는다
 
-    assert call("/api/hint", id=PID, peek=True)[1] == {"seen": 0, "total": 6, "done": False, "shown": []}  # 들여다보기만 하면 새 힌트가 열리지 않는다
+    toc = [{"block": 1, "kind": "loop", "seen": 0, "total": 3}, {"block": 2, "kind": "condition", "seen": 0, "total": 3}]  # 힌트 목차: 이름은 그 블록의 힌트를 다 본 뒤에만
+    assert call("/api/hint", id=PID, peek=True)[1] == {"seen": 0, "total": 6, "done": False, "shown": [], "blocks": toc}  # 들여다보기만 하면 새 힌트가 열리지 않는다
     hints = [call("/api/hint", id=PID)[1] for _ in range(7)]
     assert len(call("/api/hint", id=PID, peek=True)[1]["shown"]) == 6
     assert [(h["block"], h["step"]) for h in hints] == [(1, 1), (1, 2), (1, 3), (2, 1), (2, 2), (2, 3), (2, 3)]
+    assert [b.get("name") for b in hints[-1]["blocks"]] == ["개수 세기", "k번째에 꽂기"]  # 블록을 고르지 않으면 전처럼 블록 1부터 차례로
     assert hints[0]["hint"] == FIRST["ready"]["plan"]["blocks"][0]["hints"][0] and [h["done"] for h in hints[4:]] == [False, True, True] and len(hints[2]["shown"]) == 3
     # 블록 이름(답의 일부)은 그 블록의 힌트를 모두 본 뒤에만 서버가 보낸다. 종류는 늘 보낸다
     assert [h.get("name") for h in hints[:6]] == [None, None, "개수 세기", None, None, "k번째에 꽂기"] and [h["kind"] for h in hints] == ["loop"] * 3 + ["condition"] * 4
@@ -271,7 +285,7 @@ def builtin(fake) -> None:
     passed = call("/api/submit", id=PID, code=CODE)[1]
     assert passed["ok"] and passed["score"]["efficiency"] == [2, 2] and all("input" not in case for case in passed["cases"] if case["kind"] != "example")
     study = call("/api/state", id=PID)[1]["problem"]["study"]
-    assert study == {"hints_seen": 6, "hints_total": 6, "solution_seen": True, "solution_open": True, "has_guide": True, "passed_now": True}
+    assert study == {"hints_seen": 6, "hints_total": 6, "solution_seen": True, "solution_open": True, "has_guide": True, "passed_now": True, "unaided_open": False}
     with server.tutor() as t:
         assert t.store.study(PID)["solution_before_pass"] and t.store.study(PID)["help_first_at"] and [sub["status"] for sub in t.store.submissions() if sub["problem_id"] == PID] == ["failed", "timeout", "passed"]
 
@@ -282,7 +296,7 @@ def builtin(fake) -> None:
     # 언어를 바꾸면 그 언어의 시작 코드가 오고, 블록 계획은 지워진다(그 언어의 정답 풀이로 다시 짠다). 파이썬으로 돌아오면 미리 만든 계획이 다시 온다
     js = call("/api/language", id=PID, language="javascript")[1]
     assert js["problem"]["language"] == "javascript" and js["problem"]["starter"].startswith("function solution(loans, k)") and js["session"]["blocks"] == []
-    assert server.given(PID, "javascript")["code"] == JS and server.given(PID, "javascript")["approach"] and server.given(PID, "go") is None
+    assert server.given(PID, "javascript")["code"] == JS and server.given(PID, "javascript")["approach"] and server.given(PID, "cobol") is None
     if server.check_judge().judge("javascript", JS, [{"id": "1", "input": "[[\"a\"], 2]", "expected": "[]"}], mode="function")["status"] != "toolchain_missing":
         assert call("/api/submit", id=PID, code=JS)[1]["ok"]
         assert call("/api/solution", id=PID)[1]["language"] == "javascript"
@@ -305,10 +319,15 @@ def report() -> None:
     hash_ = next(theme for theme in body["themes"] if theme["key"] == "hash")
     assert (hash_["solved"], hash_["level_reached"], hash_["first_try"], hash_["solution_before_pass"], hash_["hints"]) == (1, 1, 0, 1, 6), hash_  # 본 힌트 수는 '처음부터' 뒤에도 누적이다
     assert hash_["fails"] == {"failed": 1, "runtime_error": 0, "timeout": 1, "compile_error": 0} and hash_["submissions"] >= 3 and hash_["state"] in ("progress", "weak")
+    assert sum(row["unaided"] for row in body["themes"]) == body["readiness"]["solved"] and all(row["unaided"] <= row["solved"] for row in body["themes"])  # 주제별 '도움 없이'의 합 = 준비도의 수
+    short = body["readiness"]["rule_short"]  # 한 문장이 '그 밖의 통과' 셋(도움을 쓴 것, 제출이 많은 것, 처음부터 뒤 하루 안)을 모두 말한다. 숫자는 상수에서 나온다
+    assert all(word in short for word in ("힌트·튜터·해설을 썼거나", f"제출이 {server.UNAIDED_MAX_SUBMITS}번을 넘었거나", f"'처음부터' 뒤 {server.REPEAT_GAP_HOURS}시간 안에", "'그 밖의 통과'")) and "도움 받아 통과" not in short
     assert body["summary"]["solved"] == 1 and body["summary"]["total"] == len(ROWS) and body["summary"]["languages"]["python"] >= 5
     assert body["recent"][0]["id"] == PID and len(body["recent"]) <= 10
     assert [group["key"] for group in body["signals"]] == ["hash"] and body["signals"][0]["items"][0]["title"] == FIRST["title"]  # 푼 문제의 신호만
-    assert 1 <= len(body["next"]) <= 5 and all(row["id"] != PID for row in body["next"])
+    assert 1 <= len(body["next"]) <= 5 and body["readiness"]["solved"] == 0
+    again = [row for row in body["next"] if row["id"] == PID]  # PID는 해설을 먼저 보고 통과해서 도움 없이 푼 것이 아니다: 다시 풀 후보로 권하되 '이어서 풀기'라 하지 않는다
+    assert all(row["why"].startswith("도움 없이 다시 풀기(") for row in again), again
     others = [theme for theme in body["themes"] if theme["key"] != "hash"]
     assert all(theme["state"] == "new" for theme in others)
     # 약점 규칙: 한 주제의 두 문제에서 답은 맞았지만 큰 입력에서 시간이 모자라면 약한 주제다. 한 문제에서 여러 번, 정확성 케이스의 시간 초과, 세부가 없는 예전 기록은 아니다
@@ -344,13 +363,14 @@ BANNED = ("준비됐", "합격", "약해요", "부족해요", "%")  # 준비도�
 EARLY, LATE = "2000-01-01T00:00:00+09:00", "2999-01-01T00:00:00+09:00"
 
 
-def history(*steps) -> dict:
-    """빈 기록 파일에 steps(t를 받는 함수)를 넣고 학습 보고서를 받는다(다른 시험의 기록과 섞이지 않는다)."""
+def history(*steps, listed: bool = False) -> dict:
+    """빈 기록 파일에 steps(t를 받는 함수)를 넣고 학습 보고서를 받는다(다른 시험의 기록과 섞이지 않는다). listed면 문제 목록의 주제별 '다음'을 보고서의 themes에 겹쳐 돌려준다."""
     with tempfile.TemporaryDirectory() as folder, patch.object(server, "DB", Path(folder) / "report.db"):
         with server.tutor() as t:
             for step in steps:
                 step(t)
-        return call("/api/report")[1]
+        body = call("/api/report")[1]
+        return {**body, "listed": {row["key"]: row["next"] for row in call("/api/problems")[1]["themes"]}} if listed else body
 
 
 def at(when: str):
@@ -411,6 +431,55 @@ def fail(pid: str, status: str, detail: dict | None, language: str = "python"):
     return step
 
 
+def labels_follow_language() -> None:
+    """기본 문제의 태그와 되풀이한 실수 이름은 사용자가 고른 언어의 낱말이다(문제에 저장된 언어는 기본 문제가 모두 python이다)."""
+    from tutor.knowledge.ontology import PATTERNS
+    pid = ROWS[0]["id"]
+    counting = next(key for key, (_, tech, _, _) in PATTERNS.items() if tech == "count_map")
+    with patch.dict(server.BUILTIN[pid], {"ready": {"fact": {"patterns": [counting]}}, "languages": ["python", "java", "cpp", "javascript", "rust"]}):
+        labels_checked(pid)
+
+
+def labels_checked(pid: str) -> None:
+    for language, word in (("java", "HashMap"), ("cpp", "map"), ("javascript", "Map"), ("python", "딕셔너리")):
+        call("/api/language", id=pid, language=language)
+        shown = next(row for row in call("/api/problems")[1]["problems"] if row["id"] == pid)
+        assert shown["language"] == language and f"개수 세기({word})" in shown["tags"], (language, shown["tags"])  # 목록
+        screen = call("/api/state", id=pid)[1]["problem"]
+        assert f"개수 세기({word})" in screen["tags"], (language, screen["tags"])  # 문제 화면
+    one, two = ROWS[0]["id"], ROWS[1]["id"]
+    with server.tutor() as t:
+        for pid_ in (one, two):
+            t.store.put_problem(pid_, "python", "글", title=pid_)
+            t.store.conn.execute("INSERT INTO pitfall_hit(problem_id, pitfall, code_hash, at) VALUES(?, 'pop_front', ?, 't')", (pid_, pid_))
+        t.store.conn.commit()
+    call("/api/language", id=one, language="python")
+    assert [x["name"] for x in call("/api/report")[1]["pitfalls"]] == ["리스트 앞에서 꺼내기"]  # 마지막으로 고른 언어
+    call("/api/language", id=one, language="java")
+    assert [x["name"] for x in call("/api/report")[1]["pitfalls"]] == ["배열 앞에서 꺼내기"]
+    call("/api/language", id=one, language="python")
+    with server.tutor() as t:
+        t.store.conn.execute("DELETE FROM pitfall_hit")
+        t.store.conn.commit()
+
+
+def pitfalls_repeated() -> None:
+    """되풀이한 실수는 두 번 이상 나온 것만, 나온 문제와 함께 온다. 뜻이 겹치는 함정은 한 줄로 합친다."""
+    one, two = ROWS[0]["id"], ROWS[1]["id"]
+    assert call("/api/report")[1]["pitfalls"] == []
+    with server.tutor() as t:
+        for pid in (one, two):
+            t.store.put_problem(pid, "python", "글", title=pid)
+        for pid, pitfall, h in ((one, "off_by_one", "a"), (two, "wrong_compare", "b"), (one, "wrong_init", "c")):  # wrong_compare는 off_by_one과 한 줄
+            t.store.conn.execute("INSERT INTO pitfall_hit(problem_id, pitfall, code_hash, at) VALUES(?, ?, ?, 't')", (pid, pitfall, h))
+        t.store.conn.commit()
+    rows = call("/api/report")[1]["pitfalls"]
+    assert [(x["count"], sorted(p["id"] for p in x["problems"])) for x in rows] == [(2, sorted([one, two]))], rows  # wrong_init은 한 번이라 빠진다
+    with server.tutor() as t:
+        t.store.conn.execute("DELETE FROM pitfall_hit")
+        t.store.conn.commit()
+
+
 def readiness() -> None:
     """준비도(도움 없이 푼 기본 문제로만), 남은 것과 학습 지도, 주제를 가로지른 실패 꼴, 바뀐 강·약 규칙. 모델 0회."""
     import random
@@ -465,6 +534,19 @@ def readiness() -> None:
     rest = stage(*[solve(pid) for pid in ids([k for k in ess if k not in ("bfs", "dfs")], (1, 2))])
     assert {row["key"] for row in rest["remaining"]} == {"bfs", "dfs"} and rest["focus"]["key"] == "stack_queue"
     assert next(row for row in rest["remaining"] if row["key"] == "bfs")["after"] == [server.theme_name("stack_queue")]
+    # 추천 큐도 같은 선수 규칙: DFS만 푼 기록이면 이어서 풀기가 DFS 2단계가 아니라 선수 주제(스택·큐)의 첫 문제다. 준비도 칸의 다음 주제와 같다
+    def stuck_ahead(body):  # 추천(쓰던 문제 말고)이 선수 주제가 모자란 주제의 문제인가: 준비도 칸의 '먼저 익힐 주제'와 견준다
+        blocked = {row["name"] for row in body["readiness"]["remaining"] if row["after"]}
+        return [row for row in body["next"] if row["why"] != "쓰던 문제예요." and row["theme_name"] in blocked]
+    sole = history(solve(levels[("dfs", 1)]))
+    assert not stuck_ahead(sole) and any(row["id"] == levels[("stack_queue", 1)] and row["why"].startswith("먼저 익힐 주제예요") for row in sole["next"])
+    assert not any(row["id"] == levels[("dfs", 2)] for row in sole["next"])
+    # 선수 주제를 익혔으면 그대로 이어서 풀기(바뀌지 않는다). 선수가 없는 주제(해시)와 기록이 아주 적은 때도 그대로
+    ready = history(*[solve(pid) for pid in ids(["stack_queue", "brute_force"], (1, 2))], solve(levels[("dfs", 1)]))
+    assert not stuck_ahead(ready)
+    assert next(row for row in ready["next"] if row["why"] == "이어서 풀기" and row["theme_name"] == server.theme_name("dfs"))["id"] == levels[("dfs", 2)]
+    assert any(row["id"] == levels[("hash", 2)] and row["why"] == "이어서 풀기" for row in history(solve(levels[("hash", 1)]))["next"])
+    assert any(row["why"] == "새 주제 시작" for row in history()["next"])
     # 등록한 문제만 푼 기록은 준비도에 들지 않는다
     own = {f"own-{n}": SimpleNamespace(id=f"own-{n}", title="내 문제", sample=False, builtin=False, theme=ess[n % 2], theme_name="", level=0, mode="function") for n in range(6)}
     with patch.dict(server.PROBLEMS, own):
@@ -489,12 +571,32 @@ def readiness() -> None:
         assert history(*[fail(pid, "entry_missing", {"accuracy": [0, 0]}, "java") for pid in three])["patterns"][0]["line"].startswith("Java 코드로 낸 3문제(")
     # 강·약 규칙: 튜터와 함께 첫 제출에 푼 3문제는 강점이 아니다. 한 문제에서 시간 초과 5번 뒤 통과는 약점이 아니다
     hashed = lambda body: next(row for row in body["themes"] if row["key"] == "hash")  # noqa: E731
-    assert hashed(history(*[solve(pid, talk=EARLY) for pid in hash5[:3]]))["state"] == "progress"
+    assert hashed(history(*[solve(pid, talk=EARLY) for pid in hash5[:3]]))["state"] == "weak"  # 강점이 아니고, 도움에만 기댄 통과라 약한 주제
     assert hashed(history(*[solve(pid) for pid in hash5[:3]]))["state"] == "strong"
     assert hashed(history(*[solve(pid, fails=5 if n == 0 else 0) for n, pid in enumerate(hash5)]))["state"] != "weak"
-    # '새 주제 시작'은 학습 지도 순서다(스택·큐 → BFS·DFS가 힙·DP보다 먼저)
+    # 다음 문제는 도움 없이 푼 단계가 기준이다: 모두 도움을 받아 1~4단계를 통과했으면 5단계가 아니라 가장 낮은 단계부터. 모두 도움 없이 풀었으면 5단계(그대로)
+    nxt = lambda body: next(row for row in body["themes"] if row["key"] == "hash")["next"]["id"]  # noqa: E731
+    assert nxt(history(*[solve(pid, helped=EARLY) for pid in hash5[:4]])) == hash5[0]
+    assert nxt(history(*[solve(pid) for pid in hash5[:4]])) == hash5[4]
+    assert nxt(history(solve(hash5[0]), solve(hash5[1]), solve(hash5[2], helped=EARLY))) == hash5[2]  # 도움 받은 3단계는 다시 풀 후보
+    assert nxt(history(solve(hash5[0], helped=EARLY))) == hash5[0] and nxt(history(solve(hash5[0]))) == hash5[1]  # 기록이 아주 적을 때
+    # 도움 받아 통과한 문제를 다시 권할 때는 사실대로 말한다(이어서 풀기가 아니다). 문제 목록의 '다음'도 보고서와 같다
+    aided = history(*[solve(pid, helped=EARLY) for pid in hash5[:4]], listed=True)
+    assert [row["why"] for row in aided["next"] if row["id"] == hash5[0]][0].startswith("도움 없이 다시 풀기(") and aided["listed"]["hash"]["id"] == hash5[0]
+    assert all(row["why"] != "이어서 풀기" for row in aided["next"] if row["id"] in hash5)
+    plain = history(*[solve(pid) for pid in hash5[:4]], listed=True)
+    assert plain["listed"]["hash"]["id"] == hash5[4] == nxt(plain)
+    # 도움에 기대 통과한 주제는 약한 주제다: 서로 다른 두 문제를 모두 도움을 받아 통과 → 약함, 도움 없이 푼 문제가 하나라도 있으면 아님, 한 문제만이면 판정하지 않는다
+    assert hashed(history(*[solve(pid, helped=EARLY) for pid in hash5[:2]]))["state"] == "weak"
+    assert hashed(history(*[solve(pid, hints_seen=1, helped=EARLY) for pid in hash5[:4]]))["state"] == "weak"
+    assert hashed(history(solve(hash5[0]), solve(hash5[1], helped=EARLY)))["state"] == "progress"
+    assert hashed(history(*[solve(pid) for pid in hash5[:2]]))["state"] == "progress"
+    assert hashed(history(solve(hash5[0], helped=EARLY)))["state"] == "progress"
+    weakened = history(*[solve(pid, helped=EARLY) for pid in hash5[:2]])
+    assert any(row["key"] == "hash" and "도움 없이 푼 문제가 아직 없어요" in row["why"] for row in weakened["weaknesses"])
+    # '새 주제 시작'은 학습 지도 순서이고, 선수 주제가 있는 주제는 선수 주제를 익힌 뒤에야 나온다(기록이 없으면 선수 없는 주제만)
     fresh = [row["theme_name"] for row in history()["next"] if row["why"] == "새 주제 시작"]
-    assert fresh == [server.theme_name(key) for key in server.PREREQS][:len(fresh)], fresh
+    assert fresh == [server.theme_name(key) for key in server.PREREQS if not server.PREREQS[key]][:len(fresh)], fresh
     # 주제를 '자동'으로 둔 등록 문제: 대조 검증이 all이면 풀이 계획의 유형으로 실패 수·약점 판정에 든다(기본 문제 칸·준비도에는 들지 않는다).
     # 고른 주제가 먼저이고, 계획의 유형과 다르면 둘을 나란히 보인다
     auto, auto2, partly, chosen = (server.register(GOOD)["id"] for _ in range(4))
@@ -722,6 +824,20 @@ def screen_flows() -> None:
         with server.tutor() as t:
             assert t.store.study(PID)["help_first_at"] is None and t.store.study(PID)["help_after_reset_at"]
         judged(PID, CODE, 1)
+    stuck = datetime.now()
+
+    class Stopped(datetime):  # 시계가 멈춘 것처럼 늘 같은 순간을 준다(같은 초, 같은 밀리초)
+        @classmethod
+        def now(cls, tz=None):
+            return stuck
+    with fresh(), patch("tutor.store.sqlite.datetime", Stopped):  # 같은 순간의 실패 → '처음부터' → 통과 → (화면이 저절로 여는) 해설: 일어난 차례대로 판단한다
+        opened(PID)
+        assert not submit(PID, "def solution(loans, k):\n    return []\n")
+        again(PID)
+        judged(PID, CODE, 1)  # 첫 풀이에 도움이 없었다. 통과 뒤의 해설을 '처음부터' 뒤 통과 전의 도움으로 보지 않는다
+        with server.tutor() as t:
+            study, subs = t.store.study(PID), server.problem_subs(t, PID)
+        assert study["help_first_at"] is None and subs[0]["at"] < study["reset_at"] < subs[1]["at"], (study, subs)
     with fresh():  # 언어를 바꿨다 돌아오는 것은 '처음부터'가 아니다: 도움을 받고 푼 문제는 하루 뒤에 다시 내도 세지 않는다
         opened(PID)
         call("/api/hint", id=PID)
@@ -863,6 +979,18 @@ def debug_pass() -> None:
     assert got["judged"]["unsaved"] and got["judged"]["ok"] and (state["submitted"], state["passed"]) == (1, 0), (state["submitted"], state["passed"])
 
 
+def passed_reopen() -> None:
+    """통과한 풀이를 다시 열면(화면 코드 확인): 풀던 중의 실패 말, '끝까지 쓰는 중' 안내, 틀린 곳 찾기의 옛 질문이 지금 상태처럼 남지 않는다. 브라우저 동작은 화면 확인으로 본다."""
+    js, css = (HERE / "app.js").read_text(encoding="utf-8"), (HERE / "app.css").read_text(encoding="utf-8")
+    assert "const passedNow = () => !!(S.problem && S.problem.study.passed_now);" in js
+    assert "ownWayOn() && !passedNow() ?" in js  # 통과한 뒤에는 '끝까지 내 방식으로 쓰는 중' 안내를 걷는다
+    assert "const result = !passedNow() && st && st !== \"pass\"" in js  # 블록 아래의 옛 실패 한 줄도
+    assert "if (passedNow()) html += '<p class=\"notice\" role=\"status\">이번 풀이는 통과했어요." in js  # 튜터 대화의 맨 아래가 옛 실패 말이어도 통과를 알린다
+    assert 'if (d.passed && html) html = `<details class="old-talk">' in js and ".old-talk summary" in css  # 통과한 뒤 틀린 곳 찾기의 옛 대화는 접는다
+    assert "S.debug.passed = true; S.debug.line = null;" in js  # 제출로 통과해도 옛 질문과 짚은 줄을 걷는다
+    assert call("/api/state", id=PID)[1]["problem"]["study"].get("passed_now") is not None  # 화면이 쓰는 값
+
+
 def own_way_flow() -> None:
     """'끝까지 내 방식으로 쓰기'(모델·실행 0회): 지금 블록은 넘어가기와 같게 확인 전, 남은 블록을 모두 열고 표시가 남는다(다시 열어도).
     통과(Y)를 새로 만들지 않는다. '튜터 차례로 돌아가기' 뒤에는 블록 코드 확인이 다시 돈다. 초기화하면 표시도 지운다."""
@@ -885,6 +1013,29 @@ def own_way_flow() -> None:
     assert not call("/api/state", id=PID)[1]["own_way"]
 
 
+def state_names_by_mode() -> None:
+    """상태는 요청의 방식으로 블록 이름을 가린다: 가이드는 지금 블록 이름이 보이고, 의자는 아직 찾지 못한 지금 블록 이름이 가려진다.
+    화면은 문제를 열 때 그 문제에 기억한 방식을 보내야 한다(직전 방식이 아니라) — 아니면 가이드가 이름을 가린 채 열린다."""
+    call("/api/reset", id=PID)
+    call("/api/turn", id=PID, mode="guide", event="start")
+    guide, chair = (call("/api/state", id=PID, mode=m)[1]["session"] for m in ("guide", "chair"))
+    assert guide["open_count"] == chair["open_count"] == 1
+    assert [b["name"] for b in guide["blocks"]] == ["개수 세기", None], guide["blocks"]
+    assert [b["name"] for b in chair["blocks"]] == [None, None], chair["blocks"]
+    call("/api/reset", id=PID)
+
+
+def keyboard_focus() -> None:
+    """키보드 초점(화면 코드 확인): 키보드로 누른 단추가 사라지면 초점을 이어 갈 자리로 돌려 놓고, 건너뛰기 링크는 주소를 바꾸지 않고 본문 제목으로 옮기며,
+    코드 칸에 초점이 있는 동안 Esc 다음 Tab 안내가 보인다. 사용법 창은 처음부터 showModal로 연다. 브라우저 동작은 화면 확인으로 본다."""
+    js, css, html = (HERE / "app.js").read_text(encoding="utf-8"), (HERE / "app.css").read_text(encoding="utf-8"), (HERE / "index.html").read_text(encoding="utf-8")
+    assert "function focusAfter(el)" in js and 'e.detail === 0 && e.target.closest("#view-code button")' in js and "}, true);" in js  # 다시 그리기 전에(잡기 단계에서) 받는다
+    assert '"#say"' in js[js.index("function focusAfter(el)"):js.index("document.addEventListener(\"focusin\"")] and 'textarea[data-block=' in js  # 첫 질문 → 입력 칸, 블록 확인 → 그 블록 칸
+    assert 'e.target.closest("a.skip")' in js and "e.preventDefault();" in js[js.index('a.skip'):js.index("codeCell")] and '<main id="main" tabindex="-1">' in html  # 주소를 바꾸면 화면이 홈으로 갔다
+    assert 'id="tab-hint"' in html and "Esc를 누른 뒤 Tab" in html and ".tab-hint.on { visibility: visible; }" in css and '$("tab-hint").classList.toggle("on", codeCell(e.target))' in js
+    assert "tour.showModal" in js  # 사용법 창은 모달: Tab이 창 안에서 돈다
+
+
 def chair_found() -> None:
     """의자에서 찾은 블록의 블록 코드 확인(모델 0회): 맞다고만 하고 진행은 그대로, 그 말은 그 블록을 겨눈다. 가이드는 지금 블록만.
     계획 코드와 글자 그대로 같으면 실행 없이, 틀 줄을 빼고 적으면 실행해 본다(그 문제의 예시만 있는 등록 문제라 그렇다고 말한다)."""
@@ -905,6 +1056,48 @@ def chair_found() -> None:
     assert status == 200 and body["open_count"] == 2, body
 
 
+def guide_spoken() -> None:
+    """튜터와 차례로: 말로 빈칸을 맞혀도 다음 블록이 열리지 않는다(코드 칸이 빈 채 지나가 완료처럼 보였다). 블록 코드 확인이 통과해야 연다."""
+    from tutor.turn.moves import WRITE_TIP
+    pid = server.register({"title": FIRST["title"], "text": FIRST["text"], "cases": [{"input": e["input"], "expected": e["expected"]} for e in FIRST["examples"]]})["id"]
+    with server.tutor() as t:
+        t.adopt(pid, FIRST["ready"])
+    call("/api/turn", id=pid, mode="guide", event="start")
+    with use_llm(FakeLlm({"guide.judge": ["[check]Y g"]})):
+        body = call("/api/turn", id=pid, mode="guide", event="message", text="이름마다 몇 번 나왔는지 세요")[1]
+    assert body["open_count"] == 1 and body["messages"][-1]["text"] == WRITE_TIP and body["messages"][-1]["block_index"] == 0, body
+    body = call("/api/turn", id=pid, mode="guide", event="block_filled", block_id="b1", code="\n".join(LINES[:5]))[1]
+    assert body["open_count"] == 2, body
+
+
+def same_check_once() -> None:
+    """바뀌지 않은 블록 코드를 거듭 확인해 같은 말이 나오면 대화에 또 쌓지 않는다(모델 0회). 실제 기본 문제·채점기로, 이름을 짝짓지 못해 '확인 전'으로 끝나는 확인.
+    코드를 바꾸면 다시 쌓인다. 화면은 쌓지 않은 까닭을 블록 칸에 알린다."""
+    from tutor.turn.code_check import hold_name
+    pid = "hash_2_steady_climbers"
+    call("/api/turn", id=pid, mode="guide", event="start")
+    first = call("/api/turn", id=pid, mode="guide", event="block_filled", block_id="b1", code="records = {}")[1]
+    assert first["unsure"] and not first["repeated"] and first["messages"][-1]["text"] == hold_name(["last", "visits", "broken"]), first["messages"][-1]
+    for _ in range(2):
+        again = call("/api/turn", id=pid, mode="guide", event="block_filled", block_id="b1", code="records = {}")[1]
+        assert again["unsure"] and again["repeated"] and again["messages"] == first["messages"], again["messages"][len(first["messages"]):]
+    changed = call("/api/turn", id=pid, mode="guide", event="block_filled", block_id="b1", code="records = {}\nseen = {}")[1]
+    assert not changed["repeated"] and len(changed["messages"]) == len(first["messages"]) + 2, changed
+    js = (HERE / "app.js").read_text(encoding="utf-8")
+    assert "r.data.repeated) S.note.blocks = { type: \"warn\", text: REPEATED }" in js
+
+
+def result_guides() -> None:
+    """채점 결과와 방식 화면의 안내(화면 코드 확인): 큰 입력의 실행 오류는 시간 부족이라 하지 않고, 효율성만 실패하면 ‘틀린 곳 같이 찾기’가 없는 까닭을 말하며,
+    튜터 방식 전환 단추는 무엇이 바뀌는지 말하고, 튜터의 질문으로에서 코드 칸으로 가는 길이 보인다. 브라우저 동작은 화면 확인으로 본다."""
+    js = (HERE / "app.js").read_text(encoding="utf-8")
+    assert 'c.kind === "efficiency" && (c.status === "timeout" || c.status === "skipped")' in js and "const slowOnly = slowOnlyOf(r);" in js  # 시간 초과만 '느려요'
+    assert "아주 큰 입력에서 실행 중 오류가 났어요: " in js and "아주 큰 입력에서 답이 달라요" in js and "답이 맞아서 ‘틀린 곳 같이 찾기’는 열지 않아요." in js
+    assert "혼자 풀기로 바뀌어요" not in js and "오른쪽 칸이 해설로 바뀌어요" in js and "오른쪽 칸이 힌트로 바뀌어요" in js
+    assert 'S.talk === "chair" && !s.blocks.some((b, i) => blockState(b, i) === "found")' in js and 'data-tab="direct">코드 전체 칸 열기' in js
+    assert '"message": SLOW_MESSAGE' in (HERE / "server.py").read_text(encoding="utf-8")
+
+
 def language_memory() -> None:
     """마지막으로 고른 언어를 기억한다: 처음 여는 기본 문제는 그 언어로(지원할 때), 이미 연 문제는 그 문제의 언어 그대로."""
     with server.tutor() as t:
@@ -918,6 +1111,81 @@ def language_memory() -> None:
     assert call("/api/state", id=opened["id"])[1]["problem"]["language"] == "python"
     call("/api/language", id=PID, language="python")
     assert call("/api/accounts")[1]["language"] == "python"
+
+
+def hint_by_block() -> None:
+    """혼자 풀기의 힌트는 블록마다 고른다(모델 0회): 막힌 블록부터 열고, 본 힌트 수(도움)는 하나씩 는다. '처음부터'와 예전 기록도 맞게 읽는다."""
+    pid = server.register({"title": FIRST["title"], "text": FIRST["text"], "cases": [{"input": e["input"], "expected": e["expected"]} for e in FIRST["examples"]]})["id"]
+    with server.tutor() as t:
+        t.adopt(pid, FIRST["ready"])
+    seen = lambda: call("/api/state", id=pid)[1]["problem"]["study"]["hints_seen"]  # noqa: E731
+    picked = call("/api/hint", id=pid, block=2)[1]
+    assert (picked["block"], picked["step"], picked["seen"], [b["seen"] for b in picked["blocks"]], seen()) == (2, 1, 1, [0, 1], 1), picked
+    assert [(h["block"], h["step"]) for h in call("/api/hint", id=pid, peek=True)[1]["shown"]] == [(2, 1)]
+    for bad in (0, 3, "2", True):
+        assert "블록을 다시 골라" in refuses("/api/hint", id=pid, block=bad), bad
+    last = [call("/api/hint", id=pid, block=2)[1] for _ in range(3)][-1]  # 그 블록을 다 본 뒤에는 그 블록의 마지막 힌트를 다시 준다(세지 않는다)
+    assert (last["step"], last["name"], last["seen"], seen()) == (3, "k번째에 꽂기", 3, 3), last
+    assert [b.get("name") for b in last["blocks"]] == [None, "k번째에 꽂기"]  # 다 본 블록만 이름이 보인다
+    first = call("/api/hint", id=pid)[1]  # 블록을 고르지 않으면 아직 다 보지 않은 첫 블록
+    assert (first["block"], first["step"], first["seen"]) == (1, 1, 4), first
+    rows = server.read_json(server.HINTS_FILE, {})
+    server.write_json(server.HINTS_FILE, {**rows, pid: {"from": 99, "seen": {"2": 3, "1": 1}}})  # 이번 풀이의 것이 아닌 기록: 본 수를 블록 1부터 나눈다
+    assert [b["seen"] for b in call("/api/hint", id=pid, peek=True)[1]["blocks"]] == [3, 1]
+    server.write_json(server.HINTS_FILE, rows)
+    call("/api/reset", id=pid)  # '처음부터' 뒤에는 블록마다 본 수도 처음부터(누적 수는 남는다)
+    assert [b["seen"] for b in call("/api/hint", id=pid, peek=True)[1]["blocks"]] == [0, 0] and seen() == 0
+    assert (call("/api/hint", id=pid, block=2)[1]["step"], seen()) == (1, 1)
+    with server.tutor() as t:
+        assert t.store.study(pid)["hints_seen"] == 5 and t.store.study(pid)["help_first_at"]
+
+
+def compile_hints() -> None:
+    """컴파일 오류에는 실행 오류처럼 쉬운 설명 한 줄이 붙는다(흔한 것만: 없는 이름·멤버·클래스, 형이 맞지 않음). 흔하지 않은 오류는 원문만(되돌리면 실패)."""
+    java = "Solution.java:5: error: cannot find symbol\n    count.add(1);\n         ^\n  symbol:   method add(int)\n  location: variable count of type int\n1 error"
+    assert "`add`라는 이름을 찾지 못했어요" in server.compile_hint(java, "java"), server.compile_hint(java, "java")
+    assert "`foo`라는 이름을 찾지 못했어요" in server.compile_hint("Solution.java:3: error: cannot find symbol\n  symbol:   variable foo\n1 error", "java")
+    assert "값의 형이 맞지 않아요" in server.compile_hint("Solution.java:4: error: incompatible types: String cannot be converted to int\n1 error", "java")
+    assert "값의 형이 맞지 않아요" in server.compile_hint("error[E0308]: mismatched types\n --> main.rs:3:5", "rust")
+    assert "문법에 맞지 않는" in server.compile_hint("  File \"solution.py\", line 2\nSyntaxError: invalid syntax", "python")
+    assert server.compile_hint("Solution.java:2: error: ';' expected\n1 error", "java") == ""
+    # 실제 컴파일러가 낸 글(rustc·javac·g++): Rust의 백틱 이름도 쉬운 말이 붙는다
+    for text, language, name in (("error[E0425]: cannot find value `x` in this scope\n --> a.rs:1:42\n  |\n1 | fn main(){ println!(\"{}\", x); }\n", "rust", "x"),
+                                 ("error[E0599]: no method named `lenght` found for struct `Vec<{integer}>` in the current scope\n --> b.rs:1:44\n", "rust", "lenght"),
+                                 ("error[E0425]: cannot find type `HashMap` in this scope\n --> c.rs:1:19\n", "rust", "HashMap"),
+                                 ("Solution.java:1: error: cannot find symbol\npublic class Solution { int f(){ return foo; } }\n                                        ^\n  symbol:   variable foo\n  location: class Solution\n1 error\n", "java", "foo"),
+                                 ("m.cpp:1:21: error: use of undeclared identifier 'bar'\n    1 | int main(){ int a = bar; return a; }\n      |                     ^~~\n", "cpp", "bar")):
+        assert f"`{name}`" in server.compile_hint(text, language) and "찾지 못했어요" in server.compile_hint(text, language), (language, name)
+    body = server.result_body({"status": "compile_error", "reason": "", "compile": java, "cases": [], "language": "java"})
+    assert "`add`라는" in body["compile_hint"] and server.result_body({**{"status": "failed", "reason": "", "compile": "", "cases": [], "language": "java"}})["compile_hint"] == ""
+
+
+def language_switch_state() -> None:
+    """언어를 바꾸면 언어마다 계획이 다른 문제(직접 넣은 문제)의 본 힌트는 새 계획에서 0이고, 피드백은 본 제출의 언어를 싣는다(되돌리면 실패)."""
+    pid = server.register({"title": FIRST["title"], "text": FIRST["text"], "cases": [{"input": e["input"], "expected": e["expected"]} for e in FIRST["examples"]]})["id"]
+    with server.tutor() as t:
+        t.adopt(pid, FIRST["ready"])
+    call("/api/hint", id=pid, block=1)
+    call("/api/hint", id=pid, block=1)
+    call("/api/language", id=pid, language="javascript")
+    with server.tutor() as t:
+        t.adopt(pid, FIRST["ready"])  # 튜터가 새 언어의 계획을 만든 것으로 본다
+    assert [b["seen"] for b in call("/api/hint", id=pid, peek=True)[1]["blocks"]] == [0, 0]
+    assert call("/api/hint", id=pid)[1]["seen"] == 1  # 새 계획의 첫 힌트부터
+    assert call("/api/hint", id=pid)[1]["seen"] == 2  # 새 언어에서 둘 이상 봐도 쌓인 수로 다시 나누지 않는다
+    assert [b["seen"] for b in call("/api/hint", id=pid, peek=True)[1]["blocks"]] == [2, 0]
+    assert call("/api/hint", id=pid)[1]["step"] == 3  # 다음 힌트도 같은 블록의 다음 것
+    assert [b["seen"] for b in call("/api/hint", id=pid, peek=True)[1]["blocks"]] == [3, 0]
+    assert call("/api/state", id=pid)[1]["problem"]["study"]["hints_seen"] == 3  # 화면의 수도 블록별 표시와 같다
+    call("/api/language", id=pid, language="python")  # 원래 언어로 돌아와도 어긋나지 않는다
+    assert [b["seen"] for b in call("/api/hint", id=pid, peek=True)[1]["blocks"]] == [0, 0]
+    assert call("/api/state", id=pid)[1]["problem"]["study"]["hints_seen"] == 0
+    call("/api/language", id=pid, language="javascript")
+    with server.tutor() as t:
+        sub = t.store.add_submission(pid, "x", False, language="python")
+        t.store.conn.execute("INSERT INTO feedback(problem_id, submission_id, body_json) VALUES(?, ?, ?)", (pid, sub, json.dumps({"submission_id": sub, "analysis": "a"})))
+        t.store.conn.commit()
+    assert call("/api/feedback/get", id=pid)[1]["language"] == "python" and call("/api/state", id=pid)[1]["problem"]["language"] == "javascript"
 
 
 def no_tool() -> None:
@@ -967,6 +1235,19 @@ def results() -> None:
     assert skipped["status"] == "skipped" and "error" not in skipped and timed["status"] == "timeout" and body["score"] == {"accuracy": [0, 4], "efficiency": [1, 2]}
     assert (near["near"], near["limit"]) == (True, 4) and "near" not in eff
     assert [case["status"] for case in server.tutor_view(fake)["cases"]][2:4] == ["timeout", "timeout"]  # 엔진은 돌리지 않음을 모른다
+    big = {**fake, "cases": [{**case, "id": "1", "kind": "example", "status": "passed"}, {**case, "id": "2", "kind": "efficiency", "status": "timeout"},
+                             {**case, "id": "3", "kind": "efficiency", "status": "failed", "expected": "9" * 300, "got": "8" * 300}]}
+    long = server.tutor_view(big)["cases"][2]  # 큰 입력의 값은 줄여 싣고, 함정을 견줄 꼴은 줄이기 전의 값으로
+    assert (long["input"], len(long["expected"]), len(long["got"]), long["out"]) == ("(아주 큰 입력)", server.BIG_SHOWN + len("…(앞부분만)"), server.BIG_SHOWN + len("…(앞부분만)"), server.out_key("8" * 300)), long
+    assert not server.slow_only(big) and server.slow_only({**big, "cases": big["cases"][:2] + [{**case, "id": "3", "kind": "efficiency", "status": "skipped"}]})  # 큰 입력에서 틀린 답은 시간 문제가 아니다
+    assert not server.slow_only({**big, "cases": big["cases"][:2] + [{**case, "id": "3", "kind": "efficiency", "status": "runtime_error"}]})
+    sent, server.grade = [], lambda *args, **kwargs: big
+    try:  # 작은 입력이 다 맞으면 큰 입력의 틀린 답으로 틀린 곳을 찾는다. 같이 난 시간 초과는 빼서 시간 이야기로 새지 않는다
+        with patch.object(server.Tutor, "debug", lambda self, pid, code, report, text=None: sent.append(report) or SimpleNamespace(status=200, body={"messages": []})):
+            call("/api/debug", id=pid, code="class Big {}")
+    finally:
+        server.grade = grade
+    assert sent[0]["status"] == "failed" and [c["id"] for c in sent[0]["cases"]] == ["1", "3"], sent
     assert [case["kind"] for case in server.tutor_view(fake)["cases"]] == ["example", "accuracy", "accuracy", "accuracy", "efficiency", "efficiency"]  # 엔진이 공개 예시를 가른다
     assert (server.tutor_view(fake)["cases"][0]["line"], server.tutor_view({**fake, "status": "compile_error", "compile_line": 6})["compile_line"]) == (3, 6)  # 오류의 줄을 엔진이 안다(내 블록의 줄인지 가른다)
     assert (body["repeat"], again["repeat"], other["repeat"], changed["repeat"]) == (False, True, False, False)
@@ -982,10 +1263,33 @@ def results() -> None:
     assert (ran["status"], ran["got"]) == ("ran", "7") and "reference" not in ran and "reference_note" not in ran
 
 
+def retired_languages() -> None:
+    """지원을 접은 언어(go·kotlin)로 저장된 자료: 문제를 열면 오류 없이 파이썬으로 열리고(그 언어의 코드는 지우지 않고 보관), 등록 문제의 언어·풀이·시작 코드 목록에서는 빠진다."""
+    own = server.register(GOOD)["id"]  # 등록 문제를 go로 저장해 둔 채(문제를 열기 전에) 목록·보고서부터 부른다
+    with server.tutor() as t:
+        t.store.put_problem(own, "go", server.PROBLEMS[own].text, direct_code="func solution() {}", title="t")
+        t.store.set_language(PID, "go")
+        t.store.update_code(PID, "func solution() {}")
+    assert server.starter_of(server.PROBLEMS[own], "go") == ""  # 지원 밖의 언어는 예외 없이 빈 시작 코드
+    server.retire_languages()  # 서버를 켤 때 한 번
+    with server.tutor() as t:
+        assert t.store.load(own).language == "python" and t.store.load(PID).language == "python"
+    assert server.read_json(server.CODES_FILE, {})[own]["go"] == "func solution() {}"
+    assert call("/api/problems")[1]["problems"] and call("/api/report")[1]["summary"]
+    server.LANG.pop(PID, None)
+    state = call("/api/state", id=PID)[1]["problem"]
+    assert state["language"] == "python" and "go" not in state["languages"] and "kotlin" not in state["languages"], state
+    assert server.read_json(server.CODES_FILE, {})[PID]["go"] == "func solution() {}"
+    assert next(row for row in call("/api/problems")[1]["problems"] if row["id"] == PID)["language"] == "python"
+    row = server.supported({"languages": ["python", "go", "kotlin", "rust"], "solutions": {"python": "a", "go": "b", "kotlin": "c"},
+                            "starters": {"go": "b", "rust": "d"}, "limits": {"kotlin": 1.0, "python": 1.0}})
+    assert row == {"languages": ["python", "rust"], "solutions": {"python": "a"}, "starters": {"rust": "d"}, "limits": {"python": 1.0}}, row
+
+
 def tools() -> None:
-    """이 기기의 언어 도구: 일곱 언어 모두 있음·없음이 오고, 서버를 돌리는 Python은 있다. 문제 상태에도 같은 모양으로 실린다."""
+    """이 기기의 언어 도구: 다섯 언어 모두 있음·없음이 오고, 서버를 돌리는 Python은 있다. 문제 상태에도 같은 모양으로 실린다."""
     got = call("/api/tools")[1]["tools"]
-    assert set(got) == set(server.check_judge().LANGUAGES) and len(got) == 7 and got["python"] is True
+    assert set(got) == set(server.check_judge().LANGUAGES) and len(got) == 5 and got["python"] is True
     assert call("/api/tools", refresh=True)[1]["tools"] == got
     state = call("/api/state", id=PID)[1]["problem"]
     assert state["tools"] == got and state["preparing"] is False  # 미리 만들기가 없으면 준비 중이 아니다
@@ -1125,6 +1429,11 @@ def table() -> None:
     assert found(text="입출력 예\nnumbers\tk\tresult\n[1, 2, 3]\t2\t5\n[4, 5]\t1\t4\n입출력 예 설명\n...") == want  # 화면에서 복사한 표
     assert found(text="numbers   k   return\n[1, 2, 3]   2   5\n[4, 5]  1  4") == want  # 둘 이상의 공백
     assert found(text="입출력 예\nnumbers k result\n[1, 2, 3] 2 5\n[4,5] 1 4\n입출력 예 설명\n입출력 예 #1") == want  # PDF에서 읽은 글: 칸이 공백 하나로 접힌 표
+    bar = "days | limit | result\n[2, 3] | 6 | 5\n[4, 5] | 1 | 4\n\n설명"  # 구분선 없이 |로만 나눈 표: 줄마다 칸 수가 같을 때만
+    assert found(text=bar)["cases"] == [{"input": "[[2, 3], 6]", "expected": "5"}, {"input": "[[4, 5], 1]", "expected": "4"}] and found(text=bar)["names"] == ["days", "limit"]
+    assert len(found(text="days | limit | result\n[2, 3] | 6 | 5\n[4, 5] | 1 | 4 | 9\n[7] | 2 | 3")["cases"]) == 1  # 칸 수가 다른 줄에서 끝난다
+    for text in ("a | b | result\nx | y | z", "비트 연산: a | b 는 둘 중 하나라도 1이면 1입니다.\nresult = a | b", "x | y | result\na | b | c\n1 | 2 | 3"):  # 비트 연산이나 설명 글의 |
+        assert found(text=text)["cases"] == [], text
     assert found(text="s flag answer\n'a b' True None\n['a', 'b'] False [1, 2]\n1,000 1 2") == {
         "names": ["s", "flag"], "cases": [{"input": '["a b", true]', "expected": "null"}, {"input": '[["a", "b"], false]', "expected": "[1, 2]"}], "skipped": 0,
         "missed": ["1,000 1 2"]}  # 파이썬식 값, 읽지 못하는 줄에서 끝난다. 예시처럼 생긴 그 줄은 알린다
@@ -1317,6 +1626,20 @@ def program_tutor() -> None:
             assert [c["task"] for c in fake.calls] == ["plan.solve", "plan.brute", "plan.draft_blocks"], [c["task"] for c in fake.calls]
 
 
+def guessed_level() -> None:
+    """단계를 고르지 않은 등록 문제는 분석이 어림한 단계를 level_by가 analysis로 싣는다(화면은 수정 칸에 이것을 넣지 않는다). 고른 단계는 user. 어림한 채 고쳐 저장해도 어림으로 남는다."""
+    pid = server.register(GOOD)["id"]
+    with server.tutor() as t:
+        t.adopt(pid, {**FIRST["ready"], "fact": {**FIRST["ready"]["fact"], "level": 2}})  # 분석이 어림한 단계
+    state = call("/api/state", id=pid)[1]["problem"]
+    assert state["level"] == 2 and state["level_by"] == "analysis", (state["level"], state["level_by"])
+    call("/api/problems/edit", id=pid, title="두 수의 합", text=GOOD["text"], cases=GOOD["cases"][:1] + GOOD["cases"][2:], level=0)  # 수정 칸이 비어 있으면 0을 보낸다
+    assert call("/api/state", id=pid)[1]["problem"]["level_by"] == "analysis"
+    call("/api/problems/edit", id=pid, title="두 수의 합", text=GOOD["text"], cases=GOOD["cases"][:1] + GOOD["cases"][2:], level=4)
+    state = call("/api/state", id=pid)[1]["problem"]
+    assert (state["level"], state["level_by"]) == (4, "user"), state
+
+
 def own_guide() -> None:
     """등록한 문제도 엔진이 만들어 둔 풀이 가이드가 있으면 통과 뒤 해설과 실전 신호(가이드의 단서)를 본다. 잠금은 기본 문제와 같다."""
     pid = server.register(GOOD)["id"]
@@ -1329,7 +1652,7 @@ def own_guide() -> None:
     assert call("/api/submit", id=pid, code="def solution(a, b):\n    return a + b\n")[1]["ok"]
     status, sol = call("/api/solution", id=pid)
     assert status == 200 and sol["signals"] == [{"phrase": "제목이 같으면 같은 책입니다", "means": "개수를 센다"}, {"phrase": "", "means": "입력이 크다"}]
-    assert (sol["code"], sol["language"], sol["verified"], sol["next"]) == (CODE, "python", False, None)
+    assert (sol["code"], sol["language"], sol["verified"], sol["next"], sol["traps"]) == (CODE, "python", False, None, [])  # 언어 함정은 기본 문제에만(증명이 없다)
     with server.tutor() as t:
         assert not t.store.study(pid)["solution_before_pass"]  # 통과한 뒤에 열었다
     assert [row["phrase"] for row in server.clue_signals(["'1. 금메달이 앞섭니다.' 와 '2. 은메달' → 순서", "“\"문자열\" s” → 뜻", " '한 번만' → 센다"])] == [
@@ -1359,6 +1682,29 @@ def prep_failed() -> None:
             assert body["prepare_failed"] and not body["preparing"] and pid not in server.PREPARED and tries == [pid] * n, (body, tries)
     server.PREP_FAILED.discard(pid)
     assert not call("/api/state", id=pid)[1]["problem"]["prepare_failed"]
+
+
+def prep_unverified() -> None:
+    """준비가 끝났는데 풀이 가이드를 얻지 못했으면(고친 예시를 통과하는 풀이가 없는 문제 등) 검증하지 못함과 까닭이 남는다. 이미 대조 결과가 있으면 덮지 않는다."""
+    import time
+    from tutor.main import Outcome
+
+    pid = server.register(GOOD)["id"]
+    def prepare_and_wait():
+        call("/api/state", id=pid, open=True)
+        for _ in range(200):
+            if pid not in server.PREPARING:
+                break
+            time.sleep(0.02)
+        return call("/api/state", id=pid)[1]["problem"]
+    with patch.object(server, "PREPARE", True), patch.object(server, "connected", lambda: True), patch.object(server.Tutor, "prepare", lambda self, problem_id: Outcome(200, {"blocks": 0, "patterns": []})):
+        before = call("/api/state", id=pid)[1]["problem"]
+        assert before["verified"] == "" and not before["preparing"], before  # 준비 전에는 줄이 비어 있다
+        body = prepare_and_wait()
+        assert body["verified"] == "none" and body["check"]["why"] == server.UNVERIFIED["why"] and not body["prepare_failed"], body
+        server.PREPARED.discard(pid)
+        server.cross_done(pid, {"verified": "all", "calls": 2, "tiers": ["middle"], "doubts": [], "why": "", "hidden": 3, "efficiency": 0})
+        assert prepare_and_wait()["verified"] == "all"  # 앞의 대조 결과를 '검증하지 못함'으로 덮지 않는다
 
 
 def stale_save() -> None:
@@ -1429,6 +1775,7 @@ def checkpoints() -> None:
 def compose() -> None:
     """모으기는 서버 한 곳에서 블록 코드 확인과 같은 framed로 한다. 빈 블록은 빠지고, 블록 2에 머리 줄을 적어도 확인이 돌린 프로그램과 같은 글이다."""
     from tutor.common.solution import spliced
+    from tutor.common.talk_rules import ALONE_OK
 
     def text(parts):  # 블록 주석과 빈 줄을 뺀 글
         return "\n".join(row for _, part in parts for row in part.split("\n") if row.strip() and not row.strip().startswith("# 블록"))
@@ -1436,7 +1783,10 @@ def compose() -> None:
     b1 = "\n".join(row[4:] for row in LINES[1:5])
     parts = call("/api/compose", id=PID, mode="guide", blocks={"b1": {"code": b1, "by": "me"}, "b2": {"code": "\n".join(LINES[5:]), "by": "tutor"}})[1]["parts"]
     assert [i for i, _ in parts] == [0, 1] and parts[0][1].startswith("def solution(loans, k):\n    # 블록 1 · ") and text(parts) == CODE, parts
-    assert [i for i, _ in call("/api/compose", id=PID, mode="guide", blocks={"b1": {"code": "  ", "by": "me"}, "b2": {"code": "return []", "by": "me"}})[1]["parts"]] == [1]
+    parts = call("/api/compose", id=PID, mode="guide", blocks={"b1": {"code": "  ", "by": "me"}, "b2": {"code": "return []", "by": "me"}})[1]["parts"]
+    assert [i for i, _ in parts] == [0, 1] and parts[0][1] == "def solution(loans, k):" and parts[1][1].endswith(" return []"), parts  # 빈 블록은 틀 줄만(머리가 빠지면 함수 밖의 return이었다)
+    # 튜터가 '남은 블록은 건너뛰어도 된다'고 한 뒤의 빈 블록은 화면이 모으기에서 막지 않는다(화면은 그 말로 안다)
+    assert ALONE_OK.split(".")[0] in (Path(__file__).parent / "app.js").read_text(encoding="utf-8")
     head2 = "def solution(loans, k):\n" + "\n".join(LINES[5:])  # 블록 2에 머리 줄을 적었다
     parts = call("/api/compose", id=PID, mode="guide", blocks={"b1": {"code": b1, "by": "me"}, "b2": {"code": head2, "by": "me"}})[1]["parts"]
     ran = spliced(["\n".join(LINES[:5]), "\n".join(LINES[5:])], 1, head2, "python", {0: b1})
@@ -1491,6 +1841,224 @@ def checks() -> None:
     assert call("/api/solution", id=other["id"], force="true")[0] == 409  # 문자열 "true"는 참이 아니다
 
 
+def key_flow() -> None:
+    """API 키: 그 공급자의 키 꼴이 아니면(빈칸·한글·다른 접두사) 저장하지 않고 까닭을 말한다. 지우기는 그 공급자의 키만, 화면에서 넣은 것만 지운다."""
+    claude, openai = "sk-ant-api03-" + "a" * 20, "sk-proj-" + "b" * 20
+    with patch.dict(os.environ, {}), patch.object(server.keycheck, "check", lambda provider, key, **kw: server.keycheck.OK):  # 확인은 아래 key_check_flow에서 따로 본다(네트워크를 쓰지 않는다)
+        for name in ("ANTHROPIC_API_KEY", "OPENAI_API_KEY"):
+            os.environ.pop(name, None)
+        for name, bad in (("claude", "hello world 한글"), ("claude", "sk-ant-abc def"), ("claude", openai), ("openai", "sk-a b"), ("openai", "한글키"), ("openai", claude), ("openai", "abcdef")):
+            assert "꼴이 아니에요" in refuses("/api/key", name=name, value=bad) and bad not in refuses("/api/key", name=name, value=bad)  # 값은 글에 싣지 않는다
+        assert not server.KEY_FILE.exists() and not any(os.environ.get(env) for env in server.KEYS.values())  # 거절한 키는 파일에도 환경에도 없다
+        assert call("/api/key", name="claude", value=claude)[1]["keys"] == {"claude": True, "openai": False}
+        assert call("/api/key", name="openai", value=openai)[1]["keys"] == {"claude": True, "openai": True}
+        assert refuses("/api/key/delete", name="x") and refuses("/api/key/delete", name=["claude"])
+        after = call("/api/key/delete", name="openai")[1]["keys"]  # 지운 공급자만 빠진다
+        assert after == {"claude": True, "openai": False} and server.read_json(server.KEY_FILE, {}) == {"ANTHROPIC_API_KEY": claude}
+        try:
+            call("/api/key/delete", name="openai")
+            raise AssertionError("넣지 않은 키를 지울 수는 없다")
+        except server.Refuse as exc:
+            assert exc.status == 409 and exc.code == "key_outside", exc  # 화면에서 넣은 것이 아니면 환경(.env)은 건드리지 않는다
+        env_file = server.DATA / ".env"  # .env에도 같은 공급자의 키가 있으면: 지운 뒤에는 그 키로 연결된 채이고, 지울 수 있는 키(keys_saved)는 아니다
+        env_file.write_text("OPENAI_API_KEY=sk-from-dotenv\n", encoding="utf-8")
+        try:
+            assert call("/api/key", name="openai", value=openai)[1]["keys_saved"] == {"claude": True, "openai": True}
+            got = call("/api/key/delete", name="openai")[1]
+            assert got["keys"]["openai"] and got["keys_saved"] == {"claude": True, "openai": False} and os.environ["OPENAI_API_KEY"] == "sk-from-dotenv", got
+        finally:
+            env_file.unlink()
+        os.environ["OPENAI_API_KEY"] = "sk-outside"  # 밖(환경 변수)에서 준 키는 파일에 없으니 지우지 않는다
+        assert call("/api/accounts")[1]["keys"]["openai"] and os.environ["OPENAI_API_KEY"] == "sk-outside"
+        assert call("/api/key/delete", name="claude")[1]["keys"] == {"claude": False, "openai": True} and not server.read_json(server.KEY_FILE, {})
+
+
+def key_check_flow() -> None:
+    """키 확인(가짜 응답과 루프백 서버, 외부 네트워크 없음): 공식 주소에 모델 목록 조회 한 번(10초), 결과 여섯. 리다이렉트는 따라가지 않는다. 키 값은 결과·오류 글에 없다."""
+    import io
+    import urllib.error
+    from app.llm import keycheck
+
+    class Reply:  # urlopen이 주는 응답
+        def __init__(self, status):
+            self.status = status
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+    seen = []
+
+    def opener(result):
+        def open_(request, timeout):
+            seen.append((request.full_url, request.get_method(), {k.lower(): v for k, v in request.header_items()}, timeout))
+            if isinstance(result, BaseException):
+                raise result
+            return Reply(result)
+        return open_
+
+    http = lambda code: urllib.error.HTTPError("https://example.invalid", code, "x", {}, io.BytesIO(b""))
+    secret = "sk-ant-api03-" + "q" * 20
+    for result, want in ((200, "ok"), (http(401), "invalid"), (http(403), "denied"), (http(429), "limited"), (http(500), "server"), (http(529), "server"), (http(404), "offline"), (http(302), "offline"),
+                         (urllib.error.URLError(f"연결하지 못함 {secret}"), "offline"), (TimeoutError(secret), "offline"), (Reply(302).status, "offline")):
+        assert keycheck.check("claude", secret, opener=opener(result)) == want, (result, want)
+    seen.clear()
+    keycheck.check("claude", secret, opener=opener(200))
+    keycheck.check("openai", "sk-proj-" + "r" * 20, opener=opener(200))
+    assert [(url, method, timeout) for url, method, _, timeout in seen] == [("https://api.anthropic.com/v1/models?limit=1000", "GET", 10.0), ("https://api.openai.com/v1/models", "GET", 10.0)], seen  # 공식 주소로만, 한 번씩
+    assert seen[0][2]["x-api-key"] == secret and seen[0][2]["anthropic-version"] and seen[1][2]["authorization"] == "Bearer sk-proj-" + "r" * 20
+    try:
+        keycheck.request_for("other", "x")
+        raise AssertionError("모르는 공급자는 거절해야 한다")
+    except ValueError:
+        pass
+
+    # 리다이렉트는 따라가지 않는다: 첫 주소가 302로 다른 호스트를 가리켜도 그 호스트는 키 헤더를 받지 않는다(루프백 서버 둘)
+    import http.server
+    import threading
+
+    got = []
+
+    class Second(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            got.append(dict(self.headers))
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"{}")
+
+        def log_message(self, *args):
+            pass
+
+    second = http.server.HTTPServer(("127.0.0.1", 0), Second)
+
+    class First(Second):
+        def do_GET(self):
+            self.send_response(302)
+            self.send_header("Location", f"http://127.0.0.1:{second.server_port}/")
+            self.end_headers()
+
+    first = http.server.HTTPServer(("127.0.0.1", 0), First)
+    for one in (first, second):
+        threading.Thread(target=one.serve_forever, daemon=True).start()
+
+    def to_first(request, timeout):  # 공식 주소 대신 첫 루프백 서버로 보내되, 헤더와 기본 opener(리다이렉트를 따르지 않는 것)는 그대로 쓴다
+        return keycheck.OPENER.open(urllib.request.Request(f"http://127.0.0.1:{first.server_port}/", headers=dict(request.header_items())), timeout=timeout)
+
+    try:
+        assert keycheck.check("claude", secret, opener=to_first) == "offline" and keycheck.check("openai", "sk-proj-" + "r" * 20, opener=to_first) == "offline"
+        assert got == [], got  # 두 번째 호스트에는 요청도 헤더도 가지 않았다
+    finally:
+        for one in (first, second):
+            one.shutdown()
+            one.server_close()
+
+    calls = []
+
+    def fake(result):
+        def check(provider, key, **kw):
+            calls.append((provider, key))
+            return result
+        return check
+
+    def put(result, **more):
+        with patch.object(server.keycheck, "check", fake(result)):
+            return call("/api/key", name="claude", value=f"  {secret}  ", **more)[1]
+
+    def refused(result, **more):
+        try:
+            put(result, **more)
+        except server.Refuse as exc:
+            return exc
+        raise AssertionError(f"{result}는 거절해야 한다")
+
+    with patch.dict(os.environ, {}):
+        os.environ.pop("ANTHROPIC_API_KEY", None)
+        server.KEY_FILE.unlink(missing_ok=True)
+        # 401은 저장하지 않고 '그래도 저장'도 없다. 403·5xx·연결 못 함은 저장하지 않되 '그래도 저장'을 연다. 429는 키가 맞으니 저장한다
+        for result, status, code in (("invalid", 400, "key_invalid"), ("denied", 409, "key_denied"), ("server", 409, "key_unverified"), ("offline", 409, "key_unverified")):
+            exc = refused(result)
+            assert (exc.status, exc.code, exc.field) == (status, code, "value") and secret not in str(exc), (result, exc.status, exc.code)  # 글에 키 값이 없다
+            assert not os.environ.get("ANTHROPIC_API_KEY") and not server.KEY_FILE.exists(), result  # 쓸 수 없는 키, 확인하지 못한 키는 저장하지 않는다
+        assert calls == [("claude", secret)] * 4  # 앞뒤 공백은 뗀 값으로 확인한다
+        assert "권한" in str(refused("denied")) and "서버가 답하지 않아" in str(refused("server")) and "인터넷" not in str(refused("server")) and "인터넷" in str(refused("offline"))  # 까닭을 단정하지 않고 맞게 말한다
+        assert refused("invalid", force=True).code == "key_invalid"  # 틀린 키는 그래도 저장할 수 없다
+        assert refused("offline", force="true").code == "key_unverified"  # 정확히 true일 때만 확인 없이 저장한다
+        for result in ("denied", "server", "offline"):
+            saved = put(result, force=True)
+            assert saved["key_check"] == result and saved["keys"]["claude"] and server.read_json(server.KEY_FILE, {}) == {"ANTHROPIC_API_KEY": secret}, result
+            server.KEY_FILE.unlink()
+            os.environ.pop("ANTHROPIC_API_KEY")
+        saved = put("limited")  # 429: 키는 맞다. 물음 없이 저장한다
+        assert saved["key_check"] == "limited" and server.read_json(server.KEY_FILE, {}) == {"ANTHROPIC_API_KEY": secret}
+        server.KEY_FILE.unlink()
+        os.environ.pop("ANTHROPIC_API_KEY")
+        saved = put("ok")
+        assert saved["key_check"] == "ok" and secret not in json.dumps(saved) and server.read_json(server.KEY_FILE, {}) == {"ANTHROPIC_API_KEY": secret}
+        server.drop_key("ANTHROPIC_API_KEY")
+
+
+def key_rows_flow() -> None:
+    """공급자별 키 줄: 연결 여부, 끝 4자리(나머지 글자는 응답 어디에도 없다), 마지막 확인과 그 결과. 다시 확인은 서버에 있는 키로 하고, 지우면 줄의 확인 기록도 지운다."""
+    secret = "sk-ant-api03-" + "Zq7" * 6 + "wxyz"
+    short = "sk-abc"
+    seen = []
+
+    def fake(result):
+        def check(provider, key, **kw):
+            seen.append((provider, key))
+            return result
+        return check
+
+    with patch.dict(os.environ, {}):
+        for name in ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "ALGOBLOCK_LLM_PROVIDER"):
+            os.environ.pop(name, None)
+        server.KEY_FILE.unlink(missing_ok=True)
+        server.KEY_CHECK_FILE.unlink(missing_ok=True)
+        empty = call("/api/accounts")[1]
+        assert empty["key_rows"] == {name: {"on": False, "tail": "", "at": "", "result": ""} for name in ("claude", "openai")}, empty["key_rows"]
+        with patch.object(server.keycheck, "check", fake("ok")):
+            body = call("/api/key", name="claude", value=secret)[1]
+        row = body["key_rows"]["claude"]
+        assert (row["on"], row["tail"], row["result"]) == (True, "wxyz", "ok") and row["at"] and body["using"] == "claude", row
+        assert secret[:-4] not in json.dumps(body, ensure_ascii=False) and secret[:-4] not in server.KEY_CHECK_FILE.read_text(encoding="utf-8")  # 끝 4자리 말고는 응답에도 확인 기록에도 없다
+        record = server.KEY_CHECK_FILE.read_text(encoding="utf-8")
+        assert secret not in record and server.key_print(secret) in record and server.key_print(secret) != secret  # 기록에는 키가 아니라 지문만 있다
+        other = "sk-ant-api03-" + "Nn5" * 6 + "9988"  # 키만 바뀐 경우(.env의 키 B를 두고 화면에서 넣은 키 A를 확인한 뒤 다시 켬): 옛 기록은 지금 키의 것이 아니다
+        os.environ["ANTHROPIC_API_KEY"] = other
+        changed = call("/api/accounts")[1]["key_rows"]["claude"]
+        assert changed == {"on": True, "tail": "9988", "at": "", "result": ""}, changed
+        os.environ["ANTHROPIC_API_KEY"] = secret
+        assert call("/api/accounts")[1]["key_rows"]["claude"]["result"] == "ok"  # 같은 키로 돌아오면 그 기록이 다시 보인다
+        import threading  # 키 넣기와 다시 확인이 겹쳐도 공급자의 기록이 서로 덮이지 않는다
+        pool = [threading.Thread(target=server.note_key_check, args=(name, "ok", key)) for _ in range(8) for name, key in (("claude", secret), ("openai", "sk-proj-" + "b" * 20))]
+        [t.start() for t in pool]
+        [t.join() for t in pool]
+        assert sorted(server.read_json(server.KEY_CHECK_FILE, {})) == ["claude", "openai"]
+        server.note_key_check("openai", None)
+        os.environ["OPENAI_API_KEY"] = short  # 너무 짧은 글은 끝자리도 싣지 않는다
+        assert call("/api/accounts")[1]["key_rows"]["openai"] == {"on": True, "tail": "", "at": "", "result": ""}
+        del os.environ["OPENAI_API_KEY"]
+        for result in ("invalid", "denied", "offline", "ok"):  # 다시 확인: 서버에 있는 키로 한 번, 결과와 시각을 남긴다
+            seen.clear()
+            with patch.object(server.keycheck, "check", fake(result)):
+                got = call("/api/key/check", name="claude")[1]
+            assert seen == [("claude", secret)] and got["key_check"] == result and got["key_rows"]["claude"]["result"] == result, (result, seen)
+            assert secret[:-4] not in json.dumps(got, ensure_ascii=False)
+        for bad in ({"name": "x"}, {"name": ["claude"]}):
+            assert refuses("/api/key/check", **bad)
+        try:
+            call("/api/key/check", name="openai")
+            raise AssertionError("넣지 않은 키는 확인하지 못한다")
+        except server.Refuse as exc:
+            assert (exc.status, exc.code) == (409, "key_missing")
+        deleted = call("/api/key/delete", name="claude")[1]
+        assert deleted["key_rows"]["claude"] == {"on": False, "tail": "", "at": "", "result": ""} and "claude" not in server.read_json(server.KEY_CHECK_FILE, {})
+        os.environ["ANTHROPIC_API_KEY"] = secret  # 밖에서 준 키는 확인 기록이 없다(예전 기록이 남았어도 지금 키의 것이 아니면 보이지 않게 지운 상태)
+        assert call("/api/accounts")[1]["key_rows"]["claude"]["result"] == ""
+
+
 def error_lines() -> None:
     """실행 오류 글에서 고른 한 줄(언어마다)."""
     samples = {
@@ -1498,7 +2066,6 @@ def error_lines() -> None:
         "/w/solution.js:2\n    return x();\n           ^\n\nTypeError: x is not a function\n    at solution (/w/solution.js:2:12)\n    at main (/w/run.js:5:1)\n\nNode.js v24.1.0": "TypeError: x is not a function",
         "Exception in thread \"main\" java.lang.ArrayIndexOutOfBoundsException: Index 5 out of bounds for length 3\n\tat Solution.solution(Solution.java:3)\n\tat FunctionRunner.main(FunctionRunner.java:9)":
             "Exception in thread \"main\" java.lang.ArrayIndexOutOfBoundsException: Index 5 out of bounds for length 3",
-        "panic: runtime error: index out of range [5] with length 3\n\ngoroutine 1 [running]:\nmain.solution(...)\n\t/w/main.go:4 +0x1d": "panic: runtime error: index out of range [5] with length 3",
         "thread 'main' panicked at src/main.rs:3:5:\nindex out of bounds: the len is 3 but the index is 5\nnote: run with `RUST_BACKTRACE=1`":
             "thread 'main' panicked at src/main.rs:3:5: index out of bounds: the len is 3 but the index is 5",  # Rust는 위치 줄 다음 줄이 이유다
         "libc++abi: terminating due to uncaught exception of type std::out_of_range: vector": "libc++abi: terminating due to uncaught exception of type std::out_of_range: vector",
@@ -1511,8 +2078,8 @@ def error_lines() -> None:
         assert server.error_line(text, "runtime_error") == line, (text, server.error_line(text, "runtime_error"))
     assert server.error_line("", "runtime_error").startswith("프로그램이 비정상적으로 끝났어요") and server.error_line("", "failed") == ""
     assert len(server.error_line("ValueError: " + "x" * 500)) == 300
-    # 채점기 안쪽 이름(임시 폴더, 호출 파일, Go 모듈 이름)은 가리고 내 코드 파일은 '내 코드'로
-    assert server.compile_head("# algoblockcheck\n/private/var/folders/x/algoblock-check-a1b2/solution.go:3:2: \"fmt\" imported and not used") == '내 코드:3:2: "fmt" imported and not used'
+    # 채점기 안쪽 이름(임시 폴더, 호출 파일)은 가리고 내 코드 파일은 '내 코드'로
+    assert server.compile_head("/private/var/folders/x/algoblock-check-a1b2/solution.cpp:3:2: error: x was not declared") == '내 코드:3:2: error: x was not declared'
     assert server.compile_head("FunctionRunner.java:12: error: incompatible types\nSolution.java:6: error: ';' expected\n2 errors") == "error: incompatible types\n내 코드:6: error: ';' expected\n2 errors"
     assert server.compile_head("error: no matching function for call to 'algoblockJson'\n   49 |  std::cout << algoblockJson(solution(a0)) << 1;\n") == server.CALL_FAILED  # 호출 코드의 이름은 화면에 나오지 않는다
     assert server.compile_head("error: literal out of range for `i32`\n  --> algoblock_main.rs:44:20\n   |") == "error: literal out of range for `i32`\n   |"
@@ -1526,9 +2093,8 @@ def error_lines() -> None:
                        ("libc++abi: terminating due to uncaught exception of type std::out_of_range: vector", "std::out_of_range"),
                        ("terminate called after throwing an instance of 'std::out_of_range'", "std::out_of_range")):
         assert server.exception_name(line) == name, line
-    for text, language, words in ((trace, "python", "딕셔너리에 없는 키"), ('Exception in thread "main" java.lang.NullPointerException', "kotlin", "null인 값"),
+    for text, language, words in ((trace, "python", "딕셔너리에 없는 키"), ('Exception in thread "main" java.lang.NullPointerException', "java", "null인 값"),
                                   ("TypeError: x is not a function\n    at solution (/w/solution.js:2:12)", "javascript", "함수가 아닌 것"),
-                                  ("panic: runtime error: index out of range [5] with length 3\n\ngoroutine 1 [running]:", "go", "슬라이스의 범위"),
                                   ("thread 'main' panicked at src/main.rs:3:5:\nattempt to subtract with overflow", "rust", "형의 범위를 넘었어요"),
                                   ("thread 'main' panicked at src/main.rs:3:5:\ncalled `Option::unwrap()` on a `None` value", "rust", "unwrap()"),
                                   ("thread 'main' panicked at src/main.rs:3:5:\nindex out of bounds: the len is 0 but the index is 9", "rust", "벡터의 범위"),
@@ -1700,6 +2266,429 @@ def upload() -> None:
     httpd.server_close()
 
 
+def color_tokens() -> None:
+    """화면 색: 라이트는 :root, 다크는 :root[data-scheme="dark"] 한 벌. 부품 규칙에는 색 값을 박지 않는다."""
+    import re
+    css = (HERE / "app.css").read_text(encoding="utf-8")
+    html = (HERE / "index.html").read_text(encoding="utf-8")
+    assert "prefers-color-scheme" not in css  # 운영체제 설정은 머리의 스크립트가 읽어 data-scheme에 옮긴다
+    dark_open = '\n:root[data-scheme="dark"] {\n'
+    assert css.count(dark_open) == 1
+    dark = css.split(dark_open)[1].split("\n}")[0]
+    light = css.split("\n:root {\n")[1].split("\n}")[0]
+    for name in ("--thumb", "--scrim", "--code-gutter", "--code-selection", "--syn-keyword", "--syn-string", "--syn-comment", "--syn-number", "--syn-function", "--syn-type"):
+        assert f"{name}:" in light and f"{name}:" in dark, name  # 두 화면이 모두 값을 가진다
+    rest = css.split("/* ── 바탕 ── */", 1)[1]
+    assert [hit for hit in re.findall(r"#[0-9A-Fa-f]{3,8}\b|rgba?\([^)]*\)", rest) if hit != "rgb(255 255 255 / 0.2)"] == []  # 남긴 것: 강조색 면 위의 흰 칠 둘(위), 고르기 화살표 그림(%23)
+    assert "var(--code-gutter)" in rest and "var(--thumb)" in rest and "var(--scrim)" in rest
+    assert html.index("applyScheme(") < html.index('href="app.css"')  # 첫 그림 전에 정한다
+    assert html.count('name="theme-color"') == 1 and 'data-scheme-pref="system"' in html
+
+
+def tour_pictures() -> None:
+    """사용법 안내: 그림이 글과 같은 상태를 보인다. 보고서 장은 빈 상태 없이 강점·더 공부가 함께 보이고, 연결 장은 지금 연결을 따르며, 장을 넘기면 첫 내용이 바로 보인다."""
+    js, css = (HERE / "app.js").read_text(encoding="utf-8"), (HERE / "app.css").read_text(encoding="utf-8")
+    bundle = (HERE / "tour-demos.js").read_text(encoding="utf-8")
+    assert "아직 약한 주제로 보이는 곳이 없어요" not in bundle and "더 공부할 주제" in bundle  # 보고서 그림
+    assert "demos.show($(\"tour-live\"), tourAt, { conn })" in js and "Claude API 키" not in bundle  # 연결 그림은 지금 연결을 넘겨 받는다(고정 문구 없음)
+    assert ".tour-scene .a1 { animation: tour-in 0.35s var(--ease) both; }" in css  # 첫 내용은 기다리지 않고 나온다
+    assert ".mini-head::before" in css and "padding: 28px 56px 0" in css  # 정적 그림의 틀이 움직이는 데모의 창과 같다
+
+
+def tour_follows_screens() -> None:
+    """사용법 안내 1·6장이 새 홈(오늘 할 일)과 설정(AI 연결)을 말한다: 글, 정적 그림, 미리 빌드한 움직이는 그림이 같은 이름을 쓰고, 옛 입구 셋·연결 창 글이 남지 않는다."""
+    js, html, bundle = (HERE / "app.js").read_text(encoding="utf-8"), (HERE / "index.html").read_text(encoding="utf-8"), (HERE / "tour-demos.js").read_text(encoding="utf-8")
+    tour = js[js.index("const TOUR = ["):js.index("let tourAt = 0;")]
+    first, last = tour.split("\n")[1], tour.split("\n")[6]
+    assert "오늘 할 일" in first and "입구가 셋" not in first and "‘내 기록’" not in first  # 1장 글
+    assert "‘설정’의 ‘AI 연결’" in last  # 6장 글
+    scene0 = html[html.index('data-scene="0"'):html.index('data-scene="1"')]
+    assert "오늘 할 일" in scene0 and "내 기록" not in scene0 and '>문제 풀기<' not in scene0  # 1장 정적 그림
+    scene5 = html[html.index('data-scene="5"'):][:1200]
+    assert "설정 · AI 연결" in scene5 and "이미 내는 요금제로 쓰기" in scene5 and "ChatGPT 요금제 쓰기" not in scene5  # 6장 정적 그림
+    assert "설정 · AI 연결" in bundle and "이미 내는 요금제로 쓰기" in bundle and "ChatGPT 요금제 쓰기" not in bundle  # 6장 움직이는 그림(stageshow에서 다시 빌드)
+    assert "sourceMappingURL" not in bundle and "/Users/" not in bundle and "kimtaekyu" not in bundle  # 만든 파일에 개인 경로나 소스맵 줄이 없다
+    assert '$("tour-conn").textContent = CONN.ready ? "연결됨" : "AI 연결 안 됨"' in js
+
+
+def home_screen() -> None:
+    """시작 화면은 홈(대시보드)이다: 빈 주소와 알 수 없는 주소가 홈으로 가고, '오늘 할 일'과 학습 보고서의 맨 위 단추가 같은 규칙(서버 큐의 첫 문제)을 쓴다. 홈이 오늘 출석을 찍는 /api/problems를 부른다."""
+    html, js = (HERE / "index.html").read_text(encoding="utf-8"), (HERE / "app.js").read_text(encoding="utf-8")
+    assert 'id="view-home"' in html and 'href="#/home" id="nav-home"' in html and 'id="entries"' not in html
+    route = js[js.index("function route()"):js.index("function render()")]
+    assert route.index('a === "list"') < route.index("return showHome()") and 'return showList();' not in route.replace('a === "list") return showList();', "")
+    home = js[js.index("async function showHome()"):js.index("async function showList()")]
+    assert 'api("/api/problems")' in home and "nextOf(d.next)" in home and "nextOf(d.next)" in js[js.index("async function showReport()"):js.index("async function showReport()") + 1500]
+    status = js[js.index("function homeStatus(d)"):js.index("async function showList()")]
+    assert "rd.solved" in status and "sum.solved - rd.solved" in status and "rd.rule_short" in status and 'role="img"' in status  # 도움 없이·그 밖의 통과를 갈라 보이고 기준을 ⓘ로 편다
+    assert "도움 받아 통과" not in js and "그 밖의 통과" in status and js.count("그 밖의 통과") >= 6  # 도움을 쓰지 않은 통과(제출 4번째, 처음부터 뒤 하루 안)도 들어 있어서 '도움 받아'라 부르지 않는다
+    assert "weaknesses.find" not in js[js.index("async function showReport()"):js.index("async function showReport()") + 1500]  # 보고서 단추가 약한 주제를 따로 앞세우지 않는다
+    # 되풀이한 실수: '틀린 곳 같이 찾기'에서만 쌓이니 소개 글이 그렇게 말하고, 목록이 비어도 카드는 남아 쌓이는 법을 한 줄로 안내한다
+    report_js = js[js.index("async function showReport()"):js.index("async function showReport()") + 9000]
+    assert "‘틀린 곳 같이 찾기’를 쓰면 되풀이한 실수도 모아 줘요" in js and "제출 기록에서 강한 주제와 더 공부할 주제, 자주 하는 실수" not in js
+    assert "d.pitfalls.length ? `<section" not in report_js and "‘틀린 곳 같이 찾기’를 쓰면 쌓여요" in report_js
+
+
+def settings_screen() -> None:
+    """설정은 따로 된 화면(#/settings/<분류>)이다: 예전 연결 창의 칸이 id 그대로 분류 안으로 옮겨졌고, 창과 과정별 모델 대화상자는 없다. 분류는 링크라서 뒤로 가기·키보드가 된다."""
+    import re
+    html, js = (HERE / "index.html").read_text(encoding="utf-8"), (HERE / "app.js").read_text(encoding="utf-8")
+    assert 'id="conn-panel"' not in html and 'id="models"' not in html and "toggleConn" not in js and "openModels" not in js
+    view = html[html.index('id="view-settings"'):html.index('id="view-feedback"')]
+    parts = re.findall(r'<section id="set-(\w+)" class="set-part"', view)
+    assert parts == ["ai", "models", "solve", "look", "update"] and re.findall(r'<a href="#/settings/(\w+)"', view) == parts
+    moved = {"ai": ["conn-state", "key-rows", "key-value", "key-save", "key-status", "key-delete-confirm", "chatgpt-login", "chatgpt-state", "conn-note"],
+             "models": ["models-body", "models-note"], "solve": ["tools-list", "tools-refresh"], "look": ["scheme-kinds"], "update": ["upd-now", "upd-auto", "upd-check", "upd-note"]}
+    for part, ids in moved.items():
+        block = view[view.index(f'id="set-{part}"'):]
+        block = block[:block.index("</section>")] if part != "ai" else block[:block.index('id="set-models"')]
+        assert all(f'id="{one}"' in block for one in ids), (part, [one for one in ids if f'id="{one}"' not in block])
+    assert 'id="settings-link"' in html and 'href="#/settings/ai"' in html and "‘설정’의 ‘AI 연결’" in js
+    assert 'a === "settings"' in js and "setKeyShown(false)" in js[js.index("function route()"):js.index("function render()")]  # 화면을 떠나면 키를 가린다
+
+
+def aid_note() -> None:
+    """문제 상태의 study.unaided_open: 도움 없이 푼 문제로 셀 수 있는 풀이인 동안만 참이다. 힌트, 통과, 제출 3번, 등록 문제에서는 거짓, '처음부터' 뒤에는 다시 참."""
+    from types import SimpleNamespace
+    state = lambda: call("/api/state", id=PID, mode="chair", open=True)[1]["problem"]["study"]["unaided_open"]  # noqa: E731
+    touched = server.read_json(server.TOUCHED_FILE, {})  # 제출하면 '손댄 문제'가 남는다: 뒤 시험의 '다음 문제'가 달라지지 않게 되돌린다
+    with tempfile.TemporaryDirectory() as folder, patch.object(server, "DB", Path(folder) / "aid.db"):
+        assert state() is True
+        call("/api/hint", id=PID)
+        assert state() is False  # 힌트를 쓰면 도움 없이 푼 문제에서 빠진다
+        call("/api/reset", id=PID)
+        assert state() is True  # 처음부터 뒤에는 새 풀이다
+    with tempfile.TemporaryDirectory() as folder, patch.object(server, "DB", Path(folder) / "aid.db"):
+        for n in range(2):
+            call("/api/submit", id=PID, code=f"def solution(*a):\n    return None  # {n}")
+        assert state() is True
+        call("/api/submit", id=PID, code="def solution(*a):\n    return None  # 2")
+        assert state() is False  # 제출 3번을 넘겼다
+    with tempfile.TemporaryDirectory() as folder, patch.object(server, "DB", Path(folder) / "aid.db"):
+        assert call("/api/submit", id=PID, code=f"{CODE}\n# 0")[1]["ok"] and state() is False  # 통과했다
+    server.write_json(server.TOUCHED_FILE, touched)
+    js = (HERE / "app.js").read_text(encoding="utf-8")
+    assert js.count("aidNote()") >= 4 and "‘그 밖의 통과’로 남아요" in js and "study.unaided_open" in js  # 고르는 칸, 힌트, 튜터 시작 칸, 결과 칸에서 같은 글, 서버가 준 값으로 거른다
+    study = {"reset_at": None, "help_after_reset_at": None, "help_first_at": None, "solution_before_pass": False, "hints_seen": 0}
+    assert server.unaided_open(SimpleNamespace(builtin=True), [], study, None, False) and not server.unaided_open(SimpleNamespace(builtin=False), [], study, None, False)  # 등록한 문제는 준비도에 들지 않는다
+    assert not server.unaided_open(SimpleNamespace(builtin=True), [], study, "2026-01-01T00:00:00+00:00", False)  # 튜터와 말했다
+
+
+def ai_marks() -> None:
+    """AI를 부르는 단추의 작은 표시와 비용 안내(화면 코드 확인): 표시는 data-ai로 한 곳(CSS)에서 그리고, 설정의 금액은 README의 실측 값과 같다. 사진 단계에 AI 사용을 알린다."""
+    import re
+    js, css, html = (HERE / "app.js").read_text(encoding="utf-8"), (HERE / "app.css").read_text(encoding="utf-8"), (HERE / "index.html").read_text(encoding="utf-8")
+    assert '[data-ai]::after { content: "AI";' in css
+    for name in ("to-feedback", "debug-start", "to-explain", "fb-get"):  # 화면 코드가 그리는 단추. 첫 질문·블록 힌트는 저장 힌트로 답해 모델을 부르지 않는다
+        assert re.search(rf'id="{name}" class="[^"]*" data-model data-ai', js), name
+    for name in ("send", "fq-send", "debug-send", "fb-again"):
+        assert re.search(rf'id="{name}" class="[^"]*" data-model data-ai', html), name
+    assert "data-ai" not in re.search(r'<button[^>]*id="submit"[^>]*>', html).group(0) and "data-ai" not in re.search(r'<button[^>]*id="run"[^>]*>', html).group(0)  # 채점·실행은 AI가 아니다
+    assert "data-ai" not in re.search(r'id="start"[^>]*>', js).group(0) and "data-ai" not in re.search(r'id="result-tutor-hint"[^>]*>', js).group(0)
+    assert "보내면 AI가 읽어요" in html
+    assert '$("new-submit").toggleAttribute("data-ai", !EDIT && connected())' in js  # 새로 등록하며 AI가 연결됐을 때만
+    readme = (HERE.parent.parent / "README.md").read_text(encoding="utf-8")
+    note = re.search(r'<p id="cost-note"[^>]*>(.*?)</p>', html, re.S).group(1)
+    for amount in ("0.01달러", "0.014달러", "2026년 11월 16일"):
+        assert amount in note and amount in readme, amount  # README와 같은 실측 값
+    assert "사진은 ‘다음’을 누르면 글로 읽어 와요. AI가 연결돼 있으면 AI가 읽고(사용량이 들어요)" in html and "PDF와 글 파일은 AI를 쓰지 않아요" in html
+
+
+def report_terms() -> None:
+    """학습 보고서의 낱말 풀이와 할 일 하나(화면 코드 확인): 준비도·기준·출석·실전 신호를 한 줄로 풀고, 다음에 배울 주제의 첫 문제가 ‘이어서 풀기’와 같으면 따로 링크하지 않는다."""
+    js = (HERE / "app.js").read_text(encoding="utf-8")
+    for text in ("도움(튜터·힌트·해설) 없이 푼 기본 문제가 얼마나 쌓였는지 보는 단계예요.", "준비도 기준 보기(어떤 통과를 도움 없이 푼 것으로 세는지)", "앱을 연 날을 세요.",
+                 "실전 신호는 풀이 가이드가 짚어 준 단서예요.", "단계는 주제별로 익힌 정도로 정해져요.", "첫 줄이 위의 ‘이어서 풀기’와 같아요.", "모든 문제의 제출을 합친 수예요."):
+        assert text in js, text
+    import re
+    import shutil
+    node = shutil.which("node")
+    if not node:
+        return print("node가 없어 보고서 분기 시험은 건너뜀")
+    source = re.search(r"/\* report-pure:start.*?\*/(.*?)/\* report-pure:end \*/", js, re.S).group(1)
+    script = source + """
+const t = { id: "a" };
+console.log(JSON.stringify([focusTail({ next: { id: "a" } }, t), focusTail({ next: { id: "b" } }, t), focusTail({ next: null }, t), focusTail({ next: { id: "a" } }, null),
+  sideNext({ next: { id: "a", title: "A" } }, t), sideNext({ next: { id: "b", title: "B" } }, t), sideNext({ next: null }, t)]));
+"""
+    same, other, none, no_target, side_same, side_other, side_none = json.loads(subprocess.run([node, "-e", script], capture_output=True, text=True, check=True).stdout)
+    assert "첫 문제는 위의" in same and "끝낸 뒤" in other and none == "" and "끝낸 뒤" in no_target  # 같을 때만 ‘첫 문제는 위’, 다르면 링크 없이 순서만
+    assert side_same == "" and side_other == "‘이어서 풀기’를 끝낸 뒤: B" and side_none == ""
+    pure = js[js.index("const FAIL_WORD"):js.index("const when = ")] + source
+    script = pure + """
+const f = (o) => failTip(Object.entries({ failed: 0, runtime_error: 0, timeout: 0, compile_error: 0, ...o }));
+console.log(JSON.stringify([f({ failed: 1 }), f({ failed: 3 }), f({ failed: 3, timeout: 1 }), f({ failed: 2, timeout: 2 }),
+  nextNote([{ why: "쓰던 문제예요." }]), nextNote([{ why: "이어서 풀기" }]), nextNote([{ why: "도움 없이 다시 풀기('처음부터' 뒤 24시간이 지나 다시 풀면 인정)" }]), nextNote([{ why: "새 주제 시작" }])]));
+"""
+    one, only, most, tie, cont1, cont2, again, fresh = json.loads(subprocess.run([node, "-e", script], capture_output=True, text=True, check=True).stdout)
+    assert "가장 많아요" not in one and "한 번뿐" in one and "가장 많아요" not in only and "모두 ‘오답’" in only  # 한 종류뿐이면(1건이든 여럿이든) 가장 많다고 하지 않는다
+    assert "오답이 가장 많아요." in most and "같은 수" in tie  # 비교할 종류가 둘 이상일 때만
+    assert "위의 ‘이어서 풀기’와 같아요" in cont1 and "위의 ‘이어서 풀기’와 같아요" in cont2 and "이어서 풀기" not in again and "이어서 풀기" not in fresh  # 첫 줄이 이어서 풀기일 때만 그 말
+    src = (HERE / "server.py").read_text(encoding="utf-8")
+    watched = re.search(r"nextNote = \(nexts\) => \(nexts\[0\] && /\^\(([^)]*)\)/", js).group(1).split("|")  # nextNote가 보는 글머리
+    assert watched == ["쓰던 문제", "이어서 풀기"] and '"쓰던 문제예요."' in src and '(row["next"], row["name"], "이어서 풀기", row["key"])' in src  # 서버의 두 why 문구가 바뀌면 여기서 깨진다(같이 고칠 것)
+    assert '"쓰던 문제예요."'.strip('"').startswith(watched[0]) and "이어서 풀기".startswith(watched[1])
+    assert "focusTail(focus, target)" in js and "sideNext(x, target)" in js and 'href="#/p/${esc(focus.next.id)}"' not in js
+
+
+def early_solution_report() -> None:
+    """통과하기 전에 해설을 연 문제는 학습 보고서의 주제 줄(early_problems)과 ‘해설을 먼저 본 문제’ 칸에 보인다(해설 확인 창이 그렇게 알린다)."""
+    with server.tutor() as t:
+        before = t.store.study(PID)
+        t.store.set_study(PID, solution_at=server.now(), solution_before_pass=True)
+    try:
+        rows = {row["key"]: row for row in call("/api/report")[1]["themes"]}
+        mine = rows[FIRST["theme"]]
+        assert {"id": PID, "title": FIRST["title"]} in mine["early_problems"] and mine["solution_before_pass"] >= 1, mine
+    finally:
+        with server.tutor() as t:
+            t.store.set_study(PID, solution_at=before["solution_at"], solution_before_pass=before["solution_before_pass"])
+    js = (HERE / "app.js").read_text(encoding="utf-8")
+    assert "<h2>해설을 먼저 본 문제</h2>" in js and "d.themes.flatMap((t) => t.early_problems || [])" in js
+    assert "학습 보고서에 ‘해설을 먼저 봄’으로 남아요" in js  # 알림 문구와 같은 이름으로 보인다
+
+
+def case_arg_count() -> None:
+    """내 문제 넣기의 케이스 입력: 인자 수가 시작 코드(표 머리·적은 인자 이름·첫 줄)와 다르면 그 줄 아래에서 알리고, 입력 안내가 인자 목록 전체를 대괄호로 감싼다고 예와 함께 말한다(화면 코드 확인, 분기는 node로)."""
+    import re
+    import shutil
+    js, html = (HERE / "app.js").read_text(encoding="utf-8"), (HERE / "index.html").read_text(encoding="utf-8")
+    assert "인자 목록 전체를 대괄호로 감싸 적어요. 인자가 둘이면 [1, 2], 배열 하나가 인자면 [[1, 2, 3]]처럼 한 번 더 감싸요." in html and html.count("[[1, 2, 3]]") == 1
+    assert "리스트" not in html and "리스트" not in js  # 어느 언어로 푸는 사람에게도 보이는 입력 안내라 파이썬 낱말을 쓰지 않는다
+    assert "showCalls();" in js and "argNote(args.length, expectedArgs(row))" in js and ".case-call.warn" in (HERE / "app.css").read_text(encoding="utf-8")
+    node = shutil.which("node")
+    if not node:
+        return print("node가 없어 인자 수 안내 시험은 건너뜀")
+    source = re.search(r"/\* case-pure:start.*?\*/(.*?)/\* case-pure:end \*/", js, re.S).group(1)
+    script = source + "console.log(JSON.stringify([argNote(2, 2), argNote(4, 2), argNote(3, 1), argNote(1, 2), argNote(5, null)]));"
+    same, many, wrap, few, unknown = json.loads(subprocess.run([node, "-e", script], capture_output=True, text=True, check=True).stdout)
+    assert same == "" and unknown == ""  # 맞거나 기준이 없으면 말하지 않는다
+    assert "인자가 2개인데 4개로 읽혀요." in many and "[1, 2]처럼" in many and "[[1, 2]]" not in many
+    assert "인자가 1개인데 3개로 읽혀요." in wrap and "[[1, 2]]처럼 인자 목록 전체를 대괄호로 한 번 더 감싸요." in wrap and "인자가 2개인데 1개로" in few
+
+
+def way_info() -> None:
+    """푸는 방식 설명: 네 방식이 한 자료에서 나오고, ⓘ는 눌러 펴며(키보드·Esc), 잠긴 방식도 글이 읽히고 ⓘ가 열린다. 브라우저 동작은 화면 확인으로 본다."""
+    import re
+    js, css = (HERE / "app.js").read_text(encoding="utf-8"), (HERE / "app.css").read_text(encoding="utf-8")
+    table = js[js.index("const WAY_INFO = {"):js.index("const WAYS = ")]
+    for key in ("solo", "chair", "guide", "explain"):
+        row = re.search(rf"\b{key}: \{{(.*?)\}},\n", table, re.S).group(1)
+        assert all(f"{field}:" in row for field in ("name", "line", "needsAi", "does", "when", "ai", "ready")), key
+    assert "START = {\n  chair: [WAY_INFO.chair.name, WAY_INFO.chair.does" in js  # 시작 칸의 글도 같은 자료다
+    way = js[js.index("function renderWay()"):js.index("function renderTutor()")]
+    assert 'aria-disabled="true"' in way and "disabled" not in way.replace("aria-disabled", "")  # 잠가도 Tab이 닿는다
+    assert way.index('card("solo")') < way.index('card("chair")') < way.index('card("guide")')  # 도움이 적은 것부터
+    assert 'aria-expanded=' in js and 'S.wayInfo = null' in js and '.way-card[aria-disabled="true"]' in css
+    assert ".panes.railed .head-info { position: fixed" in css  # 접힌(150px) 칸에서는 머리의 설명을 칸 밖 겹침 상자로 띄운다
+    assert "way-card:disabled" not in css and not re.search(r"\.way-card\[aria-disabled[^}]*opacity", css)  # 잠긴 카드의 글은 흐리지 않는다
+
+
+def keyboard_gaps() -> None:
+    """키보드와 AI 표시의 남은 빈틈(화면 코드 확인, 긴 입력 접기는 node로): Esc 뒤 Shift+Tab, 기다리는 중 단추가 초점을 잃지 않음, 사진 읽기의 AI 표시, 긴 실패 입력 접기."""
+    import re
+    import shutil
+    js, css = (HERE / "app.js").read_text(encoding="utf-8"), (HERE / "app.css").read_text(encoding="utf-8")
+    assert 'if (e.key === "Shift") return;' in js and js.index('if (e.key === "Shift") return;') < js.index('if (e.key === "Escape") return void (ta._tabOut = true);')  # Shift를 누르는 것이 Esc 표시를 지우지 않는다
+    busy = js[js.index("function applyBusy()"):js.index('$("timer").textContent')]
+    assert 'el.setAttribute("aria-disabled", "true")' in busy and "el.disabled = false" in busy and "el.disabled = !!S.busy" not in js  # 기다림은 disabled가 아니라 aria-disabled
+    assert 'el.getAttribute("aria-disabled") === "true") return e.preventDefault();' in js and '.btn[aria-disabled="true"]' in css
+    focus = js[js.index("function focusAfter(el)"):js.index("document.addEventListener(\"focusin\"")]
+    assert 'put(next.slice(0, 1)' in focus and '$("status")' in focus and "now !== placed" in focus and 'placed === $("status") && now === placed' in focus and 'id="status"' in (HERE / "index.html").read_text(encoding="utf-8") and 'role="status" aria-live="polite" tabindex="-1"' in (HERE / "index.html").read_text(encoding="utf-8")  # 기다리는 동안은 다시 그려진 같은 단추나 상태 글에, 끝난 뒤 다시 그리기가 떨어뜨려도 한 번 더
+    assert '[$("start"), $("say"), $("p-title")] : [$("code"), $("p-title")]).find(focusable)' in js  # 방식 카드를 고른 뒤: 보이는 요소로
+    assert 'document.querySelector("dialog[open]")' in js and 'e.key === "Tab" && document.querySelector' in js  # 열린 창에서 Tab은 창 안에서만
+    assert '"<span data-ai></span>"' in js[js.index("function renderWay()"):js.index("function renderWay()") + 900]  # 연결돼 있을 때 AI를 쓰는 카드에도 AI 표시
+    assert '$("read-files").toggleAttribute("data-ai", connected() && FILES.some((x) => x.image))' in js
+    assert 'f.longs.map' in js and "전체 입력 보기" in js and "foldLong(m.text)" in js
+    node = shutil.which("node")
+    if not node:
+        return print("node가 없어 긴 입력 접기 시험은 건너뜀")
+    source = re.search(r"/\* long-pure:start.*?\*/(.*?)/\* long-pure:end \*/", js, re.S).group(1)
+    pairs = ", ".join(f"[{i}, {i + 1}]" for i in range(160))
+    script = source + f"const big = `solution([{pairs}]) 에서 틀려요`; const a = foldLong(big), b = foldLong('입력 `[1, 2]`은 작아요'), c = foldLong('긴 글 `' + 'x'.repeat(100) + '` 끝');" + "console.log(JSON.stringify([a, b, c]));"
+    a, b, c = json.loads(subprocess.run([node, "-e", script], capture_output=True, text=True, check=True).stdout)
+    assert len(a["text"]) < 120 and a["longs"] and a["longs"][0].startswith("[[0, 1]") and a["text"].endswith("틀려요")  # 160쌍은 앞만 남기고 전체는 따로
+    assert b == {"text": "입력 `[1, 2]`은 작아요", "longs": []}  # 짧으면 그대로
+    assert c["longs"] == ["`" + "x" * 100 + "`"] and c["text"].startswith("긴 글 `xxxx") and c["text"].endswith("` 끝")
+
+
+def settings_items() -> None:
+    """설정의 기본 언어: /api/prefs가 language를 받아 적고(모르는 언어는 거절), 다른 설정을 지우지 않으며, 다음에 처음 여는 문제의 언어가 된다. 모델 설정은 세 묶음으로 보이고 사용량 글에 숫자가 없다."""
+    import re
+    saved = server.read_json(server.PREFS_FILE, {})
+    try:
+        server.write_json(server.PREFS_FILE, {**saved, "stages": {"keep": "me"}, "scheme": "dark"})
+        assert call("/api/prefs", language="rust")[1]["language"] == "rust" and server.read_json(server.PREFS_FILE, {})["stages"] == {"keep": "me"}
+        assert server.read_json(server.PREFS_FILE, {})["scheme"] == "dark" and server.last_language() == "rust"
+        assert "고를 수 없는 언어" in refuses("/api/prefs", language="cobol") and server.last_language() == "rust"
+        assert refuses("/api/prefs")  # 보낸 것이 없으면 거절
+    finally:
+        server.write_json(server.PREFS_FILE, saved)
+    js = (HERE / "app.js").read_text(encoding="utf-8")
+    groups = js[js.index("const THEME_GROUPS = "):js.index("const EFFORT =")]
+    assert all(f'"{key}"' in groups for key in server.themes.THEMES) and not re.search(r"\d+\s*(원|달러|\$|토큰)", js[js.index("const THEME_HELP"):js.index("const EFFORT =")])
+
+
+def new_draft() -> None:
+    """내 문제 넣기: 걸음마다 기록을 쌓아 뒤로 가기가 앞 걸음으로 가고, 적던 글은 이 탭의 sessionStorage에만 둔다(서버나 localStorage로 나가지 않는다). 브라우저 동작은 화면 확인으로 본다."""
+    js = (HERE / "app.js").read_text(encoding="utf-8")
+    assert "history.pushState({ wstep: n }" in js and 'addEventListener("popstate"' in js
+    keep = js[js.index("function saveDraft()"):js.index("function restoreDraft()")]
+    assert "sessionStorage.setItem(DRAFT" in keep and "localStorage" not in keep and "api(" not in keep and "fetch(" not in keep
+    assert js.count("sessionStorage.removeItem(DRAFT)") >= 2 and "restoreDraft();" in js  # 비우면 지우고, 처음 열 때 되살린다
+
+
+def menu_and_title_note() -> None:
+    """더 보기 메뉴와 내 문제 넣기의 제목 안내(화면 코드 확인): 닫힌 메뉴는 클릭을 받지 않고 Tab으로 나가면 닫히며, 제목 칸 안내는 실제로 채웠을 때만 '첫 줄에서 채웠어요'라고 한다."""
+    js, css, html = (HERE / "app.js").read_text(encoding="utf-8"), (HERE / "app.css").read_text(encoding="utf-8"), (HERE / "index.html").read_text(encoding="utf-8")
+    assert ".more:not([open]) > .more-menu { display: none; }" in css
+    assert '$("more").addEventListener("focusout"' in js and "!$(\"more\").contains(e.relatedTarget)" in js
+    assert "function titleNote()" in js and js.count("titleNote();") >= 2 and "제목을 찾지 못했어요. 문제 이름을 직접 적어 주세요." in js
+    assert '<small id="new-title-note" class="hint">글의 첫 줄에서 채웠어요' not in html  # 처음 글에는 채웠다고 말하지 않는다
+
+
+def pane_widths() -> None:
+    """칸 너비: /api/prefs로 세 칸의 몫을 적고, 어긋난 값은 거절한다. 없으면(null) 기본 배치. 다른 설정은 지우지 않는다."""
+    import re
+    html = (HERE / "index.html").read_text(encoding="utf-8")
+    assert re.search(r'id="pane-problem".*?id="sep-problem" role="separator".*?id="pane-code".*?id="sep-tutor" role="separator".*?id="pane-tutor"', html, re.S)  # 칸 사이마다 손잡이(DOM 차례가 Tab 차례)
+    saved = server.read_json(server.PREFS_FILE, {})
+    server.write_json(server.PREFS_FILE, {**saved, "language": "javascript", "stages": {"keep": "me"}})  # 다른 설정이 같이 남는지 보려고 심는다
+    try:
+        assert call("/api/accounts")[1]["panes"] is None  # 고르지 않았으면 기본 배치
+        for bad in ({}, {"panes": []}, {"panes": [30, 30]}, {"panes": [26, 38, 36, 0]}, {"panes": [4, 50, 46]}, {"panes": [26, 91, -17]}, {"panes": [20, 30, 30]}, {"panes": [40, 40, 40]},
+                    {"panes": ["26", "38", "36"]}, {"panes": [True, 50, 49]}, {"panes": [None, 50, 50]}, {"panes": "26,38,36"}, {"panes": {"a": 1}}, {"panes": float("nan")}, {"panes": [float("nan"), 50, 50]}, {"panes": 100}):
+            assert "칸 너비" in refuses("/api/prefs", **bad), bad
+        assert "panes" not in server.read_json(server.PREFS_FILE, {})  # 거절한 값은 적히지 않는다
+        got = call("/api/prefs", panes=[26.1, 38.3, 35.6])[1]
+        assert got["panes"] == [26.1, 38.3, 35.6] and server.read_json(server.PREFS_FILE, {})["panes"] == [26.1, 38.3, 35.6] and call("/api/accounts")[1]["panes"] == [26.1, 38.3, 35.6]
+        assert call("/api/prefs", panes=[26, 38, 36])[1]["panes"] == [26.0, 38.0, 36.0]  # 정수도 받는다
+        assert call("/api/prefs", panes=[25.834, 37.751, 36.42])[1]["panes"] == [25.83, 37.75, 36.42]  # 소수 둘째 자리로 적는다
+        assert call("/api/prefs", panes=[5, 90, 5])[1]["panes"] == [5.0, 90.0, 5.0] and call("/api/prefs", panes=[33.33, 33.33, 33.34])[1]["panes"] == [33.33, 33.33, 33.34]  # 끝값과 합 100
+        server.write_json(server.PREFS_FILE, {**server.read_json(server.PREFS_FILE, {}), "panes": [1, 2]})  # 손으로 고친 이상한 값은 기본으로 본다
+        assert call("/api/accounts")[1]["panes"] is None
+        call("/api/prefs", panes=[26.1, 38.3, 35.6])
+        assert call("/api/prefs", panes=None)[1]["panes"] is None  # null은 기본으로 돌린다
+        both = call("/api/prefs", scheme="dark", panes=[26.1, 38.3, 35.6])[1]  # 둘을 한 번에 보내도 되고, 하나만 보내면 다른 하나는 그대로다
+        assert both["scheme"] == "dark" and both["panes"] == [26.1, 38.3, 35.6]
+        assert call("/api/prefs", panes=None)[1]["scheme"] == "dark" and call("/api/prefs", scheme="light")[1]["panes"] is None
+        call("/api/prefs", panes=[26.1, 38.3, 35.6])
+        assert call("/api/prefs", scheme="system")[1]["panes"] == [26.1, 38.3, 35.6] and "scheme" not in server.read_json(server.PREFS_FILE, {})
+        assert "칸 너비" in refuses("/api/prefs", scheme="dark", panes=[1, 2])  # 하나가 어긋나면 다른 하나도 적지 않는다
+        assert server.read_json(server.PREFS_FILE, {}).get("scheme") is None
+        call("/api/prefs", panes=None)
+        kept = server.read_json(server.PREFS_FILE, {})
+        assert "panes" not in kept and kept["language"] == "javascript" and kept["stages"] == {"keep": "me"}  # 다른 설정은 그대로
+    finally:
+        server.write_json(server.PREFS_FILE, saved)
+
+
+def scheme_setting() -> None:
+    """화면 색: /api/prefs로 저장하고, 서버가 첫 HTML에 저장한 값을 실어 첫 그림 전에 맞춘다."""
+    import threading
+    from http.client import HTTPConnection
+
+    httpd = server.ThreadingHTTPServer(("127.0.0.1", 0), server.Handler)
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+
+    def first_page() -> str:
+        conn = HTTPConnection("127.0.0.1", httpd.server_port, timeout=60)
+        conn.request("GET", "/")
+        page = conn.getresponse().read().decode("utf-8")
+        conn.close()
+        return page
+
+    assert [f'name="scheme" value="{value}"' in first_page() for value in ("system", "light", "dark")] == [True] * 3  # 설정 창의 라디오 셋
+    saved = server.read_json(server.PREFS_FILE, {})
+    server.write_json(server.PREFS_FILE, {**saved, "language": "javascript", "stages": {"keep": "me"}})  # 다른 설정이 같이 남는지 보려고 심는다
+    try:
+        assert call("/api/accounts")[1]["scheme"] == "system" and 'data-scheme-pref="system"' in first_page()  # 고르지 않았으면 운영체제를 따른다
+        for bad in ({}, {"scheme": "sepia"}, {"scheme": ""}, {"scheme": None}, {"scheme": ["dark"]}, {"scheme": 1}):
+            assert "화면 색" in refuses("/api/prefs", **bad), bad
+        assert "scheme" not in server.read_json(server.PREFS_FILE, {})  # 거절한 값은 적히지 않는다
+        for scheme in ("dark", "light"):
+            assert call("/api/prefs", scheme=scheme)[1]["scheme"] == scheme
+            assert server.read_json(server.PREFS_FILE, {})["scheme"] == scheme and call("/api/accounts")[1]["scheme"] == scheme
+            page = first_page()
+            assert f'<html lang="ko" data-scheme-pref="{scheme}">' in page
+            assert 'data-scheme-pref="system"' in (HERE / "index.html").read_text(encoding="utf-8")  # 파일은 그대로, 내보낼 때만 바꾼다
+            assert page.index("applyScheme(") < page.index('href="app.css"')  # 적용하는 스크립트가 스타일시트보다 앞이다
+        server.write_json(server.PREFS_FILE, {**server.read_json(server.PREFS_FILE, {}), "scheme": "<x>"})  # 손으로 고친 이상한 값은 system으로 본다
+        assert call("/api/accounts")[1]["scheme"] == "system" and 'data-scheme-pref="system"' in first_page()
+        call("/api/prefs", scheme="dark")
+        assert call("/api/prefs", scheme="system")[1]["scheme"] == "system"
+        kept = server.read_json(server.PREFS_FILE, {})
+        assert "scheme" not in kept and kept["language"] == "javascript" and kept["stages"] == {"keep": "me"}  # system은 키를 지우고 다른 설정은 그대로
+    finally:
+        server.write_json(server.PREFS_FILE, saved)
+        httpd.shutdown()
+        httpd.server_close()
+
+
+def window_background() -> None:
+    """창 바탕색: 고른 색을 따르고, 시스템 설정대로일 때 운영체제를 읽지 못하면 밝은 바탕으로 연다."""
+    import types
+    from unittest.mock import MagicMock
+
+    sys.modules.setdefault("webview", types.ModuleType("webview"))  # pywebview 없이 함수만 부른다
+    import window
+
+    saved = server.read_json(server.PREFS_FILE, {})
+    out = lambda text: SimpleNamespace(stdout=text)  # noqa: E731
+    try:
+        with patch.object(window.sys, "platform", "darwin"):
+            with patch.object(window.subprocess, "run", return_value=out("Dark\n")):
+                assert window.os_dark() is True
+            with patch.object(window.subprocess, "run", return_value=out("")):  # 라이트 운영체제는 값이 없어 빈 글이 온다
+                assert window.os_dark() is False
+            with patch.object(window.subprocess, "run", side_effect=OSError("defaults 없음")):  # 읽지 못함: 밝게
+                assert window.os_dark() is False
+            with patch.object(window.subprocess, "run", side_effect=subprocess.TimeoutExpired("defaults", 3)):
+                assert window.os_dark() is False
+        with patch.object(window.sys, "platform", "linux"):  # 읽는 길이 없는 운영체제
+            assert window.os_dark() is False
+        for scheme, dark_os, want in (("dark", False, "#111113"), ("light", True, "#F5F5F7"), ("system", True, "#111113"), ("system", False, "#F5F5F7")):
+            server.write_json(server.PREFS_FILE, {**saved, **({} if scheme == "system" else {"scheme": scheme})})
+            with patch.object(window, "os_dark", MagicMock(return_value=dark_os)):
+                assert window.background() == want, (scheme, dark_os)
+        server.write_json(server.PREFS_FILE, {**saved, "scheme": "<x>"})  # 이상한 저장 값은 system으로 본다
+        with patch.object(window, "os_dark", MagicMock(return_value=False)):
+            assert window.background() == "#F5F5F7"
+    finally:
+        server.write_json(server.PREFS_FILE, saved)
+
+
+def pane_fit() -> None:
+    """칸 너비 계산(app.js의 paneNext)이 어떤 창 너비·몫·글쇠에서도 서버가 받는 범위(각각 5~90, 합 99~101)의 값만 내는지 본다.
+    혼자 풀기에서 남은 몫을 코드와 튜터로 나누는 길과 아주 넓은 창에서 최소 너비에 걸린 길을 모두 지난다."""
+    import re
+    import shutil
+    node = shutil.which("node")
+    if not node:
+        return print("node가 없어 칸 너비 계산 시험은 건너뜀")
+    source = re.search(r"/\* pane-pure:start.*?\*/(.*?)/\* pane-pure:end \*/", (HERE / "app.js").read_text(encoding="utf-8"), re.S).group(1)
+    script = source + """
+let seed = 7;
+const rnd = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
+const out = [];
+const triple = () => { const a = rnd() * 100, b = rnd() * (100 - a); return [a, b, 100 - a - b].sort(() => rnd() - 0.5); }; // 범위 밖 몫도 섞는다(아주 넓은 창에서 보이는 너비로 다시 잡은 값)
+for (let n = 0; n < 4000; n++) {
+  const left = rnd() < 0.5 ? 0 : 1, railed = left === 0 && rnd() < 0.5, span = 500 + rnd() * 12000, shares = n % 3 ? triple() : [25.83, 37.75, 36.42];
+  const right = railed ? [1, 2] : [left + 1];
+  const b = { left, right, shares, span, min: left === 0 ? [260, 390] : [rnd() < 0.5 ? 390 : 320, rnd() < 0.5 ? 370 : 300], sum: shares[left] + right.reduce((x, i) => x + shares[i], 0) };
+  for (const want of [0, Infinity, -1e9, rnd() * span, b.min[0], span - b.min[1]]) out.push([left, railed, want === Infinity ? 1e12 : want, paneNext(b, want)]);
+}
+// 혼자 풀기에서 문제 칸을 끝까지: 남은 몫을 나누어도 튜터 몫이 5 아래로 가지 않고, 끈 칸(문제)은 그대로다
+const repro = paneNext({ left: 0, right: [1, 2], shares: [10.37, 74.88, 14.75], span: 2000, min: [260, 390], sum: 100 }, 1e12);
+console.log(JSON.stringify({ out, repro }));
+"""
+    got = json.loads(subprocess.run([node, "-e", script], capture_output=True, text=True, check=True).stdout)
+    assert len(got["out"]) == 4000 * 6
+    bad = [row for row in got["out"] if not server.panes_ok(row[3])]
+    assert not bad, bad[:3]
+    assert server.panes_ok(got["repro"]) and got["repro"][0] == 80.5 and got["repro"][2] >= 5, got["repro"]
+
+
 def stages() -> None:
     """과정별 모델: 급과 추론 정도를 고르면 저장되고 바로 쓰인다. 빈 값은 기본값. 모르는 과정·급·정도는 거절한다.
     예전 설정(테마별 모델 이름, Grok·OpenRouter 키)은 조용히 옮기거나 버린다."""
@@ -1708,9 +2697,9 @@ def stages() -> None:
     rows = {row["key"]: row for row in call("/api/accounts")[1]["themes"]}
     assert list(rows) == ["read", "guide", "blocks", "talk", "judge", "explain", "feedback", "debug"]
     assert {key: (row["default_tier"], row["default_effort"]) for key, row in rows.items()} == {
-        "read": ("middle", "high"), "guide": ("middle", "high"), "blocks": ("middle", "high"), "talk": ("small", "low"),
+        "read": ("middle", "high"), "guide": ("small", "high"), "blocks": ("small", "high"), "talk": ("small", "low"),
         "judge": ("small", "low"), "explain": ("small", "medium"), "feedback": ("small", "medium"), "debug": ("small", "medium")}
-    assert (rows["guide"]["model"], rows["guide"]["model_label"], rows["talk"]["model_label"]) == ("claude/claude-sonnet-5-5", "Sonnet 5.5", "Haiku 5.5")
+    assert (rows["read"]["model"], rows["read"]["model_label"], rows["guide"]["model_label"]) == ("claude/claude-sonnet-5-5", "Sonnet 5.5", "Haiku 5.5")
     assert [tier["label"] for tier in call("/api/accounts")[1]["tiers"]] == ["Haiku 5.5", "Sonnet 5.5", "Opus 5.5"]
     got = call("/api/theme", theme="talk", tier="middle", effort="medium")[1]
     assert {row["key"]: (row["tier"], row["effort"], row["model"]) for row in got["themes"]}["talk"] == ("middle", "medium", "claude/claude-sonnet-5-5")
@@ -1741,10 +2730,9 @@ def stages() -> None:
     call("/api/theme", theme="read", tier="", effort=""), call("/api/theme", theme="guide", tier="", effort=""), call("/api/theme", theme="blocks", tier="", effort=""), call("/api/theme", theme="talk", tier="", effort="")
     assert all(row["tier"] == row["default_tier"] and row["effort"] == row["default_effort"] for row in call("/api/accounts")[1]["themes"])
 
-    # keys.json의 값이 글이 아니면 그 항목만 건너뛰고, 걷어 낸 공급자의 키(Grok·OpenRouter)는 읽지 않는다(프로젝트의 .env는 읽지 않게 바꿔 끼운다)
+    # keys.json의 값이 글이 아니면 그 항목만 건너뛰고, 걷어 낸 공급자의 키(Grok·OpenRouter)는 읽지 않는다
     server.write_json(server.KEY_FILE, {"OPENAI_API_KEY": 123, "XAI_API_KEY": "xai-test", "OPENROUTER_API_KEY": "or-test"})
-    with patch.object(server, "ROOT", TMP):
-        server.load_keys()
+    server.load_keys()
     assert not {"OPENAI_API_KEY", "XAI_API_KEY", "OPENROUTER_API_KEY"} & set(os.environ)
     assert set(call("/api/accounts")[1]["keys"]) == {"claude", "openai"} and not call("/api/accounts")[1]["connected"]
 
@@ -1780,7 +2768,7 @@ def newest_models() -> None:
         with patch.object(messages, "models", listing):
             call("/api/accounts"), wait()
             body = call("/api/accounts")[1]  # 같은 프로세스에서는 다시 받지 않는다
-            assert len(asked) == 2 and {row["key"]: row["model_label"] for row in body["themes"]}["guide"] == "Sonnet 5.6", asked
+            assert len(asked) == 2 and {row["key"]: row["model_label"] for row in body["themes"]}["read"] == "Sonnet 5.6", asked
             assert {row["key"]: row["model_label"] for row in body["themes"]}["talk"] == "Haiku 5.5"  # 날짜 붙은 이름은 건너뛴다
             saved = server.read_json(server.MODELS_FILE, {})["claude"]
             assert saved["names"]["sonnet"] == "claude-sonnet-5-6"
@@ -1929,7 +2917,7 @@ def cross_cases() -> None:
     assert not [case for case in hidden if "5000" in case["input"]]  # 제한사항(원소 1,000 이하)을 어긴 입력은 버렸다
     row = next(row for row in call("/api/problems")[1]["problems"] if row["id"] == pid)
     assert (row["verified"], row["verified_name"], row["check"]["hidden"], row["check"]["efficiency"], row["check"]["calls"], row["check"]["tiers"]) == (
-        "all", "예시와 자동 테스트 모두 통과", len(hidden), 1, 2, ["middle"]), row
+        "all", "예시와 자동 테스트 모두 통과", len(hidden), 1, 2, ["small"]), row
     state = call("/api/state", id=pid)[1]["problem"]
     assert len(state["own_cases"]) == 1 and state["cases"] == {"example": 1, "accuracy": len(hidden), "efficiency": 1}  # 수정 화면에는 내가 넣은 케이스만
     wrong = "def solution(numbers):\n    if len(numbers) == 1:\n        return 0\n    return sum(numbers)"  # 공개 예시는 통과한다
@@ -1993,9 +2981,298 @@ def build_only() -> None:
     assert run("--only", "hash/1_popular_shelf", "--no-langs").returncode == 0
     assert next(row for row in json.loads(out.read_text(encoding="utf-8")) if row["id"] == FIRST["id"])["languages"] == ["python"]
     assert run("--only", "hash/없는_폴더").returncode == 2 and run("--only").returncode == 2
+    # 글이 바뀌어 ready.json의 출처 값이 맞지 않으면 모델 없이는 가이드를 못 만든다: 그 문제와 까닭을 알리고 0이 아닌 코드로 끝난다
+    import shutil
+    root = TMP / "stale_root"
+    shutil.copytree(HERE / "problems" / "hash" / "1_popular_shelf", root / "hash" / "1_popular_shelf")
+    folder = root / "hash" / "1_popular_shelf"
+    changed = json.loads((folder / "problem.json").read_text(encoding="utf-8"))
+    changed["statement"] += " 입력은 항상 올바릅니다."
+    (folder / "problem.json").write_text(json.dumps(changed, ensure_ascii=False), encoding="utf-8")
+    stale = subprocess.run([sys.executable, "-c", f"import sys; sys.path.insert(0, {str(HERE)!r}); import make_builtin as m; from pathlib import Path; m.ROOT = Path({str(root)!r}); "
+                            f"sys.exit(m.build(['--no-model', '--no-check', '--no-langs', '--only', 'hash/1_popular_shelf', '--out', {str(TMP / 'stale.json')!r}]))"], capture_output=True, text=True)
+    assert stale.returncode == 1 and "hash/1_popular_shelf" in stale.stderr and "출처 값" in stale.stderr, (stale.returncode, stale.stderr)
+    (folder / "ready.json").unlink()  # 키 없이 넣은 새 문제처럼 ready.json이 아예 없으면 알리기만 하고 실패로 끝나지 않는다
+    fresh = subprocess.run(stale.args, capture_output=True, text=True)
+    assert fresh.returncode == 0 and "알림 hash/1_popular_shelf" in fresh.stderr and "실패" not in fresh.stderr, (fresh.returncode, fresh.stderr)
+
+
+def neutral_notes() -> None:
+    """기본 문제 해설(단서의 뜻·익힌 것·흔한 실수·사다리)은 언어마다 갈리지 않으니 한 언어에만 있는 낱말(KeyError, 딕셔너리, heapq 등)이 없어야 한다."""
+    import problemkit
+    found = [f"{row['id']}: {line}" for row in ROWS for line in problemkit.language_bound(row)]
+    assert not found, found
+    for saved in sorted((HERE / "problems").glob("*/*/ready.json")):  # 풀이 가이드·블록 힌트도 같다(FIRST의 ready는 아래에서 손으로 바뀌므로 파일을 읽는다)
+        found += [f"{saved.parent.name}: {line}" for line in problemkit.ready_bound(json.loads(saved.read_text(encoding="utf-8"))["ready"])]
+        found += [f"{saved.parent.name}: {line}" for line in problemkit.guide_names(problemkit.load(saved.parent), json.loads(saved.read_text(encoding="utf-8"))["ready"])]
+    assert not found, found
+    for word in ("steps 딕셔너리에 담는다", "빈 리스트를 만든다", "mid // 2로 나눈다", "heapq에서 꺼낸다"):
+        assert problemkit.ready_bound({"solution": {"steps": [word], "code": "d = {}"}, "plan": {"blocks": [{"hints": [], "reference": "x // 2"}]}}), word
+        assert problemkit.ready_bound({"plan": {"blocks": [{"hints": [word]}]}}), word
+    assert not problemkit.ready_bound({"solution": {"code": "x = dict()  # 딕셔너리"}, "plan": {"blocks": [{"reference": "a // b"}]}})  # 코드 칸은 보지 않는다
+    names = {"statement": "solution 함수. best_size를 구한다", "limits": [], "params": [{"name": "left_over"}], "files": {f"solution.{problemkit.EXT[lang]}": "best_size" for lang in problemkit.GUIDE_LANGS}}
+    assert not problemkit.guide_names(names, {"solution": {"steps": ["best_size와 left_over를 본다"]}})  # 다섯 언어에 다 있는 이름·문제 글의 이름은 통과
+    assert not problemkit.guide_names({**names, "files": {}}, {"solution": {"steps": ["left_over와 best_size를 본다"]}})  # 문제 글에 있으면 풀이가 없어도 통과
+    assert len(problemkit.guide_names({**names, "files": {**names["files"], "solution.java": "bestSize"}, "statement": "x"}, {"solution": {"clues": ["best_size를 쓴다"]}})) == 1  # 한 언어에 없으면 실패
+    assert len(problemkit.guide_names(names, {"solution": {"approach": "result가 None이면 True로 둔다"}})) == 2  # 파이썬 전용 값
+    bad = {"learn": "x", "pattern": "x", "ladder": "x", "pitfalls": ["count[k] += 1에서 KeyError가 난다"], "signals": [{"means": "딕셔너리에 넣는다"}]}
+    assert len(problemkit.language_bound(bad)) == 2  # 걸러야 할 글은 실제로 걸린다
+    for word in ("KeyError가 난다", "heapq에서 꺼낸다", "dict로 센다", "int에 담는다", "IndexError가 난다", "long으로 더한다"):  # 한글 조사가 붙은 낱말도 걸린다
+        assert problemkit.language_bound({**bad, "pitfalls": [word], "signals": [{"means": "x"}]}), word
+
+
+def lang_traps() -> None:
+    """언어 함정(채점기 없이 보는 것과 Python 하나만 돌리는 것): 저장소의 목록과 증명 파일이 검사를 통과하고, 묶음은 실을 언어의 함정만 싣는다.
+    걸러야 할 것(목록에 없는 id, 문제 글에 없는 구절, 쓰지 않는 목록 항목, 바꾼 줄에 함정 표시가 없음, 다른 실수에 이름만 붙임, 너무 많이 넣거나 지움,
+    흔한 낱말로만 된 닻, 통과해 버리는 증명 풀이, 본문·케이스가 바뀐 뒤의 lang.json)이 걸린다."""
+    import shutil
+    import problemkit
+    listed = problemkit.traps()
+    assert problemkit.trap_list_check() == [] and listed and all(len(rows) <= problemkit.TRAP_MAX for rows in listed.values())
+    found = []
+    for folder in problemkit.folders([str(HERE / "problems")]):
+        problem = problemkit.load(folder)
+        found += [f"{folder.name}: {line}" for line in problemkit.lang_check(problem, listed) + problemkit.lang_frozen(problem)]
+    assert not found, found
+    text = {row["id"]: row for rows in listed.values() for row in rows}
+    shipped = 0
+    for row in ROWS:  # 시험 묶음은 --no-langs라 Python 함정만 실린다. 글은 목록에서, 떨어진 케이스는 lang.json에서
+        path = HERE / "problems" / row["theme"] / row["id"].removeprefix(row["theme"] + "_") / "lang.json"
+        frozen = json.loads(path.read_text(encoding="utf-8")).get("python", []) if path.is_file() else []
+        mine = (row.get("traps") or {}).get("python", [])
+        assert set(row.get("traps") or {}) <= {"python"} and [trap["id"] for trap in mine] == [trap["trap"] for trap in frozen], row["id"]
+        assert all(trap["what"] == text[trap["id"]]["what"] and trap["fix"] == text[trap["id"]]["fix"] and (trap.get("fails") or trap.get("varies")) for trap in mine), row["id"]
+        # 튜터가 후보를 거르는 이름: 증명 검사와 같게 흔한 낱말과 한 글자는 뺀다
+        assert all(trap[key] == [term for term in text[trap["id"]][key] if problemkit.anchor(term)] for trap in mine for key in ("code", "right")), row["id"]
+        assert all(isinstance(trap["right_base"], int) and (trap["code"] or trap.get("varies") or trap["right_base"] > 0) for trap in mine), row["id"]  # 정답 풀이에 고친 꼴의 이름이 있다
+        assert [trap.get("outs") for trap in mine] == [trap.get("outs") for trap in frozen], row["id"]  # 틀린 답의 돌려준 값도 싣는다
+        shipped += len(mine)
+    assert shipped >= 5, shipped
+    js = (HERE / "app.js").read_text(encoding="utf-8")  # 해설 상자의 꼬리말은 뜻이 드러나는 말이다(내부 참조처럼 '문제 글:'로 쓰지 않는다)
+    assert "<small>이 문제에서 걸리는 곳: ${x.at" in js and "<small>문제 글: ${x.at" not in js
+    for language, rows in listed.items():  # 결과가 정해지지 않은 동작의 함정은 떨어진 케이스 목록을 얼리지 않는다
+        for path in sorted((HERE / "problems").glob("*/*/lang.json")):
+            for row in json.loads(path.read_text(encoding="utf-8")).get(language, []):
+                assert ("varies" in row) == bool(text[row["trap"]].get("varies")) and ("fails" in row) != ("varies" in row) and "skipped" not in (row.get("fails") or {}).values(), row
+                # 틀린 답(failed)의 케이스마다 돌려준 값을 얼린다(같은 케이스에서 다른 값으로 틀리는 다른 버그와 가른다)
+                assert set(row.get("outs") or {}) == {cid for cid, status in (row.get("fails") or {}).items() if status == "failed"}, row
+
+    root = TMP / "trap-root"  # 본보기 문제의 사본에서 걸러야 할 것을 하나씩 넣어 본다
+    copy = root / "hash" / "1_popular_shelf"
+    shutil.copytree(HERE / "problems" / "hash" / "1_popular_shelf", copy)
+    good = (copy / "lang_1.py").read_text(encoding="utf-8")
+    solution = (copy / "solution.py").read_text(encoding="utf-8")
+    body = good.split("\n", 1)[1]
+
+    def check(text: str, name: str = "lang_1.py", folder=copy) -> str:
+        (folder / name).write_text(text, encoding="utf-8")
+        return "\n".join(problemkit.lang_check(problemkit.load(folder), listed))
+
+    assert check(good) == ""
+    assert "목록에 없다" in check("# 언어 함정: python.no_such_trap\n" + body)
+    assert "글자 그대로 없다" in check('# 언어 함정: python.missing_key @ "문제 글에 없는 말"\n' + body)
+    assert check('# 언어 함정: python.missing_key @ "제목이 같으면 같은 책" "k번째로 빌려지는"\n' + body) == ""  # 구절은 둘까지
+    assert "첫 줄이" in check('# 언어 함정: python.missing_key @ "책" "책" "책"\n' + body)
+    assert "첫 줄이" in check("// 언어 함정: python.missing_key\n" + body) and "첫 줄이" in check(body)
+    assert "정답 풀이와 같다" in check("# 언어 함정: python.missing_key\n" + solution)
+    assert "표시가 없다" in check("# 언어 함정: python.missing_key\n" + solution.replace("shelf = []", "shelf = list()"))  # 함정과 상관없는 줄만 바꿨다
+    assert "넣은 줄 8개" in check("# 언어 함정: python.missing_key\n" + body.replace("    return shelf", "".join(f"    x{n} = {n}\n" for n in range(7)) + "    return shelf"))
+    gutted = "def solution(loans, k):\n    return []\n"  # 거의 다 지우고 남긴 풀이: 지운 줄도 상한이 있다
+    assert "지운 줄 7개" in check("# 언어 함정: python.missing_key\n" + gutted)
+    for n in (2, 3, 4):
+        (copy / f"lang_{n}.py").write_text(good, encoding="utf-8")
+    many = check(good)
+    assert "4개다(3개까지)" in many and "같은 함정" in many
+    for n in (2, 3, 4):
+        (copy / f"lang_{n}.py").unlink()
+    check(good)
+    # 다른 실수(최대 힙)에 넘침 함정의 이름만 붙이면 걸린다: 지운 줄의 right(long long)가 넣은 줄에도 남아 있다
+    heap = root / "heap" / "1_snowball_merge"
+    shutil.copytree(HERE / "problems" / "heap" / "1_snowball_merge", heap)
+    max_heap = (heap / "lang_1.cpp").read_text(encoding="utf-8").split("\n", 1)[1]
+    assert check("// 언어 함정: cpp.max_heap\n" + max_heap, "lang_1.cpp", heap) == ""
+    assert "표시가 없다" in check("// 언어 함정: cpp.int_overflow\n" + max_heap, "lang_1.cpp", heap)
+    # 지운 줄로만 증명하는 함정도 지운 것이 그 함정이어야 한다(음수 번호를 거르는 조건을 남기고 다른 줄을 지웠다)
+    dfs = root / "dfs" / "3_folder_size"
+    shutil.copytree(HERE / "problems" / "dfs" / "3_folder_size", dfs)
+    other = (dfs / "solution.py").read_text(encoding="utf-8").replace("        if size >= limit:\n            count += 1\n", "        count += 1\n")
+    assert "표시가 없다" in check("# 언어 함정: python.negative_index\n" + other, "lang_2.py", dfs)
+    # 모양 식(shape): 증명 풀이에는 맞고 정답 풀이에는 맞지 않아야 한다(앞으로 도는 size_t 반복은 그 실수가 아니다)
+    shutil.copy(HERE / "problems" / "dfs" / "3_folder_size" / "lang_2.py", dfs / "lang_2.py")
+    unsigned = (dfs / "lang_1.cpp").read_text(encoding="utf-8")
+    assert check(unsigned, "lang_1.cpp", dfs) == ""
+    forward = unsigned.replace("for (size_t i = order.size() - 1; i >= 0; i--)", "for (size_t i = 0; i < order.size(); i++)")
+    assert forward != unsigned and "모양 식" in check(forward, "lang_1.cpp", dfs)
+    check(unsigned, "lang_1.cpp", dfs)
+    # 얼린 lang.json에 틀린 답의 돌려준 값이 빠지면 낡은 것이다
+    saved_lang = (dfs / "lang.json").read_text(encoding="utf-8")
+    assert problemkit.lang_frozen(problemkit.load(dfs)) == []
+    stale = json.loads(saved_lang)
+    stale["python"] = [{key: value for key, value in row.items() if key != "outs"} for row in stale["python"]]
+    (dfs / "lang.json").write_text(json.dumps(stale, ensure_ascii=False), encoding="utf-8")
+    assert problemkit.lang_frozen(problemkit.load(dfs))
+    (dfs / "lang.json").write_text(saved_lang, encoding="utf-8")
+    dfs_cases = problemkit.frozen_cases(problemkit.load(dfs))
+    ran = problemkit.lang_run(problemkit.load(dfs), dfs_cases, ["python"], problemkit.saved_limits(problemkit.load(dfs)), listed)[0]["python"]
+    assert [row.get("outs") for row in ran] == [row.get("outs") for row in json.loads(saved_lang)["python"]], ran  # 다시 돌려도 같은 값
+
+    # 목록: 쓰는 증명 파일이 없는 항목, 글의 규칙, 흔한 낱말만 있는 닻, 객체가 아닌 항목, 상한
+    row = dict(text["python.missing_key"])
+    assert problemkit.trap_list_check({"python": [row]}, root) == []
+    assert "증명하는 파일" in "\n".join(problemkit.trap_list_check({"python": [row, {**row, "id": "python.unused"}]}, root))
+    for bad, words in (({"what": "백틱이 없는 글"}, "백틱"), ({"what": "`KeyError`가 나요. setdefault로"}, "고치는 이름"), ({"fix": "가" * 81}, "81자"),
+                       ({"id": "java.missing_key"}, "id는"), ({"right": []}, "대안 이름 목록"), ({"code": "+= 1"}, "이름 목록"), ({"varies": False}, "varies"),
+                       ({"code": ["*", "/"], "right": ["for", "int", "get"]}, "닻으로 쓸 이름이 없다"), ({"shape": "("}, "정규식이 아니다"), ({"shape": 3}, "정규식이 아니다")):
+        assert words in "\n".join(problemkit.trap_list_check({"python": [{**row, **bad}]}, root)), bad
+    assert "칸은" in "\n".join(problemkit.trap_list_check({"python": [row, "글 하나", 3]}, root))  # 객체가 아닌 항목에 죽지 않는다
+    assert problemkit.trap_list_check([]) and "13개다" in "\n".join(problemkit.trap_list_check({"python": [row] + [{**row, "id": f"python.more_{n}"} for n in range(12)]}, root))
+
+    # 실행: 증명 풀이가 떨어진 케이스와 상태를 남기고(건너뜀은 빼고), 모두 통과하는 풀이는 걸린다(Python 채점기만 쓴다)
+    problem, cases = problemkit.load(copy), problemkit.frozen_cases(problemkit.load(copy))
+    rows, more = problemkit.lang_run(problem, cases, ["python"], {}, listed)
+    assert more == [] and rows["python"][0]["trap"] == "python.missing_key" and set(rows["python"][0]["fails"].values()) == {"runtime_error"}, (rows, more)
+    varied = {"python": [{**row, "varies": True}]}  # 결과가 정해지지 않은 동작의 함정이면 떨어졌다는 것만 남긴다
+    assert problemkit.lang_run(problem, cases, ["python"], {}, varied)[0]["python"][0] == {"file": "lang_1.py", "trap": "python.missing_key", "at": ["제목이 같으면 같은 책입니다"], "varies": True}
+    (copy / "lang_1.py").write_text("# 언어 함정: python.missing_key\n" + solution, encoding="utf-8")
+    rows, more = problemkit.lang_run(problemkit.load(copy), cases, ["python"], {}, listed)
+    assert rows == {} and "모든 케이스를 통과한다" in more[0], more
+    # lang.json: 이번에 돌리지 않은 언어는 지난 값을 두고, 지운 파일이나 본문·케이스가 바뀐 파일의 행은 뺀다
+    (copy / "lang_1.py").write_text(good, encoding="utf-8")
+    cases_text = (copy / "cases.json").read_text(encoding="utf-8")
+    before = json.loads((copy / "lang.json").read_text(encoding="utf-8"))
+    fresh = {"python": [{key: value for key, value in before["python"][0].items() if key != "source"}]}
+    problemkit.write_lang(problemkit.load(copy), fresh, ["python"], cases_text)
+    assert json.loads((copy / "lang.json").read_text(encoding="utf-8")) == before and problemkit.lang_frozen(problemkit.load(copy)) == []
+    (copy / "cases.json").write_text(cases_text.replace('"id": "1"', '"id": "1" ', 1), encoding="utf-8")
+    assert problemkit.lang_frozen(problemkit.load(copy))  # 케이스가 바뀌었는데 다시 돌리지 않았다
+    (copy / "cases.json").write_text(cases_text, encoding="utf-8")
+    (copy / "lang_1.js").write_text((copy / "lang_1.js").read_text(encoding="utf-8") + "\n// 고친 본문\n", encoding="utf-8")
+    assert problemkit.lang_frozen(problemkit.load(copy))  # 증명 본문이 바뀌었는데 다시 돌리지 않았다
+    problemkit.write_lang(problemkit.load(copy), fresh, ["python"], cases_text)
+    assert "javascript" not in json.loads((copy / "lang.json").read_text(encoding="utf-8"))  # 낡은 행은 남기지 않는다(--langs로 다시 돌려야 한다)
+    (copy / "lang_1.java").unlink()
+    problemkit.write_lang(problemkit.load(copy), fresh, ["python"], cases_text)
+    assert "java" not in json.loads((copy / "lang.json").read_text(encoding="utf-8"))
+
+
+def lang_trap_counterexamples() -> None:
+    """실린 함정이 다른 버그를 그 함정으로 내놓지 않는다(채점기 없이). 증명 풀이는 그 함정으로 내놓는다.
+    size_t를 앞으로 도는 반복, long long끼리의 곱, 같은 케이스에서 다른 값으로 틀리는 Java 풀이."""
+    import problemkit
+    from make_builtin import traps_of
+    from tutor.debug.rules import trap_candidates, trap_in_code
+
+    def traps(folder: str) -> tuple[dict, dict]:
+        problem = problemkit.load(HERE / "problems" / folder)
+        files = problem["files"]
+        return files, traps_of(problem, {language: files[f"solution.{ext}"] for language, ext in problemkit.EXT.items() if f"solution.{ext}" in files})
+
+    def one(rows: list, trap_id: str) -> dict:
+        return next(row for row in rows if row["id"] == trap_id)
+
+    files, folder = traps("dfs/3_folder_size")
+    loop = one(folder["cpp"], "cpp.unsigned_loop")
+    failed = {"status": "failed", "cases": [{"id": "1", "status": "failed", "got": "0"}]}
+    assert trap_candidates([loop], failed, files["lang_1.cpp"]) == [loop]
+    forward = files["solution.cpp"].replace("int solution(", "int unused(vector<int> size) {\n    int total = 0;\n    for (size_t i = 0; i < size.size(); i++) total += size[i] - 1;\n    return total;\n}\n\nint solution(")
+    assert forward != files["solution.cpp"] and trap_candidates([loop], failed, forward) == [] and trap_candidates([loop], failed, files["solution.cpp"]) == []
+
+    files, charging = traps("binary_search/3_charging")
+    multiply = one(charging["cpp"], "cpp.int_multiply")
+    assert trap_in_code(multiply, files["lang_2.cpp"]) and not trap_in_code(multiply, files["solution.cpp"])
+    wide = files["solution.cpp"].replace("int fastest =", "long long fastest =").replace("(long long)fastest * n", "fastest * n")
+    assert wide != files["solution.cpp"] and not trap_in_code(multiply, wide)  # long long끼리의 곱은 넘치지 않는다
+    overflow = one(charging["java"], "java.int_overflow")
+    cid, out = next(iter(overflow["outs"].items()))
+    other = {"status": "failed", "cases": [{"id": cid, "status": "failed", "got": "12345"}]}  # 같은 케이스, 다른 값(다른 버그)
+    same = {"status": "failed", "cases": [{"id": cid, "status": "failed", "got": out}]}
+    plain = files["solution.java"].replace("long", "var")  # long을 쓰지 않은 풀이(var)
+    assert trap_candidates([overflow], other, plain) == [] and trap_candidates([overflow], same, plain) == [overflow]
+
+    # 바깥 *로 늘린 2차원 목록만 그 함정이다(다른 구조로 풀고 다른 버그로 -1을 돌려준 풀이는 아니다)
+    files, warehouse = traps("bfs/1_warehouse_robot")
+    rows = one(warehouse["python"], "python.shared_rows")
+    cid, out = next(iter(rows["outs"].items()))
+    same = {"status": "failed", "cases": [{"id": cid, "status": "failed", "got": out}]}
+    assert trap_candidates([rows], same, files["lang_1.py"]) == [rows] and trap_candidates([rows], same, files["wrong_3.py"]) == []
+    assert trap_candidates([rows], same, "grid = [[]] * n") == [rows] and trap_candidates([rows], same, files["solution.py"]) == []
+
+
+def problemkit_alone() -> None:
+    """설치 묶음에는 튜터 원본 파일이 없다. 서버가 늘 가져오는 problemkit은 가져올 때 튜터를 읽지 않는다(증명 파일을 다룰 때만 가져온다)."""
+    folder = TMP / "problemkit-alone"
+    folder.mkdir()
+    for name in ("problemkit.py", "casegen.py"):
+        (folder / name).write_text((HERE / name).read_text(encoding="utf-8"), encoding="utf-8")
+    done = subprocess.run([sys.executable, "-B", "-I", "-c", "import sys; sys.path.insert(0, sys.argv[1]); import problemkit; print(problemkit.fits(1, 'int'))", str(folder)],
+                          capture_output=True, text=True, cwd=folder)
+    assert done.returncode == 0 and done.stdout.strip() == "True", done.stderr[-500:]
+    # 증명을 다룰 때는 튜터의 판정 파일을 경로로 읽는다(튜터 묶음과 langgraph 없이). 그 파일이 패키지 안의 다른 모듈을 가져오기 시작하면 이 길이 깨진다
+    import problemkit
+    from tutor.debug import rules
+
+    text = problemkit.TRAP_RULES.read_text(encoding="utf-8")
+    assert not [line for line in text.splitlines() if line.lstrip().startswith(("from .", "import tutor", "from tutor"))], "rules.py는 표준 라이브러리만 가져온다"
+    loaded = problemkit.trap_rules()
+    assert loaded is not rules and loaded.out_key("찍은 줄\n[1, 2]") == rules.out_key("[1,2]") == "[1,2]"
+    shape = {"id": "cpp.unsigned_loop", "shape": r"\bsize_t\s+(\w+)\s*=[^;]*;\s*\1\s*>=\s*0\s*;"}
+    assert loaded.shape_in(shape, "for (size_t i = n - 1; i >= 0; i--)") and not loaded.shape_in(shape, "// for (size_t i = n - 1; i >= 0; i--)\nint x;")
+    trap = {"id": "python.true_division", "code": [], "right": ["//"], "fails": {"1": "failed"}, "outs": {"1": "2.5"}, "right_base": 1}
+    assert loaded.trap_candidates([trap], {"status": "failed", "cases": [{"id": "1", "status": "failed", "got": "2.5"}]}, "a / 2") == [trap]
+
+
+def solution_traps() -> None:
+    """해설은 보이는 정답 코드의 언어에서 증명된 함정을 싣는다(글·고치는 법·문제 글 구절만, 떨어진 케이스는 내보내지 않는다). 화면은 정답 코드 위에 그린다.
+    펼친 정답 코드는 사용자가 고른 대로 남는다(다시 그려도, 언어를 바꿔도). 이 분기와 글 꾸미기는 node로 돌려 본다."""
+    traps = {"python": [{"id": "python.a", "what": "`a`를 쓰면", "fix": "b", "at": ["제목이 같으면 같은 책입니다"], "fails": {"1": "failed"}}],
+             "javascript": [{"id": "javascript.c", "what": "`c`를 쓰면", "fix": "d", "varies": True}]}
+    with patch.dict(server.BUILTIN[PID], {"traps": traps}):
+        assert call("/api/solution", id=PID, force=True)[1]["traps"] == [{"what": "`a`를 쓰면", "fix": "b", "at": ["제목이 같으면 같은 책입니다"]}]
+        assert (server.problem_shape(PID, "python")["traps"], server.problem_shape(PID, "rust")["traps"]) == (traps["python"], [])  # 튜터 엔진은 그 언어의 것만 받는다
+        call("/api/language", id=PID, language="javascript")
+        try:
+            assert call("/api/solution", id=PID, force=True)[1]["traps"] == [{"what": "`c`를 쓰면", "fix": "d"}]
+        finally:
+            call("/api/language", id=PID, language="python")
+    with patch.dict(server.BUILTIN[PID]):
+        server.BUILTIN[PID].pop("traps", None)
+        assert call("/api/solution", id=PID, force=True)[1]["traps"] == []  # 증명이 없는 문제
+        assert server.problem_shape(PID, "python")["traps"] == []
+    js, css = (HERE / "app.js").read_text(encoding="utf-8"), (HERE / "app.css").read_text(encoding="utf-8")
+    assert '<div class="traps"><h5>이 언어로 풀 때 조심할 것</h5>' in js and js.index('class="traps"') < js.index('<pre class="code"><code>${esc(sol.code') and ".traps {" in css
+    change = js[js.index("async function changeLanguage"):js.index("function wantLanguage")]
+    assert change.index("const kept = ") < change.index("await work(") and "S.solo.codeOpen = kept.code;" in change  # 기다리는 동안의 다시 그리기 전에 적어 둔다
+    assert "codeOpen(S.solo, passed)" in js and "noteCodeToggle(S.solo, summary.parentElement.open)" in js
+    import re
+    import shutil
+    node = shutil.which("node")
+    if not node:
+        return print("node가 없어 글 꾸미기·정답 코드 펼침 시험은 건너뜀")
+    pure = lambda name: re.search(rf"/\* {name}-pure:start.*?\*/(.*?)/\* {name}-pure:end \*/", js, re.S).group(1)  # noqa: E731
+    source = js[:js.index("\n", js.index("const esc"))] + pure("inline") + pure("code-open")
+    script = source + """
+const out = [inline("`a**b**c` 와 **굵게**"), inline("`x` < **y**"), inline("**`k`**")];
+let solo = {};                                   // 통과한 문제: 처음에는 접혀 있다
+out.push(codeOpen(solo, true));
+noteCodeToggle(solo, false);                     // 펼친다
+out.push(codeOpen(solo, true));
+const kept = solo.codeOpen; solo = { codeOpen: kept };   // 언어를 바꾸면 새 해설 상태로 옮긴다
+out.push(codeOpen(solo, true));
+noteCodeToggle(solo, true);                      // 접는다
+out.push(codeOpen(solo, true), codeOpen({}, false), codeOpen(null, false));
+console.log(JSON.stringify(out));
+"""
+    code, other, wrapped, first, opened, moved, closed, fresh, empty = json.loads(subprocess.run([node, "-e", script], capture_output=True, text=True, check=True).stdout)
+    assert code == "<code>a**b**c</code> 와 <strong>굵게</strong>", code  # 백틱 안의 **는 그대로
+    assert other == "<code>x</code> &lt; <strong>y</strong>" and wrapped == "<strong><code>k</code></strong>", (other, wrapped)  # 코드를 감싼 굵게는 그대로 된다
+    assert (first, opened, moved, closed, fresh, empty) == (False, True, True, False, True, True)  # 접은 뒤에 다시 그려도 펼쳐지지 않는다
 
 
 def main() -> None:
+    neutral_notes()
+    lang_traps()
+    lang_trap_counterexamples()
+    problemkit_alone()
     build_only()
     error_lines()
     broken_files()
@@ -2006,25 +3283,41 @@ def main() -> None:
         bundle()
         limits()
         builtin(fake)
+        solution_traps()
         compose()
         report()
+        pitfalls_repeated()
+        labels_follow_language()
         home()
+        aid_note()
         own_theme()
         readiness()
         screen_flows()
         debug_pass()
+        passed_reopen()
         own_way_flow()
+        state_names_by_mode()
+        keyboard_focus()
         chair_found()
+        guide_spoken()
+        same_check_once()
+        result_guides()
         language_memory()
         no_tool()
         results()
         tools()
+        retired_languages()
         edit_delete()
         checkpoints()
         prep_failed()
+        key_flow()
+        key_check_flow()
+        key_rows_flow()
+        prep_unverified()
         stale_save()
         builtin_prepare()
         own_guide()
+        guessed_level()
         kept_languages()
         edit_changes()
         explicit_mode()
@@ -2033,7 +3326,25 @@ def main() -> None:
         own_starter()
         case_shapes()
         table()
+        tour_pictures()
+        tour_follows_screens()
+        home_screen()
+        settings_screen()
+        settings_items()
+        keyboard_gaps()
+        way_info()
+        early_solution_report()
+        case_arg_count()
+        ai_marks()
+        report_terms()
+        new_draft()
+        menu_and_title_note()
         hidden_cases()
+        hint_by_block()
+        compile_hints()
+
+
+        language_switch_state()
         assert not fake.calls, fake.calls  # 고치기·지우기도 모델을 부르지 않는다
         checks()
         http()
@@ -2048,6 +3359,7 @@ def main() -> None:
     assert call("/api/tour")[1]["tour_seen"] and call("/api/accounts")[1]["tour_seen"]
     for path, (name, _) in server.STATIC.items():  # 화면이 부르는 파일이 모두 있다(글꼴 포함)
         assert (server.STATIC_DIR / name).is_file(), path
+    assert "Continue with" not in (server.STATIC_DIR / "index.html").read_text(encoding="utf-8")  # 화면 글은 한국어다(ChatGPT 로그인 단추도)
 
     import test_update  # 업데이트(가짜 네트워크, 임시 폴더의 가짜 앱)
     test_update.run()
@@ -2058,6 +3370,13 @@ def main() -> None:
         raise AssertionError("받을 새 버전이 없으면 거절한다")
     except server.Refuse as exc:
         assert exc.status == 409
+    import test_single  # 앱을 두 번 켰을 때
+    test_single.run()
+    color_tokens()
+    scheme_setting()
+    window_background()
+    pane_widths()
+    pane_fit()
     stages()
     newest_models()
     read_check()

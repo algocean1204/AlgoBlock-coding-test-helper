@@ -1,0 +1,142 @@
+{
+ "python": [
+  {
+   "file": "lang_1.py",
+   "trap": "python.shared_rows",
+   "fails": {
+    "1": "failed",
+    "9": "failed",
+    "10": "failed",
+    "13": "failed",
+    "14": "failed",
+    "15": "failed",
+    "16": "failed",
+    "17": "failed",
+    "18": "failed",
+    "19": "failed",
+    "20": "failed",
+    "21": "failed",
+    "22": "failed",
+    "24": "timeout",
+    "25": "timeout"
+   },
+   "outs": {
+    "1": "6",
+    "9": "1",
+    "10": "2",
+    "13": "5",
+    "14": "4",
+    "15": "100000000",
+    "16": "100000000",
+    "17": "7",
+    "18": "71161242",
+    "19": "1",
+    "20": "6",
+    "21": "1",
+    "22": "14800153"
+   },
+   "source": 731180358
+  }
+ ],
+ "java": [
+  {
+   "file": "lang_1.java",
+   "trap": "java.int_overflow",
+   "at": [
+    "1 ≤ fast ≤ slow ≤ 100,000,000"
+   ],
+   "fails": {
+    "15": "failed",
+    "25": "failed"
+   },
+   "outs": {
+    "15": "-1994967296",
+    "25": "-1691537753"
+   },
+   "source": 2504929850
+  }
+ ],
+ "javascript": [
+  {
+   "file": "lang_1.js",
+   "trap": "javascript.fill_shared",
+   "fails": {
+    "1": "failed",
+    "9": "failed",
+    "10": "failed",
+    "13": "failed",
+    "14": "failed",
+    "15": "failed",
+    "16": "failed",
+    "17": "failed",
+    "18": "failed",
+    "19": "failed",
+    "20": "failed",
+    "21": "failed",
+    "22": "failed",
+    "24": "timeout",
+    "25": "timeout"
+   },
+   "outs": {
+    "1": "6",
+    "9": "1",
+    "10": "2",
+    "13": "5",
+    "14": "4",
+    "15": "100000000",
+    "16": "100000000",
+    "17": "7",
+    "18": "71161242",
+    "19": "1",
+    "20": "6",
+    "21": "1",
+    "22": "14800153"
+   },
+   "source": 2192992293
+  }
+ ],
+ "cpp": [
+  {
+   "file": "lang_1.cpp",
+   "trap": "cpp.max_heap",
+   "at": [
+    "가장 이른 시각"
+   ],
+   "fails": {
+    "24": "timeout",
+    "25": "timeout"
+   },
+   "source": 234424371
+  },
+  {
+   "file": "lang_2.cpp",
+   "trap": "cpp.int_overflow",
+   "at": [
+    "1 ≤ fast ≤ slow ≤ 100,000,000"
+   ],
+   "fails": {
+    "15": "failed",
+    "25": "failed"
+   },
+   "outs": {
+    "15": "-1994967296",
+    "25": "-2111624313"
+   },
+   "source": 3758124233
+  }
+ ],
+ "rust": [
+  {
+   "file": "lang_1.rs",
+   "trap": "rust.max_heap",
+   "at": [
+    "가장 이른 시각"
+   ],
+   "fails": {
+    "24": "timeout",
+    "25": "timeout"
+   },
+   "source": 3417769247
+  }
+ ]
+}

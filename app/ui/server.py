@@ -2,7 +2,7 @@
 
 실행: cd app && uv run --no-project --python 3.12 --with langgraph --with pypdf python ui/server.py
 주소: http://127.0.0.1:8791 (ALGOBLOCK_UI_PORT로 바꾼다). 이 기기 안에서만 열린다.
-모델: 기본은 연결한 공급자(API 키·ChatGPT 로그인). 키는 화면의 '연결'에서 넣거나 .env에 둔다.
+모델: 기본은 연결한 공급자(API 키·ChatGPT 로그인). 키는 화면의 '설정'의 'AI 연결'에서 넣거나 .env에 둔다.
      개발할 때만 ALGOBLOCK_UI_CLIENT=cli 로 이 PC의 Claude Code(claude -p)를 쓴다.
 설치 파일로 묶였을 때는 app/packaging/launcher.py가 데이터 폴더·화면 파일·채점기 위치를 환경 변수로 넘긴다.
 """
@@ -10,6 +10,7 @@
 import ast
 import atexit
 import base64
+import hashlib
 import json
 import os
 import re
@@ -49,11 +50,13 @@ from tutor.eval.drive import check_judge  # noqa: E402
 from tutor.common.scope import ALGORITHMS, algorithm_name  # noqa: E402
 from tutor.common.solution import composed_parts  # noqa: E402
 from tutor.common.talk_rules import MANY_ANSWERS  # noqa: E402
+from tutor.debug.rules import out_key  # noqa: E402
+from tutor.turn.code_check import compile_easy  # noqa: E402
 from tutor.save.respond import blocks_body, shown_count  # noqa: E402
 from tutor.ingest import IngestError, ocr_doubts, read_pages, reread  # noqa: E402
 from tutor.ingest.files import split_files  # noqa: E402
 from tutor.eval.scenarios import all_scenarios  # noqa: E402
-from tutor.knowledge.ontology import PITFALLS, TECHNIQUES, techniques_of  # noqa: E402
+from tutor.knowledge.ontology import PITFALL_GROUPS, PITFALLS, TECHNIQUES, pitfall_text, technique_name, techniques_of  # noqa: E402
 from tutor.llm import LlmNotConfigured, themes, use_llm  # noqa: E402
 from tutor.store.sqlite import now  # noqa: E402
 
@@ -61,7 +64,9 @@ import casegen  # noqa: E402  (효율성 케이스의 큰 입력을 다시 만�
 import casemake  # noqa: E402  (등록한 문제의 풀이를 단순 풀이·생성기와 채점기로 대조해 숨은 케이스를 만든다)
 from problemkit import fits  # noqa: E402  (값이 형에 맞는가. 기본 문제를 검사할 때 쓰는 것)
 from stubs import program_stub, stub  # noqa: E402  (형에서 언어별 시작 코드, 표준 입출력 뼈대)
+import single  # noqa: E402  (데이터 폴더 잠금)
 import updater  # noqa: E402  (새 버전 확인과 업데이트)
+from app.llm import keycheck  # noqa: E402  (키를 저장하기 전에 공급자에 확인)
 
 updater.DIR = DATA / "updates"  # 받은 설치 파일과 업데이트 설정
 
@@ -72,14 +77,17 @@ OWN_FILE = DATA / "own_way.json"  # '끝까지 내 방식으로 쓰기'를 켠 �
 CODES_FILE = DATA / "codes.json"  # 언어마다 쓰던 코드 {문항: {언어: 코드}}. 언어를 바꿨다 돌아와도 남아 있게
 ATTEND_FILE = DATA / "attendance.json"  # 출석한 날 ["YYYY-MM-DD", …](기기 현지 날짜)
 CHECKPOINTS_FILE = DATA / "checkpoints.json"  # 언어마다 마지막 체크포인트 {문항: {언어: {code: 직접 풀기 글, blocks: 블록 칸, at: ISO 시각}}}
+HINTS_FILE = DATA / "hints.json"  # 혼자 풀기에서 블록마다 이번 풀이에 본 힌트 수 {문항: {"from": 그때의 hints_at_reset, "seen": {블록 번호: 수}}}. 없거나 맞지 않으면 본 수를 블록 1부터 차례로 나눈다
 TOUCHED_FILE = DATA / "touched.json"  # 문제를 마지막으로 손댄 시각 {문항: ISO 시각}(코드 저장·실행·제출·힌트). '이어서 풀기'가 가장 최근에 쓰던 문제를 고른다
 KINDS = ("example", "accuracy", "efficiency")  # 케이스 종류: 공개 예시, 숨긴 정확성, 숨긴 효율성(큰 입력)
 STATIC = {"/": ("index.html", "text/html"), "/index.html": ("index.html", "text/html"),
           "/app.css": ("app.css", "text/css"), "/app.js": ("app.js", "text/javascript"),
+          "/highlight.js": ("highlight.js", "text/javascript"),  # 코드 칸의 문법 색(채점 언어 5개)
           "/icon.svg": ("icon.svg", "image/svg+xml"), "/favicon.svg": ("favicon.svg", "image/svg+xml"),  # 앱 아이콘과 탭 아이콘(같은 그림, 여백만 다르다)
           "/tour-demos.js": ("tour-demos.js", "text/javascript"), "/tour-demos.css": ("tour-demos.css", "text/css"),  # 처음 안내의 움직이는 데모(stageshow/에서 미리 빌드, 안내를 열 때만 불러온다)
           "/PretendardVariable.woff2": ("PretendardVariable.woff2", "font/woff2")}  # 맥 밖에서 쓰는 글꼴(OFL)
 KEYS = {"claude": "ANTHROPIC_API_KEY", "openai": "OPENAI_API_KEY"}  # 지원하는 공급자는 Claude·OpenAI 둘이다(그 밖의 키는 저장돼 있어도 읽지 않는다)
+KEY_FORM = {"claude": ("Claude", "sk-ant-"), "openai": ("OpenAI", "sk-")}  # 공급자 키의 꼴: 접두사로 시작하고 영문·숫자·-·_만(빈칸·한글이 든 글은 키가 아니다)
 SAMPLE_TITLES = {"hash_library": "책을 돌려주지 않은 학생", "stack_brackets": "괄호 짝 맞추기", "brute_pairs": "카드 두 장의 합"}
 MAX_BODY = 1_000_000
 FILE_PATHS = ("/api/problems/read", "/api/problems/new", "/api/problems/edit")  # 파일을 실어 오는 요청만 본문 상한이 크다
@@ -92,8 +100,9 @@ ASSET_TYPES = {"png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg", "w
 OWN_ID = re.compile(r"u[0-9a-f]{8}")  # 사용자가 등록한 문항 id
 PREPARE = os.environ.get("ALGOBLOCK_UI_PREPARE", "1") != "0"  # 0이면 문항을 열 때 뼈대를 미리 뽑지 않는다(개발 중 모델 호출 아끼기)
 
+KEY_CHECK_FILE = DATA / "keychecks.json"  # 공급자마다 마지막 키 확인 {공급자: {"at": ISO 시각, "result": ok·invalid·denied·offline}}. 키 값은 싣지 않는다
 KEY_FILE = DATA / "keys.json"  # 화면에서 넣은 API 키. 이 기기에만, 소유자만 읽게(0600) 둔다
-PREFS_FILE = DATA / "prefs.json"  # 화면 설정: 처음 안내를 봤는지(tour_seen), 과정별 급과 추론 정도(stages. 예전에는 테마별 모델 themes), 마지막으로 고른 풀이 언어(language)
+PREFS_FILE = DATA / "prefs.json"  # 화면 설정: 처음 안내를 봤는지(tour_seen), 과정별 급과 추론 정도(stages. 예전에는 테마별 모델 themes), 마지막으로 고른 풀이 언어(language), 화면 색(scheme: light·dark. 없으면 운영체제 설정을 따른다), 문제·코드·튜터 세 칸의 너비 몫(panes. 합 100. 없으면 기본 배치)
 MODELS_FILE = DATA / "models.json"  # 공급자 목록에서 고른 시리즈마다 최신 이름 {연결: {"at": ISO 시각, "names": {시리즈: 이름}}}. 하루에 한 번까지만 다시 받는다
 KEPT_FILE = DATA / "kept.json"  # 언어를 바꿀 때 보관한 준비 결과 {문항: {언어: {"solution": 줄, "session": 줄}}}. 그 언어로 돌아오면 되살린다(모델 0회)
 
@@ -115,8 +124,41 @@ def load_keys() -> None:
 
 
 def save_key(env_name: str, value: str) -> None:
-    saved = read_json(KEY_FILE, {})
-    saved[env_name] = value
+    write_keys({**read_json(KEY_FILE, {}), env_name: value})
+
+
+KEY_CHECK_LOCK = threading.Lock()  # 확인 기록을 읽고 고쳐 쓰는 동안(키 넣기와 다시 확인이 겹쳐도 서로 덮어쓰지 않게)
+
+
+def key_print(key: str) -> str:
+    """키의 지문(sha256 앞 12자). 확인 기록이 지금 키의 것인지 가릴 때만 쓰고, 키를 되살릴 수 없다."""
+    return hashlib.sha256(key.encode("utf-8")).hexdigest()[:12]
+
+
+def note_key_check(name: str, result: str | None, key: str = "") -> None:
+    """공급자의 마지막 키 확인을 그 키의 지문과 함께 남긴다(result가 None이면 지운다)."""
+    with KEY_CHECK_LOCK:
+        rows = {other: value for other, value in read_json(KEY_CHECK_FILE, {}).items() if other != name}
+        write_json(KEY_CHECK_FILE, {**rows, **({name: {"at": now(), "result": result, "fp": key_print(key)}} if result and key else {})})
+
+
+def key_rows() -> dict:
+    """설정의 공급자별 키 줄. 키는 끝 4자리만 싣는다(너무 짧은 글은 아예 싣지 않는다). 확인 기록은 지금 키의 지문과 같을 때만 보인다(키가 바뀌었으면 옛 기록은 보이지 않는다)."""
+    saved = read_json(KEY_CHECK_FILE, {})
+    out = {}
+    for name, env in KEYS.items():
+        key, last = os.environ.get(env, ""), saved.get(name) if isinstance(saved.get(name), dict) else {}
+        mine = bool(key) and last.get("fp") == key_print(key)
+        out[name] = {"on": bool(key), "tail": key[-4:] if len(key) >= 12 else "", "at": last.get("at", "") if mine else "", "result": last.get("result", "") if mine else ""}
+    return out
+
+
+def drop_key(env_name: str) -> None:
+    """화면에서 넣은 키 가운데 그 공급자의 것만 파일에서 지운다(다른 공급자의 키와 .env는 건드리지 않는다)."""
+    write_keys({name: value for name, value in read_json(KEY_FILE, {}).items() if name != env_name})
+
+
+def write_keys(saved: dict) -> None:
     write_json(KEY_FILE, saved)
     try:
         KEY_FILE.chmod(0o600)
@@ -217,7 +259,17 @@ def first_line(text: str) -> str:
 
 # 기본 문제(make_builtin.py가 ui/problems에서 묶는다): 글, 케이스(공개 예시·숨긴 정확성·숨긴 효율성), 실전 신호, 언어별 정답 풀이·시작 코드,
 # 그리고 미리 만들어 둔 뼈대·풀이 가이드·블록 계획(ready. 없을 수 있다). 단계가 없는 예전 형식은 읽지 않는다
-BUILTIN = {row["id"]: row for row in read_json(Path(os.environ.get("ALGOBLOCK_UI_BUILTIN") or STATIC_DIR / "builtin.json"), []) if "level" in row}
+def supported(row: dict) -> dict:
+    """저장된 문제 자료에서 지원하지 않는 언어(예전에 있던 Go·Kotlin 등)의 칸을 거른다. 자료 파일은 고치지 않고 읽을 때만 거른다."""
+    ok = check_judge().LANGUAGES
+    row = {**row, "languages": [name for name in row.get("languages") or [] if name in ok]}
+    for key in ("solutions", "starters", "limits"):
+        if isinstance(row.get(key), dict):
+            row[key] = {name: value for name, value in row[key].items() if name in ok}
+    return row
+
+
+BUILTIN = {row["id"]: supported(row) for row in read_json(Path(os.environ.get("ALGOBLOCK_UI_BUILTIN") or STATIC_DIR / "builtin.json"), []) if "level" in row}
 THEME_ORDER = {key: n for n, key in enumerate(ALGORITHMS)}
 
 
@@ -236,6 +288,7 @@ def load_problems() -> dict:
         mode = "program" if raw.get("mode") == "program" else "function"  # 푸는 방식. 없는 예전 문항은 함수 방식
         made = [case for case in raw.get("made") or [] if isinstance(case, dict)]  # 대조로 만든 숨은·효율성 케이스(made: true). 사용자가 넣은 케이스(cases)와 따로 둔다
         level = raw.get("level") if raw.get("level") in range(1, 6) else 0  # 사용자가 고친 단계(없으면 분석이 붙인 것을 목록이 쓴다)
+        raw = {**raw, "language": raw["language"] if raw["language"] in check_judge().LANGUAGES else "python"}  # 지원을 접은 언어로 저장된 문항은 파이썬으로 연다
         out[raw["id"]] = SimpleNamespace(**{**raw, "theme": theme, "mode": mode, "cases": [*raw["cases"], *made], "level": level},
                                          sample=False, builtin=False, theme_name=theme_name(theme) if theme else "")
     for row in sorted(BUILTIN.values(), key=lambda row: (THEME_ORDER.get(row["theme"], 99), row["level"])):
@@ -317,14 +370,22 @@ def notice_of(raw: dict) -> str:
 LIMIT_WORDS = {"output_limit": "출력이 너무 많아 멈췄어요(끝나지 않는 반복일 수 있어요)", "memory_limit": "메모리를 너무 많이 써서 멈췄어요"}
 
 
+BIG_SHOWN = 60  # 큰 입력(효율성 케이스)의 기대값·내 결과는 이 길이까지만 엔진에 넘긴다(튜터의 말에 그대로 실린다. 잘린 값에는 앞부분만이라고 붙인다)
+
+
+def clipped(text: str) -> str:
+    return text if len(text) <= BIG_SHOWN else text[:BIG_SHOWN] + "…(앞부분만)"
+
+
 def tutor_view(report: dict) -> dict:
-    """채점 결과를 튜터 엔진이 읽는 모양으로: 큰 입력(효율성 케이스)은 글을 싣지 않고, 엔진이 모르는 상태는 실행 오류로 바꾼다."""
+    """채점 결과를 튜터 엔진이 읽는 모양으로: 큰 입력(효율성 케이스)은 입력을 싣지 않고 기대값·내 결과는 줄여 싣는다. 엔진이 모르는 상태는 실행 오류로 바꾼다.
+    out: 내 결과를 견줄 꼴(줄이기 전의 값으로. 언어 함정이 증명된 결과와 같은지 엔진이 본다)."""
     cases = []
     for case in report["cases"]:
-        limit = LIMIT_WORDS.get(case["status"])
+        limit, big = LIMIT_WORDS.get(case["status"]), case["kind"] == "efficiency"
         status = "runtime_error" if limit else "timeout" if case["status"] == "skipped" else case["status"]  # 돌리지 않은 케이스는 앞선 시간 초과 탓이다
-        cases.append({"id": case["id"], "kind": case["kind"], "input": "(아주 큰 입력)" if case["kind"] == "efficiency" else case["input"], "expected": case["expected"],
-                      "got": "" if case["kind"] == "efficiency" else case["got"], "error": limit or case["error"], "status": status, "line": case.get("line")})
+        cases.append({"id": case["id"], "kind": case["kind"], "input": "(아주 큰 입력)" if big else case["input"], "expected": clipped(case["expected"]) if big else case["expected"],
+                      "got": clipped(case["got"]) if big else case["got"], "out": out_key(case["got"]), "error": limit or case["error"], "status": status, "line": case.get("line")})
     status = report["status"] if not cases else next((case["status"] for case in cases if case["status"] != "passed"), "passed")
     return {"status": status, "cases": cases, "compile": report["compile"], "compile_line": report.get("compile_line")}  # 줄은 채점기가 알려 준 오류의 줄(이어 붙인 프로그램의 줄)
 
@@ -351,9 +412,11 @@ def given(pid: str, language: str) -> dict | None:
 
 
 def problem_shape(pid: str, language: str) -> dict:
-    """엔진에 넘기는 문항의 방식과 이 언어의 시작 코드(블록 코드 확인이 방식을 짐작하지 않고, 풀이 가이드가 시작 코드의 머리를 따른다)."""
+    """엔진에 넘기는 문항의 방식과 이 언어의 시작 코드(블록 코드 확인이 방식을 짐작하지 않고, 풀이 가이드가 시작 코드의 머리를 따른다),
+    그리고 이 언어에서 증명된 언어 함정(틀린 곳 찾기가 실패와 맞는 것을 고른다. 기본 문제만, 없으면 빈 목록)."""
     p = PROBLEMS.get(pid)
-    return {} if p is None else {"mode": p.mode, "starter": starter_of(p, language), "many_answers": getattr(p, "many_answers", False) is True}
+    traps = ((BUILTIN.get(pid) or {}).get("traps") or {}).get(language, [])
+    return {} if p is None else {"mode": p.mode, "starter": starter_of(p, language), "many_answers": getattr(p, "many_answers", False) is True, "traps": traps}
 
 
 def cross_mode(pid: str) -> str | None:
@@ -405,6 +468,9 @@ def cross_done(pid: str, verdict: dict) -> None:
 
 
 CROSS = SimpleNamespace(mode=cross_mode, run=cross_run, done=cross_done)
+UNVERIFIED = {"verified": "none", "calls": 0, "tiers": [], "doubts": [], "hidden": 0, "efficiency": 0,
+              "why": "AI의 풀이를 얻지 못해 검증하지 못했어요. 응답 오류였거나 예시가 문제 글과 맞지 않을 수 있어요."}
+
 FILE_LOCK_ROWS = threading.RLock()  # problems.json을 읽고 고쳐 쓰는 동안(뒤에서 도는 대조와 등록·수정이 서로 덮어쓰지 않게)
 VERIFIED_WORDS = {"all": "예시와 자동 테스트 모두 통과", "examples": "예시만 통과", "none": "검증하지 못함"}
 
@@ -442,8 +508,10 @@ def prepare_later(pid: str) -> None:
         try:
             with LOCKS[pid], model(), tutor() as t:
                 out = t.prepare(pid)
-            if out.status >= 400:  # 모델의 답이 어긋났거나 공급자 오류(엔진은 예외 대신 실패 결과를 돌려준다)
-                raise RuntimeError(f"{out.status} {out.body}")
+                if out.status >= 400:  # 모델의 답이 어긋났거나 공급자 오류(엔진은 예외 대신 실패 결과를 돌려준다)
+                    raise RuntimeError(f"{out.status} {out.body}")
+                if CROSS.mode(pid) and t.store.load(pid).canonical is None and not getattr(PROBLEMS.get(pid), "check", None):
+                    cross_done(pid, UNVERIFIED)  # 준비는 끝났는데 풀이 가이드를 얻지 못했다: 대조 결과가 없는 채로 두면 화면에서 '검증' 줄이 사라진다
         except Exception as exc:  # noqa: BLE001 - 덤이다
             PREPARED.discard(pid)
             PREP_FAILED.add(pid)
@@ -511,7 +579,9 @@ def accounts() -> dict:
                      "model": model, "model_label": themes.label(model)})
     return {"client": STATE["client"], "dev": dev_client(), "model": os.environ.get("ALGOBLOCK_LLM_MODEL", ""), "chatgpt": bool(chatgpt.get("connected")), "chatgpt_note": chatgpt.get("error") or "", "connected": connected(),
             "keys": {name: bool(os.environ.get(env)) for name, env in KEYS.items()},
-            "tour_seen": bool(read_json(PREFS_FILE, {}).get("tour_seen")), "language": last_language(),
+            "key_rows": key_rows(), "using": themes.provider(),  # using: 튜터가 쓰는 공급자(claude·chatgpt·openai)
+            "keys_saved": {name: env in read_json(KEY_FILE, {}) for name, env in KEYS.items()},  # 화면에서 넣은 키(keys.json에 있는 것. 지울 수 있는 것)
+            "tour_seen": bool(read_json(PREFS_FILE, {}).get("tour_seen")), "language": last_language(), "scheme": scheme_pref(), "panes": panes_pref(),
             "themes": rows, "tiers": [{"key": tier, "label": themes.label(themes.model_of(tier))} for tier in themes.TIERS],
             "topics": [{"key": key, "name": theme_name(key)} for key in ALGORITHMS]}  # 등록 화면의 주제 고르기
 
@@ -550,6 +620,24 @@ def refresh_models() -> None:
     threading.Thread(target=run, daemon=True, name=f"models-{here}").start()
 
 
+def scheme_pref() -> str:
+    """고른 화면 색: light, dark, 없거나 모르는 값이면 system(운영체제 설정을 따른다)."""
+    scheme = read_json(PREFS_FILE, {}).get("scheme")
+    return scheme if scheme in ("light", "dark") else "system"
+
+
+def panes_ok(panes: object) -> bool:
+    """세 칸의 몫: 수 셋, 각각 5~90, 합 99~101(화면은 합 100으로 보낸다. 반올림 오차만 받는다)."""
+    return (isinstance(panes, list) and len(panes) == 3 and all(isinstance(x, (int, float)) and not isinstance(x, bool) and 5 <= x <= 90 for x in panes)
+            and 99 <= sum(panes) <= 101)
+
+
+def panes_pref() -> list | None:
+    """저장한 칸 너비 몫. 없거나 손으로 고쳐 꼴이 어긋났으면 None(기본 배치)."""
+    panes = read_json(PREFS_FILE, {}).get("panes")
+    return panes if panes_ok(panes) else None
+
+
 def last_language() -> str:
     """마지막으로 고른 풀이 언어(코드 화면에서 언어를 바꿀 때 적는다). 없거나 모르는 값이면 python."""
     language = read_json(PREFS_FILE, {}).get("language")
@@ -573,6 +661,8 @@ def counts(t) -> dict:
 
 
 def starter_of(p, language: str) -> str:
+    if language not in check_judge().LANGUAGES:  # 지원하지 않는 언어(예전 기록)에는 시작 코드가 없다
+        return ""
     return BUILTIN[p.id]["starters"].get(language, "") if p.builtin else "" if p.sample else own_starter(p, language)
 
 
@@ -611,40 +701,53 @@ def report_themes(t) -> tuple[dict, dict]:
     return theme_of, differ
 
 
-def labels_of(t, p, marks: dict | None = None) -> dict:
+def labels_of(t, p, language: str, marks: dict | None = None) -> dict:
     """문제의 라벨: 단계(사용자가 고친 것 > 분석이 붙인 것), 태그(쓰는 방법. 온톨로지 기법 이름), 검증(verified: all·examples·none, 아직 대조 전이면 빈 글)과 그 말.
-    등록한 문제는 대조 결과(check)의 숨은·효율성 케이스 수와 확인이 필요한 곳(doubts), 까닭(why)도. marks: 미리 읽은 store.labels()(목록은 한 번만 읽는다)."""
+    등록한 문제는 대조 결과(check)의 숨은·효율성 케이스 수와 확인이 필요한 곳(doubts), 까닭(why)도. marks: 미리 읽은 store.labels()(목록은 한 번만 읽는다). language: 사용자가 그 문제에 고른 언어(태그의 그릇 낱말이 이 언어를 따른다)."""
     if p.builtin:
         tags = techniques_of(((BUILTIN[p.id].get("ready") or {}).get("fact") or {}).get("patterns") or [])
-        return {"level": p.level, "tags": [TECHNIQUES[tid][1] for tid in tags], "verified": "all", "verified_name": VERIFIED_WORDS["all"]}
+        return {"level": p.level, "tags": [technique_name(tid, language) for tid in tags], "verified": "all", "verified_name": VERIFIED_WORDS["all"]}
     if p.sample:
         return {"tags": [], "verified": "", "verified_name": ""}
     fact = (marks if marks is not None else t.store.labels()).get(p.id) or {}
     check = getattr(p, "check", None) or {}
     verified = check.get("verified") or ""
     return {"level": p.level or fact.get("level") or 0, "level_by": "user" if p.level else "analysis" if fact.get("level") else "",
-            "tags": [TECHNIQUES[tid][1] for tid in fact.get("tags") or [] if tid in TECHNIQUES], "verified": verified, "verified_name": VERIFIED_WORDS.get(verified, ""),
+            "tags": [technique_name(tid, language) for tid in fact.get("tags") or [] if tid in TECHNIQUES], "verified": verified, "verified_name": VERIFIED_WORDS.get(verified, ""),
             "check": {key: check[key] for key in ("hidden", "efficiency", "tiers", "calls", "why", "doubts") if key in check}}
+
+
+def unaided_ids(t, passed: set) -> set:
+    """통과한 기본 문제 가운데 도움 없이 푼 것(학습 보고서와 같은 기준 unaided_pass). 문제 목록의 '다음'이 홈·보고서와 같은 기준을 쓰게 한다."""
+    by_problem: dict[str, list] = defaultdict(list)
+    for sub in t.store.submissions():
+        if sub["problem_id"] in passed and sub["status"] != "toolchain_missing":
+            by_problem[sub["problem_id"]].append(sub)
+    talked = {row["problem_id"]: row["at"] for row in t.store.conn.execute("SELECT problem_id, MIN(at) AS at FROM message GROUP BY problem_id")}
+    return {pid for pid, subs in by_problem.items() if unaided_pass(subs, t.store.study(pid), talked.get(pid))}
 
 
 def problem_rows(t) -> list[dict]:
     done, mine, guessed, marks = counts(t), touched(t), planned_themes(t), t.store.labels()
     chosen = {row["id"]: row["language"] for row in t.store.conn.execute("SELECT id, language FROM problem").fetchall()}  # 사용자가 고른 언어
+    alone = unaided_ids(t, {pid for pid, (passed, _) in done.items() if passed and pid in BUILTIN})
     rows = []
     for p in PROBLEMS.values():
         passed, total = done.get(p.id, (0, 0))
         # 붙인 주제가 이긴다. 계획의 알고리즘이 15개 밖이면 주제 칩을 빼낸다
         shown = p.theme_name or (theme_name(guessed[p.id]) if not p.sample and guessed.get(p.id) else "")
         # 등급: 통과 2회마다 한 등급, 8회 이상 5등급
-        rows.append({"id": p.id, "title": p.title, "language": chosen.get(p.id, p.language), "sample": p.sample, "builtin": p.builtin,
-                     "theme": p.theme, "theme_name": shown, "level": p.level, "passed": passed, "submitted": total, "solved": passed > 0,
-                     "touched": p.id in mine, "grade": min(5, 1 + min(passed, 10) // 2), **labels_of(t, p, marks)})
+        language = chosen.get(p.id) if chosen.get(p.id) in check_judge().LANGUAGES else p.language
+        rows.append({"id": p.id, "title": p.title, "language": language, "sample": p.sample, "builtin": p.builtin,
+                     "theme": p.theme, "theme_name": shown, "level": p.level, "passed": passed, "submitted": total, "solved": passed > 0, "unaided": p.id in alone,
+                     "touched": p.id in mine, "grade": min(5, 1 + min(passed, 10) // 2), **labels_of(t, p, language, marks)})
     return rows
 
 
 def next_up(mine: list[dict], solved: set):
-    """한 주제(단계 순서)에서 다음에 풀 문제: 위에 못 푼 단계가 남은 통과 단계 가운데 가장 높은 것 바로 위의 못 푼 단계(3·5단계를 통과했으면 4단계).
-    통과한 단계 위에 못 푼 것이 없으면 가장 낮은 못 푼 단계. 다 풀었으면 None."""
+    """한 주제(단계 순서)에서 다음에 풀 문제: 위에 못 푼 단계가 남은 푼 단계 가운데 가장 높은 것 바로 위의 못 푼 단계(3·5단계를 풀었으면 4단계).
+    푼 단계 위에 못 푼 것이 없으면 가장 낮은 못 푼 단계. 다 풀었으면 None. 보고서는 solved에 '도움 없이 푼' 문제만 넘겨,
+    도움을 받아 통과한 단계는 다시 풀 후보로 남는다."""
     todo = [row for row in mine if row["id"] not in solved]
     for top in sorted({row["level"] for row in mine if row["id"] in solved}, reverse=True):
         above = [row for row in todo if row["level"] > top]
@@ -659,7 +762,7 @@ def theme_rows(rows: list[dict]) -> list[dict]:
     for key in ALGORITHMS:
         mine = [row for row in rows if row["builtin"] and row["theme"] == key]
         if mine:
-            todo = next_up(mine, {row["id"] for row in mine if row["solved"]})
+            todo = next_up(mine, {row["id"] for row in mine if row["unaided"]})  # 도움 없이 푼 단계가 기준(보고서와 같다)
             out.append({"key": key, "name": theme_name(key), "total": len(mine), "solved": sum(row["solved"] for row in mine),
                         "next": {"id": todo["id"], "title": todo["title"]} if todo else None})
     return out
@@ -701,12 +804,16 @@ def case_args(given: str) -> list:
 RESULT_HEADS = {"result", "return", "answer", "결과", "반환", "출력"}  # 입출력 예 표 머리의 마지막 칸
 
 
-def table_cells(line: str) -> tuple[bool, list[str]]:
-    """표 한 줄의 (마크다운인가, 칸들). 마크다운은 | a | b |, 아니면 탭이나 둘 이상의 공백으로 가른다(화면에서 복사한 표 꼴)."""
+def table_cells(line: str) -> tuple[str, list[str]]:
+    """표 한 줄의 (꼴, 칸들). 꼴은 마크다운("md": | a | b |), 줄 앞 | 없이 |로만 나눈 표("bar": a | b | c), 그 밖("")은 탭이나 둘 이상의 공백(화면에서 복사한 표 꼴)."""
     row = line.strip()
     if row.startswith("|"):
-        return True, [cell.strip() for cell in row.strip("|").split("|")]
-    return False, [cell for cell in re.split(r"\t|\s{2,}", row) if cell.strip()]
+        return "md", [cell.strip() for cell in row.strip("|").split("|")]
+    if "|" in row:
+        cells = [cell.strip() for cell in row.rstrip("|").split("|")]
+        if all(cells):
+            return "bar", cells
+    return "", [cell for cell in re.split(r"\t|\s{2,}", row) if cell.strip()]
 
 
 def plain(value):
@@ -757,7 +864,7 @@ def table_cases(text: str) -> dict:
             if md and all(re.fullmatch(r":?-+:?", cell) for cell in cells):  # 마크다운 구분 줄
                 continue
             if len(cells) != len(head):
-                if not md:  # 탭 표는 칸 수가 다른 줄(설명 글)에서 끝난다
+                if md != "md":  # 탭 표와 |로만 나눈 표는 칸 수가 다른 줄(설명 글)에서 끝난다
                     missed = missed_after(lines, k)
                     break
                 skipped += 1
@@ -765,6 +872,8 @@ def table_cases(text: str) -> dict:
             try:
                 values = [cell_value(cell) for cell in cells]
             except ValueError:
+                if md == "bar":  # 값이 아닌 칸(비트 연산 `a | b` 같은 글)이 있으면 표가 아니다
+                    break
                 skipped += 1
                 continue
             cases.append({"input": json.dumps(values[:-1], ensure_ascii=False), "expected": json.dumps(values[-1], ensure_ascii=False)})
@@ -888,7 +997,7 @@ def sample_cases(text: str) -> dict:
 
 
 ARG_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
-# 일곱 언어의 흔한 예약어와, 시작 코드·채점기가 쓰는 이름(answer, solution). 인자 이름이 이것과 같으면 뒤에 _를 붙인다
+# 여러 언어의 흔한 예약어와, 시작 코드·채점기가 쓰는 이름(answer, solution). 인자 이름이 이것과 같으면 뒤에 _를 붙인다
 RESERVED = set("""
 and as assert async await auto bool boolean break byte case catch chan char class const continue crate debugger def default defer del delete do double dyn
 elif else enum eval except explicit export extends extern false False fallthrough final finally float fn for friend fun func function go goto if impl
@@ -1305,7 +1414,7 @@ def edit(body: dict) -> dict:
                 t.index.delete(pid)
             if text_changed:  # 옛 글에 맞춰 남긴 코드다
                 write_json(CHECKPOINTS_FILE, {key: value for key, value in read_json(CHECKPOINTS_FILE, {}).items() if key != pid})
-            t.store.put_problem(pid, ctx.language if ctx else row["language"], text, direct_code=ctx.direct_code if ctx else "", title=title)
+            t.store.put_problem(pid, ctx.language if ctx else (row["language"] if row["language"] in check_judge().LANGUAGES else "python"), text, direct_code=ctx.direct_code if ctx else "", title=title)
         if files is not None:
             save_assets(pid, files)
     if text_changed or redo:
@@ -1323,7 +1432,7 @@ def delete(body: dict) -> dict:
             t.store.delete_problem(pid)
             if t.index is not None:  # 비슷한 문항 찾기 색인에서도 뺀다
                 t.index.delete(pid)
-        for path in (BLOCKS_FILE, OWN_FILE, CODES_FILE, CHECKPOINTS_FILE, TOUCHED_FILE):
+        for path in (BLOCKS_FILE, OWN_FILE, CODES_FILE, CHECKPOINTS_FILE, TOUCHED_FILE, HINTS_FILE):
             write_json(path, {key: value for key, value in read_json(path, {}).items() if key != pid})
         shutil.rmtree(ASSETS / pid, ignore_errors=True)
         shutil.rmtree(LARGE / pid, ignore_errors=True)
@@ -1343,7 +1452,7 @@ def score(report: dict) -> dict:
     return {"accuracy": part(("example", "accuracy")), "efficiency": part(("efficiency",))}
 
 
-ERROR_WORDS = ("Error", "Exception", "panic", "terminate called", "terminating due to")  # TypeError, Exception in thread "main" …, panic: …(Go), thread 'main' panicked at …(Rust), C++ 예외로 멈춤
+ERROR_WORDS = ("Error", "Exception", "panic", "terminate called", "terminating due to")  # TypeError, Exception in thread "main" …, thread 'main' panicked at …(Rust), C++ 예외로 멈춤
 TRACE_LINES = ("    at ", "\tat ", "Node.js v")  # JS·Java 호출 자취와 Node 버전 줄
 
 
@@ -1351,15 +1460,15 @@ ABNORMAL = "프로그램이 비정상적으로 끝났어요. 배열 범위를 �
 TEMP_DIR = re.compile(r"[^\s'\"(]*algoblock-check-[^/\\\s]+[/\\]")  # 채점기의 임시 폴더 경로(app/judge common.work_directory)
 HARNESS = re.compile(r"\b(?:algoblock_main|algoblock_runner|FunctionRunner)\.\w+")  # 채점기가 만든 호출 파일(app/judge의 언어별 runner.py)
 # 채점기가 내 코드를 적어 둔 파일: 함수 방식, 프로그램 방식(main. 임시 폴더 경로는 먼저 지우므로 경로 안의 main.rs 같은 남의 파일은 둔다)
-USER_FILE = re.compile(r"\b(?:solution\.(?:py|js|go|rs|cpp)|Solution\.(?:java|kt))\b|(?<![/\\])\b(?:main\.(?:py|js|go|rs|cpp)|Main\.(?:java|kt))\b")
+USER_FILE = re.compile(r"\b(?:solution\.(?:py|js|rs|cpp)|Solution\.java)\b|(?<![/\\])\b(?:main\.(?:py|js|rs|cpp)|Main\.java)\b")
 
 
 def clean(text: str) -> str:
-    """오류 글에서 채점기 안쪽 이름을 가린다: 임시 폴더 경로는 지우고, 호출 파일을 가리키는 자취 줄과 Go 모듈 이름 줄(# algoblockcheck)은 빼고,
+    """오류 글에서 채점기 안쪽 이름을 가린다: 임시 폴더 경로는 지우고, 호출 파일을 가리키는 자취 줄은 빼고,
     호출 파일의 위치 머리(FunctionRunner.java:12:)는 떼고, 내 코드를 적어 둔 파일 이름은 '내 코드'로 바꾼다."""
     rows = []
     for row in TEMP_DIR.sub("", text or "").splitlines():
-        if "algoblockcheck" in row or (HARNESS.search(row) and row.strip().startswith(("at ", "-->", "File "))):
+        if HARNESS.search(row) and row.strip().startswith(("at ", "-->", "File ")):
             continue
         rows.append(USER_FILE.sub("내 코드", re.sub(HARNESS.pattern + r"(?::\d+)*:?\s?", "", row)))
     return "\n".join(rows)
@@ -1392,7 +1501,6 @@ def exception_name(line: str) -> str:
     return words[-1].rsplit(".", 1)[-1].strip("'\"") if words else ""
 
 
-FAMILY = {"kotlin": "java"}  # 같은 예외 이름을 쓰는 언어
 HINTS = {  # 예외 이름 → 한 줄 풀이(무엇이 일어났나, 무엇을 볼까). 숨은 테스트에도 붙으니 입력을 드러내지 않는 일반적인 말이다
     "python": {
         "KeyError": "딕셔너리에 없는 키를 읽었어요. 처음 보는 값일 때를 따져 보세요.",
@@ -1433,10 +1541,7 @@ HINTS = {  # 예외 이름 → 한 줄 풀이(무엇이 일어났나, 무엇을 
         "SyntaxError": "자바스크립트 문법에 맞지 않는 줄이 있어요. 괄호와 따옴표 짝을 보세요.",
     },
 }
-PHRASE_HINTS = (  # 이름 없이 문구로 알리는 오류(Go 패닉, Rust 패닉): (언어, 오류 글에서 찾을 것, 풀이)
-    ("go", re.compile(r"index out of range"), "배열·슬라이스의 범위를 벗어난 자리를 읽었어요. 길이와 같은 번호일 수 있어요."),
-    ("go", re.compile(r"nil pointer dereference"), "nil인 값을 썼어요. 만들지 않은 맵이나 포인터를 쓴 곳을 보세요."),
-    ("go", re.compile(r"integer divide by zero"), "0으로 나눴어요. 나누는 값이 0이 되는 경우를 따져 보세요."),
+PHRASE_HINTS = (  # 이름 없이 문구로 알리는 오류(Rust 패닉): (언어, 오류 글에서 찾을 것, 풀이)
     ("rust", re.compile(r"index out of bounds"), "벡터의 범위를 벗어난 자리를 읽었어요. 빈 벡터이거나 len()과 같은 번호일 수 있어요."),
     ("rust", re.compile(r"attempt to .+ with overflow"), "계산한 값이 형의 범위를 넘었어요. i64를 쓰거나 빼기가 음수가 되는지 보세요."),
     ("rust", re.compile(r"called `?Option::unwrap\(\)`? on a `?None`? value"), "None인 값에 unwrap()을 불렀어요. 값이 없을 때를 먼저 따져 보세요."),
@@ -1456,7 +1561,7 @@ IMPORTED = {  # 가져와야(import) 쓸 수 있는 표준 모듈과 그 안의 
 def error_hint(text: str, language: str) -> str:
     """실행 오류 글에 붙일 한국어 한 줄 풀이. 모르는 오류면 빈 글. 가져오지 않은 표준 모듈 이름의 NameError는 import를 덧붙인다."""
     full, name = clean(text), exception_name(error_line(text, "runtime_error"))
-    known = HINTS.get(FAMILY.get(language, language), {}).get(name)
+    known = HINTS.get(language, {}).get(name)
     missing = re.search(r"name '(\w+)' is not defined", full) if language == "python" and name == "NameError" else None
     if known and missing and missing[1] in IMPORTED:
         name = missing[1]
@@ -1465,6 +1570,11 @@ def error_hint(text: str, language: str) -> str:
     if known:
         return known
     return next((hint for lang, found, hint in PHRASE_HINTS if lang == language and found.search(full)), "")
+
+
+def compile_hint(text: str, language: str) -> str:
+    """컴파일 오류 글에 붙일 한 줄 풀이: 파이썬·자바스크립트의 문법 오류는 실행 오류 표(HINTS)로, 컴파일하는 언어의 흔한 오류는 블록 확인과 같은 말로."""
+    return error_hint(text, language) or compile_easy(text)
 
 
 def error_fields(case: dict, language: str, hidden: bool) -> dict:
@@ -1495,7 +1605,7 @@ def result_body(report: dict) -> dict:
     missed = [case for case in report["cases"] if case["status"] != "passed"]
     # many: 통과하지 못한 케이스가 모두 '답이 여럿일 수 있는 문제에서 값이 다름'이다(틀렸다고 단정하지 않는다. 화면 머리가 그렇게 말한다)
     return {"ok": report["status"] == "passed", "status": report["status"], "reason": report["reason"], "compile": compile_head(report["compile"]),
-            "compile_line": report.get("compile_line"), "score": score(report), "cases": cases, "repeat": report.get("repeat") is True,
+            "compile_hint": compile_hint(report["compile"], language) if report["status"] == "compile_error" else "", "compile_line": report.get("compile_line"), "score": score(report), "cases": cases, "repeat": report.get("repeat") is True,
             "many": bool(missed) and all(case.get("note") for case in missed), "notice": report.get("notice") or ""}
 
 
@@ -1668,6 +1778,20 @@ def change_language(t, p, language: str, code: str | None) -> None:
     LANG[pid] = language
 
 
+def retire_languages() -> None:
+    """서버를 켤 때 한 번: 엔진 저장소에서 지원하지 않는 언어(예전에 있던 Go·Kotlin 등)로 저장된 문제를 모두 파이썬으로 옮긴다.
+    그 언어의 코드·계획은 change_language가 보관하고 지우지 않는다."""
+    with tutor() as t:
+        rows = t.store.conn.execute("SELECT id, language FROM problem").fetchall()
+        for row in rows:
+            if row["language"] not in check_judge().LANGUAGES:
+                try:
+                    with LOCKS[row["id"]]:
+                        change_language(t, SimpleNamespace(id=row["id"]), "python", None)
+                except Exception as e:  # 한 문제를 옮기지 못해도 앱은 뜬다(그 문제의 시작 코드는 starter_of가 빈 글로 받는다)
+                    print(f"[retire] {row['id']}: {e}", file=sys.stderr)
+
+
 SOLUTION_COLUMNS = ("approach", "steps_json", "code", "verified", "clues_json")
 SESSION_COLUMNS = ("plan_json", "explain_json", "solution_json")  # 대화 진행(open_count)은 보관하지 않는다(되살리면 첫 블록부터)
 
@@ -1725,6 +1849,12 @@ def own_way(pid: str, on: bool) -> None:
     write_json(OWN_FILE, {**rows, pid: True} if on else rows)
 
 
+def feedback_language(t, body):
+    """피드백이 본 제출의 언어를 얹는다. 언어를 바꿔도 피드백은 남아, 화면 부제가 지금 고른 언어를 적으면 다른 언어의 코드에 붙는다."""
+    row = isinstance(body, dict) and t.store.conn.execute("SELECT language FROM submission WHERE id=?", (body.get("submission_id"),)).fetchone()
+    return {**body, "language": row["language"]} if row else body
+
+
 def hints_now(study: dict, rows: list) -> int:
     """이번 풀이(처음, 또는 마지막 '처음부터' 뒤)에서 본 힌트 수."""
     return min(max(0, study["hints_seen"] - study["hints_at_reset"]), len(rows))
@@ -1740,10 +1870,39 @@ def hint_rows(t, pid: str) -> list[dict]:
             for n, block in enumerate(blocks, 1) for k, hint in enumerate(block["hints"][:3], 1)]
 
 
-def hints_shown(rows: list[dict], seen: int) -> list[dict]:
-    """본 힌트까지. 블록 이름은 그 블록의 힌트를 모두 본 뒤에만 싣는다(이름이 답의 일부다. 화면에서 가리지 않고 보내지 않는다)."""
-    done = {row["block"] for row in rows[:seen] if row["last"]}
-    return [{key: value for key, value in row.items() if key != "last" and (key != "name" or row["block"] in done)} for row in rows[:seen]]
+def hint_counts(study: dict, rows: list[dict], saved, language: str | None = None) -> dict[int, int]:
+    """블록마다 이번 풀이에서 본 힌트 수 {블록 번호: 수}. 남겨 둔 수가 이번 풀이의 것이고 합이 본 힌트 수와 같을 때만 쓴다.
+    아니면(예전 기록, '처음부터' 뒤, 계획이 바뀜) 본 수를 블록 1부터 차례로 나눈다(블록마다 고르기 전과 같은 결과).
+    language: 언어마다 계획이 다른 문제(직접 넣은 문제)에서 지금 언어. 다른 언어에서 남긴 수는 이 계획의 힌트를 본 것이 아니라 모두 0이다."""
+    sizes = Counter(row["block"] for row in rows)
+    if language and isinstance(saved, dict) and saved.get("lang", language) != language:
+        return {n: 0 for n in sizes}
+    seen = saved.get("seen") if isinstance(saved, dict) and saved.get("from") == study["hints_at_reset"] else None
+    if isinstance(seen, dict):
+        got = {n: seen.get(str(n), 0) for n in sizes}
+        # 언어를 적어 둔 기록은 그 언어에서 센 것이라 누적 수(다른 언어에서 본 것도 든다)와 합이 같지 않다. 언어 없는 예전 기록만 합으로 맞춘다
+        if all(isinstance(k, int) and 0 <= k <= sizes[n] for n, k in got.items()) and (bool(language and saved.get("lang") == language) or sum(got.values()) == hints_now(study, rows)):
+            return got
+    left, out = hints_now(study, rows), {}
+    for n, size in sizes.items():
+        out[n] = min(size, left)
+        left -= out[n]
+    return out
+
+
+def hints_shown(rows: list[dict], counts: dict[int, int]) -> list[dict]:
+    """본 힌트(블록 차례, 그 안의 힌트 차례). 블록 이름은 그 블록의 힌트를 모두 본 뒤에만 싣는다(이름이 답의 일부다. 화면에서 가리지 않고 보내지 않는다)."""
+    seen = [row for row in rows if row["step"] <= counts.get(row["block"], 0)]
+    done = {row["block"] for row in seen if row["last"]}
+    return [{key: value for key, value in row.items() if key != "last" and (key != "name" or row["block"] in done)} for row in seen]
+
+
+def hint_blocks(rows: list[dict], counts: dict[int, int]) -> list[dict]:
+    """힌트 목차: 블록마다 번호, 종류, 본 수와 모두의 수. 이름은 그 블록의 힌트를 모두 본 뒤에만."""
+    sizes = Counter(row["block"] for row in rows)
+    firsts = {row["block"]: row for row in reversed(rows)}
+    return [{"block": n, "kind": firsts[n]["kind"], "seen": counts[n], "total": size, **({"name": firsts[n]["name"]} if counts[n] >= size else {})}
+            for n, size in sizes.items()]
 
 
 QUOTE_PAIRS = {"'": "'", '"': '"', "‘": "’", "“": "”"}
@@ -1794,6 +1953,8 @@ def own_starter(p, language: str) -> str:
     """등록한 문제의 시작 코드: 모든 케이스의 넣을 값과 기대 결과에서 형을 정해 함수 머리를 만든다. 정할 수 없으면 빈 글.
     인자 이름은 입출력 예 표 머리에서 가져온 것(names, 예약어면 뒤에 _), 없거나 수가 다르면 a, b, c …
     프로그램 방식은 표준 입력을 읽는 main 뼈대."""
+    if language not in check_judge().LANGUAGES:
+        return ""
     if p.mode == "program":
         return program_stub(language)
     types, returns = own_types(p) or ([None], None)
@@ -1802,6 +1963,15 @@ def own_starter(p, language: str) -> str:
     names = getattr(p, "names", None)
     names = [name + "_" if name in RESERVED else name for name in names] if isinstance(names, list) and len(names) == len(types) else [chr(ord("a") + n) for n in range(len(types))]
     return stub({"params": [{"name": name, "type": typ} for name, typ in zip(names, types)], "returns": returns}, language)
+
+
+def slow_only(report: dict) -> bool:
+    """정확성 케이스는 모두 맞고 효율성 케이스는 시간 초과로만 떨어졌다(돌리지 않은 것은 앞선 시간 초과 탓).
+    큰 입력에서 답이 다르거나(정수 넘침 등) 실행 오류(재귀가 너무 깊음 등)로 멈췄으면 시간 문제가 아니라 틀린 곳이 있다."""
+    return bool(report["cases"]) and all(case["status"] == "passed" or case["kind"] == "efficiency" and case["status"] in ("timeout", "skipped") for case in report["cases"])
+
+
+SLOW_MESSAGE = "답은 맞아요. 다만 입력이 아주 클 때 시간이 모자라요. 제한사항의 입력 크기를 보고, 같은 것을 되풀이해 세거나 찾는 곳이 없는지 살펴보세요."
 
 
 DEBUG_DONE = "고친 코드가 통과했어요. 기록으로 남기려면 제출해 주세요."
@@ -1833,6 +2003,8 @@ def state_body(t, p, body: dict) -> dict:
         recheck_later(pid)  # 대조 없이 준비해 둔 등록 문제(대조 기능 전에 등록): 한 번 대조한다
     passed, total = counts(t).get(pid, (0, 0))
     study = t.store.study(pid)
+    passed_now = passed_since(problem_subs(t, pid), study)  # 이번 풀이에서 통과했다(아니면 화면이 해설을 저절로 열지 않는다)
+    talked = (t.store.conn.execute("SELECT MIN(at) FROM message WHERE problem_id=?", (pid,)).fetchone() or [None])[0]
     # 주제를 붙이지 않은 등록 문제는 튜터가 준비한 계획의 알고리즘(15개 주제 가운데 하나일 때만)을 보인다(목록과 같다)
     planned = ctx.plan.algorithm if not p.sample and ctx is not None and ctx.plan is not None and ctx.plan.algorithm in ALGORITHMS else ""
     kinds = Counter(case.get("kind", "example") for case in p.cases)
@@ -1841,12 +2013,13 @@ def state_body(t, p, body: dict) -> dict:
     mine = {} if p.sample else {"own_cases": [{"input": case["input"], "expected": case["expected"], "hidden": case.get("kind", "example") != "example"} for case in p.cases if not case.get("made")],
                                 **{key: getattr(p, key, False) is True for key in ANSWER_FLAGS}}
     return {"problem": {"id": pid, "title": p.title, "language": ctx.language, "text": p.text, "sample": p.sample, "builtin": p.builtin, "mode": p.mode,
-                        "theme": p.theme, "theme_name": p.theme_name or (theme_name(planned) if planned else ""), "level": p.level, **labels_of(t, p),
+                        "theme": p.theme, "theme_name": p.theme_name or (theme_name(planned) if planned else ""), "level": p.level, **labels_of(t, p, ctx.language),
                         "languages": row["languages"] if row else list(check_judge().LANGUAGES), "starter": row["starters"].get(ctx.language, "") if row else own_starter(p, ctx.language),
                         "examples": examples, "cases": {kind: kinds.get(kind, 0) for kind in KINDS},
-                        "study": {"hints_seen": hints_now(study, hint_rows(t, pid)), "hints_total": len(hint_rows(t, pid)), "solution_seen": bool(study["solution_at"]),
+                        "study": {"hints_seen": sum(hint_counts(study, hint_rows(t, pid), read_json(HINTS_FILE, {}).get(pid), None if row else ctx.language).values()), "hints_total": len(hint_rows(t, pid)), "solution_seen": bool(study["solution_at"]),
                                   "solution_open": passed > 0 or bool(study["solution_at"]), "has_guide": row is not None or ctx.solution is not None,
-                                  "passed_now": passed_since(problem_subs(t, pid), study)},  # 이번 풀이에서 통과했다(아니면 화면이 해설을 저절로 열지 않는다)
+                                  "passed_now": passed_now,
+                                  "unaided_open": unaided_open(p, problem_subs(t, pid), study, talked, passed_now)},
                         "code": ctx.direct_code or "", "passed": passed, "submitted": total,
                         "tools": tools(), "preparing": pid in PREPARING, "prepare_failed": pid in PREP_FAILED and ctx.plan is None, "assets": assets(pid), "checkpoint_at": (checkpoint(pid, ctx.language) or {}).get("at"), **mine},
             "session": t.session(pid, body.get("mode")).body, "blocks": read_json(BLOCKS_FILE, {}).get(pid, {}), "own_way": pid in read_json(OWN_FILE, {}),
@@ -1870,7 +2043,7 @@ FAIL_KINDS = {"failed": "오답", "runtime_error": "실행 오류", "timeout": "
 FAIL_OF = {"output_limit": "runtime_error", "memory_limit": "runtime_error",  # 보고서에서는 실행 오류로 묶는다
            "entry_missing": "compile_error", "unsupported_signature": "compile_error",  # 코드 모양이 틀렸다
            "undecided": "failed"}
-LANG_NAMES = {"python": "Python", "java": "Java", "javascript": "JavaScript", "cpp": "C++", "go": "Go", "kotlin": "Kotlin", "rust": "Rust"}
+LANG_NAMES = {"python": "Python", "java": "Java", "javascript": "JavaScript", "cpp": "C++", "go": "Go", "kotlin": "Kotlin", "rust": "Rust"}  # 예전 제출 기록에 남은 Go·Kotlin 이름도 보여야 해서 둔다
 
 # 준비도(이 앱의 기본 문제 기준). 군과 문턱은 여기 한 곳에만 둔다. 심화(dijkstra, graph)는 단계 조건에 넣지 않는다
 ESSENTIAL = ("implementation", "simulation", "hash", "sort", "brute_force", "bfs", "dfs")  # 필수
@@ -1925,6 +2098,17 @@ def unaided_pass(subs: list[dict], study: dict, talked: str | None) -> bool:
     first = study["help_first_at"] or (EARLIEST.isoformat() if study["solution_before_pass"] or study["hints_seen"] else None)
     return clean(None, (first, talked)) or (study["reset_at"] is not None
                                             and clean(stamp(study["reset_at"]), (study["help_after_reset_at"], talked), timedelta(hours=REPEAT_GAP_HOURS)))
+
+
+def unaided_open(p, subs: list[dict], study: dict, talked: str | None, passed_now: bool) -> bool:
+    """이번 풀이가 아직 '도움 없이 푼 문제'로 셀 수 있는 중인가: 기본 문제이고, 이번 풀이에서 통과하지 않았고, 도움(튜터 기능·힌트·해설·튜터 대화)을
+    쓰지 않았고, 제출이 UNAIDED_MAX_SUBMITS번 안이다. 화면이 도움을 쓰기 전에 기준을 알릴지 가르는 데 쓴다(규칙은 unaided_pass와 같다)."""
+    if not p.builtin or passed_now:
+        return False
+    reset = study["reset_at"]
+    helped = study["help_after_reset_at"] if reset else study["help_first_at"] or (EARLIEST.isoformat() if study["solution_before_pass"] or study["hints_seen"] else None)
+    tries = [sub for sub in subs if reset is None or stamp(sub["at"]) > stamp(reset)]
+    return not (helped or talked) and len(tries) < UNAIDED_MAX_SUBMITS
 
 
 def fail_kind(sub: dict) -> str | None:
@@ -1990,18 +2174,27 @@ def left(key: str, level: int, levels: list, fresh: list, after: list) -> dict:
     return {"key": key, "name": theme_name(key), "level": level, "solved": len(levels), "top": top, "more": more, "todo": todo, "after": after}
 
 
+def mastered(unaided: dict, key: str, level: int) -> bool:
+    """주제를 익혔는가: 도움 없이 MASTER_COUNT문제 이상 풀었고 그중 가장 높은 단계가 level 이상."""
+    return len(unaided.get(key, [])) >= MASTER_COUNT and max(unaided[key]) >= level
+
+
+def prereq_root(key: str, basic: dict) -> str:
+    """key의 선수 주제 가운데 기초를 못 익힌 것이 있으면 그쪽으로 거슬러 올라간 첫 주제(없으면 key). 준비도 칸과 추천 큐가 같이 쓴다."""
+    while any(not basic[p] for p in PREREQS[key]):
+        key = next(p for p in PREREQS[key] if not basic[p])
+    return key
+
+
 def readiness(unaided: dict, started: set, fresh: dict) -> dict:
     """준비도와 다음 단계까지 남은 주제(학습 지도 순서). unaided: 주제 → 도움 없이 푼 기본 문제의 단계들, fresh: 주제 → 아직 통과하지 않은 기본 문제의 단계들."""
-    def mastered(key: str, level: int) -> bool:
-        return len(unaided.get(key, [])) >= MASTER_COUNT and max(unaided[key]) >= level
-
-    basic = {key: mastered(key, BASIC_LEVEL) for key in PREREQS}
+    basic = {key: mastered(unaided, key, BASIC_LEVEL) for key in PREREQS}
     solved = sum(len(levels) for levels in unaided.values())
     need = {key: BASIC_LEVEL for key in ESSENTIAL if not basic[key]}
     if need:
         stage = "hold" if solved < READY_MIN else "building"
     else:
-        need = {key: REAL_LEVEL for key in ESSENTIAL if not mastered(key, REAL_LEVEL)} | {key: BASIC_LEVEL for key in FREQUENT if not basic[key]}
+        need = {key: REAL_LEVEL for key in ESSENTIAL if not mastered(unaided, key, REAL_LEVEL)} | {key: BASIC_LEVEL for key in FREQUENT if not basic[key]}
         stage = "easy" if need else "practice"
     line = {"hold": f"아직 판단하기에 기록이 적어요. 도움 없이 {READY_MIN}문제를 풀면 알려 드릴게요(지금 {solved}문제).",
             "building": f"도움 없이 {solved}문제를 풀었어요. 쉬운 코딩테스트 도전까지 필수 주제 {len(need)}개가 남았어요.",
@@ -2012,13 +2205,13 @@ def readiness(unaided: dict, started: set, fresh: dict) -> dict:
     # 다음에 배울 주제: 남은 것 가운데 먼저 익힐 주제를 모두 익힌 것(필수 → 자주, 시작한 주제, 지도 순서). 없으면 첫 주제의 못 익힌 선수 주제로 거슬러 간다
     order = sorted(need, key=lambda key: (key not in ESSENTIAL, key not in started, MAP_ORDER[key]))
     focus = next((key for key in order if all(basic[p] for p in PREREQS[key])), order[0] if order else None)
-    while focus and any(not basic[p] for p in PREREQS[focus]):
-        focus = next(p for p in PREREQS[focus] if not basic[p])
+    focus = prereq_root(focus, basic) if focus else None
     return {"stage": stage, "label": STAGES[stage], "line": line, "solved": solved, "focus": focus,
             "goal": STAGES["practice" if stage == "easy" else "easy"] if need else None,  # 남은 것이 향하는 단계
             "remaining": [left(key, need[key], unaided.get(key, []), fresh.get(key, []), [theme_name(p) for p in PREREQS[key] if not basic[p]])
                           for key in PREREQS if key in need],
             "basis": "이 앱의 기본 문제 기준이에요.",
+            "rule_short": f"도움 없이, 제출 {UNAIDED_MAX_SUBMITS}번 안에 통과한 기본 문제만 준비도에 세요. 힌트·튜터·해설을 썼거나, 제출이 {UNAIDED_MAX_SUBMITS}번을 넘었거나, '처음부터' 뒤 {REPEAT_GAP_HOURS}시간 안에 다시 푼 통과는 '그 밖의 통과'로 남아요.",
             "rules": [f"도움 없이 푼 문제: 튜터 기능(대화, 블록 채우기, 해설 모드, 틀린 곳 같이 찾기, AI 피드백), 힌트, 해설을 쓰기 전에 제출 {UNAIDED_MAX_SUBMITS}번 안에 "
                       f"통과한 기본 문제예요. '이 문제 처음부터'로 다시 시작했다면 {REPEAT_GAP_HOURS}시간이 지난 뒤에 그렇게 통과해도 세요. "
                       "통과한 뒤에 쓴 도움은 판정을 바꾸지 않아요. 등록한 문제는 세지 않아요.",
@@ -2026,6 +2219,18 @@ def readiness(unaided: dict, started: set, fresh: dict) -> dict:
                       f"판정 보류: 도움 없이 푼 문제가 {READY_MIN}문제보다 적어요.",
                       f"쉬운 코딩테스트 도전: 필수 주제({', '.join(theme_name(key) for key in ESSENTIAL)})를 모두 기초 익힘.",
                       f"실전 연습 단계: 필수 주제를 모두 실전 익힘, 자주 나오는 주제({', '.join(theme_name(key) for key in FREQUENT)})를 모두 기초 익힘."]}
+
+
+def repeated_pitfalls(store, language: str) -> list[dict]:
+    """두 번 이상 밟은 함정과, 그 함정이 나온 문제. 한 번만 나온 것은 되풀이가 아니라서 뺀다."""
+    where: dict[str, list[str]] = {}
+    for row in store.conn.execute("SELECT DISTINCT problem_id, pitfall FROM pitfall_hit ORDER BY rowid").fetchall():
+        ids = where.setdefault(PITFALL_GROUPS.get(row["pitfall"], row["pitfall"]), [])
+        if row["problem_id"] in PROBLEMS and row["problem_id"] not in ids:
+            ids.append(row["problem_id"])
+    return [{"name": pitfall_text(pid, language)[0] if pid in PITFALLS else pid, "count": count,
+             "problems": [{"id": x, "title": PROBLEMS[x].title} for x in where.get(pid, [])]}
+            for pid, count in store._frequent_pitfalls(5) if count >= 2]
 
 
 def learning_report(t) -> dict:
@@ -2038,7 +2243,8 @@ def learning_report(t) -> dict:
                풀기 전에 해설을 연 문제가 없다.
     - weak     아래 가운데 하나: 두 문제 이상에 걸쳐 제출이 3번 이상인데 60% 이상이 통과하지 못했다(한 문제에서 여러 번 틀리고 푼 것은 약점이 아니다) /
                두 문제 이상에서 답은 맞았지만 큰 입력에서 시간이 모자랐다(fail_kind의 slow) /
-               풀기 전에 해설을 연 문제가 2개 이상이다 / 3번 넘게 제출하고도 아직 못 푼 문제가 있다.
+               풀기 전에 해설을 연 문제가 2개 이상이다 / 3번 넘게 제출하고도 아직 못 푼 문제가 있다 /
+               서로 다른 문제 2개 이상을 통과했는데 도움 없이 푼 문제가 하나도 없다.
     - progress 그 밖(풀고 있는 중).
     """
     subs = [sub for sub in t.store.submissions() if sub["status"] != "toolchain_missing"]  # 도구가 없어 채점하지 못한 예전 기록은 제출이 아니다
@@ -2078,7 +2284,7 @@ def learning_report(t) -> dict:
         slow = {sub["problem_id"] for sub in mine_subs if fail_kind(sub) == "slow"}
         stuck = [row for row in tried + own_tried if row["id"] not in solved and len(by_problem[row["id"]]) > 3]
         failed = sum(fails.values())
-        todo = next_up(mine, solved)
+        todo = next_up(mine, {row["id"] for row in alone})  # 도움 없이 푼 단계가 기준이다(도움 받아 통과한 것은 다시 풀 후보)
         # 해설을 먼저 본 문제: 그 뒤의 통과 제출이 한 번 이하면 힌트·해설 없이 다시 풀었는지 가릴 수 없어 다시 권한다
         review = next((row for row in mine if studies[row["id"]]["solution_before_pass"]
                        and sum(sub["ok"] and stamp(sub["at"]) >= stamp(studies[row["id"]]["solution_at"]) for sub in by_problem.get(row["id"], [])) <= 1), None)
@@ -2098,12 +2304,15 @@ def learning_report(t) -> dict:
             state, why = "weak", f"풀기 전에 해설을 먼저 연 문제가 {early}개예요. 힌트까지만 보고 한 번 더 버텨 보세요."
         elif stuck:
             state, why = "weak", f"'{stuck[0]['title']}' 문제를 {len(by_problem[stuck[0]['id']])}번 제출했지만 아직 통과하지 못했어요."
+        elif len(done) >= 2 and not alone:
+            state, why = "weak", f"{len(done)}문제를 통과했지만 도움 없이 푼 문제가 아직 없어요(힌트·튜터·해설을 썼거나 제출이 많았어요). 도움 없이 한 문제를 다시 풀어 보세요."
         else:
             own_line = f" 등록한 문제 {sum(pid in solved for pid in own_by_theme[key])}개를 풀었어요." if own_by_theme[key] else ""  # 등록 문제의 통과는 따로 말한다(제출 수와 기준을 맞춘다)
             state, why = "progress", f"기본 문제 {len(mine)}문제 중 {len(done)}문제를 풀었어요.{own_line}" + (f" 다음은 {todo['level']}단계예요." if todo else " 모두 풀었어요.")
         theme_rows_.append({"key": key, "name": theme_name(key), "solved": len(done), "total": len(mine), "level_reached": max((row["level"] for row in done), default=0),
-                            "submissions": len(mine_subs), "first_try": first_try, "fails": fails, "hints": sum(study["hints_seen"] for study in studies.values()),
-                            "solution_before_pass": early, "state": state, "why": why, "next": {"id": todo["id"], "title": todo["title"], "level": todo["level"]} if todo else None,
+                            "unaided": len(alone), "submissions": len(mine_subs), "first_try": first_try, "fails": fails, "hints": sum(study["hints_seen"] for study in studies.values()),
+                            "solution_before_pass": early, "early_problems": [{"id": row["id"], "title": row["title"]} for row in mine if studies[row["id"]]["solution_before_pass"]],
+                            "state": state, "why": why, "next": {"id": todo["id"], "title": todo["title"], "level": todo["level"]} if todo else None,
                             "review": {"id": review["id"], "title": review["title"], "level": review["level"]} if review else None,
                             # 이 주제를 고른 등록 문제 가운데 풀이 계획의 유형이 다른 것(둘을 나란히 보인다)
                             "plan_differs": [{"id": pid, "title": PROBLEMS[pid].title, "planned": theme_name(differ[pid])} for pid in own_by_theme[key] if pid in differ]})
@@ -2118,17 +2327,24 @@ def learning_report(t) -> dict:
     last = {pid: max(str(stamps.get(pid) or ""), by_problem[pid][-1]["at"] if pid in by_problem else "") for pid in PROBLEMS}
     writing = sorted((pid for pid in PROBLEMS if pid not in solved and (pid in by_problem or pid in mine_code or pid in stamps)), key=lambda pid: last[pid], reverse=True)
     queue = [({"id": pid, "title": PROBLEMS[pid].title, "level": PROBLEMS[pid].level}, PROBLEMS[pid].theme_name or (theme_name(theme_of[pid]) if theme_of.get(pid) else ""),
-              "쓰던 문제예요.") for pid in writing[:1]]
+              "쓰던 문제예요.", None) for pid in writing[:1]]  # 키가 None이면 선수 주제를 보지 않는다(쓰던 문제·해설을 먼저 본 문제는 그대로)
     for row in weak:
-        queue += [(row["review"], row["name"], "해설을 먼저 본 문제예요. 힌트 없이 다시 풀어 보세요.")] if row["review"] else []
-        queue += [(row["next"], row["name"], "약한 주제예요: " + row["why"])]
+        queue += [(row["review"], row["name"], "해설을 먼저 본 문제예요. 힌트 없이 다시 풀어 보세요.", None)] if row["review"] else []
+        queue += [(row["next"], row["name"], "약한 주제예요: " + row["why"], row["key"])]
     # 까닭에는 주제·단계를 다시 적지 않는다(화면이 '해시 3단계 · '를 앞에 붙인다)
-    queue += [(row["next"], row["name"], "이어서 풀기") for row in theme_rows_ if row["state"] == "progress" and row["next"] and row["key"] in started]
-    queue += [(row["next"], row["name"], "새 주제 시작") for row in sorted(theme_rows_, key=lambda row: MAP_ORDER[row["key"]])  # 학습 지도 순서
+    queue += [(row["next"], row["name"], "이어서 풀기", row["key"]) for row in theme_rows_ if row["state"] == "progress" and row["next"] and row["key"] in started]
+    queue += [(row["next"], row["name"], "새 주제 시작", row["key"]) for row in sorted(theme_rows_, key=lambda row: MAP_ORDER[row["key"]])  # 학습 지도 순서
               if row["state"] == "new" or (row["state"] == "progress" and row["key"] not in started)]
-    queue += [(row["next"], row["name"], "한 단계 더") for row in theme_rows_ if row["state"] == "strong" and row["next"]]
+    queue += [(row["next"], row["name"], "한 단계 더", row["key"]) for row in theme_rows_ if row["state"] == "strong" and row["next"]]
+    basic = {key: mastered(unaided, key, BASIC_LEVEL) for key in PREREQS}
     todo_rows, picked = [], set()
-    for target, name, why in queue:
+    for target, name, why, key in queue:
+        # 선수 주제를 못 익힌 주제의 문제는 준비도 칸과 같은 규칙으로 선수 주제의 다음 문제로 바꾼다
+        if key and (root := prereq_root(key, basic)) != key:
+            row = next((row for row in theme_rows_ if row["key"] == root), {})
+            target, name, why = row.get("next"), row.get("name", ""), f"먼저 익힐 주제예요({theme_name(key)}의 선수 주제)"
+        if target and target["id"] in solved and not why.startswith("해설을"):  # 도움을 받아 통과한 문제: 이어서 푸는 것이 아니라 다시 푸는 것
+            why = f"도움 없이 다시 풀기('처음부터' 뒤 {REPEAT_GAP_HOURS}시간이 지나 다시 풀면 인정)"
         if target and target["id"] not in picked and len(todo_rows) < 5:
             picked.add(target["id"])
             todo_rows.append({"id": target["id"], "title": target["title"], "theme_name": name, "level": target["level"], "why": why})
@@ -2154,7 +2370,7 @@ def learning_report(t) -> dict:
         "strengths": [{"key": row["key"], "name": row["name"], "why": row["why"]} for row in strong],
         "weaknesses": [{"key": row["key"], "name": row["name"], "why": row["why"], "next": {"id": (row["review"] or row["next"])["id"], "title": (row["review"] or row["next"])["title"]}
                         if row["review"] or row["next"] else None} for row in weak],
-        "pitfalls": [{"name": PITFALLS[pid][1] if pid in PITFALLS else pid, "count": count} for pid, count in t.store._frequent_pitfalls(5)],
+        "pitfalls": repeated_pitfalls(t.store, last_language()),
         "recent": [{"id": sub["problem_id"], "title": PROBLEMS[sub["problem_id"]].title, "ok": sub["ok"], "status": sub["status"], "language": sub["language"], "at": sub["at"]}
                    for sub in reversed(subs) if sub["problem_id"] in PROBLEMS][:10],
         "signals": signals, "feedbacks": feedbacks, "next": todo_rows, "attendance": attendance(),
@@ -2191,6 +2407,27 @@ def handle(path: str, body: dict) -> tuple[int, dict]:
     if path == "/api/tour":  # 처음 안내를 봤다고 적는다(창을 다시 켜도 또 뜨지 않게. 웹뷰는 localStorage를 남기지 않는다)
         write_json(PREFS_FILE, {**read_json(PREFS_FILE, {}), "tour_seen": True})
         return 200, accounts()
+    if path == "/api/prefs":  # 화면 설정: 화면 색(scheme. system이면 키를 지워 운영체제 설정을 따른다), 세 칸의 너비 몫(panes. null이면 기본 배치), 기본 언어(language). 보낸 것만 바꾼다
+        if not {"scheme", "panes", "language"} & body.keys():
+            raise Refuse("화면 색, 칸 너비, 기본 언어 가운데 하나는 보내 주세요.")
+        if "language" in body and body["language"] not in check_judge().LANGUAGES:
+            raise Refuse("고를 수 없는 언어예요.", field="language")
+        if "scheme" in body and body["scheme"] not in ("system", "light", "dark"):
+            raise Refuse("화면 색은 시스템 설정대로, 라이트, 다크 가운데 하나예요.", field="scheme")
+        if body.get("panes") is not None and "panes" in body and not panes_ok(body["panes"]):
+            raise Refuse("칸 너비는 문제·코드·튜터 세 몫이고, 각각 5에서 90 사이, 합은 100이에요.", field="panes")
+        prefs = read_json(PREFS_FILE, {})
+        for key in ("scheme", "panes"):
+            if key in body:
+                prefs.pop(key, None)
+        if body.get("scheme") in ("light", "dark"):
+            prefs["scheme"] = body["scheme"]
+        if body.get("panes") is not None:
+            prefs["panes"] = [round(float(x), 2) for x in body["panes"]]
+        if "language" in body:
+            prefs["language"] = body["language"]  # 다음에 처음 여는 문제의 언어(코드 화면에서 언어를 바꿔도 이 값이 바뀐다)
+        write_json(PREFS_FILE, prefs)
+        return 200, accounts()
     if path == "/api/theme":  # 과정 하나의 급과 추론 정도. 빈 값은 기본값으로 돌린다는 뜻이다
         if not all(isinstance(body.get(key, ""), str) for key in ("theme", "tier", "effort")) or body.get("theme") not in themes.THEMES:
             raise Refuse("알 수 없는 과정이에요.")
@@ -2217,8 +2454,43 @@ def handle(path: str, body: dict) -> tuple[int, dict]:
         value = value.strip()
         if len(value) > 400 or any(ch in value for ch in "\r\n\0"):
             raise Refuse("키가 너무 길거나 쓸 수 없는 글자가 있어요.")
+        label, prefix = KEY_FORM[body["name"]]
+        if not (value.startswith(prefix) and re.fullmatch(r"[A-Za-z0-9_-]+", value)) or (body["name"] == "openai" and value.startswith("sk-ant-")):  # Claude 키를 OpenAI 칸에 넣어도 거른다
+            raise Refuse(f"{label} 키의 꼴이 아니에요. {prefix}로 시작하고 영문·숫자·-·_만 있어야 해요. 빈칸이나 한글이 섞이지 않았는지 확인해 주세요.", field="value")
+        found = keycheck.check(body["name"], value)  # 공식 주소에 모델 목록 조회 한 번(요금 없음, 10초). 키 값은 어디에도 남기지 않는다
+        if found == keycheck.INVALID:
+            raise Refuse(f"{label}가 이 키를 받아 주지 않아요(401). 키를 다시 복사해 붙여 넣어 주세요.", 400, "key_invalid", "value")
+        if body.get("force") is not True:  # 아래는 사용자가 '그래도 저장'을 고를 수 있다
+            if found == keycheck.DENIED:
+                raise Refuse(f"이 키로는 {label}의 모델 목록을 볼 권한이 없어요(403). 키의 권한을 확인하거나, 그래도 저장할 수 있어요.", 409, "key_denied", "value")
+            if found == keycheck.SERVER:
+                raise Refuse(f"{label} 서버가 답하지 않아 키를 확인하지 못했어요. 잠시 뒤 다시 시도하거나, 확인 없이 저장할 수 있어요.", 409, "key_unverified", "value")
+            if found == keycheck.OFFLINE:
+                raise Refuse(f"{label}에 연결하지 못해 키를 확인하지 못했어요. 인터넷 연결을 보고 다시 시도하거나, 확인 없이 저장할 수 있어요.", 409, "key_unverified", "value")
         os.environ[KEYS[body["name"]]] = value
         save_key(KEYS[body["name"]], value)  # 다음에 켜도 쓰게 이 기기에만 저장한다
+        note_key_check(body["name"], found, value)
+        return 200, {**accounts(), "key_check": found}
+    if path == "/api/key/check":  # 지금 쓰는 그 공급자의 키를 다시 확인한다(키 값은 요청으로 받지 않는다)
+        if not isinstance(body.get("name"), str) or body["name"] not in KEYS:
+            raise Refuse("확인할 키 종류를 골라 주세요.")
+        if not os.environ.get(KEYS[body["name"]]):
+            raise Refuse("넣은 키가 없어요.", 409, "key_missing")
+        key = os.environ[KEYS[body["name"]]]
+        found = keycheck.check(body["name"], key)
+        note_key_check(body["name"], found, key)
+        return 200, {**accounts(), "key_check": found}  # found: ok·limited(키는 맞음), 그 밖은 확인 없이 저장한 것
+    if path == "/api/key/delete":  # 화면에서 넣은 그 공급자의 키만 지운다
+        if not isinstance(body.get("name"), str) or body["name"] not in KEYS:
+            raise Refuse("지울 키 종류를 골라 주세요.")
+        env, saved = KEYS[body["name"]], read_json(KEY_FILE, {})
+        if env not in saved:
+            raise Refuse("이 키는 화면에서 넣은 것이 아니에요. 넣어 둔 곳(.env나 환경 변수)에서 지워 주세요.", 409, "key_outside")
+        if os.environ.get(env) == saved[env]:  # 환경 변수의 값이 다른 것이면(밖에서 준 키) 그대로 둔다
+            os.environ.pop(env)
+        drop_key(env)
+        note_key_check(body["name"], None)
+        load_keys()  # .env에 같은 공급자의 키가 있으면 다시 올린다(지운 뒤의 연결 상태가 실제와 같게)
         return 200, accounts()
     if path == "/api/update":  # 새 버전: 상태·확인·받기·바꾸기(action)
         try:
@@ -2267,15 +2539,26 @@ def handle(path: str, body: dict) -> tuple[int, dict]:
             if not rows:
                 raise Refuse("이 문제에는 미리 만들어 둔 힌트가 없어요. 튜터를 연결하면 질문으로 도와드려요.", 404, "not_found")
             study = t.store.study(pid)
-            seen = hints_now(study, rows)
+            by_lang = None if row else language  # 기본 문제의 힌트는 모든 언어가 같다. 직접 넣은 문제는 언어마다 계획이 달라 본 수도 언어마다 센다
+            by_block = hint_counts(study, rows, read_json(HINTS_FILE, {}).get(pid), by_lang)
+            sizes = Counter(row["block"] for row in rows)
+            want = body.get("block")  # 막힌 블록의 힌트부터 연다(1부터). 주지 않으면 아직 다 보지 않은 첫 블록
+            if want is not None and (type(want) is not int or want not in sizes):
+                raise Refuse("힌트를 볼 블록을 다시 골라 주세요.", field="block")
+            seen = sum(by_block.values())
+            view = lambda: {"seen": seen, "total": len(rows), "done": seen == len(rows), "shown": hints_shown(rows, by_block), "blocks": hint_blocks(rows, by_block)}  # noqa: E731
             if body.get("peek") is True:  # 이번 풀이에서 본 힌트만 다시 보여 준다(문제를 다시 열었을 때). 새 힌트를 열지 않는다
-                return 200, {"seen": seen, "total": len(rows), "done": seen == len(rows), "shown": hints_shown(rows, seen)}
-            if seen < len(rows):  # 다 본 뒤에는 마지막 힌트를 다시 준다
+                return 200, view()
+            block = want or next((n for n in sizes if by_block[n] < sizes[n]), max(sizes))
+            if by_block[block] < sizes[block]:  # 그 블록의 힌트를 다 본 뒤에는 그 블록의 마지막 힌트를 다시 준다
+                by_block[block] += 1
                 seen += 1
-                t.store.set_study(pid, hints_seen=study["hints_seen"] + 1)  # 본 힌트 수는 누적이다
+                t.store.set_study(pid, hints_seen=study["hints_seen"] + 1)  # 본 힌트 수는 누적이다(도움으로 센다)
                 t.store.mark_help(pid)
-            shown = hints_shown(rows, seen)
-            return 200, {**shown[-1], "seen": seen, "total": len(rows), "done": seen == len(rows), "shown": shown}
+                write_json(HINTS_FILE, {**read_json(HINTS_FILE, {}), pid: {"from": study["hints_at_reset"], "seen": {str(n): k for n, k in by_block.items()}, **({"lang": by_lang} if by_lang else {})}})
+            body_now = view()
+            opened = next((row for row in reversed(body_now["shown"]) if row["block"] == block), None)
+            return 200, {**(opened or {}), **body_now}
         if path == "/api/solution":  # 기본 문제는 실린 해설, 등록한 문제는 엔진이 만들어 둔 그 언어의 풀이 가이드
             own_guide = None if row else t.store.load(pid).solution
             if row is None and own_guide is None:
@@ -2289,12 +2572,13 @@ def handle(path: str, body: dict) -> tuple[int, dict]:
                 t.store.mark_help(pid)
             if own_guide is not None:
                 return 200, {"signals": clue_signals(own_guide.clues), "pattern": "", "learn": "", "pitfalls": [], "ladder": [], "clues": own_guide.clues,
-                             "approach": own_guide.approach, "steps": own_guide.steps, "code": own_guide.code, "language": language, "next": None, "verified": own_guide.verified}
+                             "approach": own_guide.approach, "steps": own_guide.steps, "code": own_guide.code, "language": language, "next": None, "verified": own_guide.verified, "traps": []}
             guide = (row.get("ready") or {}).get("solution") or {}
             shown = language if language in row["solutions"] else "python"
+            traps = [{key: trap[key] for key in ("what", "fix", "at") if key in trap} for trap in (row.get("traps") or {}).get(shown, [])]  # 보이는 정답 코드의 언어에서 증명된 함정
             return 200, {"signals": row["signals"], "pattern": row["pattern"], "learn": row["learn"], "pitfalls": row["pitfalls"], "ladder": row["ladder"],
                          "clues": guide.get("clues") or [], "approach": guide.get("approach") or "", "steps": guide.get("steps") or [],
-                         "code": row["solutions"][shown], "language": shown, "next": next_problem(pid, {key for key, (ok, _) in counts(t).items() if ok}), "verified": True}
+                         "code": row["solutions"][shown], "language": shown, "next": next_problem(pid, {key for key, (ok, _) in counts(t).items() if ok}), "verified": True, "traps": traps}
         if path == "/api/code":
             t.store.update_code(pid, code_of(body))
             return 200, {"ok": True}
@@ -2334,7 +2618,7 @@ def handle(path: str, body: dict) -> tuple[int, dict]:
             return 200, result_body(judge(t, p, language, need_code(body)))
         if path == "/api/feedback/get":
             saved = t.feedback_get(pid)
-            return saved.status, saved.body
+            return saved.status, feedback_language(t, saved.body)
         with LOCKS[pid]:
             if path in ("/api/turn", "/api/followup", "/api/fill", "/api/explain", "/api/feedback", "/api/debug"):
                 t.store.mark_help(pid)  # 튜터 기능을 쓴 시각(학습 보고서가 도움 없이 푼 문제를 가린다)
@@ -2362,18 +2646,18 @@ def handle(path: str, body: dict) -> tuple[int, dict]:
                     judged = {**result_body(report), "unsaved": True}
                 if report["status"] == "passed":  # 엔진을 부르지 않는다: 내 말(있으면)과 맺음말만 디버그 대화에 남긴다
                     return 200, {"passed": True, "judged": judged or result_body(report), "messages": debug_closed(t, pid, str(body.get("text") or "").strip())}
-                if report["cases"] and all(case["status"] == "passed" for case in report["cases"] if case["kind"] != "efficiency"):
-                    # 답은 맞고 큰 입력에서만 걸렸다: 틀린 줄을 찾을 일이 아니라 방법을 바꿀 일이다(큰 입력은 모델에 넘기지 않는다)
-                    return 200, {"passed": False, "efficiency_only": True, "judged": judged or result_body(report),
-                                 "message": "답은 맞아요. 다만 입력이 아주 클 때 시간이 모자라요. 제한사항의 입력 크기를 보고, 같은 것을 되풀이해 세거나 찾는 곳이 없는지 살펴보세요."}
+                if slow_only(report):  # 답은 맞고 큰 입력에서 시간만 모자랐다: 틀린 줄을 찾을 일이 아니라 방법을 바꿀 일이다
+                    return 200, {"passed": False, "efficiency_only": True, "judged": judged or result_body(report), "message": SLOW_MESSAGE}
                 seen = tutor_view(report)
-                lines = [{**case, "line": raw.get("line")} for case, raw in zip(seen["cases"], report["cases"]) if raw["kind"] != "efficiency"] or seen["cases"]  # 채점기가 준 오류 줄을 같이 넘긴다
-                out = t.debug(pid, code, {**seen, "compile_line": report.get("compile_line"), "cases": lines},
+                small = [case for case in seen["cases"] if case["kind"] != "efficiency"]
+                # 작은 입력에서 틀렸으면 그것만 본다. 작은 입력이 다 맞으면 큰 입력에서 틀린 답·실행 오류를 본다(같이 난 시간 초과는 빼서 시간 이야기로 새지 않게)
+                lines = small if any(case["status"] != "passed" for case in small) else [case for case in seen["cases"] if case["status"] != "timeout"]
+                out = t.debug(pid, code, {**seen, "status": next((case["status"] for case in lines if case["status"] != "passed"), seen["status"]), "cases": lines},
                               text=str(body.get("text") or "").strip() or None)
                 return out.status, {**out.body, "judged": judged}
             else:
                 raise Refuse("찾지 못했어요.", 404, "not_found")
-            return out.status, out.body
+            return out.status, feedback_language(t, out.body) if path == "/api/feedback" else out.body
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -2398,7 +2682,10 @@ class Handler(BaseHTTPRequestHandler):
         path = self.path.split("?", 1)[0]
         if path in STATIC:
             name, kind = STATIC[path]
-            return self._send(200, (STATIC_DIR / name).read_bytes(), kind)
+            page = (STATIC_DIR / name).read_bytes()
+            if name == "index.html":  # 고른 화면 색을 첫 HTML에 실어 첫 그림 전에 맞춘다(웹뷰는 localStorage를 남기지 않고, 요청을 기다리면 깜빡인다)
+                page = page.replace(b'data-scheme-pref="system"', f'data-scheme-pref="{scheme_pref()}"'.encode(), 1)
+            return self._send(200, page, kind)
         found = re.fullmatch(r"/asset/([^/]+)/([^/]+)", path)  # 올린 원본: index.json에 적힌 것만
         if found and OWN_ID.fullmatch(found[1]) and re.fullmatch(r"\d{1,2}", found[2]):
             row = next((raw for raw in assets(found[1]) if isinstance(raw, dict) and raw.get("n") == int(found[2]) and raw.get("type") in ASSET_TYPES), None)
@@ -2472,21 +2759,43 @@ def stop_grading(*_) -> None:
 atexit.register(stop_grading)
 
 
-def main() -> None:
+def start() -> "ThreadingHTTPServer | str":
+    """잠금과 포트를 잡고 서버를 돌릴 준비를 한다. 새로 띄우지 못하면(이미 켜져 있거나 포트가 막힘) 그 안내 글을 돌려준다."""
+    port = int(os.environ.get("ALGOBLOCK_UI_PORT", "8791"))
+    other = single.guard(DATA, port)  # 켜져 있으면 키 읽기·업데이트 확인·미리 준비를 하나 더 돌리지 않는다
+    if other is not None:
+        return single.running_message(other)
+    try:
+        httpd = ThreadingHTTPServer(("127.0.0.1", port), Handler)
+    except OSError as exc:  # 잠금은 잡았으니 다른 프로그램(또는 다른 데이터 폴더의 앱)이 이 포트를 쓰고 있다
+        return f"{port}번 포트를 이미 다른 프로그램이 쓰고 있어요. 새로 띄우지 않았습니다: {exc}"
     load_keys()
+    retire_languages()
     updater.start()  # 켤 때(마지막 확인에서 24시간이 지났으면)와 24시간마다 새 버전을 뒤에서 본다(실패하면 1시간부터 늘려 다시)
     if threading.current_thread() is threading.main_thread():  # 창(window.py)에서 띄우면 스레드라 신호를 받을 수 없다
         signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))  # 끝내기 전에 atexit의 stop_grading이 돈다
-    port = int(os.environ.get("ALGOBLOCK_UI_PORT", "8791"))
-    server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
-    server.daemon_threads = True
+    httpd.daemon_threads = True
     print(f"AlgoBlock: http://127.0.0.1:{port}", flush=True)
+    return httpd
+
+
+def serve(httpd) -> None:
     try:
-        server.serve_forever()
+        httpd.serve_forever()
     except KeyboardInterrupt:
         pass
     finally:
         stop_grading()
+
+
+def main() -> bool:
+    """서버를 띄워 끝날 때까지 돈다. 새로 띄우지 못했으면 안내를 표준 오류에 쓰고 False."""
+    httpd = start()
+    if isinstance(httpd, str):
+        print(httpd, file=sys.stderr, flush=True)
+        return False
+    serve(httpd)
+    return True
 
 
 if __name__ == "__main__":

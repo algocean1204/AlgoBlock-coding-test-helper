@@ -41,14 +41,6 @@ SOURCES = {
         "function": "#include <bits/stdc++.h>\nusing namespace std;\nvector<string> solution(vector<vector<int>> grid, string word) {\n    int total = 0;\n    for (auto& row : grid) for (int v : row) total += v;\n    return {word + to_string(total)};\n}\n",
         "program": "#include <iostream>\nint main() {\n    int n; std::cin >> n;\n    long long total = 0;\n    for (int i = 0; i < n; ++i) { int v; std::cin >> v; total += v; }\n    std::cout << total << \"\\n\";\n}\n",
     },
-    "kotlin": {
-        "function": "class Solution {\n    fun solution(grid: Array<IntArray>, word: String): Array<String> {\n        return arrayOf(word + grid.sumOf { it.sum() })\n    }\n}\n",
-        "program": "fun main() {\n    readln()\n    println(readln().split(\" \").sumOf { it.toInt() })\n}\n",
-    },
-    "go": {
-        "function": "package main\n\nimport \"strconv\"\n\nfunc solution(grid [][]int, word string) []string {\n\ttotal := 0\n\tfor _, row := range grid {\n\t\tfor _, v := range row {\n\t\t\ttotal += v\n\t\t}\n\t}\n\treturn []string{word + strconv.Itoa(total)}\n}\n",
-        "program": "package main\n\nimport \"fmt\"\n\nfunc main() {\n\tvar n int\n\tfmt.Scan(&n)\n\ttotal := 0\n\tfor i := 0; i < n; i++ {\n\t\tvar v int\n\t\tfmt.Scan(&v)\n\t\ttotal += v\n\t}\n\tfmt.Println(total)\n}\n",
-    },
     "rust": {
         "function": "fn solution(grid: Vec<Vec<i32>>, word: String) -> Vec<String> {\n    let total: i32 = grid.iter().map(|r| r.iter().sum::<i32>()).sum();\n    vec![format!(\"{}{}\", word, total)]\n}\n",
         "program": "use std::io::Read;\nfn main() {\n    let mut s = String::new();\n    std::io::stdin().read_to_string(&mut s).unwrap();\n    let nums: Vec<i64> = s.split_whitespace().skip(1).map(|x| x.parse().unwrap()).collect();\n    println!(\"{}\", nums.iter().sum::<i64>());\n}\n",
@@ -219,13 +211,13 @@ class FailureTest(unittest.TestCase):
 
     def test_no_cases_and_missing_toolchain(self):
         self.assertEqual(judge.judge("python", SOURCES["python"]["function"], [], mode="function")["status"], "no_cases")
-        go = judge.load_language("go")
-        saved = go.TOOLS
-        go.TOOLS = ("algoblock-no-such-tool",)
+        rust = judge.load_language("rust")
+        saved = rust.TOOLS
+        rust.TOOLS = ("algoblock-no-such-tool",)
         try:
-            self.assertEqual(judge.judge("go", "", FUNCTION_CASES, mode="function")["status"], "toolchain_missing")
+            self.assertEqual(judge.judge("rust", "", FUNCTION_CASES, mode="function")["status"], "toolchain_missing")
         finally:
-            go.TOOLS = saved
+            rust.TOOLS = saved
 
 
 class EdgeTest(unittest.TestCase):
@@ -242,20 +234,11 @@ class EdgeTest(unittest.TestCase):
         report = judge.judge("cpp", source, [{"id": "1", "input": "[[1, 2, 3], 10000000000]", "expected": "10000000006"}], mode="function")
         self.assertEqual(report["status"], "passed", report)
 
-    def test_go_nil_slice_is_empty_array(self):
-        if not available("go"):
-            self.skipTest("go 없음")
-        source = "package main\n\nfunc solution(a []int) []int {\n\tvar out []int\n\tfor _, v := range a {\n\t\tif v > 5 {\n\t\t\tout = append(out, v)\n\t\t}\n\t}\n\treturn out\n}\n"
-        report = judge.judge("go", source, [{"id": "1", "input": "[[1, 2]]", "expected": "[]"}, {"id": "2", "input": "[[9]]", "expected": "[9]"}], mode="function")
-        self.assertEqual(report["status"], "passed", report)
-
     def test_typed_returns_across_languages(self):
         """bool, double, long, 2차원 배열 반환."""
         sources = {
             "java": "class Solution { public double[][] solution(long n, boolean flag) { return new double[][]{{n / 2.0}, {flag ? 1.5 : 0}}; } }",
-            "kotlin": "class Solution { fun solution(n: Long, flag: Boolean): Array<DoubleArray> = arrayOf(doubleArrayOf(n / 2.0), doubleArrayOf(if (flag) 1.5 else 0.0)) }",
             "rust": "fn solution(n: i64, flag: bool) -> Vec<Vec<f64>> { vec![vec![n as f64 / 2.0], vec![if flag { 1.5 } else { 0.0 }]] }",
-            "go": "package main\n\nfunc solution(n int64, flag bool) [][]float64 {\n\tv := 0.0\n\tif flag {\n\t\tv = 1.5\n\t}\n\treturn [][]float64{{float64(n) / 2}, {v}}\n}\n",
             "cpp": "#include <vector>\nstd::vector<std::vector<double>> solution(long long n, bool flag) { return {{n / 2.0}, {flag ? 1.5 : 0.0}}; }",
             "javascript": "function solution(n, flag) { return [[n / 2], [flag ? 1.5 : 0]]; }",
             "python": "def solution(n, flag):\n    return [[n / 2], [1.5 if flag else 0]]\n",
@@ -326,8 +309,6 @@ class ReviewFindingTest(unittest.TestCase):
         sources = {
             "cpp": "#include <iostream>\nint solution(int a, int b) { return a + b; }\nint main() { std::cout << solution(1, 2); }\n",
             "rust": "fn solution(a: i32, b: i32) -> i32 { a + b }\nfn main() { println!(\"{}\", solution(1, 2)); }\n",
-            "go": "package main\n\nimport \"fmt\"\n\nfunc solution(a int, b int) int { return a + b }\n\nfunc main() { fmt.Println(solution(1, 2)) }\n",
-            "kotlin": "fun solution(a: Int, b: Int): Int = a + b\nfun main() { println(solution(1, 2)) }\n",
             "java": "class Solution { public int solution(int a, int b) { return a + b; } public static void main(String[] x) { } }",
             "python": "def solution(a, b):\n    return a + b\n\nprint(solution(1, 2))\n",
             "javascript": "function solution(a, b) { return a + b; }\nconsole.log(solution(1, 2));\n",
@@ -357,8 +338,6 @@ BIG_SOURCES = {
     "javascript": "function solution(nums, flags, grid, text, words) {\n  let t = 0;\n  for (const v of nums) t += v;\n  for (const f of flags) if (f) t += 1;\n  for (const r of grid) for (const v of r) t += v;\n  for (const w of words) t += w.length;\n  return t + text.length;\n}\n",
     "java": "class Solution {\n    public long solution(long[] nums, boolean[] flags, long[][] grid, String text, String[] words) {\n        long t = text.length();\n        for (long v : nums) t += v;\n        for (boolean f : flags) if (f) t++;\n        for (long[] r : grid) for (long v : r) t += v;\n        for (String w : words) t += w.length();\n        return t;\n    }\n}\n",
     "cpp": "#include <string>\n#include <vector>\nusing namespace std;\nlong long solution(vector<long long> nums, vector<bool> flags, vector<vector<long long>> grid, string text, vector<string> words) {\n    long long t = text.size();\n    for (long long v : nums) t += v;\n    for (bool f : flags) if (f) t++;\n    for (auto& r : grid) for (long long v : r) t += v;\n    for (auto& w : words) t += w.size();\n    return t;\n}\n",
-    "kotlin": "class Solution {\n    fun solution(nums: LongArray, flags: BooleanArray, grid: Array<LongArray>, text: String, words: Array<String>): Long {\n        var t = text.length.toLong()\n        for (v in nums) t += v\n        for (f in flags) if (f) t++\n        for (r in grid) for (v in r) t += v\n        for (w in words) t += w.length\n        return t\n    }\n}\n",
-    "go": "package main\n\nfunc solution(nums []int64, flags []bool, grid [][]int64, text string, words []string) int64 {\n\tt := int64(len(text))\n\tfor _, v := range nums {\n\t\tt += v\n\t}\n\tfor _, f := range flags {\n\t\tif f {\n\t\t\tt++\n\t\t}\n\t}\n\tfor _, r := range grid {\n\t\tfor _, v := range r {\n\t\t\tt += v\n\t\t}\n\t}\n\tfor _, w := range words {\n\t\tt += int64(len(w))\n\t}\n\treturn t\n}\n",
     "rust": "fn solution(nums: Vec<i64>, flags: Vec<bool>, grid: Vec<Vec<i64>>, text: &str, words: Vec<&str>) -> i64 {\n    let mut t = text.len() as i64;\n    for v in &nums { t += *v; }\n    for f in &flags { if *f { t += 1; } }\n    for r in &grid { for v in r { t += *v; } }\n    for w in &words { t += w.len() as i64; }\n    t\n}\n",
 }
 
@@ -369,14 +348,20 @@ BIG2_SOURCES = {
     "javascript": "function solution(pairs, marks) {\n  let t = 0;\n  for (const r of pairs) { t += r.length; for (const s of r) t += s.length; }\n  for (const r of marks) for (const m of r) if (m) t += 1;\n  return t;\n}\n",
     "java": "class Solution {\n    public long solution(String[][] pairs, boolean[][] marks) {\n        long t = 0;\n        for (String[] r : pairs) { t += r.length; for (String s : r) t += s.length(); }\n        for (boolean[] r : marks) for (boolean m : r) if (m) t++;\n        return t;\n    }\n}\n",
     "cpp": "#include <string>\n#include <vector>\nusing namespace std;\nlong long solution(vector<vector<string>> pairs, vector<vector<bool>> marks) {\n    long long t = 0;\n    for (auto& r : pairs) { t += r.size(); for (auto& s : r) t += s.size(); }\n    for (auto& r : marks) for (bool m : r) if (m) t++;\n    return t;\n}\n",
-    "kotlin": "class Solution {\n    fun solution(pairs: Array<Array<String>>, marks: Array<BooleanArray>): Long {\n        var t = 0L\n        for (r in pairs) { t += r.size; for (s in r) t += s.length }\n        for (r in marks) for (m in r) if (m) t++\n        return t\n    }\n}\n",
-    "go": "package main\n\nfunc solution(pairs [][]string, marks [][]bool) int64 {\n\tvar t int64\n\tfor _, r := range pairs {\n\t\tt += int64(len(r))\n\t\tfor _, s := range r {\n\t\t\tt += int64(len(s))\n\t\t}\n\t}\n\tfor _, r := range marks {\n\t\tfor _, m := range r {\n\t\t\tif m {\n\t\t\t\tt++\n\t\t\t}\n\t\t}\n\t}\n\treturn t\n}\n",
     "rust": "fn solution(pairs: Vec<Vec<String>>, marks: Vec<Vec<bool>>) -> i64 {\n    let mut t: i64 = 0;\n    for r in &pairs { t += r.len() as i64; for s in r { t += s.len() as i64; } }\n    for r in &marks { for m in r { if *m { t += 1; } } }\n    t\n}\n",
 }
 
 
 class BigInputTest(unittest.TestCase):
     """큰 인자는 호출 코드에 박지 않고 파일로 넘긴다. Java는 배열 20,000개 리터럴에서 'code too large'로 컴파일이 안 됐다."""
+
+    def judged(self, language, source, cases):
+        """채점기의 한도를 시험하는 것이 아니라 큰 입력이 파일로 넘어가는지 보는 시험이라, 느린 러너에서 흔들리지 않게 컴파일·실행 한도에 여유를 둔다."""
+        with mock.patch.object(common.compile_command, "__defaults__", (common.COMPILE_TIMEOUT_SECONDS * 3,)):
+            report = judge.judge(language, source, cases, problem="solution 함수를 완성하세요", timeout=common.TIMEOUT_SECONDS * 3)
+        # 케이스가 비는 것은 컴파일 실패·시간 초과 같은 채점 전 단계에서 멈춘 것이라 상태와 까닭을 메시지에 남긴다
+        why = {"language": language, "status": report["status"], "reason": report["reason"], "compile": report.get("compile"), "cases": report["cases"]}
+        return report, why
 
     def test_large_arguments_go_through_files(self):
         nums = [3_000_000_000 + i for i in range(50_000)]
@@ -394,14 +379,25 @@ class BigInputTest(unittest.TestCase):
             if not available(language):
                 continue
             with self.subTest(language=language, kind="2차원 글·참거짓"):
-                report = judge.judge(language, source, more, problem="solution 함수를 완성하세요")
-                self.assertEqual([case["status"] for case in report["cases"]], ["passed"], report.get("compile") or report["cases"])
+                report, why = self.judged(language, source, more)
+                self.assertEqual([case["status"] for case in report["cases"]], ["passed"], why)
         for language, source in BIG_SOURCES.items():
             if not available(language):
                 continue
             with self.subTest(language=language):
-                report = judge.judge(language, source, cases, problem="solution 함수를 완성하세요")
-                self.assertEqual([case["status"] for case in report["cases"]], ["passed", "passed"], report.get("compile") or report["cases"])
+                report, why = self.judged(language, source, cases)
+                self.assertEqual([case["status"] for case in report["cases"]], ["passed", "passed"], why)
+
+
+class CompileStopTest(unittest.TestCase):
+    def test_compile_stop_leaves_a_reason(self):
+        case = [{"id": "1", "input": "[1]", "expected": "1"}]
+        for status, word in (("timeout", "제한 시간"), ("compile_error", "컴파일하지 못")):
+            with self.subTest(status=status), mock.patch.object(common, "compile_command", return_value={"status": status, "stdout": "", "stderr": "", "time_ms": 1}), \
+                    mock.patch.object(judge.load_language("cpp"), "toolchain", return_value=None, create=True):
+                report = judge.judge("cpp", "int solution(int n) { return n; }\n", case, problem="solution 함수를 완성하세요")
+                self.assertEqual((report["status"], report["cases"]), (status, []))
+                self.assertIn(word, report["reason"])
 
 
 class BigIntTest(unittest.TestCase):
@@ -515,6 +511,25 @@ class LimitTest(unittest.TestCase):
         self.assertEqual([c["status"] for c in report["cases"]], ["timeout", "timeout", "passed", "timeout", "timeout"])
 
 
+class JobEventsTest(unittest.TestCase):
+    """작업의 알림으로 결과를 다듬는 판정(포트 없이 함수만 부른다. 어느 OS에서나 돈다)."""
+
+    def test_process_limit_adds_one_line_unless_passed(self):
+        events = {common.JOB_MSG_ACTIVE_PROCESS_LIMIT}
+        failed = common._apply_job_events({"status": "runtime_error", "stdout": "", "stderr": "Traceback\n"}, events, 64)
+        self.assertEqual((failed["status"], failed["stderr"]), ("runtime_error", "Traceback\n프로세스 수 상한(64)에 걸렸어요\n"))
+        self.assertEqual(common._apply_job_events({"status": "runtime_error", "stderr": ""}, events, 64)["stderr"], "프로세스 수 상한(64)에 걸렸어요\n")
+        self.assertEqual(common._apply_job_events({"status": "runtime_error", "stderr": "끝에 줄바꿈 없음"}, events, 64)["stderr"], "끝에 줄바꿈 없음\n프로세스 수 상한(64)에 걸렸어요\n")
+        passed = {"status": "passed", "stdout": "ok", "stderr": ""}
+        self.assertEqual(common._apply_job_events(passed, events, 64), passed)
+        self.assertEqual(common._apply_job_events({"status": "runtime_error", "stderr": "x"}, set(), 64)["stderr"], "x")  # 알림이 없으면 그대로
+
+    def test_memory_event_decides_memory_limit_only_for_runtime_error(self):
+        events = {common.JOB_MSG_JOB_MEMORY_LIMIT}
+        self.assertEqual(common._apply_job_events({"status": "runtime_error", "stderr": ""}, events, 64)["status"], "memory_limit")
+        self.assertEqual(common._apply_job_events({"status": "timeout", "stderr": ""}, events, 64)["status"], "timeout")
+
+
 class WindowsShapeTest(unittest.TestCase):
     """Windows API에 넘기는 구조체의 크기와 자리(Microsoft 문서의 x64 배치). 순수 ctypes라 어느 64비트 OS에서나 돈다."""
 
@@ -535,7 +550,7 @@ class WindowsShapeTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             self.assertEqual(common._windows_program(["./app", "1"], folder), [str(Path(folder) / "app"), "1"])  # 없으면 이름 그대로(실행이 FileNotFoundError를 낸다)
             (Path(folder) / "app").write_bytes(b"")
-            self.assertEqual(common._windows_program(["./app"], folder), [str(Path(folder) / "app")])  # go·rustc는 이름 그대로 만든다
+            self.assertEqual(common._windows_program(["./app"], folder), [str(Path(folder) / "app")])  # rustc는 이름 그대로 만든다
             (Path(folder) / "app.exe").write_bytes(b"")
             self.assertEqual(common._windows_program(["./app", "1"], folder), [str(Path(folder) / "app.exe"), "1"])  # g++(MinGW)는 .exe를 붙인다
         self.assertEqual(common._windows_program([Path(sys.executable).name, "-c", "1"], ROOT)[1:], ["-c", "1"])
@@ -570,6 +585,48 @@ class WindowsJobTest(unittest.TestCase):
         self.assertIn("MemoryError", result["stderr"])
         plain = self.run_python("raise SystemExit(3)")  # 메모리와 상관없는 실패는 그대로 실행 오류다
         self.assertEqual(plain["status"], "runtime_error", plain)
+
+    # 자식을 count개 띄우고(5초 잠드는 파이썬) 1.5초 뒤 만들지 못했거나 이미 끝난 수를 출력하는 코드. 상한을 넘은 프로세스는 만들기가 실패하거나 바로 끝난다
+    SPAWN = ("import subprocess, sys, time\nkids, fails = [], 0\nfor _ in range({count}):\n    try:\n"
+             "        kids.append(subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(5)'], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL))\n"
+             "    except OSError:\n        fails += 1\ntime.sleep(1.5)\nfails += sum(kid.poll() is not None for kid in kids)\nfor kid in kids:\n    kid.kill()\nprint(fails)\n")
+
+    def test_process_count_is_capped(self):
+        """작업 안의 동시 프로세스 수가 상한을 넘으면 그 프로세스를 만들지 못한다. 상한을 끄면(processes=None) 모두 만들어진다."""
+        capped = self.run_python(self.SPAWN.format(count=8), processes=4)
+        self.assertEqual(capped["status"], "passed", capped)
+        self.assertGreaterEqual(int(capped["stdout"]), 1, "상한(4)을 넘는 자식이 만들어졌다")
+        free = self.run_python(self.SPAWN.format(count=8), processes=None)
+        self.assertEqual((free["status"], free["stdout"].strip()), ("passed", "0"), free)
+
+    def test_default_process_limit_allows_a_few_children(self):
+        """기본 상한은 자식 몇 개를 띄우는 코드를 막지 않는다."""
+        result = self.run_python(self.SPAWN.format(count=5))
+        self.assertEqual((result["status"], result["stdout"].strip()), ("passed", "0"), result)
+
+    def test_error_dialogs_are_off_in_the_child_and_restored_after(self):
+        """자식은 오류 창을 끈 오류 모드(SetErrorMode)로 돈다. 이 프로세스의 오류 모드는 실행이 끝나면 원래대로다."""
+        kernel = common._kernel32()
+        original = kernel.SetErrorMode(0)  # 읽으면서 0으로 둔다: 아래에서 자식이 0이 아니면 run_command가 켠 것이다
+        try:
+            result = self.run_python("import ctypes; print(ctypes.windll.kernel32.SetErrorMode(0))")
+            after = kernel.GetErrorMode()
+        finally:
+            kernel.SetErrorMode(original)
+        self.assertEqual(result["status"], "passed", result)
+        self.assertEqual(int(result["stdout"]) & common.ERROR_MODE, common.ERROR_MODE, result)
+        self.assertEqual(after, 0, "실행이 끝난 뒤 이 프로세스의 오류 모드가 되돌려지지 않았다")
+
+    def test_process_limit_line_is_added_to_a_failed_run_only(self):
+        """작업이 '프로세스 수 상한' 알림을 보냈다고 하면(알림만 고정한다) 실패한 실행의 stderr 끝에 한 줄이 붙고, 통과한 실행에는 붙지 않는다."""
+        line = f"프로세스 수 상한({common.JOB_PROCESS_LIMIT})에 걸렸어요"
+        with mock.patch.object(common, "_job_events", return_value={common.JOB_MSG_ACTIVE_PROCESS_LIMIT}):
+            failed = self.run_python("raise SystemExit(1)")
+            passed = self.run_python("print('ok')")
+        self.assertEqual(failed["status"], "runtime_error", failed)
+        self.assertTrue(failed["stderr"].endswith(line + "\n"), failed)
+        self.assertEqual(passed["status"], "passed", passed)
+        self.assertNotIn(line, passed["stderr"])
 
     def test_without_job_it_still_runs_and_says_so(self):
         with mock.patch.object(common, "_windows_job", side_effect=OSError(5, "막힘")):
@@ -626,18 +683,14 @@ class EfficiencyTest(unittest.TestCase):
 CRASH_AT_3 = {
     "python": "def solution(a):\n    b = [a]\n    return b[5]\n",
     "java": "class Solution {\n    public int solution(int a) {\n        int[] b = new int[0]; return b[a];\n    }\n}\n",
-    "kotlin": "class Solution {\n    fun solution(a: Int): Int {\n        return IntArray(0)[a]\n    }\n}\n",
     "javascript": "function solution(a) {\n  const o = null;\n  return o.x;\n}\n",
-    "go": "package main\nfunc solution(a int) int {\n\treturn []int{}[a]\n}\n",
     "rust": "fn solution(a: i32) -> i32 {\n    let v: Vec<i32> = Vec::new();\n    v[a as usize]\n}\n",
 }
 BROKEN_AT_2 = {
     "python": "def solution(a):\n    return a +\n",
     "javascript": "function solution(a) {\n  return a +;\n}\n",
     "java": "class Solution {\n    public int solution(int a) { return a }\n}\n",
-    "kotlin": "fun solution(a: Int): Int {\n    return undefinedName\n}\n",
     "cpp": "int solution(int a) {\n    return a +;\n}\n",
-    "go": "package main\nfunc solution(a int) int { return a + }\n",
     "rust": "use std::collections::HashMap;\nfn solution(a: i32) -> i32 { undefined_name }\n",  # 앞 줄의 경고(쓰지 않는 use)를 오류로 읽지 않는다
 }
 

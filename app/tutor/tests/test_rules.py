@@ -1,5 +1,6 @@
 """규칙(모델 없음): 전략, 블록 검사, 힌트 다듬기, 해설 절, 나가는 글 검사, 열린 블록 수, 판정 읽기, 대화 원칙, 피드백 검사, 요청 거절."""
 
+import json
 import unittest
 from dataclasses import replace
 
@@ -54,14 +55,65 @@ class BlockRuleTest(unittest.TestCase):
             "지어낸 인용": [fakes.HINTS1[0], "'글자는 모두 다르다'를 보면 어떨까요?", fakes.HINTS1[2]],
             "코드 펜스": [fakes.HINTS1[0], fakes.HINTS1[1], "```x```로 해 볼까요?"],
             "참고 코드": [fakes.HINTS1[0], fakes.HINTS1[1], "REF_ONE을 쓰면 어떨까요?"],
+            # 문제 글의 'k번째로 빌려지는'에서 낱말 중간을 떼었다
+            "깨진 인용": [fakes.HINTS1[0], "'번째로 빌려지는 바로 그때'를 보면 무엇을 세어야 할까요?", fakes.HINTS1[2]],
+            "줄인 인용": [fakes.HINTS1[0], "'어떤 책이 … 꽂습니다'를 보면 무엇을 세어야 할까요?", fakes.HINTS1[2]],
+            "같은 질문 되풀이": [fakes.HINTS1[0], "책마다 무엇을 기록해 둬야 하나요?", fakes.HINTS1[2]],
         }
         for why, hints in cases.items():
             with self.subTest(why=why):
                 broken = [replace(good[0], hints=hints), good[1]]
                 self.assertEqual(clean_blocks(broken, fakes.PROBLEM)[0].hints, [])
                 self.assertEqual(clean_blocks(broken, fakes.PROBLEM)[1].hints, fakes.HINTS2)
+        # 문제 글에 없는 코드 이름: 참고 코드의 인자 이름(day)을 낱말처럼 썼다. 문제 글에 있는 이름(loans, k)과 백틱 안 코드는 된다
+        coded = [replace(good[0], reference="def borrowed(day):\n    return day"), good[1]]
+        named = [replace(coded[0], hints=[fakes.HINTS1[0], fakes.HINTS1[1], "day일까지 몇 번 빌려졌는지 어떻게 셀까요?"]), good[1]]
+        self.assertEqual(clean_blocks(named, fakes.PROBLEM)[0].hints, [])
+        fine = [replace(coded[0], hints=[fakes.HINTS1[0], fakes.HINTS1[1], "loans가 owl, tide이고 k가 1이면 `borrowed`는 무엇을 셀까요?"]), good[1]]
+        self.assertEqual(len(clean_blocks(fine, fakes.PROBLEM)[0].hints), 3)
         capped = clean_blocks([replace(good[0], checks=["a", "b", "c", "d", " "], hints=fakes.HINTS1 + ["넷째 질문인가요?"])], fakes.PROBLEM)[0]
         self.assertEqual((len(capped.checks), len(capped.hints)), (3, 3))
+
+
+class BrokenQuoteTest(unittest.TestCase):
+    def test_quote_cut_inside_a_word(self):
+        """인용이 문제 글의 낱말 중간에서 시작했다. 대화의 말도 같은 검사를 받는다(줄인 인용은 저장 질문만 막는다)."""
+        from ..common.talk_rules import broken_quotes
+
+        self.assertEqual(broken_quotes("'번째로 빌려지는 바로 그때'에는 무엇을 볼까요?", fakes.PROBLEM), ["번째로 빌려지는 바로 그때"])
+        self.assertEqual(broken_quotes("'k번째로 빌려지는 바로 그때'에는 무엇을 볼까요?", fakes.PROBLEM), [])
+        self.assertEqual(broken_quotes("'제목이 같으면'을 보면 무엇을 셀까요?", fakes.PROBLEM), [])  # 낱말 첫머리에서 시작하면 뒤 조사를 떼도 된다
+        elided = "'어떤 책이 … 꽂습니다'를 보면 무엇을 셀까요?"
+        self.assertEqual((broken_quotes(elided, fakes.PROBLEM), broken_quotes(elided, fakes.PROBLEM, cut=True)), ([], ["어떤 책이 … 꽂습니다"]))
+        series = "점검일은 first, first + gap, …, last일입니다."
+        self.assertEqual(broken_quotes("'first, first + gap, …, last일입니다'를 보면 무엇을 셀까요?", series, cut=True), [])  # 문제 글 자체의 '…'
+        self.assertIn("깨진 인용", reply_problems("'번째로 빌려지는 바로 그때'는 언제일까요?", move="clue", problem=fakes.PROBLEM))
+
+    def test_builtin_hints_pass_the_hint_rules(self):
+        """기본 문제의 저장 힌트도 깨진 인용·문제 글에 없는 코드 이름·되풀이 검사를 지난다('day일까지 점검이 몇 번인지')."""
+        import json
+        from pathlib import Path
+
+        from ..common.talk_rules import broken_quotes, code_names, repeated_hints
+
+        path = Path(__file__).resolve().parents[2] / "ui" / "builtin.json"
+        if not path.exists():
+            self.skipTest("ui/builtin.json 없음")
+        found = []
+        for row in json.loads(path.read_text(encoding="utf-8")):
+            blocks = ((row.get("ready") or {}).get("plan") or {}).get("blocks") or []
+            code = "\n".join(b["reference"] for b in blocks)
+            for b in blocks:
+                found += [(row["id"], b["id"], "되풀이")] if repeated_hints(b["hints"]) else []
+                found += [(row["id"], b["id"], h) for h in b["hints"] if code_names(h, code, row["text"]) or broken_quotes(h, row["text"], cut=True)]
+        self.assertEqual(found, [])
+
+    def test_hint_rules_reach_the_prompt(self):
+        from ..plan.prompts import HINT_RULES
+
+        rules = "\n".join(HINT_RULES)
+        for part in ("문제 글에 이미 적힌 것", "세 질문은 서로 다른 것을 묻는다", "낱말 중간에서 끊지 않고", "판정 낱말"):
+            self.assertIn(part, rules)
 
 
 class SectionRuleTest(unittest.TestCase):
@@ -137,6 +189,8 @@ class VerdictTest(unittest.TestCase):
         self.assertEqual(parse_verdict("[check]Y e입니다").basis, "e")
         for bad in ("Y", "[check]", None):
             self.assertIsNone(parse_verdict(bad))
+        got = parse_verdict("[check]W")  # 낱말의 뜻을 묻는 말
+        self.assertEqual((got.ok, got.aside), (False, "W"))
 
 
 class TalkRuleTest(unittest.TestCase):
@@ -550,16 +604,14 @@ class OuterLineTest(unittest.TestCase):
 
 
 class LanguageRuleTest(unittest.TestCase):
-    """Go 새 이름, 문장인 한도 말, 탭 들여쓰기, 디버그 말의 큰따옴표 인용."""
+    """문장인 한도 말, 탭 들여쓰기, 디버그 말의 큰따옴표 인용."""
 
-    def test_go_names_and_tabs(self):
-        from ..common.solution import created_names, framed
+    def test_tab_indent(self):
+        from ..common.solution import framed
 
-        self.assertEqual(created_names("for i, p := range parent {\nvar ord []int\nkids := make([][]int, n)\nvar a, b int", "go"),
-                         [("i", "loop", ""), ("p", "loop", ""), ("ord", "var", "[]int"), ("kids", "var", ""), ("a", "var", "int"), ("b", "var", "int")])
-        ref = "\tchildren := make([][]int, n)\n\tfor f := 0; f < n; f++ {\n\t\tx := f\n\t}"
-        self.assertEqual(framed("\tkids := make([][]int, n)\n\tfor f := 0; f < n; f++ {\n\t\tx := f\n\t}", ref, "go"),
-                         "\tkids := make([][]int, n)\n\tfor f := 0; f < n; f++ {\n\t\tx := f\n\t}")  # 공백 1칸 + 탭이 섞이지 않는다
+        ref = "\tint children = 0;\n\tfor (int f = 0; f < n; f++) {\n\t\tint x = f;\n\t}"
+        mine = "\tint kids = 0;\n\tfor (int f = 0; f < n; f++) {\n\t\tint x = f;\n\t}"
+        self.assertEqual(framed(mine, ref, "cpp"), mine)  # 공백 1칸 + 탭이 섞이지 않는다
 
     def test_session_tells_checked_code(self):
         """통과한 블록의 코드를 화면에 실어, 칸 글을 고치면 '블록 코드 확인'을 다시 보이게 한다."""
@@ -577,7 +629,7 @@ class LanguageRuleTest(unittest.TestCase):
 
         case = {"id": "1", "kind": "example", "input": "[[1]]", "expected": "1", "got": "", "status": "runtime_error", "error": "메모리를 너무 많이 써서 멈췄어요"}
         self.assertEqual(seen_line({"cases": [case]}, False), "메모리를 너무 많이 써서 멈췄어요.")  # 한도 말도 '~어요'
-        self.assertEqual(seen_line({"cases": [case]}, False, "뒤 블록을 튜터의 코드로 이어 돌리면"), "뒤 블록을 튜터의 코드로 이어 돌리면 메모리를 너무 많이 써서 멈췄어요.")
+        self.assertEqual(seen_line({"cases": [case]}, False, "뒤 블록은 튜터의 코드로 채워서 돌리면"), "뒤 블록은 튜터의 코드로 채워서 돌리면 메모리를 너무 많이 써서 멈췄어요.")
 
     def test_debug_double_quote_is_checked(self):
         from ..common.talk_rules import quotes_ok
@@ -626,15 +678,24 @@ class ModelTalkRuleTest(unittest.TestCase):
         self.assertNotIn("문제 글에 없는 인용", reply_problems(text, move="open", problem=problem))
         self.assertEqual(repair("'그때까지 ... 없는 말'을 보면 무엇을 남길까요?", problem), "그때까지 ... 없는 말을 보면 무엇을 남길까요?")
 
+    def test_english_name_batchim_by_sound(self):
+        """영어 이름의 끝소리: 받침으로 읽히는 꼴은 받침(맵·겟·벡·덱·스택), 모음·자음 뒤의 t·d(트·드)와 r·s·x는 받침이 아니다."""
+        from ..debug.rules import batchim
+
+        got = {"HashMap": 1, "map": 1, "get": 1, "set": 1, "HashSet": 1, "Vec": 1, "deque": 1, "BTreeMap": 1, "Stack": 1, "Heap": 1, "len": 1, "size": 0,
+               "ArrayList": 0, "Scanner": 0, "PriorityQueue": 0, "push": 0, "sort": 0, "append": 0, "count": 0, "log": 0, "dfs": 0}
+        self.assertEqual({w: int(batchim(w)) for w in got}, got)
+
     def test_silent_e_has_batchim(self):
         from ..common.talk_rules import rename_note
         from ..debug.rules import batchim
 
         self.assertEqual([batchim(w) for w in ("name", "line", "table", "value", "tom", "remaining", "r", "for")], [True, True, True, False, True, True, True, False])
         # 코드 이름 뒤에 조사를 붙이지 않는다
-        self.assertEqual(rename_note([["g", "name"]]), "이 블록에서 쓴 이름(`g`)을 튜터의 코드는 다른 이름(`name`)으로 불러요. 뒤 블록을 '이 블록 채우기'로 채우면 내 이름으로 바꿔 채워요.")
-        self.assertEqual(rename_note([["cnt", "count"], ["r", "name"]]),
-                         "이 블록에서 쓴 이름(`cnt`, `r`)을 튜터의 코드는 차례대로 다른 이름(`count`, `name`)으로 불러요. 뒤 블록을 '이 블록 채우기'로 채우면 내 이름으로 바꿔 채워요.")
+        self.assertEqual(rename_note([["g", "name"]]), "같은 값을 튜터의 코드는 다른 이름으로 써요(내 이름 → 튜터의 이름: `g` → `name`). 이름이 달라도 이어서 돌아가요. "
+                                                       "뒤 블록을 '이 블록 채우기'로 채우면 튜터의 코드를 내 이름으로 바꿔 넣어요.")
+        # 이름이 여럿이면 '차례대로'로 묶지 않고 짝마다 쓴다('counts, picked를 count, shelf로'는 어느 것이 어느 것인지 알기 어려웠다)
+        self.assertIn("(내 이름 → 튜터의 이름: `cnt` → `count`, `r` → `name`)", rename_note([["cnt", "count"], ["r", "name"]]))
 
 
 class EchoClauseTest(unittest.TestCase):
@@ -695,6 +756,239 @@ class ToldAnswerTest(unittest.TestCase):
                      "limit이 10이고 boxes가 [4, 4, 4]라고 해 봅시다. 셋째 상자는 언제 오를까요?"):  # 작은 예
             self.assertNotIn("답을 말함", reply_problems(fine, move="trace", problem=problem, reference=start), fine)
         self.assertIn("답을 말함", reply_problems("벨트 위 무게 합과 맨 앞 상자 번호는 0이에요.", move="open", problem=problem, reference=start))  # 지울 수 없으면 대체 질문
+
+
+class DebugOpeningRuleTest(unittest.TestCase):
+    def test_line_forms_pieces_and_expected_answer(self):
+        from ..debug.rules import leaks_piece, names_line
+        from ..turn.moves import rule_verdict
+
+        for said in ("4번째 줄", "4줄에서", "12행", "네 번째 줄", "열 번째 행", "line 4", "Line 12", "3번 줄의", "10번 행", "첫 번째 줄", "3번 라인", "3번 줄이 하는 일은"):
+            self.assertTrue(names_line(f"{said} count는 몇인가요?"), said)
+        for said in ("범위를 2번 줄이면", "값이 3번 줄어들면", "2번 행렬", "1번 행동", "3번 반복할 때 어디서 달라질까요?", "한 줄씩 따라가 보면 어디서 달라질까요?", "코드 첫 줄부터 따라가 보면 어떨까요?", "두 번째 tom을 만나면 count는 몇인가요?"):
+            self.assertFalse(names_line(said), said)
+        code = "for name in a:\n    count[name] = 1"
+        self.assertTrue(leaks_piece("count.get(name, 0) + 1로 바꾸면?", "count[name] = count.get(name, 0) + 1", code))
+        self.assertFalse(leaks_piece("두 번째 tom에서 count[name]은 몇이 되나요?", "count[name] = count.get(name, 0) + 1", code))  # 사용자 코드에 있던 조각
+        for text in ("기대 답 보여줘", "예상 답 알려 주세요"):  # 기대한 값을 묻는 말은 답 요청이 아니다
+            self.assertNotEqual(getattr(rule_verdict(text), "aside", ""), "A", text)
+        self.assertEqual(rule_verdict("답 알려 주세요").aside, "A")
+
+
+class LangTrapFilterTest(unittest.TestCase):
+    """언어 함정 후보는 모델 없이 거른다: 같은 케이스에서 같은 상태(틀린 답이면 같은 값)로 떨어졌고 코드가 그 함정의 꼴이어야 한다."""
+
+    @staticmethod
+    def report(*cases, status="failed"):
+        return {"status": status, "cases": [{"id": cid, "status": state, "got": got} for cid, state, got in cases]}
+
+    def test_wrong_answer_needs_the_same_output(self):
+        from ..debug.rules import out_key, trap_candidates
+
+        trap = {"id": "java.missing_key_null", "code": [".get("], "right": ["getOrDefault"], "fails": {"2": "failed"}, "outs": {"2": out_key("[1, 2]")}}
+        code = "int n = map.get(key) + 1;"
+        self.assertEqual(trap_candidates([trap], self.report(("1", "passed", "3"), ("2", "failed", "[1,2]")), code), [trap])  # 공백이 달라도 같은 값
+        self.assertEqual(trap_candidates([trap], self.report(("2", "failed", "찍은 줄\n[1, 2]")), code), [trap])  # 함수 방식: 마지막 줄이 돌려준 값
+        self.assertEqual(trap_candidates([trap], self.report(("2", "failed", "[2, 1]")), code), [])  # 같은 케이스에서 다른 값으로 틀리는 다른 버그
+        self.assertEqual(trap_candidates([{**trap, "outs": {}}], self.report(("2", "failed", "[1, 2]")), code), [])  # 얼린 값이 없으면 견주지 못한다
+        self.assertEqual(trap_candidates([trap], self.report(("2", "runtime_error", "")), code), [])  # 같은 케이스, 다른 상태
+        self.assertEqual(trap_candidates([trap], self.report(("2", "failed", "[1, 2]")), "int n = map.getOrDefault(key, 0) + 1;"), [])  # 실수한 이름이 없다
+        self.assertTrue(out_key(json.dumps(list(range(50)))).startswith("#"))  # 길면 지문
+        self.assertEqual(out_key('{"b": 1, "a": 2}'), out_key('{"a":2,"b":1}'))  # 키 순서와 공백은 맞춘다
+        long = json.dumps(list(range(50)))  # 큰 입력: 내 결과는 줄여 받고 견줄 꼴(out)은 줄이기 전의 값으로 받는다
+        cut = {"status": "failed", "cases": [{"id": "2", "status": "failed", "got": long[:20] + "…", "out": out_key(long)}]}
+        self.assertEqual(trap_candidates([{**trap, "outs": {"2": out_key(long)}}], cut, code), [{**trap, "outs": {"2": out_key(long)}}])
+
+    def test_runtime_error_and_timeout_need_only_the_status(self):
+        from ..debug.rules import trap_candidates
+
+        trap = {"id": "java.missing_key_null", "code": [".get("], "right": ["getOrDefault"], "fails": {"2": "runtime_error", "3": "memory_limit"}}
+        code = "int n = map.get(key) + 1;"
+        self.assertEqual(trap_candidates([trap], self.report(("2", "runtime_error", "")), code), [trap])
+        self.assertEqual(trap_candidates([trap], self.report(("3", "runtime_error", "")), code), [trap])  # 튜터는 메모리 초과를 실행 오류로 받는다
+        self.assertEqual(trap_candidates([trap], self.report(("4", "runtime_error", "")), code), [])  # 다른 케이스
+
+    def test_varies_needs_a_shape(self):
+        from ..debug.rules import trap_candidates
+
+        shape = r"\bsize_t\s+(\w+)\s*=[^;]*;\s*\1\s*>=\s*0\s*;"
+        trap = {"id": "cpp.unsigned_loop", "code": ["size_t"], "right": [], "varies": True, "shape": shape}
+        failed = self.report(("7", "timeout", ""))
+        self.assertEqual(trap_candidates([trap], failed, "for (size_t i = v.size() - 1; i >= 0; i--)"), [trap])
+        self.assertEqual(trap_candidates([trap], failed, "for (size_t i = 0; i < v.size(); i++) { total += v[i] - 1; }"), [])  # 앞으로 도는 size_t와 다른 버그
+        self.assertEqual(trap_candidates([trap], failed, "// for (size_t i = n - 1; i >= 0; i--)\nfor (int i = n - 1; i >= 0; i--)"), [])  # 주석은 보지 않는다
+        self.assertEqual(trap_candidates([trap], self.report(("7", "passed", ""), status="passed"), "size_t i = n - 1; i >= 0;"), [])  # 통과했으면 없다
+        bare = {key: value for key, value in trap.items() if key != "shape"}  # 모양 식이 없는 varies 함정은 이름이 있어도 내놓지 않는다
+        self.assertEqual(trap_candidates([bare], failed, "for (size_t i = v.size() - 1; i >= 0; i--)"), [])
+
+    def test_empty_code_counts_right_names_against_the_solution(self):
+        from ..debug.rules import trap_candidates
+
+        # code가 빈 함정: 고친 꼴의 이름(right)이 정답 풀이에서 센 수(right_base)보다 적게 나와야 한다. 주석은 세지 않는다
+        trap = {"id": "python.true_division", "code": [], "right": ["//"], "fails": {"1": "failed"}, "outs": {"1": "2.5"}, "right_base": 2}
+        failed = self.report(("1", "failed", "2.5"))
+        self.assertEqual(trap_candidates([trap], failed, "mid = (lo + hi) / 2\nleft = n // k"), [trap])  # 하나만 /로 바꾼 실수
+        self.assertEqual(trap_candidates([trap], failed, "mid = (lo + hi) // 2\nleft = n // k"), [])  # 정답 풀이만큼 쓴 다른 실수
+        self.assertEqual(trap_candidates([trap], failed, "mid = (lo + hi) / 2  # // 로 나누기\nleft = n // k"), [trap])
+        bare = {key: value for key, value in trap.items() if key != "right_base"}  # 정답 풀이의 수가 없으면 하나도 없어야 한다
+        self.assertEqual((trap_candidates([bare], failed, "a / 2\nb // k"), trap_candidates([bare], failed, "a / 2")), ([], [bare]))
+        rows = {"id": "python.missing_key", "code": [], "right": [".get(", "Counter"], "fails": {"1": "failed"}, "outs": {"1": "2.5"}}
+        self.assertEqual(trap_candidates([rows], failed, "MyCounter = 1\ncount[name] += 1"), [rows])  # 다른 낱말의 일부는 세지 않는다
+        self.assertEqual(trap_candidates([rows], failed, 'wall = "#"; count = Counter(a)'), [])  # 문자열 안의 #는 주석이 아니다
+        java = {"id": "java.string_equals", "code": ['== "'], "right": [".equals("], "fails": {"1": "failed"}, "outs": {"1": "2.5"}}
+        self.assertEqual(trap_candidates([java], failed, 'if (s == "//") {}'), [java])  # 따옴표가 든 이름
+
+    def test_at_most_three_and_off_without_data(self):
+        from ..debug.rules import TRAP_PICKS, trap_candidates
+
+        traps = [{"id": f"python.t{n}", "code": [], "right": ["heapify"], "fails": {"1": "failed"}, "outs": {"1": "1"}} for n in range(5)]
+        self.assertEqual((TRAP_PICKS, [t["id"] for t in trap_candidates(traps, self.report(("1", "failed", "1")), "x = 1")]), (3, ["python.t0", "python.t1", "python.t2"]))
+        self.assertEqual(trap_candidates([], self.report(("1", "failed", "1")), "x = 1"), [])
+
+
+class DebugLineWithFixTest(unittest.TestCase):
+    def _reply(self, step, text, user):
+        from ..debug import nodes
+        from ..state import TutorRequest
+
+        draft = {"step_name": step, "recent": [], "hash": "h", "kind": "logic", "line": 3, "cause": "", "fixed_line": "count[name] = count.get(name, 0) + 1", "step": 1}
+        state = {"request": TutorRequest(kind="debug", problem_id="p1", code="for name in a:\n    x = 1\n    count[name] = 1", text=user), "ctx": fakes.context(),
+                 "draft": draft, "reply_draft": text}
+        return nodes.check_reply(state)["result"]["reply"], nodes
+
+    def test_line_number_with_fix_piece_is_blocked_only_where_line_is_hidden(self):
+        said = "3번째 줄에서 count.get(name, 0) + 1처럼 바꾸면 어떨까요?"
+        reply, nodes = self._reply("trace", said, "모르겠어요")
+        self.assertEqual(reply, nodes.rules.FALLBACK["trace"])
+        ok = "3번째 줄에서 바로 그 덮어쓰기가 문제였죠. fruit[name] = fruit.get(name, 0) + 1처럼 쓰면 fruit는 어떻게 될까요?"
+        self.assertEqual(self._reply("fix", ok, "get 쓰는 법을 모르겠어요")[0], ok)  # fix 단계는 문법 예를 보여 준다
+
+
+class FeedbackAdviceTest(unittest.TestCase):
+    def test_advice_points_where_to_look_not_the_fix_order(self):
+        from ..feedback.prompts import ADVICE, SOLO_ADVICE, system
+
+        for line in (ADVICE["keep_flow"], ADVICE["canonical"], SOLO_ADVICE["canonical"]):
+            self.assertIn("어디", line)
+        for line in (*ADVICE.values(), *SOLO_ADVICE.values()):
+            self.assertFalse(any(w in line for w in ("지우", "바꾸라")), line)
+        self.assertIn("고치는 순서", system(True))
+
+
+class UnsaidCreditTest(unittest.TestCase):
+    """'잘 모르겠어요'에 '재귀 깊이는 원인이 아니라는 점을 짚으셨는데, 그 판단은 맞는 방향입니다'라고 답했다. 한 말의 두 물음 가운데 하나만 받았다."""
+
+    def test_credit_for_unsaid_judgement_is_caught_and_dropped(self):
+        from ..common.talk_rules import asked_count, many_asks_line, repair, unsaid_credit
+
+        said = "재귀 깊이는 원인이 아니라는 점을 짚으셨는데, 그 판단은 맞는 방향입니다. 그럼 어느 값부터 따라가 볼까요?"
+        self.assertEqual(len(unsaid_credit(said, "잘 모르겠어요")), 1)
+        self.assertIn("말하지 않은 판단 인정", reply_problems(said, move="trace", problem="", user="잘 모르겠어요"))
+        self.assertEqual(repair(said, "", user="잘 모르겠어요"), "어느 값부터 따라가 볼까요?")
+        leaned = "짚으신 대로 재귀 깊이를 보면 어느 값부터 볼까요?"  # 생각 없는 말 뒤에 그 말에 기대는 질문
+        self.assertTrue(unsaid_credit(leaned, "모르겠어요") and not unsaid_credit(leaned, "재귀 깊이는 원인이 아닌 것 같아요"))
+        self.assertTrue(unsaid_credit("그 판단은 맞는 방향입니다. 다음은요?", "재귀 깊이는 원인이 아닌 것 같아요"))  # 말한 판단도 판정하지 않는다
+        for fine in ("그 방향이 맞는지 작은 예로 확인해 보세요. 어느 값부터 볼까요?", "그 생각이 맞는지 어떻게 확인할 수 있을까요?"):
+            self.assertEqual(unsaid_credit(fine, "모르겠어요"), [], fine)
+        self.assertEqual(asked_count("이름별로 세면 되나요? 그리고 k는 왜 필요한가요"), 2)
+        self.assertEqual(asked_count("이름별로 세면 될 것 같아요"), 0)
+        # 한 일을 묻는 질문은 생각 없는 말 뒤에도 걸리지 않는다(판단을 받는 동사만 본다)
+        for fine in ("그 입력을 손으로 따라가 보셨나요?", "실패한 입력을 첫 줄부터 직접 따라가 보셨나요?", "앞에서 찾으신 값은 어디에 쓰이나요?"):
+            self.assertEqual(unsaid_credit(fine, "잘 모르겠어요"), [], fine)
+        self.assertEqual(asked_count("`a > b ? a : b` 꼴은 뭔가요"), 1)  # 코드 속 '?'는 세지 않고, '뭔가요'는 센다
+        self.assertEqual(asked_count("이거 맞나\n변수가 뭐야"), 2)
+        self.assertEqual(asked_count("같은 이름이 또 나오니까 하나 더해요"), 0)
+        self.assertEqual(asked_count("끝까지 봐야 하니까"), 0)  # '~니까'는 물음 어미가 아니다
+        self.assertEqual(asked_count("x = a ? b : c 에서 ? 는 뭐죠?"), 1)  # 코드 모양 줄도 남기고, 공백 뒤의 '?'는 문장 끝이 아니다
+        self.assertEqual(many_asks_line("이름별로 세면 될 것 같아요. k는 왜 있나요?"), [])
+        self.assertTrue(many_asks_line("세면 되나요?\nk는 왜 있죠?")[0].startswith("사용자 말에 물음이 2개 있다."))
+
+    def test_reply_that_takes_none_of_several_asks_gets_a_deferral_line(self):
+        from ..common.talk_rules import asks_ignored, defer_ask
+
+        lead = "물음이 둘이라 하나씩 볼게요. 다른 물음은 다음 차례에 이어 봐요. "
+        two = "이름별로 세면 되나요? 그리고 k는 왜 필요한가요?"
+        # 걸리면 실패(대체 질문)가 아니라 답 앞에 미룸 문장이 붙고 본문은 그대로다
+        self.assertNotIn("물음을 받지 않음", reply_problems("입력의 첫 값을 손으로 따라가 볼까요?", move="trace", problem="", user=two))
+        self.assertEqual(defer_ask("입력의 첫 값을 손으로 따라가 볼까요?", two), lead + "입력의 첫 값을 손으로 따라가 볼까요?")
+        self.assertIn("여럿이라", defer_ask("입력을 볼까요?", "가는 뭐죠? 나는 뭐죠? 다는 뭐죠?"))
+        # 걸리지 않는다: 한 물음만 다뤄도, 이미 미뤘다고 말해도(미룸 말을 겹쳐 붙이지 않는다), 물음이 하나이거나 없어도, 코드만 붙여도
+        for text, user in [("k는 어떤 값을 담는 변수일까요?", two), (lead + "입력부터 따라가 볼까요?", two),
+                           ("이름별로 세는 것은 다음 차례에 보고, 입력부터 따라가 볼까요?", two), ("입력을 손으로 따라가 볼까요?", "이름별로 세면 되나요?"),
+                           ("입력을 손으로 따라가 볼까요?", "잘 모르겠어요"), ("무엇이 먼저 실행되나요?", "```python\nx = a ? b : c\nprint(x)\n```")]:
+            self.assertEqual(defer_ask(text, user), text)
+        # 검토 예문: 바꿔 말한 답은 미룸만 붙고, 대소문자·활용형·낱말 없는 물음은 받은 것으로 본다
+        self.assertTrue(asks_ignored("이미 본 칸을 기록하는 때가 언제일까요?", "방문 표시는 언제 해야 하나요? 그리고 큐에는 뭘 넣나요?"))
+        self.assertFalse(asks_ignored("Count가 처음에 담는 값은 무엇일까요?", "count는 왜 0부터 시작하나요? 그리고 Counts 배열은 뭐예요?"))
+        self.assertFalse(asks_ignored("정렬하면 같은 값끼리 붙는데 어떨까요?", "정렬해야 하나요? 아니면 해시를 써야 하나요?"))
+        self.assertFalse(asks_ignored("입력을 손으로 따라가 볼까요?", "이거 맞나요? 다음엔 뭐 하죠?"))
+        self.assertFalse(asks_ignored("큐에 넣는 값을 볼까요?", "방문 표시는 언제 해야 하나요? 그리고 큐에는 뭘 넣나요?"))
+
+    def test_debug_check_reply_prepends_deferral_only_when_not_fallback(self):
+        two = "이름별로 세면 되나요? 그리고 k는 왜 필요한가요?"
+        text = "입력의 첫 값을 손으로 따라가 볼까요?"
+        reply, _ = DebugLineWithFixTest()._reply("trace", text, two)
+        self.assertTrue(reply.startswith("물음이 둘이라 하나씩 볼게요.") and reply.endswith(text))
+        self.assertEqual(DebugLineWithFixTest()._reply("trace", text, "이름별로 세면 되나요?")[0], text)
+
+    def test_agreeing_lead_on_a_restated_assumption_is_caught(self):
+        from ..common.talk_rules import unsaid_credit
+
+        said = "Map.get이 0을 돌려줄 것 같아요"
+        self.assertTrue(unsaid_credit("말씀하신 대로 처음에는 counts.get(title)이 0이라고 가정하셨네요. 값이 없을 때는 무엇을 돌려줄까요?", said))
+        self.assertTrue(unsaid_credit("그렇죠. 그럼 키가 없으면요?", said))
+        self.assertTrue(unsaid_credit("말씀처럼 get이 0을 돌려준다고 썼네요. 값이 없을 때는요?", said))
+        for fine in ("가정하신 대로라면 count가 0이어야 하는데, 실제로는 null이 나와요. 왜 그럴까요?", "생각하신 대로 하면 첫 값에서 오류가 나요. 첫 값은 무엇일까요?", "말씀하신 대로라면 0이어야 하는데 실제로는 null이에요.", "말씀하신 대로 하면 첫 값에서 오류가 나요."):
+            self.assertEqual(unsaid_credit(fine, said), [], fine)
+        self.assertEqual(unsaid_credit("처음에는 get이 0을 돌려준다고 보셨네요. 값이 없을 때는 무엇을 돌려줄까요?", said), [])
+
+    def test_unanswered_ask_is_carried_to_the_next_turn(self):
+        from ..common.talk_rules import many_asks_line
+
+        two = "사용자: 세면 되나요? 그리고 k는 왜 필요한가요?"
+        carried = many_asks_line("모르겠어요", [two, "튜터: k를 먼저 볼게요. 무엇일까요?"])
+        self.assertEqual(len(carried), 1)
+        self.assertIn("k는 왜 필요한가요", carried[0])
+        self.assertEqual(many_asks_line("모르겠어요", ["사용자: 세면 되나요?", "튜터: 네?"]), [])  # 지난 말의 물음이 하나면 돌아올 것이 없다
+        self.assertEqual(len(many_asks_line("a는 뭔가요? b는 뭔가요?", [two])), 2)
+        self.assertIn("답·고칠 곳은 말하지 않는다", many_asks_line("a는 뭔가요? b는 뭔가요?")[0])  # 답을 먼저 주지 않는 원칙은 그대로
+
+    def test_prompts_carry_the_previous_double_ask(self):
+        from ..debug.prompts import speak_messages as debug_speak
+        from ..state import MovePlan, TurnContext, TutorRequest
+        from ..turn.talk import speak_messages as turn_speak
+
+        two = "사용자: 세면 되나요? 그리고 k는 왜 필요한가요?"
+        plan = fakes.planned(fakes.hinted())
+        ctx = fakes.context(plan=plan, open_count=2)
+        state = fakes.make_state("turn", ctx, mode="guide", text="모르겠어요")
+        for recent, expect in (([two], True), (["사용자: 세면 되나요?"], False)):
+            turn = TurnContext(index=0, block=plan.blocks[0], last_question="없음", recent=recent, moves_used=["open"], event="message", text="모르겠어요")
+            got = turn_speak(state, turn, MovePlan("open", 0, False), "시스템", {"open": "지시", "reply": "지시"})[-1]["content"]
+            self.assertEqual("지난번 사용자 말에도" in got, expect)
+        draft = {"step_name": "trace", "recent": [two], "hash": "h", "kind": "logic", "line": 3, "cause": "c", "fixed_line": "f", "step": 1}
+        dstate = {"request": TutorRequest(kind="debug", problem_id="p1", code="a = 1", text="모르겠어요", report={}), "ctx": fakes.context(), "draft": draft}
+        self.assertIn("지난번 사용자 말에도", debug_speak(dstate)[-1]["content"])
+        self.assertNotIn("지난번 사용자 말에도", debug_speak({**dstate, "draft": {**draft, "recent": []}})[-1]["content"])
+
+    def test_rule_reaches_every_talking_prompt(self):
+        from ..common.talk_prompts import NOT_SAID
+        from ..chair.prompts import SYSTEM as CHAIR
+        from ..debug.prompts import SPEAK_SYSTEM
+        from ..followup.prompts import SYSTEM as FOLLOWUP
+        from ..guide.prompts import SYSTEM as GUIDE
+
+        for text in (CHAIR, GUIDE, FOLLOWUP, SPEAK_SYSTEM):
+            self.assertIn(NOT_SAID, text)
+
+    def test_debug_reply_with_unsaid_credit_falls_back(self):
+        from ..debug import nodes
+        from ..state import TutorRequest
+
+        draft = {"step_name": "trace", "recent": [], "hash": "h", "kind": "logic", "line": 7, "cause": "", "fixed_line": "", "step": 1}
+        state = {"request": TutorRequest(kind="debug", problem_id="p1", code="a = 1", text="잘 모르겠어요"), "ctx": fakes.context(),
+                 "draft": draft, "reply_draft": "재귀 깊이는 원인이 아니라는 점을 짚으셨는데, 그 판단은 맞는 방향입니다."}
+        self.assertEqual(nodes.check_reply(state)["result"]["reply"], nodes.rules.FALLBACK["trace"])  # 지우면 질문이 남지 않는다: 대체 질문
 
 
 class DebugSaidLineTest(unittest.TestCase):
@@ -764,15 +1058,10 @@ class GrammarRuleTest(unittest.TestCase):
     def test_type_names_in_typed_declarations_are_not_written_names(self):
         """형을 적은 선언의 형 이름(Int, i32, int)을 쓴 이름으로 읽어 '그 이름으로 맞춰 주세요'에 형 이름이 섞였다."""
         from ..turn.pairs import writes
-        self.assertEqual(writes("var answer: Int = 0\nvar at: Int = 1", "kotlin"), ["answer", "at"])
         self.assertEqual(writes("let mut best: i32 = -1;\nlet n: usize = v.len();", "rust"), ["best", "n"])
-        self.assertEqual(writes("var count int = 0\ncount = 3", "go"), ["count"])
         self.assertEqual(writes("int total = 0;\ntotal += 2;", "java"), ["total"])  # 형이 앞에 오는 언어는 그대로
         # 선언 이름 뒤부터 '=' 앞까지는 모두 형이다(형 꼴을 하나씩 늘리지 않는다)
         self.assertEqual(writes('let label: &str = "x";', "rust"), ["label"])
-        self.assertEqual(writes("var cells [3]int = [3]int{}\nvar head *Item = nil\nvar seen map[string]int = map[string]int{}", "go"), ["cells", "head", "seen"])
-        self.assertEqual(writes("const limit int = 3", "go"), ["limit"])
-        self.assertEqual(writes("var lo, hi int = 0, 9", "go"), ["lo", "hi"])
 
     def test_swap_names_changes_only_name_positions(self):
         from ..common.solution import swap_names
@@ -787,19 +1076,23 @@ class GrammarRuleTest(unittest.TestCase):
             ("python", 'a = f"{count=}" + f"{count:>{width}}" + f"{{count}}" + "{count}"', {"count": "c", "width": "w"},
              'a = f"{count=}" + f"{c:>{w}}" + f"{{count}}" + "{count}"'),  # '{x=}'는 식의 글자가 출력된다
             ("python", 's = """count"""\nt = count  # don\'t keep count', {"count": "c"}, 's = """count"""\nt = c  # don\'t keep c'),  # 주석은 돌지 않는다: 낱말을 맞춘다
-            ("kotlin", 'println("count=$count ${count + 1}")\nval p = Pair(first = a, second = first)', {"count": "c", "first": "f"},
-             'println("count=$c ${c + 1}")\nval p = Pair(first = a, second = f)'),
             ("javascript", 'console.log(`count: ${count}`, "count", count)', {"count": "c"}, 'console.log(`count: ${c}`, "count", c)'),
+            ("javascript", "const r = /x[/]x\\/x/gi; if (/^x$/.test(x)) return /x/;", {"x": "Y"}, "const r = /x[/]x\\/x/gi; if (/^x$/.test(Y)) return /x/;"),  # 정규식 글자는 글자다
+            ("javascript", "y = a[x] / x / 2 + (x) / x + i++ / x;", {"x": "Y"}, "y = a[Y] / Y / 2 + (Y) / Y + i++ / Y;"),  # 값 뒤의 '/'는 나눗셈이다
+            ("javascript", "y = '8' / x / 2 + `8` / x / 1 + o.return / x / 1 + o?.typeof / x / 1;", {"x": "Y"},
+             "y = '8' / Y / 2 + `8` / Y / 1 + o.return / Y / 1 + o?.typeof / Y / 1;"),  # 글자 뒤, 점 뒤의 예약어 속성 뒤의 '/'도 나눗셈이다
+            ("javascript", "if (x) return /x/.test(s); y = typeof /x/; z = [/x/, x / 2];", {"x": "Y"}, "if (Y) return /x/.test(s); y = typeof /x/; z = [/x/, Y / 2];"),
+            ("javascript", "y = a$ / x / 2 + $ / x / 2 + 값 / x / 2 + x$ + $x + x;", {"x": "Y"}, "y = a$ / Y / 2 + $ / Y / 2 + 값 / Y / 2 + x$ + $x + Y;"),  # $·유니코드 이름도 이름이다(뒤의 '/'는 나눗셈, x$·$x는 x가 아니다)
+            ("javascript", "const a = `x ${x} ${`in ${count} x`} x`;", {"x": "Y", "count": "cnt"}, "const a = `x ${Y} ${`in ${cnt} x`} x`;"),  # 겹친 템플릿의 글자 부분
+            ("javascript", "const a = `${x > 0 ? `${'}'}x` : x / 2} x`;", {"x": "Y"}, "const a = `${Y > 0 ? `${'}'}x` : Y / 2} x`;"),  # ${…} 안 문자열의 '}'는 끝이 아니다
             ("rust", "fn longest<'a>(x: &'a str, y: &'a str) -> &'a str { if x.len() > y.len() { x } else { y } }", {"x": "first", "y": "second"},
              "fn longest<'a>(first: &'a str, second: &'a str) -> &'a str { if first.len() > second.len() { first } else { second } }"),  # 수명 표기는 문자열이 아니다
             ("rust", "let c = 'x'; let q = '\\''; let n = x + 1;", {"x": "z"}, "let c = 'x'; let q = '\\''; let n = z + 1;"),
-            ("go", 'm[x] = len("x") + x', {"x": "key"}, 'm[key] = len("x") + key'),
             ("cpp", "char q = '\"'; int z = count; // count's", {"count": "c"}, "char q = '\"'; int z = c; // c's"),
             ("java", 'f(x = 5); String s = "x";', {"x": "y"}, 'f(y = 5); String s = "x";'),  # Java의 괄호 안 '='는 대입이다
             ("cpp", "node->x = x;", {"x": "y"}, "node->x = y;"),  # '->' 뒤는 멤버다
             ("cpp", "int c = std::count(v.begin(), v.end(), 1) + count;", {"count": "cnt"}, "int c = std::count(v.begin(), v.end(), 1) + cnt;"),  # '::' 뒤는 경로다
             ("rust", "let m = i32::max(x, 1) + Vec::count(&v);", {"x": "y", "count": "cnt"}, "let m = i32::max(y, 1) + Vec::count(&v);"),
-            ("kotlin", "val g = xs.map(Foo::x) + x", {"x": "y"}, "val g = xs.map(Foo::x) + y"),
             ("python", "r = a[::x] + a[x::2]", {"x": "y"}, "r = a[::y] + a[y::2]"),  # Python의 '::'는 조각의 간격이다(변수가 온다)
             ("java", "list.forEach(x->use(x));", {"x": "y"}, "list.forEach(y->use(y));"),  # Java의 '->'는 람다다
         ]
@@ -813,10 +1106,6 @@ class GrammarRuleTest(unittest.TestCase):
         from ..common.solution import swap_names
 
         rows = [
-            ("javascript", "const r = /x/g;", {"x": "Y"}, "const r = /Y/g;"),  # 정규식 글자
-            ("javascript", "const a = `x ${x} ${`in ${count} x`} x`;", {"x": "Y", "count": "cnt"}, "const a = `x ${Y} ${`in ${cnt} Y`} x`;"),  # 겹친 백틱
-            ("kotlin", 'val a = "${f("x")} $x"\nval b = "${ if (x > 0) "x" else "y" }"', {"x": "Y"},
-             'val a = "${f("Y")} $Y"\nval b = "${ if (x > 0) "Y" else "y" }"'),  # ${} 안의 문자열
             ("rust", 'let a = r#"x "quoted" x"#;', {"x": "Y"}, 'let a = r#"x "quoted" Y"#;'),  # r#"…"#
             ("cpp", 'auto s = R"d(x)d";', {"x": "Y"}, 'auto s = R"d(Y)d";'),  # 구분자 있는 원시 문자열
             ("java", 'String t = """\n  \\"""x\\"""\n""";', {"x": "Y"}, 'String t = """\n  \\"""Y\\"""\n""";'),  # 텍스트 블록 안의 이스케이프
@@ -824,7 +1113,6 @@ class GrammarRuleTest(unittest.TestCase):
             ("cpp", "#include <x>\n", {"x": "Y"}, "#include <Y>\n"),
             ("rust", "'x: loop { break 'x; }", {"x": "Y"}, "'Y: loop { break 'Y; }"),  # 라벨
             ("python", "def h(x):\n    return x\ny = h(x=x)", {"x": "Y"}, "def h(Y):\n    return Y\ny = h(x=Y)"),  # 머리의 매개변수와 호출의 키워드 인자가 짝이 안 맞는다
-            ("kotlin", "fun h(x: Int) = x\nval y = h(x = x)", {"x": "Y"}, "fun h(Y: Int) = Y\nval y = h(x = Y)"),
             ("python", "sorted(a, key=lambda x=1: x)", {"x": "Y"}, "sorted(a, key=lambda x=1: Y)"),  # 람다의 기본값
         ]
         for language, code, names, want in rows:
@@ -847,11 +1135,82 @@ class GrammarRuleTest(unittest.TestCase):
             self.assertNotEqual(_rows(mine), _rows(plan), mine)
         self.assertEqual(_rows("x = 1   \n\n\ny = 2\n"), _rows("x = 1\ny = 2"))
 
+    def test_plain_words_are_not_frame_or_keywords(self):
+        """JavaScript의 변수 이름 val과 '(' 뒤에 혼자 닫는 ')' 줄은 틀이나 예약어로 빠지지 않는다."""
+        from ..common.solution import body_lines, made_statements
+
+        js = "function solution(xs) {\n  let t = 0;\n  for (const val of xs) {\n    t += val;\n  }\n  return t;\n}\n"
+        self.assertIn("val", [row[0] for row in made_statements(js, "javascript")])
+        code = "function solution(a) {\n  const r = Math.max(\n    ...a\n  )\n  return r;\n}\n"
+        self.assertIn(")", body_lines(code, "javascript", False))
+        walrus = [row for row in made_statements("def solution(xs):\n    while n := len(xs):\n        xs.pop()\n    return 0\n", "python") if row[0] == "n"]
+        self.assertTrue(walrus and walrus[0][3][1], walrus)  # Python의 괄호 없는 := 도 오른쪽 식을 잃지 않는다
+
+    def test_made_names_per_declaration_form(self):
+        """줄마다 새로 만드는 이름과 꼴이 정해져 있다(반복 머리·패턴·구조 분해·생성자 꼴 선언 포함)."""
+        from ..common.solution import made_statements
+
+        table = [
+            ("rust", "for i in 0..n {", [("i", "loop")]),
+            ("rust", "for (i, c) in s.chars().enumerate() {", [("i", "loop"), ("c", "loop")]),
+            ("rust", "while let Some(x) = stack.pop() {", [("x", "loop")]),
+            ("rust", "if let Some(v) = map.get(&k) {", [("v", "var")]),
+            ("rust", "let (a, b) = (1, 2);", [("a", "var"), ("b", "var")]),
+            ("rust", "let mut v = Vec::new();", [("v", "var")]),
+            ("cpp", "vector<int> v(n);", [("v", "var")]),
+            ("cpp", "vector<vector<int>> g(n, vector<int>());", [("g", "var")]),
+            ("cpp", "vector<int> a(n), b(m);", [("a", "var"), ("b", "var")]),
+            ("cpp", "auto [a, b] = p;", [("a", "var"), ("b", "var")]),
+            ("cpp", "for (auto& [k, v] : m) {", [("k", "loop"), ("v", "loop")]),
+            ("cpp", "const auto& [a, b] = p;", [("a", "var"), ("b", "var")]),
+            ("cpp", "for (const auto& [k, v] : m) {", [("k", "loop"), ("v", "loop")]),
+            ("cpp", "for (auto x : xs) {", [("x", "loop")]),
+            ("cpp", "int x = 0, y;", [("x", "var"), ("y", "var")]),
+            ("cpp", "sort(a.begin(), a.end());", []),
+            ("cpp", "cout << x(y);", []),
+            ("javascript", "const [a, b] = pair;", [("a", "var"), ("b", "var")]),
+            ("javascript", "const { x, y } = p;", [("x", "var"), ("y", "var")]),
+            ("javascript", "const { x: u, y = 2 } = p;", [("u", "var"), ("y", "var")]),
+            ("javascript", "for (const [k, v] of m) {", [("k", "loop"), ("v", "loop")]),
+            ("javascript", "for (const x of xs) {", [("x", "loop")]),
+            ("java", "for (int x : xs) {", [("x", "loop")]),
+            ("java", "int[] a = new int[n];", [("a", "var")]),
+        ]
+        for language, line, expected in table:
+            code = line + "\n" + ("}\n" if line.endswith("{") else "")
+            self.assertEqual([(n, kind) for n, kind, *_ in made_statements(code, language)], expected, f"{language}: {line}")
+        # 구조 분해의 이름마다 자리는 패턴 안의 실제 자리다(비운 자리와 '_'도 센다. 객체는 키, 중첩은 경로)
+        paths = lambda language, code: {row[0]: row[3][-1] for row in made_statements(code, language)}
+        self.assertEqual(paths("javascript", "const [, second, [x, y]] = t;\n"), {"second": "1", "x": "2.0", "y": "2.1"})
+        self.assertEqual(paths("javascript", "const { y: b, x: a, c: { d } } = p;\n"), {"b": "y", "a": "x", "d": "c.d"})
+        self.assertEqual(paths("rust", "while let Some(&(_, last)) = st.pop() {\n}\n"), {"last": "0.1"})
+        self.assertEqual(paths("rust", "let Point { x: px, y } = p;\n"), {"px": "x", "y": "y"})
+        self.assertEqual(made_statements("for _ in 0..n {\n}\n", "rust"), [])
+
+    def test_destructured_names_pair_by_real_position(self):
+        """비운 자리·'_'가 앞에 있어도 구조 분해 이름은 실제 같은 자리끼리 짝이 된다. 객체는 키로 짝이 된다."""
+        from ..turn.pairs import pair_block
+
+        cases = [
+            ("javascript", "for (const [, myLook] of people) {\n}\n", "for (const [name, look] of people) {\n}\n", {"myLook": "look"}),
+            ("rust", "while let Some(&(_, last_level)) = st.pop() {\n}\n", "while let Some(&(idx, lv)) = st.pop() {\n}\n", {"last_level": "lv"}),
+            ("javascript", "const [, second] = pair;\n", "const [a, b] = pair;\n", {"second": "b"}),
+            ("rust", "let (_, hi) = range;\n", "let (lo, top) = range;\n", {"hi": "top"}),
+            ("javascript", "const { y: b, x: a } = p;\n", "const { x, y } = p;\n", {"b": "y", "a": "x"}),
+            ("javascript", "const { a: { b } } = o;\n", "const { a: { c } } = o;\n", {"b": "c"}),
+            ("rust", "for _ in 0..n {\n}\n", "for k in 0..n {\n}\n", {}),
+            ("rust", "for (i, c) in s.chars().enumerate() {\n}\n", "for (j, ch) in s.chars().enumerate() {\n}\n", {"i": "j", "c": "ch"}),
+            ("rust", "let Point { x: px, y } = p;\n", "let Point { x: q, y: w } = p;\n", {"px": "q"}),
+        ]
+        for language, plan, mine, fixed in cases:
+            result = pair_block(plan, mine, {}, plan, set(), language)
+            self.assertEqual((result.fixed, result.groups), (fixed, []), f"{language}: {plan!r}")
+
     def test_entry_params_follow_each_grammar(self):
         from ..common.solution import entry_params
 
-        rows = [("python", "def solution(loans, k):"), ("kotlin", "fun solution(loans: Array<String>, k: Int): Array<String> {"),
-                ("rust", "pub fn solution(mut loans: Vec<String>, k: i32) -> Vec<String> {"), ("go", "func solution(loans []string, k int) []string {"),
+        rows = [("python", "def solution(loans, k):"),
+                ("rust", "pub fn solution(mut loans: Vec<String>, k: i32) -> Vec<String> {"),
                 ("cpp", "vector<string> solution(vector<string> loans, int k) {"), ("java", "    public String[] solution(String[] loans, int k) {"),
                 ("javascript", "function solution(loans, k) {")]
         for language, head in rows:
@@ -859,7 +1218,7 @@ class GrammarRuleTest(unittest.TestCase):
         self.assertIsNone(entry_params("const solution = (loans, k) => {", "javascript"))  # 알아보지 못한 머리는 같다고 하지 않는다
 
     def test_entry_params_read_the_last_word_of_a_declaration(self):
-        """C 계열(C·C++·Java)·Go의 선언에서 이름은 타입 다음의 마지막 낱말이다. '::'는 경로라 'name: Type'의 ':'가 아니고, 꺾쇠·괄호 안의 쉼표에서 끊지 않으며,
+        """C 계열(C·C++·Java)의 선언에서 이름은 타입 다음의 마지막 낱말이다. '::'는 경로라 'name: Type'의 ':'가 아니고, 꺾쇠·괄호 안의 쉼표에서 끊지 않으며,
         머리가 여러 줄이어도 괄호가 닫힐 때까지 읽는다. 닫히지 않으면 알아보지 못한 것이다."""
         from ..common.solution import entry_params
 
@@ -869,12 +1228,9 @@ class GrammarRuleTest(unittest.TestCase):
                 ("cpp", "vector<int> solution(vector<vector<int>>& grid,\n                     int k,\n                     map<int, pair<int, int>> m) {", ["grid", "k", "m"]),
                 ("cpp", "int solution(int a, std::vector<std::pair<int,int>>& v) {", ["a", "v"]),
                 ("java", "public int[] solution(int[] arr, java.util.List<String> names, final int k) {", ["arr", "names", "k"]),
-                ("go", "func solution(a, b int, names []string) int {", ["a", "b", "names"]),
-                ("go", "func solution(a, b int,\n\tnames []string) int {", ["a", "b", "names"]),
-                ("kotlin", "fun solution(m: Map<Int, Int>, f: kotlin.collections.List<Int>): Int {", ["m", "f"]),
                 ("rust", "fn solution(m: std::collections::HashMap<i32, i32>, mut v: Vec<i32>) -> i32 {", ["m", "v"]),
                 ("python", "def solution(nums,\n             k):", ["nums", "k"]),
-                ("python", "def solution(nums,\n", None), ("kotlin", "fun solution(a: Int,", None)]
+                ("python", "def solution(nums,\n", None), ("rust", "fn solution(a: i32,", None)]
         for language, head, want in rows:
             with self.subTest(language=language, head=head):
                 self.assertEqual(entry_params(head + "\n", language), want)
@@ -929,3 +1285,54 @@ class PlainWordsTest(unittest.TestCase):
             self.assertNotIn("번째", said)
             self.assertIn("의심되는 줄" if "{line}" in FALLBACK[name] else FALLBACK[name][:6], said)
         self.assertIn("3번째 줄", fallback("cause", 3))
+
+
+class LanguageNeutralTextTest(unittest.TestCase):
+    """실전 신호·익힐 것·풀이 단계는 한 언어에서만 맞는 말을 조건 없이 쓰지 않는다."""
+
+    # 이 말이 나오는 문장이 있으면 같은 항목 안에 언어의 성질로 단 조건이 있어야 한다.
+    RULES = (
+        (r"64비트 정수", "넘칠 수 있는 언어"),
+        (r"재귀 대신|재귀 없이|재귀는[^.]*넘칠|재귀가[^.]*필요", "깊이 한도가 낮은 언어"),
+        (r"힙[^.]*부호를 뒤집|부호를 뒤집[^.]*힙", "최소 힙만 있는 언어|힙이 가장 작은 값만 꼭대기에 둔다면"),
+    )
+
+    def test_conditions(self):
+        import re
+        from pathlib import Path
+        root = Path(__file__).resolve().parents[2] / "ui" / "problems"
+        texts = []
+
+        def walk(node, where):
+            if isinstance(node, dict):
+                for key, val in node.items():
+                    if key not in ("code", "reference", "phrase", "statement", "spec"):
+                        walk(val, where)
+            elif isinstance(node, list):
+                for val in node:
+                    walk(val, where)
+            elif isinstance(node, str):
+                texts.append((where, node))
+
+        for path in root.glob("*/*/problem.json"):
+            data = json.loads(path.read_text(encoding="utf-8"))
+            for key in ("signals", "learn", "ladder", "pitfalls", "pattern"):
+                walk(data.get(key), path)
+        for path in root.glob("*/*/ready.json"):
+            walk(json.loads(path.read_text(encoding="utf-8")).get("ready"), path)
+        for where, text in texts:
+            for sentence in re.split(r"(?<=[.다요])\s+", text):
+                for rule, cond in self.RULES:
+                    if re.search(rule, sentence):
+                        self.assertRegex(text, cond, f"{where.parent.name}: {sentence}")
+
+
+class FeedbackClaimTest(unittest.TestCase):
+    def test_record_does_not_claim_an_unspoken_process(self):
+        from ..feedback.prompts import record_lines
+        from ..state import DebugState, Submission
+        # 틀린 곳 찾기를 열기만 했고 말한 적이 없으면 기록이 과정을 말하지 않는다
+        ctx = fakes.context(debug_state=DebugState("h", "logic", 3, "c", ""), latest_submission=Submission("s1", "x", True))
+        record = "\n".join(record_lines(ctx, None))
+        self.assertNotIn("말로 짚기 전에", record)
+        self.assertIn("대화를 하지 않았", record)

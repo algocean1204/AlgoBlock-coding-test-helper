@@ -1,5 +1,6 @@
 """공급자(app/llm, app.llm) 시험. tutor가 쓰는 모델 입구가 서버 안에서 그대로 도는지 본다."""
 
+import json
 import os
 import unittest
 from dataclasses import dataclass
@@ -9,6 +10,7 @@ from ..llm.client import _backend_session
 
 _session = _backend_session()  # 저장소 루트를 경로에 더해 app.llm을 부른다
 from app.llm.openai.oauth.pkce import make_pkce  # noqa: E402
+from app.llm.errors import LlmFailed  # noqa: E402
 from app.llm.parse import parse, text_of  # noqa: E402
 from app.llm.route import route  # noqa: E402
 from app.llm.session import llm  # noqa: E402
@@ -140,6 +142,22 @@ class ProviderTest(unittest.TestCase):
     def test_parse_reads_responses_text(self):
         self.assertEqual(text_of({"output_text": "x"}), "x")
         self.assertEqual(parse(Reply, {"output_text": '{"text": "파서"}'}).text, "파서")
+
+    def test_parse_reads_optional_fields_like_the_fake_client(self):
+        """실제 공급자 경로와 가짜 모델의 검사 함수가 X | None 칸을 같게 읽는다(숨은 테스트 생성기의 제한사항이 이 꼴이다)."""
+        from ..llm.client import coerce as fake_coerce
+        from ..state import CaseMaker
+
+        ok = {"code": "def small(): pass", "bounds": [{"arg": 0, "low": 1, "high": None, "longest": 5}]}
+        got = parse(CaseMaker, {"output_text": json.dumps(ok)})
+        self.assertEqual((got.bounds[0].low, got.bounds[0].high, got.bounds[0].longest), (1, None, 5))
+        self.assertEqual(got, fake_coerce(CaseMaker, ok))
+        bad = {"code": "x", "bounds": [{"arg": 0, "low": "많이"}]}
+        with self.assertRaises(LlmFailed):
+            parse(CaseMaker, {"output_text": json.dumps(bad)})
+        from ..llm import client as fake  # 가짜 모델 쪽은 튜터의 오류 꼴로 알린다
+        with self.assertRaises(fake.LlmFailed):
+            fake_coerce(CaseMaker, bad)
 
     def test_parse_takes_loose_extra_fields(self):
         """모양을 따지지 않는 덤 필드(Any)는 공급자 파서도 그대로 받는다: 태그·단계의 모양 탓에 풀이 가이드 전체를 잃지 않는다."""

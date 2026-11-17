@@ -1,0 +1,147 @@
+{
+ "python": [
+  {
+   "file": "lang_1.py",
+   "trap": "python.true_division",
+   "at": [
+    "gap일마다 한 번씩"
+   ],
+   "fails": {
+    "10": "failed",
+    "18": "failed",
+    "20": "failed",
+    "22": "failed",
+    "26": "failed",
+    "27": "failed",
+    "28": "failed"
+   },
+   "outs": {
+    "10": "8",
+    "18": "14",
+    "20": "38",
+    "22": "33",
+    "26": "999998002500",
+    "27": "608338860318",
+    "28": "7131105"
+   },
+   "source": 1659275915
+  }
+ ],
+ "java": [
+  {
+   "file": "lang_1.java",
+   "trap": "java.int_overflow",
+   "at": [
+    "schedules의 길이는 1 이상 40,000 이하",
+    "times는 1 이상 1,000,000 이하"
+   ],
+   "fails": {
+    "27": "failed",
+    "28": "failed"
+   },
+   "outs": {
+    "27": "998996724787",
+    "28": "49911676"
+   },
+   "source": 2544808216
+  },
+  {
+   "file": "lang_2.java",
+   "trap": "java.int_multiply",
+   "at": [
+    "gap은 1 이상 1,000,000 이하",
+    "times는 1 이상 1,000,000 이하"
+   ],
+   "fails": {
+    "24": "failed",
+    "25": "failed",
+    "26": "failed",
+    "27": "failed"
+   },
+   "outs": {
+    "24": "1000000000",
+    "25": "271620032",
+    "26": "1000",
+    "27": "2147389486"
+   },
+   "source": 3703398251
+  }
+ ],
+ "javascript": [
+  {
+   "file": "lang_1.js",
+   "trap": "javascript.float_division",
+   "fails": {
+    "10": "failed",
+    "18": "failed",
+    "20": "failed",
+    "22": "failed",
+    "26": "failed",
+    "27": "failed",
+    "28": "failed"
+   },
+   "outs": {
+    "10": "8",
+    "18": "14",
+    "20": "38",
+    "22": "33",
+    "26": "999998002500",
+    "27": "608338860318",
+    "28": "7131105"
+   },
+   "source": 2729558258
+  },
+  {
+   "file": "lang_2.js",
+   "trap": "javascript.shift_32bit",
+   "at": [
+    "gap은 1 이상 1,000,000 이하",
+    "times는 1 이상 1,000,000 이하"
+   ],
+   "fails": {
+    "24": "timeout",
+    "25": "timeout",
+    "26": "timeout"
+   },
+   "source": 259663585
+  }
+ ],
+ "cpp": [
+  {
+   "file": "lang_1.cpp",
+   "trap": "cpp.int_overflow",
+   "at": [
+    "schedules의 길이는 1 이상 40,000 이하",
+    "times는 1 이상 1,000,000 이하"
+   ],
+   "fails": {
+    "27": "failed",
+    "28": "failed"
+   },
+   "outs": {
+    "27": "998996724787",
+    "28": "49911676"
+   },
+   "source": 67092429
+  }
+ ],
+ "rust": [
+  {
+   "file": "lang_1.rs",
+   "trap": "rust.i32_wrap",
+   "at": [
+    "times는 1 이상 1,000,000 이하",
+    "schedules의 길이는 1 이상 40,000 이하"
+   ],
+   "fails": {
+    "27": "failed",
+    "28": "failed"
+   },
+   "outs": {
+    "27": "998996724787",
+    "28": "49911676"
+   },
+   "source": 1259668948
+  }
+ ]
+}

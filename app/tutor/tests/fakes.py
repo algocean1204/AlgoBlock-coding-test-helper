@@ -15,7 +15,7 @@ PROBLEM = "작은 도서관은 누군가 책을 빌려 갈 때마다 그 책의 
 # 꼴이 다른 문제 글(시험이 한 문제의 꼴에 기대지 않게): 표준 입출력 방식 하나, Python이 아닌 언어의 함수 방식 하나
 PROGRAM_PROBLEM = ("첫째 줄에 정류장 수 N이 주어지고, 둘째 줄에 정류장마다 탄 사람 수가 공백으로 주어진다.\n"
                    "탄 사람이 가장 많은 정류장의 번호(1부터)를 출력한다. 가장 많은 정류장이 여럿이면 앞 번호를 출력한다.")
-KOTLIN_PROBLEM = "정수 배열 heights와 정수 limit이 주어집니다. heights에서 limit보다 큰 값의 개수를 return 하도록 solution 함수를 완성하세요."
+CPP_PROBLEM = "정수 배열 heights와 정수 limit이 주어집니다. heights에서 limit보다 큰 값의 개수를 return 하도록 solution 함수를 완성하세요."
 
 SECTIONS = [
     {"title": "문제에서 읽을 것", "body": "읽을 것"},

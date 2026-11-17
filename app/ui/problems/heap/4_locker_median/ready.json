@@ -16,10 +16,10 @@
   "solution": {
    "approach": "거리의 합이 가장 작아지는 곳은 평균이 아니라 가운데 값(중앙값)입니다. 그래서 날마다 지금까지 지어진 집들의 가운데 값을 알아야 합니다. 집을 작은 쪽 절반과 큰 쪽 절반으로 나눠 두 힙에 담고, 작은 쪽 힙의 가장 큰 값이 늘 가운데 값이 되도록 두 힙의 개수를 맞춥니다. 두 힙에 든 값의 합도 함께 기억해 두면, 가운데 값보다 작은 집들의 거리 합과 큰 집들의 거리 합을 곱셈과 뺄셈만으로 바로 구할 수 있습니다.",
    "steps": [
-    "작은 쪽 힙 low(부호를 뒤집어 넣음)와 큰 쪽 힙 high, 두 힙의 값 합 low_sum·high_sum, 답 total을 준비한다 — 가운데 값과 거리 합을 날마다 바로 꺼내 쓰기 위해",
+    "작은 쪽 힙 low(가장 큰 값이 꼭대기에 오는 최대 힙이고, 최소 힙만 있는 언어에서는 부호를 뒤집어 넣음)와 큰 쪽 힙 high, 작은 쪽 집들의 합과 큰 쪽 집들의 합, 답 total을 준비한다 — 가운데 값과 거리 합을 날마다 바로 꺼내 쓰기 위해",
     "집을 지어진 순서대로 보며, low가 비었거나 low의 꼭대기 이하이면 low에, 아니면 high에 넣고 그 힙의 합에 더한다 — 작은 절반과 큰 절반으로 나눠 담기 위해",
     "low가 high보다 둘 이상 많으면 low의 꼭대기를 high로, high가 low보다 많으면 high의 꼭대기를 low로 옮기고 두 합도 고친다 — low의 꼭대기가 늘 가운데 값이 되게 하기 위해",
-    "가운데 값 middle을 low의 꼭대기에서 꺼내 (middle × low 개수 − low_sum) + (high_sum − middle × high 개수)를 total에 더한다 — 그날 모든 집에서 보관함까지의 거리 합을 한 번에 구하기 위해",
+    "가운데 값 middle을 low의 꼭대기에서 꺼내 (middle × low 개수 − 작은 쪽 집들의 합) + (큰 쪽 집들의 합 − middle × high 개수)를 total에 더한다 — 그날 모든 집에서 보관함까지의 거리 합을 한 번에 구하기 위해",
     "모든 날을 다 본 뒤 total을 돌려준다 — 1일째부터 마지막 날까지의 합이 답이므로"
    ],
    "code": "import heapq\n\n\ndef solution(houses):\n    low = []   # 작은 쪽 절반. 부호를 뒤집어 넣어 가장 큰 값이 꼭대기에 온다\n    high = []  # 큰 쪽 절반. 가장 작은 값이 꼭대기에 온다\n    low_sum = 0\n    high_sum = 0\n    total = 0\n    for house in houses:\n        if not low or house <= -low[0]:\n            heapq.heappush(low, -house)\n            low_sum += house\n        else:\n            heapq.heappush(high, house)\n            high_sum += house\n        # 개수 맞추기: low가 high와 같거나 하나 더 많게 둔다. 그러면 low의 꼭대기가 가운데 값이다\n        if len(low) > len(high) + 1:\n            moved = -heapq.heappop(low)\n            low_sum -= moved\n            heapq.heappush(high, moved)\n            high_sum += moved\n        elif len(high) > len(low):\n            moved = heapq.heappop(high)\n            high_sum -= moved\n            heapq.heappush(low, -moved)\n            low_sum += moved\n        middle = -low[0]\n        # (작은 쪽 집들에서 가운데까지의 거리 합) + (큰 쪽 집들에서 가운데까지의 거리 합)\n        total += (middle * len(low) - low_sum) + (high_sum - middle * len(high))\n    return total",
@@ -43,7 +43,7 @@
      "reference": "import heapq\n\n\ndef solution(houses):\n    low = []   # 작은 쪽 절반. 부호를 뒤집어 넣어 가장 큰 값이 꼭대기에 온다\n    high = []  # 큰 쪽 절반. 가장 작은 값이 꼭대기에 온다",
      "checks": [
       "집 위치를 작은 쪽 절반과 큰 쪽 절반으로 나눠 담을 힙을 두 개 만든다",
-      "작은 쪽 힙은 가장 큰 값이 먼저 나오도록 부호를 뒤집어 넣는다",
+      "작은 쪽 힙은 가장 큰 값이 먼저 나오도록 최대 힙으로 쓴다(최소 힙만 있는 언어에서는 부호를 뒤집어 넣는다)",
       "거리 합이 가장 작은 곳은 평균이 아니라 가운데 값이라는 점을 안다"
      ],
      "hints": [

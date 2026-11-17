@@ -20,6 +20,9 @@ cd app && python3 -B ui/test_publish.py history
 
 # 4. 채점기 (cd app/judge 에서)
 cd app/judge && python3 -B -m unittest test_check
+
+# 5. 코드 칸 문법 색 (Node)
+cd app && node ui/test_highlight.js
 ```
 
 | 시험 | 보는 것 |
@@ -29,7 +32,8 @@ cd app/judge && python3 -B -m unittest test_check
 | 3. 저장소 구조 | 루트·`app`·`Docs`에 허용되지 않은 것이 없는지, 내부 파일이 추적되지 않는지 |
 | 3. 공개 전 검사 | 추적하는 파일의 내부 경로, 키 모양의 글자, 개인 경로와 이메일, 내부 이름, 50MB를 넘는 파일, `.env.example`의 키 이름과 서버 키 이름이 같은지, LICENSE, 공개 문서의 링크 |
 | 3. 공개 전 검사 `history` | 현재 브랜치의 모든 커밋의 모든 파일에서 내부 경로와 내용(키 모양, 개인 경로·이메일, 내부 이름)을 본다. 걸리면 경로와 커밋 수를 내고 종료 코드 1로 끝난다 |
-| 4. 채점기 | 비교, 모드 정하기, 7개 언어의 두 모드, 실패 종류, 다른 모드로 다시 돌리기, 큰 인자 파일, 출력·메모리 상한, 자식 프로세스 정리, CPU 시간 상한, 비밀 환경 변수 거르기, 효율성 케이스. Windows에서는 작업 객체(정상 종료 뒤의 자식, 커밋 메모리 상한과 그때의 `memory_limit` 판정, 작업 없이 돌 때의 `warning`)도 본다. 다른 OS에서는 그 시험을 건너뛴다 |
+| 4. 채점기 | 비교, 모드 정하기, 5개 언어의 두 모드, 실패 종류, 다른 모드로 다시 돌리기, 큰 인자 파일, 출력·메모리 상한, 자식 프로세스 정리, CPU 시간 상한, 비밀 환경 변수 거르기, 효율성 케이스. Windows에서는 작업 객체(정상 종료 뒤의 자식, 커밋 메모리 상한과 그때의 `memory_limit` 판정, 프로세스 수 상한, 자식의 오류 창 끄기, 작업 없이 돌 때의 `warning`)도 본다. 다른 OS에서는 그 시험을 건너뛴다 |
+| 5. 문법 색 | 기본 풀이 전부에서 색칠한 글을 이으면 원래 코드와 같은지, 줄마다 나눈 HTML이 그 줄의 글과 같고 span이 줄 안에서 닫히는지, 언어마다 대표 토큰, `<`·`&`의 이스케이프, macOS 12 웹뷰가 모르는 문법(정규식 뒤돌아보기 등)이 화면 스크립트에 없는지 |
 
 - 1번은 임베딩 패키지나 모델 파일이 없으면 색인 시험 일부를 건너뛴다.
 - 4번은 기기에 없는 언어를 건너뛴다. 모든 언어를 시험하려면 그 언어의 도구를 먼저 깐다([언어 도구](../guide/install.md#언어-도구)).
@@ -52,6 +56,7 @@ cd app && python3 ui/problemkit.py check ui/problems/<주제>
 | `app/tutor/` | 1번 |
 | `app/llm/` | 1번 |
 | `app/ui/` (서버, 화면, 도구) | 2번. 튜터 코드도 건드렸다면 1번 |
+| `app/ui/highlight.js`, 기본 풀이 | 5번 |
 | `app/judge/` | 4번과 2번(서버가 채점기를 부른다) |
 | `app/ui/problems/` 또는 `problemkit.py`·`make_builtin.py` | 기본 문제 검사(바꾼 주제 폴더) + 2번 |
 | 파일이나 폴더를 추가·옮김, `.gitignore` | 3번 `test_structure.py` |
@@ -71,7 +76,7 @@ cd app && python3 ui/problemkit.py check ui/problems/<주제>
 | 작업 | 돌리는 것 | 제한 시간 |
 | --- | --- | --- |
 | `changes` | 바뀐 파일이 문서뿐인지 본다. 목록을 읽지 못하면 모두 돌린다 | 5분 |
-| `engine-tests` | 1번, 2번 | 20분 |
+| `engine-tests` | 1번, 2번, 5번 | 20분 |
 | `judge-tests` | 4번(러너에 있는 언어만 돈다) | 20분 |
 | `windows` | Windows 러너(`windows-latest`)에서 아래 차례로 돈다 | 60분 |
 | `publish-check` | 3번 세 가지(구조, 현재 파일, 모든 커밋) | 10분 |
@@ -91,6 +96,7 @@ cd app && python3 ui/problemkit.py check ui/problems/<주제>
 6. `build_win.ps1`로 exe를 빌드한다. 해시 파일 `SHA256SUMS-windows-x64`도 만든다.
 7. 빌드한 exe를 `--server`로 띄워 5와 같이 제출한다.
 8. 업데이트의 바꿔 끼우기를 빌드한 exe의 사본 둘(수정 시각만 다르다)로 끝까지 본다(`python ui/test_update.py exe <exe>`). 성공: 옛 앱이 끝나면 새 exe로 바꿔 열고, 새 앱의 `/`가 200을 준다. 되돌리기: 새 앱의 포트를 막아 응답하지 않게 하면 새 앱을 끝내고 옛 exe를 되돌려 연다. 새 앱이 응답하기까지 걸린 시간을 작업 요약에 적는다. 이때 새 앱은 창 모드로 열린다.
+9. 6~8이 모두 성공하면 릴리스 이름의 사본 `AlgoBlock-windows-x64.exe`와 `SHA256SUMS-windows-x64`를 산출물(`AlgoBlock-windows-x64`)로 7일 동안 남긴다. PR의 실행 화면(Actions)에서 내려받을 수 있다. 포크에서 온 PR에서는 남기지 않는다.
 
 준비(1)가 끝나면 2부터는 앞 단계가 실패해도 모두 돈다. 실패는 한 번에 모두 보이고, 하나라도 실패하면 작업은 실패다. 모델이 필요한 4와 6은 모델을 받았을 때만, 7과 8은 빌드가 성공했을 때만 돈다.
 

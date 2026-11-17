@@ -127,6 +127,7 @@ class DebugState:
     fixed_line: str
     step: int = 0
     pitfall: str = ""  # 온톨로지 함정 id(없으면 빈 글)
+    trap: str = ""  # 고른 언어 함정 id(묶음의 traps. 없으면 빈 글). 피드백이 이어 받는다
 
 
 @dataclass
@@ -182,6 +183,7 @@ class TutorContext:
     mode: str = "function"  # 문항의 푸는 방식(function·program). 서버가 아는 값을 받는다(shape)
     starter: str = ""  # 이 언어의 시작 코드(풀이 가이드의 진입 함수 머리를 이것과 같게 묶는다. 없으면 빈 글)
     many_answers: bool = False  # 등록할 때 '답이 여럿일 수 있음'을 켰다(값이 다르면 맞는지 가릴 수 없다). 서버가 아는 값을 받는다(shape)
+    traps: list[dict] = field(default_factory=list)  # 이 문제·언어에서 증명된 언어 함정 [{id, what, fix, code, right, fails 또는 varies}]. 기본 문제만. 서버가 아는 값을 받는다(shape)
 
 
 @dataclass
@@ -194,7 +196,7 @@ class Verdict:
     score: int | None = None
     malformed: bool = False
     other: bool = False  # D: 계획과 다르지만 문제가 풀리는 방법을 말했다
-    aside: str = ""  # A: 답·답 코드를 달라는 요청, O: 문제와 무관한 말(의자·가이드 말 판정만)
+    aside: str = ""  # A: 답·답 코드를 달라는 요청, O: 문제와 무관한 말, W: 낱말·개념의 뜻을 묻는 말(의자·가이드 말 판정만)
     seen: str = ""  # 블록 코드 확인이 통과하지 못했을 때 실행에서 본 것 한 줄(오답 값, 오류, 괄호 수)
     hint: bool = True  # 거짓이면 그 실패와 상관없는 저장 힌트를 붙이지 않는다(문법·실행 오류, 괄호·들여쓰기 안내, 이름 찾기 실패)
     ran: bool = True  # 블록 코드 확인: 거짓이면 실행하지 못해 모델이 코드를 읽고 본 판단이다(통과여도 '확인 전'으로 보이고 그렇다고 말한다)
@@ -239,7 +241,7 @@ class Abstract:
     patterns: list[str] = field(default_factory=list)
     skills: list[str] = field(default_factory=list)  # 구현 기술 id
     size: int = 0  # 제한사항에서 가장 큰 입력 크기(모르면 0)
-    level: int = 0  # 단계 1~5(모르면 0). 등록한 문제의 목록에 보인다
+    level: Any = 0  # 단계 1~5(모르면 0). 등록한 문제의 목록에 보인다. 모델 출력은 모양을 따지지 않고 받아("2", 2.0, null로 뼈대를 잃지 않게) plan.nodes.abstract가 정수로 바꾼다
     tags: list[str] = field(default_factory=list)  # 쓰는 방법(온톨로지 기법 id) 2~4개
 
 
@@ -358,6 +360,8 @@ class Diagnosis:
     cause: str
     fixed_line: str
     pitfall: str = ""
+    trap: str = ""  # 내놓은 언어 함정 후보 가운데 고른 id(없으면 빈 글)
+    opening: str = ""  # 사용자에게 보일 첫 질문(실패 입력과 코드의 단서를 짚는다). 비거나 검사에 걸리면 정해진 글
 
 
 @dataclass

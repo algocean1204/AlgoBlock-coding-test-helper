@@ -8,7 +8,7 @@ app에서:
         --no-langs         파이썬 정답 풀이만 검사해 싣는다(기본은 다른 언어 정답 풀이(solution.java 등)도 검사해 싣는다. 그 언어의 도구가 기기에 있어야 한다.
                            이 옵션으로 묶으면 이미 실린 문제의 다른 언어 풀이가 묶음에서 빠진다)
         --only 폴더 …      그 문제만 검사하고 묶는다(예: hash/1_popular_shelf). 다른 문제의 행은 지금 묶음의 것을 그대로 둔다(문제 하나를 더할 때)
-        --no-check         검사를 다시 돌리지 않고 폴더의 cases.json(지난 검사가 얼린 것)을 믿는다(개발·시험용. 실을 때는 쓰지 않는다)
+        --no-check         검사를 다시 돌리지 않고 폴더의 cases.json·lang.json(지난 검사가 얼린 것)을 믿는다(개발·시험용. 실을 때는 쓰지 않는다)
         --out 파일          다른 곳에 쓴다(기본 ui/builtin.json)
         --workers N        한 번에 몇 문제(기본 4)
 
@@ -70,6 +70,7 @@ def entry(folder: Path, langs: bool = True, check: bool = True) -> dict:
     solutions = {"python": files["solution.py"]}
     if langs:  # 검사한 언어만 싣는다(--no-langs면 파이썬만)
         solutions |= {language: files[f"solution.{ext}"] for language, ext in problemkit.EXT.items() if language != "python" and f"solution.{ext}" in files}
+    traps = traps_of(problem, solutions)
     return {
         "id": problem["id"], "theme": problem["theme"], "level": problem["level"], "title": problem["title"], "language": "python",
         "text": text_of(problem, cases), "params": problem["params"], "returns": problem["returns"],
@@ -77,9 +78,29 @@ def entry(folder: Path, langs: bool = True, check: bool = True) -> dict:
         "cases": cases, "large": files["gen.py"] if any(case["kind"] == "efficiency" for case in cases) else "", **({"limits": limits} if limits else {}),
         "signals": problem["signals"], "pattern": problem["pattern"], "learn": problem["learn"], "pitfalls": problem["pitfalls"], "ladder": problem["ladder"],
         "languages": [language for language in LANGUAGES if language in solutions], "solutions": solutions,
-        "starters": {language: stub(problem, language) for language in LANGUAGES},
+        "starters": {language: stub(problem, language) for language in LANGUAGES}, **({"traps": traps} if traps else {}),
         "source": zlib.crc32((problem["statement"] + json.dumps(problem["limits"], ensure_ascii=False) + files["solution.py"]).encode()),  # 글·정답 풀이가 바뀌었는지
     }
+
+
+def traps_of(problem: dict, solutions: dict) -> dict:
+    """싣는 언어의 증명된 함정: {언어: [{id, what, fix, code, right, shape(있으면), at(구절 목록, 있으면), fails·outs 또는 varies}]}. 글은 함정 목록에서, 증명은 lang.json(검사가 얼린 것)에서 온다.
+    varies: 결과가 정해지지 않은 동작이라 떨어지는 케이스가 기기마다 다를 수 있다(떨어진 케이스 목록을 싣지 않는다). outs: 틀린 답을 낸 케이스의 돌려준 값(짧게, 길면 지문).
+    code·right: 사용자 코드가 그 함정의 꼴인지 보는 이름(튜터가 후보를 거른다). 증명 검사와 같게 흔한 낱말과 한 글자는 뺀다.
+    right_base: 그 언어 정답 풀이(주석 밖)에 right 이름이 나오는 횟수의 합. code가 없는 함정은 사용자 코드에서 이보다 적게 나와야 후보다."""
+    from tutor.debug.rules import right_count
+
+    path = problem["dir"] / "lang.json"
+    saved = json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {}
+    text = {row["id"]: row for rows in problemkit.traps().values() for row in rows}
+    names = lambda row, key: [term for term in text[row["trap"]][key] if problemkit.anchor(term)]
+
+    def one(row: dict, language: str) -> dict:
+        trap = {"id": row["trap"], "what": text[row["trap"]]["what"], "fix": text[row["trap"]]["fix"], "code": names(row, "code"), "right": names(row, "right"),
+                **{key: text[row["trap"]][key] for key in ("shape",) if key in text[row["trap"]]}, **{key: row[key] for key in ("at", "fails", "outs", "varies") if key in row}}
+        return trap | {"right_base": right_count(trap, solutions[language])}
+
+    return {language: [one(row, language) for row in rows if row["trap"] in text] for language, rows in saved.items() if language in solutions}
 
 
 def ready_of(row: dict) -> dict:
@@ -189,6 +210,11 @@ def build(args: list[str]) -> int:
                     why = f"{type(exc).__name__}: {str(exc)[:600]}"
             else:
                 return name, row, f"가이드·블록을 만들지 못했다(가이드 없이 싣는다): {why}"
+        elif not path.exists():  # 키 없이 넣은 새 문제: 가이드 없이 싣는 것이 정상이다(알리기만 하고 실패로 세지 않는다)
+            print(f"알림 {name}: ready.json이 없어 가이드 없이 싣는다(키를 넣고 모델로 build하면 만든다)", file=sys.stderr)
+        else:  # 있던 가이드가 낡았거나 다시 만들라고 골랐다: 조용히 빠지면 안 된다
+            have = f"ready.json의 출처 값 {kept['source']}이(가) 지금 글·정답 풀이의 값 {row['source']}과 다르다" if kept.get("source") is not None else "--redo로 다시 만들라고 골랐다"
+            return name, row, f"가이드 없이 싣는다: {have}. 모델 없이는 다시 만들 수 없다(모델로 build하거나, 가이드와 상관없는 수정이면 출처 값을 맞춘다)"
         return name, row, ""
 
     contexts = [copy_context() for _ in folders]

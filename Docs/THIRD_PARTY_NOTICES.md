@@ -30,7 +30,7 @@
 | NumPy | onnxruntime이 쓴다 | BSD-3-Clause |
 | Python | 앱 자체의 실행 환경(PyInstaller가 묶는다. 채점용 Python은 묶지 않는다) | PSF License |
 
-채점은 사용자 기기에 설치된 언어 도구(Python, Node.js, JDK, g++/clang, Go, Kotlin, Rust)를 부른다. 이미지 문제를 AI 없이 읽을 때는 기기의 `tesseract`를 부른다. 이 도구들은 묶지 않는다.
+채점은 사용자 기기에 설치된 언어 도구(Python, Node.js, JDK, g++/clang, Rust)를 부른다. 이미지 문제를 AI 없이 읽을 때는 기기의 `tesseract`를 부른다. 이 도구들은 묶지 않는다.
 
 ## 설치 파일에 묶이는 파이썬 패키지
 
