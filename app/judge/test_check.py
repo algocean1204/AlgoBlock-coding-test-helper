@@ -355,6 +355,14 @@ BIG2_SOURCES = {
 class BigInputTest(unittest.TestCase):
     """큰 인자는 호출 코드에 박지 않고 파일로 넘긴다. Java는 배열 20,000개 리터럴에서 'code too large'로 컴파일이 안 됐다."""
 
+    def judged(self, language, source, cases):
+        """채점기의 한도를 시험하는 것이 아니라 큰 입력이 파일로 넘어가는지 보는 시험이라, 느린 러너에서 흔들리지 않게 컴파일·실행 한도에 여유를 둔다."""
+        with mock.patch.object(common.compile_command, "__defaults__", (common.COMPILE_TIMEOUT_SECONDS * 3,)):
+            report = judge.judge(language, source, cases, problem="solution 함수를 완성하세요", timeout=common.TIMEOUT_SECONDS * 3)
+        # 케이스가 비는 것은 컴파일 실패·시간 초과 같은 채점 전 단계에서 멈춘 것이라 상태와 까닭을 메시지에 남긴다
+        why = {"language": language, "status": report["status"], "reason": report["reason"], "compile": report.get("compile"), "cases": report["cases"]}
+        return report, why
+
     def test_large_arguments_go_through_files(self):
         nums = [3_000_000_000 + i for i in range(50_000)]
         flags = [i % 3 == 0 for i in range(30_000)]
@@ -371,14 +379,25 @@ class BigInputTest(unittest.TestCase):
             if not available(language):
                 continue
             with self.subTest(language=language, kind="2차원 글·참거짓"):
-                report = judge.judge(language, source, more, problem="solution 함수를 완성하세요")
-                self.assertEqual([case["status"] for case in report["cases"]], ["passed"], report.get("compile") or report["cases"])
+                report, why = self.judged(language, source, more)
+                self.assertEqual([case["status"] for case in report["cases"]], ["passed"], why)
         for language, source in BIG_SOURCES.items():
             if not available(language):
                 continue
             with self.subTest(language=language):
-                report = judge.judge(language, source, cases, problem="solution 함수를 완성하세요")
-                self.assertEqual([case["status"] for case in report["cases"]], ["passed", "passed"], report.get("compile") or report["cases"])
+                report, why = self.judged(language, source, cases)
+                self.assertEqual([case["status"] for case in report["cases"]], ["passed", "passed"], why)
+
+
+class CompileStopTest(unittest.TestCase):
+    def test_compile_stop_leaves_a_reason(self):
+        case = [{"id": "1", "input": "[1]", "expected": "1"}]
+        for status, word in (("timeout", "제한 시간"), ("compile_error", "컴파일하지 못")):
+            with self.subTest(status=status), mock.patch.object(common, "compile_command", return_value={"status": status, "stdout": "", "stderr": "", "time_ms": 1}), \
+                    mock.patch.object(judge.load_language("cpp"), "toolchain", return_value=None, create=True):
+                report = judge.judge("cpp", "int solution(int n) { return n; }\n", case, problem="solution 함수를 완성하세요")
+                self.assertEqual((report["status"], report["cases"]), (status, []))
+                self.assertIn(word, report["reason"])
 
 
 class BigIntTest(unittest.TestCase):
