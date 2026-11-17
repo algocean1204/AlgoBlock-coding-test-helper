@@ -903,6 +903,21 @@ class UnsaidCreditTest(unittest.TestCase):
         self.assertEqual(many_asks_line("이름별로 세면 될 것 같아요. k는 왜 있나요?"), [])
         self.assertTrue(many_asks_line("세면 되나요?\nk는 왜 있죠?")[0].startswith("사용자 말에 물음이 2개 있다."))
 
+    def test_reply_that_takes_none_of_several_asks_is_caught(self):
+        from ..common.talk_rules import asks_ignored
+
+        two = "이름별로 세면 되나요? 그리고 k는 왜 필요한가요?"
+        self.assertTrue(asks_ignored("먼저 입력을 손으로 따라가 보면 어떨까요?", two))
+        self.assertIn("물음을 받지 않음", reply_problems("먼저 입력을 손으로 따라가 보면 어떨까요?", move="trace", problem="", user=two))
+        self.assertTrue(asks_ignored("값을 하나 골라 따라가 볼까요?", "`cnt`는 뭐죠? 반복은 왜 두 번인가요?"))
+        # 오탐: 한 물음만 다뤄도, 하나를 미뤘다고 말해도, 물음이 하나이거나 없어도, 코드만 붙여도 통과
+        self.assertFalse(asks_ignored("k는 어떤 값을 담는 변수일까요?", two))
+        self.assertFalse(asks_ignored("이름별로 세는 것은 다음 차례에 보고, 입력부터 따라가 볼까요?", two))
+        self.assertFalse(asks_ignored("먼저 입력을 따라가 보고 이어 볼까요?", two))
+        self.assertFalse(asks_ignored("입력을 손으로 따라가 볼까요?", "이름별로 세면 되나요?"))
+        self.assertFalse(asks_ignored("입력을 손으로 따라가 볼까요?", "잘 모르겠어요"))
+        self.assertFalse(asks_ignored("무엇이 먼저 실행되나요?", "```python\nx = a ? b : c\nprint(x)\n```"))
+
     def test_agreeing_lead_on_a_restated_assumption_is_caught(self):
         from ..common.talk_rules import unsaid_credit
 
