@@ -990,7 +990,11 @@ class UnsaidCreditTest(unittest.TestCase):
         base = [fakes.service("첫 질문", 0), fakes.user(two, 0)]
         self.assertIn("지난번 사용자 말에도", got([*base, deferred, fakes.user("이대로 넘어가기", 0, "u2")]))  # 미룬 뒤 블록이 바뀐 첫 차례
         self.assertNotIn("지난번 사용자 말에도", got([*base, deferred, fakes.service("다음 블록 질문", 1, "m3"), fakes.user("글쎄요", 1, "u3")]))  # 두 번째 차례
-        self.assertNotIn("지난번 사용자 말에도", got([*base, fakes.service("그 하나를 볼게요", 0, "m2", "reply"), fakes.user("이대로 넘어가기", 0, "u2")]))  # 미룸이 없었다
+        self.assertIn("지난번 사용자 말에도", got([*base, fakes.service("세는 쪽부터 볼게요. k는 다음에 봐요", 0, "m2", "reply"), fakes.user("이대로 넘어가기", 0, "u2")]))  # 모델이 스스로 미뤘다
+        check = fakes.user("x = 1", 0, "u4")
+        check.move = "check:N"
+        self.assertIn("지난번 사용자 말에도", got([*base, deferred, check, fakes.service("아직이에요", 0, "m4", "reply"), fakes.user("이대로 넘어가기", 0, "u2")]))  # 사이에 블록 확인이 실패했다
+        self.assertNotIn("지난번 사용자 말에도", got([fakes.service("첫 질문", 0), fakes.user("세면 되나요?", 0), fakes.service("그렇죠", 0, "m2", "reply"), fakes.user("이대로 넘어가기", 0, "u2")]))  # 물음이 하나였다
 
     def test_rule_reaches_every_talking_prompt(self):
         from ..common.talk_prompts import NOT_SAID

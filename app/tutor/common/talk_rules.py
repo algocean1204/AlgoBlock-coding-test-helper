@@ -108,14 +108,17 @@ def defer_ask(text: str, user: str) -> str:
 
 
 def deferred_user(said) -> list[str]:
-    """블록이 바뀌는 첫 차례용: 가장 나중 튜터 말이 미룸 문장을 달고 있으면 그 바로 앞 학습자 말을 recent 꼴로 돌려준다(저장 상태 없이 대화 기록에서 읽는다).
-    그 뒤 튜터 말이 하나라도 생기면(새 블록의 첫 질문) 더는 넘기지 않는다."""
-    said = list(said)
-    last = next((i for i in range(len(said) - 1, -1, -1) if said[i].role == "service"), -1)
-    if last < 0 or DEFER_TAIL not in said[last].text:
-        return []
-    user = next((m.text for m in reversed(said[:last]) if m.role == "user"), "")
-    return [f"사용자: {user}"] if user else []
+    """블록이 바뀌는 첫 차례용: 가장 나중 튜터 말 바로 앞이 학습자 말이면 그 말을 recent 꼴로 돌려준다(저장 상태 없이 대화 기록에서 읽는다).
+    물음이 여럿이었는지는 many_asks_line이 본다(엔진이 미룸 문장을 붙였든 모델이 스스로 미뤘든 같다).
+    블록 코드 확인의 짝(판정 표시가 붙은 학습자 글과 그 뒤 튜터 말)은 건너뛴다. 그 뒤 튜터 말이 하나라도 생기면(새 블록의 첫 질문) 더는 넘기지 않는다."""
+    talk, checking = [], False
+    for m in said:
+        if m.role == "user":
+            checking = (m.move or "").startswith(CHECKED)
+        if not checking:
+            talk.append(m)
+    last = next((i for i in range(len(talk) - 1, -1, -1) if talk[i].role == "service"), -1)
+    return [f"사용자: {talk[last - 1].text}"] if last > 0 and talk[last - 1].role == "user" and talk[last - 1].text else []
 
 
 def many_asks_line(text: str, recent: list[str] | None = None) -> list[str]:
