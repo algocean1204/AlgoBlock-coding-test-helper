@@ -7,7 +7,7 @@ from ..llm import cached_user
 from ..common.progress_view import active_plan
 from ..common.scope import algorithm_line
 from ..common.talk_prompts import CONCEPT_FIRST, HARD_STEP, learner_lines
-from ..common.talk_rules import FALLBACK, kind_word, many_asks_line, note_fallback, repair, reply_problems
+from ..common.talk_rules import FALLBACK, defer_ask, kind_word, many_asks_line, note_fallback, repair, reply_problems
 from ..knowledge.ontology import hidden_terms
 from ..request_check.nodes import mode_messages
 from ..state import MainState, MovePlan, TurnContext
@@ -100,4 +100,4 @@ def checked_reply(state: MainState, move: MovePlan, text: str) -> tuple[str, lis
     if problems:
         LOG.info("대체 질문", extra={"move": move.move, "problems": problems})
         note_fallback(f"{state['request'].mode}.{move.move}", problems, text)
-    return (FALLBACK[move.move] if problems else text.strip()), problems
+    return (FALLBACK[move.move] if problems else defer_ask(text.strip(), turn_text(state))), problems

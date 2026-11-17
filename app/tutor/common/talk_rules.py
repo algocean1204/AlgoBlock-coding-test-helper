@@ -56,13 +56,52 @@ def unsaid_credit(text: str, user: str = "") -> list[str]:
 _ASKED = re.compile(r"(?:[?？]|나요|(?<!니)까요?|(?:인|는|건|은|한|뭔)가요|죠|뭐예요|뭐에요|뭐야|뭔데|(?<!하)(?<!그러)나)\s*$")
 
 
-def asked_count(text: str) -> int:
-    """사용자 말 속 물음의 수(문장·줄마다 물음표나 물음 어미로 끝나는가)."""
+def _asked_parts(text: str) -> list[str]:
+    """사용자 말을 문장·줄로 나눠 물음인 것만(asked_count와 여럿 물음 검사가 같은 나눔을 쓴다)."""
     # 백틱·펜스 코드 구간만 뺀다(코드 모양 줄을 통째로 지우면 'x = a ? b : c 에서 ? 는 뭐죠?'가 0개였다).
     # 문장 끝은 글자 바로 뒤의 문장 부호다: 앞에 공백이 있는 '?'(코드 속 삼항 연산, '? 는')는 문장을 끊지 않는다
     plain = _CODE_SPAN.sub(" ", text or "")
     parts = [part.strip() for part in re.split(r"(?<=[^\s][.?!？])\s+|\n", plain) if part.strip()]
-    return sum(bool(_ASKED.search(part)) for part in parts)
+    return [part for part in parts if _ASKED.search(part)]
+
+
+def asked_count(text: str) -> int:
+    """사용자 말 속 물음의 수(문장·줄마다 물음표나 물음 어미로 끝나는가)."""
+    return len(_asked_parts(text))
+
+
+# 물음에서 핵심 낱말을 고를 때 빼는 것: 물음 어미로 끝나는 낱말, 흔한 말
+_ASK_WORD = re.compile(r"(?:나요|까요?|가요|죠|예요|에요|뭐야|뭔데|해요|어요|아요|세요|니다)$")
+_COMMON = {"그리고", "그런데", "그러면", "그럼", "어떻게", "어떤", "무엇", "무슨", "이거", "이게", "그거", "그게", "저거", "근데", "혹시", "정말", "진짜",
+           "방법", "생각", "때문", "경우", "부분", "하나", "이것", "그것", "여기", "거기", "아니", "그냥", "이렇게", "그렇게", "어디", "언제", "누가",
+           "다음", "다음엔", "다음에", "그다음", "아니면", "뭔가", "이건", "그건", "저건"}
+_PARTICLE = re.compile(r"(?:(?<=[가-힣])(?:에는|에서|으로|에게|한테|이랑|하고|보다|부터|까지|처럼|께서|에는|엔)|(?<=[가-힣]{2})(?:은|는|이|가|을|를|에|의|도|로|와|과|만|별|마다))$")
+_DEFERRED = re.compile(r"다음\s*(?:차례|번|에)|나중에|먼저[^.?!？]*?(?:보고|볼게|보겠|살펴)")  # 하나를 미뤘다고 말한 답
+
+
+def asks_ignored(text: str, user: str) -> bool:
+    """물음이 둘 이상인 사용자 말에 답이 그 물음들의 핵심 낱말(코드 이름·백틱 조각·한글 낱말)을 하나도 다루지 않았는가.
+    하나라도 다뤘거나 하나를 미뤘다고 말한 답, 낱말을 뽑지 못한 물음은 통과한다(오탐을 피한다).
+    영문 이름은 대소문자를 무시하고, 한글 낱말은 조사를 떼고 앞 두 글자(줄기)로 견준다('정렬해야'↔'정렬하면')."""
+    if asked_count(user) < 2:
+        return False
+    parts = _asked_parts(user)
+    words = {_PARTICLE.sub("", word)[:2] for part in parts for word in re.findall(r"[가-힣]{2,}", part)
+             if word not in _COMMON and not _ASK_WORD.search(word)}
+    words |= {span.strip("` ").lower() for span in re.findall(r"`[^`\n]+`", user or "")}
+    names = {name.lower() for part in parts for name in re.findall(r"(?<![A-Za-z0-9_])[A-Za-z_][A-Za-z0-9_]*", part)}  # 'k'처럼 한 글자 이름도(낱말 경계로 찾는다)
+    words.discard("")
+    body = (text or "").lower()
+    return (bool(words) or bool(names)) and not _DEFERRED.search(body) and not any(word in body for word in words) \
+        and not any(re.search(rf"(?<![a-z0-9_]){re.escape(name)}(?![a-z0-9_])", body) for name in names)
+
+
+def defer_ask(text: str, user: str) -> str:
+    """물음이 여럿인데 답이 하나도 받지 않았으면 답 앞에 미룸 문장을 붙인다(답 본문은 그대로, 못 받은 물음은 다음 차례에 many_asks_line이 잇는다)."""
+    if not asks_ignored(text, user):
+        return text
+    many = "여럿이라" if asked_count(user) > 2 else "둘이라"
+    return f"물음이 {many} 하나씩 볼게요. 다른 물음은 다음 차례에 이어 봐요. {text}"
 
 
 def many_asks_line(text: str, recent: list[str] | None = None) -> list[str]:
