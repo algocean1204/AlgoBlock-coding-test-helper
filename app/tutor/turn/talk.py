@@ -7,7 +7,7 @@ from ..llm import cached_user
 from ..common.progress_view import active_plan
 from ..common.scope import algorithm_line
 from ..common.talk_prompts import CONCEPT_FIRST, HARD_STEP, learner_lines
-from ..common.talk_rules import FALLBACK, defer_ask, kind_word, many_asks_line, note_fallback, repair, reply_problems
+from ..common.talk_rules import FALLBACK, defer_ask, deferred_user, kind_word, many_asks_line, note_fallback, repair, reply_problems
 from ..knowledge.ontology import hidden_terms
 from ..request_check.nodes import mode_messages
 from ..state import MainState, MovePlan, TurnContext
@@ -34,6 +34,10 @@ def speak_messages(state: MainState, turn: TurnContext, move: MovePlan, system: 
     aside = "" if aside == "W" else aside  # 뜻을 묻는 말은 그 말을 받아 답한다(term)
     if turn.text and not aside:
         lines.append(f"사용자 말:{turn.text}")
+    # 블록이 바뀌면 이 블록의 대화는 비어 있다. 미룬 물음은 직전 학습자 말에서 한 번만 이어 준다
+    if move.target != turn.index and not aside:
+        lines += many_asks_line(turn.text, deferred_user(mode_messages(state)))
+    elif turn.text and not aside:
         lines += many_asks_line(turn.text, recent)
     if aside:  # 그 말에는 답하지 않는다. 안내 문장은 엔진이 앞에 붙인다
         lines.append(f"사용자가 방금 {'답을 달라고 했다' if aside == 'A' else '문제와 무관한 말을 했다'}. 안내 문장은 앞에 따로 붙는다. "

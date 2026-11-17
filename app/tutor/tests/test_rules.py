@@ -971,6 +971,27 @@ class UnsaidCreditTest(unittest.TestCase):
         self.assertIn("지난번 사용자 말에도", debug_speak(dstate)[-1]["content"])
         self.assertNotIn("지난번 사용자 말에도", debug_speak({**dstate, "draft": {**draft, "recent": []}})[-1]["content"])
 
+    def test_deferred_ask_carries_once_into_the_next_block(self):
+        from ..common.talk_rules import defer_ask
+        from ..state import MovePlan, TurnContext
+        from ..turn.talk import speak_messages as turn_speak
+
+        plan = fakes.planned(fakes.hinted())
+        two = "세면 되나요? 그리고 k는 왜 필요한가요?"
+        deferred = fakes.service(defer_ask("해시로 세는 방법을 떠올려 볼까요?", two), 0, "m2", "reply")
+        steps = {"open": "지시", "reply": "지시"}
+
+        def got(said):
+            ctx = fakes.context(plan=plan, open_count=1, guide=said)
+            state = fakes.make_state("turn", ctx, mode="guide", text="")
+            turn = TurnContext(index=0, block=plan.blocks[0], last_question="없음", recent=[], moves_used=["open"], event="skip", text="")
+            return turn_speak(state, turn, MovePlan("open", 1, True), "시스템", steps)[-1]["content"]
+
+        base = [fakes.service("첫 질문", 0), fakes.user(two, 0)]
+        self.assertIn("지난번 사용자 말에도", got([*base, deferred, fakes.user("이대로 넘어가기", 0, "u2")]))  # 미룬 뒤 블록이 바뀐 첫 차례
+        self.assertNotIn("지난번 사용자 말에도", got([*base, deferred, fakes.service("다음 블록 질문", 1, "m3"), fakes.user("글쎄요", 1, "u3")]))  # 두 번째 차례
+        self.assertNotIn("지난번 사용자 말에도", got([*base, fakes.service("그 하나를 볼게요", 0, "m2", "reply"), fakes.user("이대로 넘어가기", 0, "u2")]))  # 미룸이 없었다
+
     def test_rule_reaches_every_talking_prompt(self):
         from ..common.talk_prompts import NOT_SAID
         from ..chair.prompts import SYSTEM as CHAIR
