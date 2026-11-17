@@ -160,7 +160,8 @@ def judge(language, source, cases, problem="", mode=None, timeout=TIMEOUT_SECOND
             compile_once = getattr(lang, "compile", common.compile_command)
             failure = compile_once(build, work)
             if failure:
-                return {**report, "status": failure["status"], "compile": failure,
+                why = "컴파일이 제한 시간 안에 끝나지 않았습니다" if failure["status"] == "timeout" else "컴파일하지 못했습니다"
+                return {**report, "status": failure["status"], "reason": why, "compile": failure,
                         "compile_line": common.error_line(language, lang.SAMPLE[chosen], source, failure["stderr"])}
         streak = 0
         for index, case in enumerate(mode_cases):
