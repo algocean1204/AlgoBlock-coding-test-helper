@@ -96,12 +96,27 @@ def asks_ignored(text: str, user: str) -> bool:
         and not any(re.search(rf"(?<![a-z0-9_]){re.escape(name)}(?![a-z0-9_])", body) for name in names)
 
 
+DEFER_TAIL = "다른 물음은 다음 차례에 이어 봐요."
+
+
 def defer_ask(text: str, user: str) -> str:
     """물음이 여럿인데 답이 하나도 받지 않았으면 답 앞에 미룸 문장을 붙인다(답 본문은 그대로, 못 받은 물음은 다음 차례에 many_asks_line이 잇는다)."""
     if not asks_ignored(text, user):
         return text
     many = "여럿이라" if asked_count(user) > 2 else "둘이라"
-    return f"물음이 {many} 하나씩 볼게요. 다른 물음은 다음 차례에 이어 봐요. {text}"
+    return f"물음이 {many} 하나씩 볼게요. {DEFER_TAIL} {text}"
+
+
+def deferred_user(said) -> list[str]:
+    """블록이 바뀌는 차례용: 답을 받은 가장 나중 학습자 말을 recent 꼴로 돌려준다(저장 상태 없이 대화 기록에서 읽는다).
+    물음이 여럿이었는지는 many_asks_line이 본다(엔진이 미룸 문장을 붙였든 모델이 스스로 미뤘든 같다).
+    블록 코드 확인 글(판정 표시)은 학습자 말로 치지 않는다. 그 말 뒤에 다른 블록의 튜터 말(새 블록의 첫 질문)이 있으면 이미 넘긴 것이라 넘기지 않는다."""
+    said = list(said)
+    k = next((i for i in range(len(said) - 2, -1, -1) if said[i].role == "user" and not (said[i].move or "").startswith(CHECKED)
+              and said[i + 1].role == "service"), -1)
+    if k < 0 or not said[k].text or any(m.role == "service" and m.block_index != said[k].block_index for m in said[k + 1:]):
+        return []
+    return [f"사용자: {said[k].text}"]
 
 
 def many_asks_line(text: str, recent: list[str] | None = None) -> list[str]:
