@@ -3,11 +3,13 @@
 표·예제 구간은 부르는 쪽이 준 규칙 파서(read.table·read.samples·read.value)로 읽는다: 모델은 위치만 짚고 읽기는 규칙이 한다."""
 
 import json
+import re
 from dataclasses import dataclass, field
 from typing import Any
 
 from ..llm import LlmError, LlmNotConfigured, llm, model_name, themes
 
+ARG = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")  # 인자 이름 꼴(화면 서버의 ARG_NAME과 같다)
 NOISE_MAX = 0.6  # 잡음 구간이 전체 줄의 이만큼을 넘으면 답을 버린다
 MAX_CHARS = 40_000  # 이보다 긴 글은 모델에게 보내지 않는다(규칙만)
 # 줄 끝 \r\n·\r, 폭 없는 글자, NBSP 같은 공백, 전각 영문·숫자·기호, 빼기 기호(U+2212)를 보통 글자로. NFKC는 쓰지 않는다(10⁵가 105가 된다)
@@ -110,7 +112,9 @@ def checked(got: Outline, lines: list[str], read) -> dict:
             said.append(said_case(case, lines, read.value))
         except (Bad, ValueError):
             pass
-    names = [name for name in got.names if isinstance(name, str)] if isinstance(got.names, list) else []
+    text = "\n".join(lines)  # 인자 이름은 모두 식별자 꼴이고 글에 낱말로 글자 그대로 있어야 쓴다. 하나라도 아니면 비운다(모델이 지어낸 이름을 싣지 않는다)
+    names = got.names if isinstance(got.names, list) and all(
+        isinstance(name, str) and ARG.fullmatch(name) and re.search(rf"(?<![A-Za-z0-9_]){name}(?![A-Za-z0-9_])", text) for name in got.names) else []
     function = read.table(cut(lines, table)) if table else {"names": [], "cases": [], "skipped": 0}
     if not function["cases"] and said:
         function = {"names": names, "cases": said, "skipped": 0}

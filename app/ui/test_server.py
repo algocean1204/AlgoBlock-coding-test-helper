@@ -1483,6 +1483,18 @@ def detect_merge() -> None:
     forced = call("/api/problems/detect", text=boj, fast=True, mode="function", touched=["mode"])[1]
     assert (forced["mode"], forced["cases"]) == ("function", []), forced
     assert "글이어야" in refuses("/api/problems/detect", text=None) and "모양" in refuses("/api/problems/detect", text="x", touched=[{"a": 1}])
+    said = "합 구하기\n문제 설명\n예를 들어 numbers가 [1, 2]이면 3을 반환한다.\n제한사항\n1 ≤ n ≤ 10"  # 모델이 글에 없는 인자 이름을 지어냈다
+    made = {"problem": True, "title": 1, "mode": "function", "names": ["made_up_arg"], "cases": [{"line": 3, "args": ["[1, 2]"], "expected": "3"}]}
+    for touched, bad in (([], "made_up_arg"), (["cases"], "made_up_arg"), ([], "<img src=x onerror=alert(1)>"), ([], "__import__('os')")):
+        fake = FakeLlm({"ingest.outline": [{**made, "names": [bad]}]})
+        with use_llm(fake), patch.object(server, "connected", lambda: True):
+            got = call("/api/problems/detect", text=said, touched=touched)[1]
+        assert got["names"] == [] and bad not in json.dumps(got, ensure_ascii=False), got
+        assert (got["suggest"]["cases"] if touched else got["cases"]) == [{"input": "[[1, 2]]", "expected": "3"}], got
+    fake = FakeLlm({"ingest.outline": [{**made, "names": ["numbers"]}]})
+    with use_llm(fake), patch.object(server, "connected", lambda: True):
+        assert call("/api/problems/detect", text=said, touched=["cases"])[1]["suggest"]["names"] == ["numbers"]  # 글에 있는 이름은 예시와 함께 제안한다
+    assert server.RANGE.search("1 \\le n") and server.RANGE.search("1 \\leq n") and not server.RANGE.search("1 \\left( x \\right)") and not server.RANGE.search("x \\gets 1")
 
     tries = []
     with patch.object(server, "PREPARE", True), patch.object(server, "connected", lambda: True), patch.object(server.Tutor, "prepare", lambda self, problem_id: tries.append(problem_id) or Outcome(200, {"blocks": 0, "patterns": []})):

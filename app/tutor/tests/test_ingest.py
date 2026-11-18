@@ -169,11 +169,14 @@ class OutlineTest(unittest.TestCase):
     def test_spans_cases_and_noise_are_checked_without_model(self):
         said = [{"line": 4, "args": ["[1, 2]"], "expected": "3"}, {"line": 4, "args": ["[9]"], "expected": "3"}, {"line": 4, "args": ["[1,"], "expected": "3"}]
         got, models = self.ask({"problem": True, "title": 2, "body": [[3, 4]], "table": [5, 6], "samples": [{"in": None, "out": [7, 7]}], "cases": said,
-                                "noise": [[1, 1]], "mode": "function", "names": ["numbers", 3], "many": False})
+                                "noise": [[1, 1]], "mode": "function", "names": ["numbers"], "many": False})
         self.assertEqual(models, ["claude/claude-haiku-5-5"])
         self.assertEqual((got["title"], got["noise"]), (2, [[1, 1]]))
         self.assertEqual(got["function"], {"names": ["numbers"], "cases": [{"input": "[[1, 2]]", "expected": "3"}], "skipped": 0})  # 줄에 없는 값·못 읽는 값은 버린다
         self.assertEqual(self.seen, [("table", "numbers | result\n[4] | 4"), ("samples", "예제 출력 1\n댓글")])  # 표·예제 구간은 규칙 파서가 읽는다
+        line4 = {"problem": True, "mode": "function", "cases": [{"line": 4, "args": ["[1, 2]"], "expected": "3"}]}
+        for names in (["made_up_arg"], ["numbers", "made_up_arg"], ["numbers", 3], ["<img src=x onerror=alert(1)>"], ["__import__('os')"], ["number"], "numbers"):
+            self.assertEqual(self.ask({**line4, "names": names})[0]["function"]["names"], [], names)  # 글에 낱말로 없거나 식별자가 아닌 이름이 하나라도 있으면 비운다
 
     def test_bad_reply_tries_middle_once_then_rules_only(self):
         for bad in ({"problem": True, "body": [[0, 2]], "mode": "function"}, {"problem": True, "body": [[2, 4]], "noise": [[4, 5]], "mode": "function"},

@@ -104,7 +104,7 @@ POST, 문제와 무관한 것 16개
 | `/api/problems/delete` | 등록한 문제와 그 기록 지우기 |
 | `/api/problems/read` | 올린 파일에서 글 읽기(저장하지 않는다) |
 | `/api/problems/cases` | 입출력 예 표나 예제 구역에서 케이스 찾기(모델 0회) |
-| `/api/problems/detect` | 붙여 넣은 글에서 방식·예시·제목·수 범위·줄마다의 구역 찾기(저장하지 않는다). `fast: true`면 규칙만(모델 0회), 아니면 연결돼 있을 때 문제 나누기 모델로 보탠다(1~2회). `touched`로 보낸 칸은 덮지 않고 `suggest`에 싣는다 |
+| `/api/problems/detect` | 붙여 넣은 글에서 방식·예시·제목·수 범위·줄마다의 구역 찾기(저장하지 않는다). `fast: true`면 규칙만(모델 0회), 아니면 연결돼 있을 때 문제 나누기 모델로 보탠다(1~2회. 공급자 연결은 모양이 깨진 답을 한 번 더 요청한다). `touched`로 보낸 칸은 덮지 않고 `suggest`에 싣는다 |
 | `/api/problems/prepare` | 문제 글로 보이지 않아 미뤄 둔 등록 문제의 준비를 시작한다 |
 | `/api/tools` | 언어 도구 있음·없음. `refresh: true`면 다시 센다 |
 | `/api/accounts` | 연결 상태, 키 있음, 과정별 급과 모델 이름, 주제 목록, 마지막 언어, `tour_seen`, `scheme`, 칸 너비 `panes` |

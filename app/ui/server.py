@@ -1265,7 +1265,7 @@ def assets(pid: str) -> list[dict]:
     return read_json(ASSETS / pid / "index.json", []) if OWN_ID.fullmatch(pid) else []
 
 
-_CMP = r"(?:≤|<=|<|≥|>=|이상|이하|미만|초과|\\[lg]e|\\[lg]t)"  # 비교 낱말. TeX의 \le·\leq·\ge·\lt 등도
+_CMP = r"(?:≤|<=|<|≥|>=|이상|이하|미만|초과|\\[lg](?:eq?|t)(?![A-Za-z]))"  # 비교 낱말. TeX의 \le·\leq·\ge·\geq·\lt·\gt도(\left·\gets는 아니다)
 RANGE = re.compile(rf"\d[^\n]{{0,40}}?{_CMP}|{_CMP}[^\n]{{0,40}}?\d")  # 제한사항의 수 범위 한 자리
 
 
@@ -1369,9 +1369,11 @@ def detected(raw: list[str], lines: list[str], rule: dict, kinds: list[str], tit
 def detect(body: dict) -> dict:
     """붙여 넣은 글에서 방식·예시·제목·수 범위와 줄마다의 구역(kinds: title·body·limits·input·output·sample·noise·빈 글)을 찾는다. 저장하지 않는다.
     먼저 규칙(구역 머리 낱말, table_cases·sample_cases. 모델 0회). fast가 아니고 AI가 연결돼 있으면 문제 나누기 모델이 줄 구간을 짚어 보탠다
-    (outline.ask. 1~2회. 실패하면 규칙 결과 그대로). 모델은 제목·방식·잡음 줄·빈 예시·답이 여럿만 채우고, 모델이 쓴 글은 넣지 않는다.
-    touched(사용자가 고친 칸 이름)는 규칙 결과 그대로 두고 모델이 다르게 본 값은 suggest에 싣는다. touched에 mode가 있으면 보낸 mode로 읽는다.
-    problem이 거짓이면(모델이 문제 글이 아니라고 했거나 예시와 수 범위가 모두 없음) notice를 싣는다. 등록할 때 그대로 보내면 뒤 준비를 미룬다."""
+    (outline.ask: 그 과정의 급으로 1회, 호출이 실패하거나 검사에 걸리면 가운데 급으로 1회. 공급자 연결은 모양이 깨진 답을 한 번 더 받는다. 둘 다 안 되면 규칙 결과 그대로).
+    모델은 제목 줄·방식·잡음 줄·빈 예시와 그 인자 이름·답이 여럿만 채운다. 글에 없는 글은 싣지 않는다: 제목은 그 줄 그대로, 예시 값과 인자 이름은 글에 글자 그대로 있는 것만.
+    줄은 str.splitlines로 나눈다(kinds의 길이가 그 줄 수다). touched(사용자가 고친 칸 이름)는 규칙 결과 그대로 두고 모델이 다르게 본 값은 suggest에 싣는다.
+    touched에 mode가 있으면 보낸 mode로 읽는다. problem이 거짓이면(모델이 문제 글이 아니라고 했거나, 예시도 잡음이 아닌 줄의 수 범위도 없음) notice를 싣는다.
+    등록할 때 problem: false를 그대로 보내면 뒤 준비를 미룬다."""
     text, touched = body.get("text"), body.get("touched") or []
     if not isinstance(text, str):
         raise Refuse("문제 글은 글이어야 해요.", field="text")
