@@ -2185,7 +2185,8 @@ def two_step_start_is_free() -> None:
 
 
 def two_step_checking_state() -> None:
-    """2걸음은 preparing이 아니라 checking(숨은 테스트 만드는 중)으로 보이고, 1걸음(가이드·블록 준비)은 preparing으로 보인다."""
+    """2걸음은 preparing이 아니라 checking(숨은 테스트 만드는 중)으로 보이고, 1걸음(가이드·블록 준비)은 preparing으로 보인다.
+    준비 중 폴링(/api/prep)은 같은 두 값만 1KB 안에 돌려준다."""
     from tutor.main import Outcome
 
     threading, quiet, forget = two_step_helpers()
@@ -2209,14 +2210,23 @@ def two_step_checking_state() -> None:
             assert in_prepare.wait(10)
             body = call("/api/state", id=pid)[1]["problem"]
             assert body["preparing"] and not body.get("checking"), body
+            assert call("/api/prep", id=pid) == (200, {"id": pid, "preparing": True, "checking": False})
             release.set()
             assert in_recheck.wait(10)
             body = call("/api/state", id=pid)[1]["problem"]
             assert body.get("checking") is True and not body["preparing"], body
+            assert call("/api/prep", id=pid)[1] == {"id": pid, "preparing": False, "checking": True}
             release_check.set()
             quiet(pid, in_recheck)
             body = call("/api/state", id=pid)[1]["problem"]
             assert not body.get("checking") and not body["preparing"], body
+            prep = call("/api/prep", id=pid)[1]
+            assert prep == {"id": pid, "preparing": False, "checking": False} and len(json.dumps(prep)) < 1024
+            try:
+                call("/api/prep", id="no-such-problem")
+                raise AssertionError("없는 문제의 준비 표시를 돌려줬다")
+            except server.Refuse as exc:
+                assert exc.code == "not_found"
     finally:
         release.set()
         release_check.set()

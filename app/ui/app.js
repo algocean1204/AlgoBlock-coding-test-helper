@@ -113,7 +113,8 @@ const S = {
   note: {}, // 자리별 알림 {chat, start, blocks}
   codeNote: "",
   fb: null, wantFeedback: false,
-  busy: null, // {label, where, t0}
+  busy: null, // AI 줄의 기다림 {label, where, t0}: 대화·시작·채우기·해설·피드백·디버그와 그 밖의 일
+  running: null, // 실행 줄의 기다림(예시 실행·제출). AI 줄과 서로 기다리지 않는다
 };
 
 /* ── 서버 ── */
@@ -155,9 +156,12 @@ const say = (text) => { $("status").textContent = text || ""; };
 let carried = ""; // 다음 화면에서 보여 줄 상태 문구(화면을 옮기면 상태 문구를 지우므로, 옮기며 남길 말은 여기에)
 const sayNext = (text) => { carried = text; };
 
-/* ── 기다림: 무엇을 하는지와 지난 초를 보여 주고, 모델을 부르는 단추를 잠근다 ── */
-let ticker = null;
-const secs = () => (S.busy ? Math.round((Date.now() - S.busy.t0) / 1000) : 0);
+/* ── 기다림: 무엇을 하는지와 지난 초를 보여 주고, 모델을 부르는 단추를 잠근다.
+   줄이 둘이다: AI 줄(S.busy)과 실행 줄(S.running, 예시 실행·제출). AI가 답하는 동안에도 실행·제출이 되고, 같은 줄 안에서는 겹치지 않는다.
+   언어 바꾸기는 두 줄을 다 잡는다(코드와 대화가 함께 바뀐다). 실행 줄의 단추는 data-model="run" ── */
+const laneOf = (where) => (where === "result" ? "running" : "busy");
+const langBusy = () => !!(S.busy && S.busy.where === "lang");
+const secs = (b = S.busy) => (b ? Math.round((Date.now() - b.t0) / 1000) : 0);
 const since = (t0) => Math.round((Date.now() - (t0 || Date.now())) / 1000);
 const LATE = "조금 더 걸리고 있어요.";
 const late = (n, text) => (n > 30 ? LATE : text); // 걸린다고 말한 시간(30초)을 넘기면 말을 바꾼다
@@ -169,32 +173,58 @@ setInterval(() => {
 
 function applyBusy() {
   // 기다리는 동안 단추를 disabled로 잠그면 초점이 문서 맨 위로 떨어진다. aria-disabled로 두어 초점을 지키고, 누름은 막는다(아래 click)
-  document.querySelectorAll("[data-model]").forEach((el) => { el.disabled = false; if (S.busy) el.setAttribute("aria-disabled", "true"); else el.removeAttribute("aria-disabled"); });
+  document.querySelectorAll("[data-model]").forEach((el) => { el.disabled = false; if (el.dataset.model === "run" ? S.running || langBusy() : S.busy) el.setAttribute("aria-disabled", "true"); else el.removeAttribute("aria-disabled"); });
   if (S.view === "code" && noTool()) $("run").disabled = $("submit").disabled = $("run-own-go").disabled = true; // 이 기기에 언어 도구가 없으면 실행·제출을 못 한다
-  $("timer").textContent = S.busy ? `${secs()}초` : "";
-  document.querySelectorAll("[data-secs]").forEach((el) => { el.textContent = `${secs()}초`; });
+  $("timer").textContent = S.busy || S.running ? `${secs(S.busy || S.running)}초` : "";
+  document.querySelectorAll("[data-secs]").forEach((el) => { el.textContent = `${secs(S[el.dataset.secs])}초`; });
 }
 
 async function work(label, where, fn, slow) { // slow: 10초를 넘기면 덧붙일 말(모델이 아니라 코드를 돌리는 기다림)
-  if (S.busy) return null;
-  S.busy = { label, where, t0: Date.now(), slow, pid: S.pid }; // pid: 이 기다림을 시작한 문제(다른 문제 화면에서 진행 글을 그 문제의 것으로 보이지 않게)
+  const lane = laneOf(where);
+  if (S[lane] || (lane === "running" ? langBusy() : where === "lang" && S.running)) return null;
+  S[lane] = { label, where, t0: Date.now(), slow, pid: S.pid }; // pid: 이 기다림을 시작한 문제(다른 문제 화면에서 진행 글을 그 문제의 것으로 보이지 않게)
   say(label);
   render();
-  ticker = setInterval(applyBusy, 1000);
+  const ticker = setInterval(applyBusy, 1000);
   try {
     return await fn();
   } finally {
     clearInterval(ticker);
-    S.busy = null;
-    S.sending = null;
+    S[lane] = null;
+    if (lane === "busy") S.sending = null;
     render();
-    if (S.startAfter) { S.startAfter = false; maybeStart(); } // 기다리는 동안 누른 튜터 탭
+    perfDone();
+    if (S.startAfter && !S.busy && !S.running) { S.startAfter = false; maybeStart(); } // 기다리는 동안 누른 튜터 탭
   }
 }
 
 const DOTS = '<span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>';
-const waitLine = (where) => (S.busy && S.busy.where === where // 문구가 걸리는 시간을 말하면(…걸려요) 따로 붙이지 않는다
-  ? `${DOTS}<span>${esc(S.busy.label)} <span class="secs" data-secs>${secs()}초</span>${S.busy.slow ? `<span data-slow="${esc(S.busy.slow)}"></span>` : /걸려요$/.test(S.busy.label) ? "" : " · 보통 5~25초 걸려요"}</span>` : "");
+const waitLine = (where) => { // 문구가 걸리는 시간을 말하면(…걸려요) 따로 붙이지 않는다
+  const lane = laneOf(where), b = S[lane];
+  return b && b.where === where ? `${DOTS}<span>${esc(b.label)} <span class="secs" data-secs="${lane}">${secs(b)}초</span>${b.slow ? `<span data-slow="${esc(b.slow)}"></span>` : /걸려요$/.test(b.label) ? "" : " · 보통 5~25초 걸려요"}</span>` : "";
+};
+
+/* ── 반응 속도(개발용 연결로 띄웠을 때만): 누름 → 첫 화면 변화 → 끝을 performance.mark로 찍고 window.__ab.perf에 둔다. 기기 밖으로 보내지 않는다 ── */
+const perfBox = () => (ACCOUNTS && ACCOUNTS.dev ? (window.__ab ??= { perf: {} }).perf : null);
+let pressed = null; // 마지막 누름 {key, t0}
+/** key: 남길 이름(press_to_paint_ms, send_to_clear_ms, tab_to_change_ms). 첫 화면 변화는 누른 뒤 처음 그려진 때다. */
+function perfPress(e, key) {
+  const perf = perfBox();
+  if (!perf) return;
+  const at = pressed = { key, t0: e.timeStamp };
+  performance.mark("ab-press", { startTime: at.t0, detail: key });
+  requestAnimationFrame(() => setTimeout(() => { // 다음 그림이 그려진 뒤
+    performance.mark("ab-paint", { detail: key });
+    perf.press_to_paint_ms = perf[key] = Math.round(performance.now() - at.t0);
+  }));
+}
+function perfDone() {
+  const perf = perfBox();
+  if (!perf || !pressed) return;
+  performance.mark("ab-done", { detail: pressed.key });
+  perf.press_to_done_ms = Math.round(performance.now() - pressed.t0);
+  pressed = null;
+}
 const pending = (where) => (S.busy && S.busy.where === where ? `<div class="msg tutor pending"><span class="who">튜터</span><div class="bubble">${waitLine(where)}</div></div>` : "");
 
 /* ── 글 꾸미기: 코드 울타리, 표(| a | b |), 목록(- ), 소제목, `코드`, **굵게**, 표준 입출력 문제의 예제 구역 ── */
@@ -347,6 +377,12 @@ async function renderMath() {
 new MutationObserver(() => renderMath()).observe(document.body, { childList: true, subtree: true });
 
 const kindChip = (kind) => (kind ? `<span class="kind kind-${esc(kind)}">${KIND[kind] ? ico("k-" + kind) : ""}${esc((KIND[kind] || [kind])[0])}</span>` : ""); // 종류가 없으면(코드와 맞지 않아 서버가 비웠다) 꼬리표를 그리지 않는다
+/** 같은 HTML이면 다시 그리지 않는다(노드·초점·선택 범위가 그대로). 다시 그렸으면 참. 이 도우미로 그리는 칸은 다른 곳에서 innerHTML을 바꾸지 않는다. */
+function setHtml(el, html) {
+  if (el._html === html) return false;
+  el.innerHTML = el._html = html;
+  return true;
+}
 const meMsg = (text, sending) => `<div class="msg me${sending ? " sending" : ""}"><span class="who">나</span><div class="bubble">${esc(text)}</div></div>`;
 /* long-pure:start 튜터 말 속의 긴 입력(대괄호 목록이나 `…` 안의 글)이 max자를 넘으면 앞부분만 남기고 전체는 따로 돌려준다(node로도 시험한다) */
 function foldLong(text, max = 80) {
@@ -424,9 +460,11 @@ function route() {
 }
 
 function render() {
+  const t0 = performance.now(), perf = perfBox();
   if (S.view === "code") renderCode();
   if (S.view === "feedback") renderFeedback();
   applyBusy();
+  if (perf) perf.rerender_ms = Math.round(performance.now() - t0);
 }
 
 /* ── 02 문제 목록(홈): 입구 셋(문제 풀기 · 내 문제 넣기 · 내 기록) → 내 문제 → 기본 문제 단계(주제마다 한 줄, 단계마다 한 칸) ── */
@@ -1280,7 +1318,8 @@ function clearProblem(pid) {
   Object.assign(S, { pid, problem: null, session: null, hasFeedback: false, mode: null, tried: null, startAfter: false, soloOpen: null, talk: "chair", codeTab: "direct", blockCode: {}, result: null,
     quote: null, sending: null, debug: null, note: {}, codeNote: "", fb: null, solo: null, langWant: null, codeAsk: null, fillAsk: null, ownAsk: null, prepAt: 0, keptNote: false, keptSeen: false, nextUp: null, pullThenRun: false, tagsOpen: false });
   for (const id of ["code", ...DRAFTS]) $(id).value = "";
-  for (const id of ["p-title", "p-text", "blocks", "chat-log", "explain-box", "tutor-note", "result", "solo-box"]) $(id).innerHTML = "";
+  for (const id of ["p-title", "p-text", "explain-box", "tutor-note", "result", "solo-box"]) $(id).innerHTML = "";
+  for (const id of ["blocks", "chat-log"]) setHtml($(id), "");
   for (const id of ["result", "sep-result", "result-big", "debug-sheet", "composer", "fq-composer", "chat-log", "explain-box", "old-feedback", "solo-box", "lang-confirm"]) $(id).hidden = true;
   splitBig = false; // '결과 크게 보기'는 그 문제의 결과에만
   splitShow();
@@ -1352,13 +1391,21 @@ function applyState(data) {
   S.prepAt = S.problem.preparing ? S.prepAt || Date.now() : 0; // 준비 진행 줄에 지난 초를 보여 준다(새 준비는 0초부터)
   render();
   clearTimeout(prepTimer);
-  if ((S.problem.preparing || S.problem.checking) && connected()) { // 튜터가 뒤에서 풀이 순서나 숨은 테스트를 준비하는 중: 3초마다 다시 보고, 끝나면 표시를 걷는다(문제 화면을 떠나면 멈춘다)
-    const pid = S.pid;
-    prepTimer = setTimeout(() => { if (S.view === "code" && S.pid === pid) loadState(); }, 3000);
-  }
+  prepTimer = null;
+  if ((S.problem.preparing || S.problem.checking) && connected()) prepWatch(S.pid); // 튜터가 뒤에서 풀이 순서나 숨은 테스트를 준비하는 중: 끝나면 표시를 걷는다
   maybeStart(); // 튜터 탭에 대화가 없으면 바로 시작한다(준비가 끝나 다시 받은 상태에서도)
 }
 let prepTimer = null;
+/** 준비 중에는 3초마다 가벼운 /api/prep(준비·대조 표시)만 묻고, 값이 바뀌면 전체 상태를 한 번 받는다(문제 화면을 떠나면 멈춘다). */
+function prepWatch(pid) {
+  const id = prepTimer = setTimeout(async () => {
+    if (S.view !== "code" || S.pid !== pid) return;
+    const r = await api("/api/prep", { id: pid });
+    if (prepTimer !== id || S.view !== "code" || S.pid !== pid) return; // 그사이 상태를 다시 받았다(그쪽이 다시 건다)
+    if (r.ok && r.data.preparing === !!S.problem.preparing && r.data.checking === !!S.problem.checking) prepWatch(pid);
+    else loadState();
+  }, 3000);
+}
 
 /** 코드 전체 칸이 비었는가(시작 코드만 있는 것도 빈 것으로 본다). */
 const codeEmpty = () => { const text = $("code").value.trim(); return !text || text === ((S.problem && S.problem.starter) || "").trim(); };
@@ -1378,7 +1425,7 @@ function renderCode() {
   $("p-lang").textContent = LANG[p.language] || p.language;
   if (picker._key !== key) { picker._key = key; picker.innerHTML = langOptions(p.languages); }
   if (!S.langWant) picker.value = p.language;
-  picker.disabled = !!S.busy;
+  picker.disabled = !!(S.busy || S.running); // 언어 바꾸기는 두 줄을 다 잡는다
   $("lang-confirm").hidden = !S.langWant;
   $("code-tools").hidden = !!S.codeAsk;
   $("code-confirm").hidden = !S.codeAsk;
@@ -1570,11 +1617,11 @@ function renderBlocks() {
   harvest();
   const s = S.session, list = $("blocks");
   if (!s.blocks.length) {
-    list.innerHTML = '<li class="empty"><strong>아직 블록이 없어요</strong><span>튜터와 시작하면 풀이 순서대로 블록이 하나씩 놓여요.</span></li>';
+    setHtml(list, '<li class="empty"><strong>아직 블록이 없어요</strong><span>튜터와 시작하면 풀이 순서대로 블록이 하나씩 놓여요.</span></li>');
   } else if (!s[S.talk].length) { // 튜터의 첫 말 전에는 블록 칸을 열어 두지 않는다
-    list.innerHTML = '<li class="empty"><span>튜터를 시작하면 블록이 하나씩 열려요</span></li>';
+    setHtml(list, '<li class="empty"><span>튜터를 시작하면 블록이 하나씩 열려요</span></li>');
   } else {
-    list.innerHTML = s.blocks.map((b, i) => {
+    const html = s.blocks.map((b, i) => {
       const state = blockState(b, i), n = i + 1;
       if (state === "locked") {
         return `<li class="block is-locked"><span class="no" aria-hidden="true">${n}</span><div class="block-head"><span class="sr-only">블록 ${n}, 아직 열리지 않음.</span>${kindChip(b.kind) || '<span class="kind" aria-hidden="true">아직 열리지 않았어요</span>'}<span class="lock">${ico("i-lock")}</span></div></li>`;
@@ -1603,7 +1650,13 @@ function renderBlocks() {
         </div>
       </li>`;
     }).join("");
-    list.querySelectorAll("textarea").forEach((ta) => { ta._seen = ta.value; paintCode(ta); }); // 새로 그린 칸은 바로 칠한다(한 프레임 동안 글이 비어 보이지 않게)
+    // 같은 HTML이면 다시 그리지 않는다(쓰던 칸의 커서가 그대로). 다시 그리면 초점이 있던 블록 칸과 선택 범위를 되살린다
+    const a = document.activeElement, was = a && a.dataset && a.dataset.block && list.contains(a) ? { id: a.dataset.block, from: a.selectionStart, to: a.selectionEnd, dir: a.selectionDirection, top: a.scrollTop, left: a.scrollLeft } : null;
+    if (setHtml(list, html)) {
+      list.querySelectorAll("textarea").forEach((ta) => { ta._seen = ta.value; paintCode(ta); }); // 새로 그린 칸은 바로 칠한다(한 프레임 동안 글이 비어 보이지 않게)
+      const ta = was && list.querySelector(`textarea[data-block="${CSS.escape(was.id)}"]`);
+      if (ta) { ta.focus({ preventScroll: true }); ta.setSelectionRange(was.from, was.to, was.dir); ta.scrollTop = was.top; ta.scrollLeft = was.left; }
+    }
     const at = `${S.pid}:${S.talk}`, opened = list._opened || {}; // 새 블록이 열리면 그 블록이 보이게 목록을 옮긴다(처음 그릴 때는 옮기지 않는다)
     if (opened.at === at && s.open_count > opened.n) { const now = list.querySelector('[aria-current="step"]') || list.querySelectorAll(".block:not(.is-locked)")[s.open_count - 1]; if (now) now.scrollIntoView({ block: "nearest" }); }
     list._opened = { at, n: s.open_count };
@@ -1767,7 +1820,7 @@ function renderCodePane() {
   $("pull-blocks").hidden = !direct || !S.session.blocks.length || !tutor;
   $("code-note").textContent = direct ? S.codeNote : "제출하면 ‘코드 전체’ 칸의 코드를 채점해요";
   $("run").hidden = !(S.problem.cases && S.problem.cases.example);
-  const away = S.busy && S.busy.where === "result" && S.busy.pid !== S.pid; // 다른 문제에서 실행·채점하는 중이면 실행·제출이 잠긴다
+  const away = S.running && S.running.pid !== S.pid; // 다른 문제에서 실행·채점하는 중이면 실행·제출이 잠긴다
   const why = noTool() ? `이 기기에 ${LANG[S.problem.language] || S.problem.language} 도구가 없어 실행과 제출을 할 수 없어요.` : "";
   $("tool-note").textContent = why || (away ? "다른 문제에서 실행·채점하는 중이에요. 끝나면 이 문제도 실행하고 제출할 수 있어요." : "");
   $("run").title = $("submit").title = $("run-own-go").title = why;
@@ -2073,7 +2126,7 @@ function passActions(ai, learn) {
 }
 
 function renderResult() {
-  const box = $("result"), r = S.result, judging = S.busy && S.busy.where === "result", mine = judging && S.busy.pid === S.pid;
+  const box = $("result"), r = S.result, mine = !!S.running && S.running.pid === S.pid;
   const review = !r && !mine && !!S.problem && S.problem.passed > 0; // 통과한 문제를 다시 열었다: 마지막 결과는 없어도 갈 길은 남긴다
   box.hidden = $("sep-result").hidden = !r && !mine && !review;
   $("result-big").hidden = box.hidden;
@@ -2198,7 +2251,7 @@ function setMode(mode, remember) {
 function maybeStart() {
   const p = S.problem, mode = S.mode;
   if (S.view !== "code" || !p || !S.session || !tutorWay(mode) || S.session[mode].length || S.tried === mode || !connected() || p.preparing || p.prepare_failed || S.note.start) return;
-  if (S.busy) { if (!S.startAfter) { S.startAfter = true; render(); } return; }
+  if (S.busy || S.running) { if (!S.startAfter) { S.startAfter = true; render(); } return; } // 스스로 시작은 실행·채점도 끝난 뒤에(누른 시작 단추는 기다리지 않는다)
   startMode();
 }
 
@@ -2278,7 +2331,7 @@ function renderTutor() {
   else if (allFound()) html += '<p class="notice" role="status">블록을 모두 찾았어요. 블록 칸을 채우고 ‘모아서 실행’을 눌러 보세요.</p>';
   html += noteHtml(S.note.chat);
   const log = $("chat-log"), key = `${mode}:${chat.length}:${s.followups.reduce((sum, t) => sum + t.messages.length, 0)}:${S.busy ? S.busy.where : ""}:${S.quote}:${(S.note.chat || {}).text}`;
-  log.innerHTML = html;
+  setHtml(log, html);
   if (log._key !== key) { // 새 말이 오면 그 말이 보이게
     log._key = key;
     const target = S.quote && log.querySelector(`[data-msg="${CSS.escape(S.quote)}"]`);
@@ -2413,22 +2466,46 @@ async function startMode() {
   S.note.start = null;
   if (tutorWay(mode)) S.tried = mode;
   const prep = S.problem.preparing || (S.problem.builtin && S.session.strategy == null); // 기본 문제는 열 때 준비하지 않아 계획이 없으면 시작이 준비부터 한다
-  const r = await work(prep ? "풀이 순서를 준비하는 중…" : START[mode], "start", () => (mode === "explain" ? api("/api/explain", { id: pid }) : api("/api/turn", { id: pid, mode, event: "start" })));
+  // 상태를 다시 받을 때까지 기다림 안에 둔다(받기 전에 그리면 대화가 없어 '다시 시작'이 잠깐 보였다)
+  const r = await work(prep ? "풀이 순서를 준비하는 중…" : START[mode], "start", async () => {
+    const out = await (mode === "explain" ? api("/api/explain", { id: pid }) : api("/api/turn", { id: pid, mode, event: "start" }));
+    if (S.pid !== pid) return out;
+    if (!out.ok && out.error.code !== "already_started") S.note.start = mode === "explain" ? errorNote(out.error) : out.error.code === "invalid_output" ? PREP_FAILED : { ...errorNote(out.error), retry: true }; // 튜터 탭에는 시작 단추가 없어 다시 시작하는 단추를 단다
+    await loadState();
+    return out;
+  });
   if (!r || S.pid !== pid) return;
-  if (!r.ok && r.error.code !== "already_started") S.note.start = mode === "explain" ? errorNote(r.error) : r.error.code === "invalid_output" ? PREP_FAILED : { ...errorNote(r.error), retry: true }; // 튜터 탭에는 시작 단추가 없어 다시 시작하는 단추를 단다
   say(r.ok ? (mode === "explain" ? "해설이 준비됐어요." : "튜터가 첫 질문을 했어요.") : "");
-  await loadState();
+}
+
+/* ── 대화 칸 보내기: 보내는 즉시 칸을 비우고 내 말을 올린다. 보내지 못하면 글을 칸에 되돌린다 ── */
+const talkBox = (el) => !!el && el.tagName === "TEXTAREA" && !!el.closest(".composer");
+/** 대화 칸에서 Enter로 보낸다. 빈 칸이면 아무것도 하지 않는다(조합을 확정한 뒤 한 번 더 오는 Enter가 '적은 뒤 보내 주세요'를 띄우지 않게). */
+function sendTalk(el, e) {
+  if (!el.value.trim()) return;
+  perfPress(e, "send_to_clear_ms");
+  $(el.dataset.send).click(); // 잠긴(기다리는 중) 단추면 click이 막는다
+}
+function takeText(ta) { ta.value = ""; ta.style.height = ""; }
+/** 보내지 못한 글을 칸에 되돌린다. 그사이 새로 쓴 글은 뒤에 남긴다. 다른 문제로 옮겼으면 그 문제의 보내지 않은 글에 넣는다. */
+function giveBack(id, pid, text) {
+  const join = (now) => (now ? `${text}\n${now}` : text);
+  if (S.pid !== pid) return void (KEPT[pid] && (KEPT[pid][id] = join(KEPT[pid][id])));
+  const ta = $(id);
+  ta.value = join(ta.value);
+  if (ta.offsetParent) grow(ta);
 }
 
 async function sendAnswer(given) {
-  const pid = S.pid, mode = S.mode, text = typeof given === "string" ? given : $("say").value.trim();
+  const pid = S.pid, mode = S.mode, typed = typeof given !== "string", text = typed ? $("say").value.trim() : given;
   if (!text) { S.note.chat = { type: "warn", text: "답을 적은 뒤 보내 주세요." }; render(); return $("say").focus(); }
   S.note.chat = null;
   S.sending = { text };
+  if (typed) takeText($("say"));
   const r = await work("튜터가 생각하는 중…", "chat", () => api("/api/turn", { id: pid, mode, event: "message", text }));
+  if (typed && !(r && r.ok)) giveBack("say", pid, text);
   if (!r || S.pid !== pid) return;
-  if (r.ok && typeof given !== "string") $("say").value = "";
-  else if (!r.ok) S.note.chat = errorNote(r.error);
+  if (!r.ok) S.note.chat = errorNote(r.error);
   say(r.ok ? "튜터가 답했어요." : "");
   await loadState();
 }
@@ -2441,9 +2518,11 @@ async function sendFollowup() {
   if (!text) { S.note.chat = { type: "warn", text: "꼬리질문을 적은 뒤 보내 주세요." }; render(); return $("fq-text").focus(); }
   S.note.chat = null;
   S.sending = { text };
+  takeText($("fq-text"));
   const r = await work("튜터가 꼬리질문에 답하는 중…", "thread", () => api("/api/followup", { id: pid, mode, quote_id: quote, text }));
+  if (!(r && r.ok)) giveBack("fq-text", pid, text);
   if (!r || S.pid !== pid) return;
-  if (r.ok) { $("fq-text").value = ""; if (S.quote === quote) S.quote = null; } // 답이 오면 '내 답' 칸으로 돌아온다(꼬리질문 칸에 본 답을 적으면 블록 찾기 판정을 하지 않았다)
+  if (r.ok) { if (S.quote === quote) S.quote = null; } // 답이 오면 '내 답' 칸으로 돌아온다(꼬리질문 칸에 본 답을 적으면 블록 찾기 판정을 하지 않았다)
   else S.note.chat = errorNote(r.error);
   say(r.ok ? "튜터가 꼬리질문에 답했어요. 본 대화의 답은 ‘내 답’ 칸에 적어요." : "");
   await loadState();
@@ -2562,7 +2641,7 @@ function renderDebug() {
   if (d.passed) html += '<div class="note ok" role="status">고친 코드가 모든 케이스를 통과했어요. 채점 결과 칸에서 피드백을 받아 보세요.</div>';
   html += noteHtml(d.note);
   const log = $("debug-log"), key = `${d.messages.length}:${S.busy ? 1 : 0}:${d.passed}:${(d.note || {}).text}`;
-  log.innerHTML = html;
+  setHtml(log, html);
   if (log._key !== key) { log._key = key; log.scrollTop = log.scrollHeight; }
   $("debug-composer").hidden = !!d.passed;
 }
@@ -2579,11 +2658,13 @@ async function debugCall(text) {
   const pid = S.pid, code = $("code").value, d = S.debug;
   d.note = null;
   S.sending = text ? { text } : null;
+  if (text) takeText($("debug-say"));
   const r = await work(text ? "튜터가 답을 읽는 중…" : "튜터가 코드를 보는 중…", "debug", () => api("/api/debug", { id: pid, code, text }));
+  if (text && !(r && r.ok)) giveBack("debug-say", pid, text); // 보낸 글이 사라지지 않게
   if (!r || S.pid !== pid) return;
   if (!r.ok) {
     d.note = errorNote(r.error);
-    if (text) { $("debug-say").value = text; d.note = { ...d.note, text: `${d.note.text} 쓴 글은 입력 칸에 그대로 있어요.` }; } // 보낸 글이 사라지지 않게
+    if (text) d.note = { ...d.note, text: `${d.note.text} 쓴 글은 입력 칸에 그대로 있어요.` };
   } else {
     if (r.data.judged) S.result = r.data.judged;
     d.code = code;
@@ -2595,7 +2676,6 @@ async function debugCall(text) {
     if (regraded && at >= 0) fresh.splice(at, 0, { role: "regrade", text: `다시 채점했어요: ${judgedLine(r.data.judged)}` }); // 고친 코드를 다시 채점했다: 구분선 아래에 새 질문
     d.messages = d.messages.concat(fresh);
     if (!d.passed) d.line = r.data.efficiency_only ? null : r.data.line;
-    $("debug-say").value = "";
     $("code")._seen = code;
   }
   say(!r.ok ? "" : d.passed ? "고친 코드가 통과했어요." : d.line ? `튜터가 ${d.line}번째 줄을 짚었어요.` : "튜터가 물었어요.");
@@ -3356,6 +3436,7 @@ document.addEventListener("click", (e) => {
   const el = e.target.closest("button");
   if (!el || el.disabled) return;
   if (el.getAttribute("aria-disabled") === "true") return e.preventDefault(); // 기다리는 중의 단추(초점은 그대로 둔다)
+  if (e.isTrusted) perfPress(e, el.dataset.way ? "tab_to_change_ms" : /send$/.test(el.id) ? "send_to_clear_ms" : "press_to_paint_ms"); // Enter로 보낸 것은 keydown에서 잰다
   if (el.dataset.langFilter !== undefined) { // 등록한 문제를 언어로 거른다(화면에서만)
     LIST_LANG = el.dataset.langFilter;
     document.querySelectorAll("#list-body [data-lang]").forEach((li) => { li.hidden = !!LIST_LANG && li.dataset.lang !== LIST_LANG; });
@@ -3573,7 +3654,12 @@ document.addEventListener("keydown", (e) => {
     if (ins.length && (!modal.contains(el) || (e.shiftKey ? el === ins[0] : el === ins[ins.length - 1]))) { e.preventDefault(); ins[e.shiftKey ? ins.length - 1 : 0].focus(); }
     return;
   }
-  if (e.key === "Enter" && !e.isComposing && el.dataset && el.dataset.send && (el.tagName === "INPUT" || e.ctrlKey || e.metaKey)) { // 한 줄 칸은 Enter, 여러 줄 칸은 Ctrl/Cmd+Enter
+  if (talkBox(el) && (e.key === "Enter" || e.code === "Enter" || e.code === "NumpadEnter") && !e.shiftKey && !e.altKey) { // 대화 칸은 Enter로 보내고 Shift+Enter로 줄을 바꾼다(Windows 입력기는 조합 중 key가 Process라 code도 본다)
+    if (e.isComposing) return void (el._sendAfter = true); // 한글 조합을 확정하는 Enter: 확정된 뒤(compositionend) 한 번 보낸다. 확정 뒤에 한 번 더 오는 Enter는 빈 칸이라 보내지 않는다
+    e.preventDefault(); // 확정이 먼저 끝난 Enter(keyCode 229, WebKit)도 마지막 글자까지 들어 있어 바로 보낸다
+    return sendTalk(el, e);
+  }
+  if (e.key === "Enter" && !e.isComposing && el.dataset && el.dataset.send && (el.tagName === "INPUT" || e.ctrlKey || e.metaKey)) { // 한 줄 칸은 Enter, 그 밖의 여러 줄 칸(코드·내 입력·문제 글)은 Ctrl/Cmd+Enter
     e.preventDefault();
     return $(el.dataset.send).click();
   }
@@ -3594,6 +3680,14 @@ document.addEventListener("keydown", (e) => {
   if (el.id === "code" || (el.dataset && el.dataset.block)) codeKeys(e);
 });
 
+document.addEventListener("compositionend", (e) => {
+  const el = e.target;
+  if (!el._sendAfter) return;
+  el._sendAfter = false;
+  setTimeout(() => sendTalk(el, e)); // 확정된 글이 칸에 들어간 뒤
+});
+document.addEventListener("keyup", (e) => { if (e.target._sendAfter && (e.key === "Enter" || e.code === "Enter" || e.code === "NumpadEnter")) e.target._sendAfter = false; }); // 확정 없이 끝난 Enter는 다음 확정에 보내지 않는다
+
 $("more").addEventListener("toggle", () => { if (!$("more").open) { $("reset-confirm").hidden = true; $("reset").hidden = false; } }); // 메뉴를 닫으면 처음부터의 물음도 접는다
 /** 더 보기: 키보드로 메뉴 밖으로 나가면(Tab) 닫는다. 열린 채 남은 메뉴가 그 아래 방식 탭을 덮지 않게. */
 $("more").addEventListener("focusout", (e) => { if ($("more").open && e.relatedTarget && !$("more").contains(e.relatedTarget)) $("more").open = false; });
@@ -3611,14 +3705,14 @@ function focusAfter(el) {
   const look = () => {
     const now = document.activeElement, lost = !now || now === document.body || !now.isConnected;
     if (!lost && now !== el && now !== placed) return; // 사용자(또는 그 일 자체)가 다른 곳으로 옮겼다
-    if (S.busy) { // 기다림 동안: 다시 그려진 같은 단추나 상태 글에 둔다(잠긴 단추는 aria-disabled라 초점을 받는다)
+    if (S.busy || S.running) { // 기다림 동안: 다시 그려진 같은 단추나 상태 글에 둔다(잠긴 단추는 aria-disabled라 초점을 받는다)
       waited = true;
       if (lost) put(next.slice(0, 1).map((q) => document.querySelector(`#view-code ${q}`)).find(focusable) || $("status"));
     } else {
       end = end || Date.now();
       if (lost || (placed && placed === $("status") && now === placed)) put(next.map((q) => document.querySelector(`#view-code ${q}`)).find(focusable)); // 끝난 뒤: 결과를 이어 갈 자리로(기다리는 동안 상태 글에 두었다면 거기서 옮긴다). 뒤따르는 다시 그리기가 또 떨어뜨리면 한 번 더
     }
-    if (S.busy ? Date.now() - t0 < 120000 : Date.now() - (waited ? end : t0) < 1500) setTimeout(look, 100); // 기다림이 끝날 때까지, 끝난 뒤(또는 기다림이 없으면) 1.5초
+    if (S.busy || S.running ? Date.now() - t0 < 120000 : Date.now() - (waited ? end : t0) < 1500) setTimeout(look, 100); // 기다림이 끝날 때까지, 끝난 뒤(또는 기다림이 없으면) 1.5초
   };
   setTimeout(look, 60);
 }

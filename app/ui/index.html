@@ -284,7 +284,7 @@
             <div class="run-own-row">
               <textarea id="run-input" rows="2" aria-label="직접 넣을 값" spellcheck="false" autocapitalize="off" autocomplete="off" data-send="run-own-go"></textarea>
               <button type="button" id="run-fill" class="btn quiet small" hidden>예시 입력 넣기</button>
-              <button type="button" id="run-own-go" class="btn small" data-model>이 값으로 실행</button>
+              <button type="button" id="run-own-go" class="btn small" data-model="run">이 값으로 실행</button>
             </div>
           </details>
           <button type="button" id="result-big" class="btn quiet small" hidden>결과 크게 보기</button>
@@ -314,9 +314,9 @@
         <div id="way-info-box" class="head-info"></div>
         <p id="way-note" class="aid-note hint" hidden>튜터를 시작하면 ‘그 밖의 통과’로 남아요.</p>
         <div class="run-bar" role="group" aria-label="실행과 제출">
-          <button type="button" id="compose-run" class="btn" data-model hidden>모아서 실행</button>
-          <button type="button" id="run" class="btn" data-model>예시 실행</button>
-          <button type="button" id="submit" class="btn" data-model>제출</button>
+          <button type="button" id="compose-run" class="btn" data-model="run" hidden>모아서 실행</button>
+          <button type="button" id="run" class="btn" data-model="run">예시 실행</button>
+          <button type="button" id="submit" class="btn" data-model="run">제출</button>
           <span id="tool-note" class="note warn" role="status" hidden></span>
         </div>
         <div class="tutor-body" id="tutor-body">
@@ -331,9 +331,9 @@
 
           <form id="composer" class="composer" hidden>
             <label for="say">내 답</label>
-            <textarea id="say" aria-label="내 답" rows="2" data-send="send" placeholder="생각나는 대로 적어 보세요. 몰라도 괜찮아요"></textarea>
+            <textarea id="say" aria-label="내 답" aria-describedby="say-help" rows="2" data-send="send" placeholder="생각나는 대로 적어 보세요. 몰라도 괜찮아요"></textarea>
             <div class="composer-row">
-              <span class="hint">Ctrl+Enter로 보내기 · 보내면 AI가 읽어요</span>
+              <span id="say-help" class="hint">Enter로 보내기 · Shift+Enter로 줄바꿈 · 보내면 AI가 읽어요</span>
               <button type="submit" id="send" class="btn" data-model data-ai aria-label="내 답 보내기">보내기</button>
             </div>
           </form>
@@ -344,9 +344,9 @@
               <button type="button" id="fq-close" class="btn quiet small">꼬리질문 닫기</button>
             </div>
             <label for="fq-text">꼬리질문</label>
-            <textarea id="fq-text" aria-label="꼬리질문" rows="2" data-send="fq-send" placeholder="이 말에서 이해가 안 되는 부분을 물어보세요"></textarea>
+            <textarea id="fq-text" aria-label="꼬리질문" aria-describedby="fq-help" rows="2" data-send="fq-send" placeholder="이 말에서 이해가 안 되는 부분을 물어보세요"></textarea>
             <div class="composer-row">
-              <span class="hint">이 말에 대해서만 답해요</span>
+              <span id="fq-help" class="hint">Enter로 보내기 · 이 말에 대해서만 답해요</span>
               <button type="submit" id="fq-send" class="btn" data-model data-ai>꼬리질문 보내기</button>
             </div>
           </form>
@@ -359,9 +359,9 @@
             <div id="debug-log" class="chat-log" role="group" aria-label="틀린 곳을 찾는 대화" tabindex="0"></div>
             <form id="debug-composer" class="composer">
               <label for="debug-say">디버깅 답</label>
-              <textarea id="debug-say" aria-label="디버깅 답" rows="2" data-send="debug-send" placeholder="코드를 보고 생각한 것을 적어 보세요"></textarea>
+              <textarea id="debug-say" aria-label="디버깅 답" aria-describedby="debug-help" rows="2" data-send="debug-send" placeholder="코드를 보고 생각한 것을 적어 보세요"></textarea>
               <div class="composer-row">
-                <span class="hint">코드를 고친 뒤 보내면 다시 채점해요</span>
+                <span id="debug-help" class="hint">Enter로 보내기 · 코드를 고친 뒤 보내면 다시 채점해요</span>
                 <button type="submit" id="debug-send" class="btn" data-model data-ai>디버깅 답 보내기</button>
               </div>
             </form>
