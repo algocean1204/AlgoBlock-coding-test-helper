@@ -1640,6 +1640,10 @@ def guessed_level() -> None:
     call("/api/problems/edit", id=pid, title="두 수의 합", text=GOOD["text"], cases=GOOD["cases"][:1] + GOOD["cases"][2:], level=4)
     state = call("/api/state", id=pid)[1]["problem"]
     assert (state["level"], state["level_by"]) == (4, "user"), state
+    # 배지는 누가 단계를 붙였는지와 상관없이 같은 겉모습이다: 화면과 문서에 어림 표시가 없다
+    root = HERE.parent.parent
+    assert "어림" not in (HERE / "app.js").read_text(encoding="utf-8")
+    assert "어림" not in (root / "Docs" / "guide" / "add-problem.md").read_text(encoding="utf-8")
 
 
 def own_guide() -> None:
