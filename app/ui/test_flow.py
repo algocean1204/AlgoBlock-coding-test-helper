@@ -1,0 +1,97 @@
+"""화면 흐름 시험: 서버를 가짜 모델로 띄우고 flow/*.mjs를 브라우저로 돌린다. 모델·네트워크를 쓰지 않는다.
+
+준비: cd app/ui/stageshow && npm ci --ignore-scripts    (playwright-core. 브라우저는 깔린 Chrome, CHROME_PATH로 바꾼다)
+실행: cd app && uv run -q --no-project --python 3.12 --with langgraph --with pypdf python -B ui/test_flow.py [사진 폴더]
+흐름 스크립트는 `node <스크립트> <서버 주소> <사진 폴더>`로 불린다. 서버 밖 요청은 막고 실패로 적으며,
+실패하면 사진 폴더에 화면 사진을 남기고 1로 끝난다. 모두 통과하면 끝에 ok를 찍는다.
+"""
+
+import json
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+import threading
+from functools import partial
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+TMP = Path(tempfile.mkdtemp(prefix="algoblock-flow-"))
+(TMP / "data").mkdir()
+(TMP / "data" / "prefs.json").write_text(json.dumps({"tour_seen": True}), encoding="utf-8")  # 처음 안내 창이 화면을 가리지 않게
+os.environ["ALGOBLOCK_UI_DATA"] = str(TMP / "data")  # 사용자 데이터 폴더를 건드리지 않는다
+os.environ["ALGOBLOCK_UI_PREPARE"] = "0"
+for name in ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "ALGOBLOCK_LLM_MODEL", "ALGOBLOCK_LLM_PROVIDER", "ALGOBLOCK_UI_CLIENT", "ALGOBLOCK_EVAL_EXTRA", "ALGOBLOCK_UI_SCENARIOS"):
+    os.environ.pop(name, None)  # 키 없이 돈다
+sys.path.insert(0, str(HERE))
+
+import server  # noqa: E402
+from tutor.llm import FakeLlm, use_llm  # noqa: E402
+
+server.ROOT = TMP  # 저장소의 .env를 읽지 않는다
+FAKE = FakeLlm()  # 응답이 없어 부르면 실패한다. 부른 기록은 FAKE.calls에 남는다
+server.model = lambda: use_llm(FAKE)  # 요청을 받는 스레드마다 가짜 모델을 건다(문맥 변수는 새 스레드로 넘어가지 않는다)
+VIEWPORTS = ("1366x689", "1093x551")
+
+
+def serve(handler) -> tuple[ThreadingHTTPServer, str]:
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), handler)  # 빈 포트
+    httpd.daemon_threads = True
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    return httpd, f"http://127.0.0.1:{httpd.server_port}"
+
+
+def run(script: Path, base: str, shots: Path) -> subprocess.CompletedProcess:
+    return subprocess.run(["node", str(script), base, str(shots)], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=300)
+
+
+class Quiet(SimpleHTTPRequestHandler):
+    def log_message(self, *args):
+        pass
+
+
+def self_check(script: Path) -> None:
+    """흐름을 일부러 실패시켜 본다: 앱이 아닌 빈 화면이 서버 밖 주소를 부르면 막아서 적고, 뷰포트마다 사진을 남기고 1로 끝나야 한다."""
+    page = TMP / "broken"
+    page.mkdir(exist_ok=True)
+    probe = "http://203.0.113.7/probe.png"  # 문서용 주소(어디로도 가지 않는다)
+    (page / "index.html").write_text(f'<!doctype html><meta charset="utf-8"><title>빈 화면</title><img src="{probe}" alt="">', encoding="utf-8")
+    httpd, base = serve(partial(Quiet, directory=str(page)))
+    shots = TMP / f"broken-{script.stem}"
+    try:
+        out = run(script, base, shots)
+    finally:
+        httpd.shutdown()
+    names = " ".join(path.name for path in shots.glob("*.png"))
+    if out.returncode != 1 or f"external: {probe}" not in out.stderr or not all(tag in names for tag in VIEWPORTS):
+        raise AssertionError(f"{script.name}: 실패를 잡지 못했다(종료 {out.returncode}, 사진 [{names}])\n{out.stdout}{out.stderr}")
+
+
+def main() -> bool:
+    shots = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else TMP / "shots"
+    scripts = sorted((HERE / "flow").glob("*.mjs"))
+    assert scripts, "flow/*.mjs가 없다"
+    for script in scripts:
+        self_check(script)
+    httpd, base = serve(server.Handler)
+    failed = []
+    for script in scripts:
+        out = run(script, base, shots)
+        print(f"== {script.name}\n{out.stdout}{out.stderr}", end="", flush=True)
+        if out.returncode:
+            failed.append(script.name)
+    httpd.shutdown()
+    if FAKE.calls:
+        failed.append(f"모델 {len(FAKE.calls)}회: {[call['task'] for call in FAKE.calls]}")
+    if failed:
+        print(f"실패: {failed}. 화면 사진: {shots}", file=sys.stderr)
+        return False
+    shutil.rmtree(TMP, ignore_errors=True)
+    print("ok")
+    return True
+
+
+if __name__ == "__main__":
+    sys.exit(0 if main() else 1)
