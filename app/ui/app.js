@@ -1205,7 +1205,7 @@ function applyState(data) {
   S.prepAt = S.problem.preparing ? S.prepAt || Date.now() : 0; // 준비 진행 줄에 지난 초를 보여 준다(새 준비는 0초부터)
   render();
   clearTimeout(prepTimer);
-  if (S.problem.preparing && connected()) { // 튜터가 뒤에서 풀이 순서를 준비하는 중: 3초마다 다시 보고, 끝나면 표시를 걷는다(문제 화면을 떠나면 멈춘다)
+  if ((S.problem.preparing || S.problem.checking) && connected()) { // 튜터가 뒤에서 풀이 순서나 숨은 테스트를 준비하는 중: 3초마다 다시 보고, 끝나면 표시를 걷는다(문제 화면을 떠나면 멈춘다)
     const pid = S.pid;
     prepTimer = setTimeout(() => { if (S.view === "code" && S.pid === pid) loadState(); }, 3000);
   }
@@ -1264,12 +1264,29 @@ async function prepAgain() {
   try { S.note.start = null; S.problem.prepare_failed = false; S.prepAt = 0; await loadState(true); say(S.problem.preparing ? "튜터가 풀이 순서를 다시 준비해요." : ""); } finally { prepAsking = false; }
 }
 
-/** 등록한 문제의 준비·검증 한 줄: "풀이 준비 중 · 숨은 테스트 n개 만듦 · 검증: 예시와 대조 모두 통과" */
+/** 숨은 테스트를 만들며 찾은 더 정확한 풀이로 바꾼다(대화를 시작해 저절로 바꾸지 않은 것). 대화·블록 진행은 서버가 지우고 코드 칸은 그대로 둔다. */
+async function swapGuide() {
+  if (prepAsking) return;
+  const pid = S.pid;
+  prepAsking = true;
+  $("swap-guide").disabled = true;
+  clearTimeout(blocksTimer); blocksTimer = null; // 지워질 블록 칸을 다시 보내지 않는다
+  try {
+    const r = await api("/api/swap", { id: pid });
+    if (S.pid !== pid) return;
+    if (r.ok) { Object.assign(S, { blockCode: {}, debug: null, quote: null, prepAt: 0 }); S.note.start = null; }
+    await loadState();
+    say(r.ok && S.problem.preparing ? "튜터가 새 풀이로 풀이 순서를 다시 준비해요." : "");
+  } finally { prepAsking = false; }
+}
+
+/** 등록한 문제의 준비·검증 한 줄: "풀이 준비 중 · 숨은 테스트 n개 만듦 · 검증: 예시와 대조 모두 통과". 준비는 두 걸음이다(풀이 순서 → 숨은 테스트) */
 function renderCheckLine(p) {
-  const c = p.check || {}, made = (Number(c.hidden) || 0) + (Number(c.efficiency) || 0);
-  const parts = p.sample ? [] : [p.preparing ? "풀이 준비 중" : "", made ? `숨은 테스트 ${made}개 만듦` : "", p.verified_name ? `검증: ${p.verified_name}` : "", c.why && p.verified !== "all" ? String(c.why) : "", p.prepare_failed && !p.preparing ? "튜터가 풀이 순서를 준비하지 못했어요." : ""].filter(Boolean).map(esc); // 준비가 실패로 끝났으면 말하고 다시 준비하는 길을 둔다
+  const c = p.check || {}, made = (Number(c.hidden) || 0) + (Number(c.efficiency) || 0), better = p.better && !p.preparing;
+  const parts = p.sample ? [] : [p.preparing ? "풀이 준비 중" : p.checking ? "숨은 테스트 만드는 중" : "", made ? `숨은 테스트 ${made}개 만듦` : "", p.verified_name ? `검증: ${p.verified_name}` : "", c.why && p.verified !== "all" ? String(c.why) : "", p.prepare_failed && !p.preparing ? "튜터가 풀이 순서를 준비하지 못했어요." : "",
+    better ? "튜터의 풀이를 더 정확한 것으로 바꿀 수 있어요" : "", better ? "다시 준비하면 대화·해설·블록 칸은 처음부터예요(코드 칸과 제출 기록은 남아요)" : ""].filter(Boolean).map(esc); // 준비가 실패로 끝났으면 말하고 다시 준비하는 길을 둔다
   if (p.preparing) parts[0] += ` <span class="secs" data-since="${S.prepAt}">${since(S.prepAt)}초</span> · 보통 1분 안팎`; // 다른 기다림 표시처럼 지난 초
-  $("p-check").innerHTML = parts.length ? `${p.preparing ? DOTS : ""}<span>${parts.join(" · ")}</span>${p.prepare_failed && !p.preparing ? ' <button type="button" class="btn small" id="prep-again-top" data-model>다시 준비</button>' : ""}` : "";
+  $("p-check").innerHTML = parts.length ? `${p.preparing || p.checking ? DOTS : ""}<span>${parts.join(" · ")}</span>${p.prepare_failed && !p.preparing ? ' <button type="button" class="btn small" id="prep-again-top" data-model>다시 준비</button>' : ""}${better ? ' <button type="button" class="btn small" id="swap-guide" data-model>다시 준비</button>' : ""}` : "";
   $("p-check").hidden = !parts.length;
 }
 
@@ -3223,7 +3240,7 @@ document.addEventListener("click", (e) => {
     "lang-yes": () => changeLanguage(S.langWant), "lang-no": () => { S.langWant = null; render(); $("p-lang-select").focus(); }, "debug-start": debugStart, "to-feedback": askFeedback, "fb-again": askFeedback, "fb-get": askFeedback,
     "old-feedback": () => { location.hash = `#/p/${S.pid}/feedback`; },
     "goto-line": gotoLine,
-    "prep-again": prepAgain, "prep-again-top": prepAgain,
+    "prep-again": prepAgain, "prep-again-top": prepAgain, "swap-guide": swapGuide,
     "cp-save": saveCheckpoint, "cp-restore": () => askCode("restore"), "code-clear": () => askCode("clear"),
     "code-yes": async () => {
       const run = S.codeAsk === "pull" && S.pullThenRun;
