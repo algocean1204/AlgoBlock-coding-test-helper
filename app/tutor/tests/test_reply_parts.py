@@ -13,14 +13,18 @@ import json
 import sqlite3
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 from unittest import mock
 
 from . import fakes
 from . import test_advance_rule as ar
 from .test_tutor import DRAFT
-from ..common.talk_rules import ANSWER_LEAD, BACK_LEAD, RETRY_LEAD, SKIPPED
-from ..turn.moves import HINTS_DONE
+from ..common.talk_rules import ANSWER_LEAD, BACK_LEAD, EXAMPLES_ONLY, OWN_WAY, RETRY_LEAD, SKIPPED, UNRUN_NO, WITHDRAWN, rename_note
+from ..turn.code_check import code_hash
+from ..turn.moves import FOUND_OK, HINTS_DONE
+from ..state import BlockState
+from .test_pipeline import SORT_BLOCKS, exec_check, sort_check
 from ..llm import FakeLlm
 from ..main import Tutor
 from ..save.nodes import collect
@@ -329,6 +333,75 @@ class ButtonMarksTest(unittest.TestCase):
                 self.assertEqual(self.parts(mode, 1, ar.code(ar.FAIL))[0]["buttons"], ["skip"])
                 self.assertNotIn("buttons", self.parts(mode, 1, ar.code(ar.FAIL, back=1))[0])  # 앞 블록을 다시 확인: 넘어가기 단추가 없다
                 self.assertEqual(self.parts(mode, ar.N - 1, ar.code(ar.PASS))[0]["buttons"], ["run"])
+
+
+class SituationPartsTest(unittest.TestCase):
+    """확인 결과마다 결과 칸에 들어가는 줄: 오류, 실행 못 함, 앞 블록 다시 확인, 끝까지 내 방식, 물린 뒤 블록, 이름 안내, 모델이 쓰는 길."""
+
+    def parts(self, state, scripts, check):
+        done, fake = fakes.go(state, scripts, check)
+        self.assertIsNone(done.get("error"))
+        return parts_of(collect(done)["changes"]["messages"]), len(fake.calls)
+
+    def ar_parts(self, mode, i, make, **extra):
+        return self.parts(*make(mode, i, ar.context(mode, i, **extra)))
+
+    def sort_turn(self, blocks, mode="guide", open_count=1, chat=None):
+        ctx = fakes.context(plan=fakes.planned(blocks), open_count=open_count, **{mode: chat or [fakes.service(fakes.HINTS1[0], 0)]})
+        return fakes.make_state("turn", ctx, mode=mode, event="block_filled", block_id="b1", code="arr = sorted(items)")
+
+    def test_syntax_error_is_a_result_with_skip_and_no_question(self):
+        broken = ["def solution(items):\n    total = (0", *ar.PASS[1:]]
+        for mode in ("chair", "guide"):
+            with self.subTest(mode=mode):
+                parts, calls = self.ar_parts(mode, 0, ar.code(broken))
+                self.assertEqual((set(parts), parts["buttons"], calls), ({"block_index", "result", "buttons"}, ["skip"], 0))
+                self.assertTrue(parts["result"].startswith(RETRY_LEAD.strip()))
+                self.assertIn("SyntaxError", parts["result"])
+
+    def test_unrun_check_is_a_result_with_skip(self):
+        for mode in ("chair", "guide"):
+            with self.subTest(mode=mode):
+                parts, _ = self.ar_parts(mode, 1, ar.code(ar.PASS, ar.unrun))
+                self.assertIn(UNRUN_NO, parts["result"])
+                self.assertEqual(parts["buttons"], ["skip"])
+
+    def test_earlier_block_passing_again_is_found_ok_only(self):
+        for mode in ("chair", "guide"):
+            for i in (1, 2):
+                with self.subTest(mode=mode, i=i):
+                    self.assertEqual(self.ar_parts(mode, i, ar.code(ar.PASS, back=1)), ({"block_index": i - 1, "result": FOUND_OK}, 0))
+
+    def test_own_way_is_a_result_without_question(self):
+        for mode in ("chair", "guide"):
+            with self.subTest(mode=mode):
+                parts, calls = self.ar_parts(mode, 0, ar.code(ar.FAIL, ar.never, quiet=True, skip=True, own_way=True))
+                self.assertEqual((parts["result"].split("\n"), calls), ([SKIPPED.strip(), OWN_WAY.strip()], 0))
+                self.assertNotIn("question", parts)
+
+    def test_withdrawn_line_is_in_result(self):
+        states = {b.id: BlockState(b.id, c, code_hash(c), "Y") for b, c in zip(ar.BLOCKS[:2], ar.PASS[:2])}
+        other = ["def solution(items):\n    total = 0", *ar.PASS[1:]]
+        for mode in ("chair", "guide"):
+            with self.subTest(mode=mode):
+                parts, _ = self.ar_parts(mode, 2, ar.code(other, back=2), block_states=states)
+                self.assertEqual(parts, {"block_index": 0, "result": f"{FOUND_OK}\n{WITHDRAWN.format(n=1)}"})
+
+    def test_rename_note_is_in_result(self):
+        note = rename_note([["arr", "order"]])
+        self.assertEqual(self.parts(self.sort_turn(SORT_BLOCKS), {}, sort_check([])),
+                         ({"block_index": 1, "result": note, "question": fakes.HINTS2[0]}, 0))  # 저장 힌트로 다음 블록을 연다
+        chair = [fakes.service(fakes.HINTS1[0], 0), fakes.service(fakes.HINTS2[0], 1, "m2")]
+        self.assertEqual(self.parts(self.sort_turn(SORT_BLOCKS, "chair", 2, chair), {}, sort_check([])),
+                         ({"block_index": 0, "result": f"{FOUND_OK}\n{note}"}, 0))  # 앞 블록 다시 확인(마침 말 뒤)
+
+    def test_model_path_keeps_said_and_rename_in_result(self):
+        asked = "`order`에서 무엇을 빼야 할까요?"
+        blocks = [SORT_BLOCKS[0], replace(SORT_BLOCKS[1], hints=[])]  # 저장 힌트가 없어 모델이 다음 블록을 연다
+        self.assertEqual(self.parts(self.sort_turn(blocks), {"guide.lead": [asked]}, sort_check([])),
+                         ({"block_index": 1, "result": rename_note([["arr", "order"]]), "question": asked}, 1))
+        parts = self.ar_parts("chair", ar.N - 1, ar.code(ar.PASS, exec_check([], ar.CASES[:1])))  # 공개 예시로만 돌았다(said), 정리 질문은 모델
+        self.assertEqual(parts, ({"block_index": ar.N - 1, "result": EXAMPLES_ONLY, "question": ar.ASKED, "buttons": ["run"]}, 1))
 
 
 if __name__ == "__main__":
