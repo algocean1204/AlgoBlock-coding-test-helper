@@ -1091,13 +1091,27 @@ def same_check_once() -> None:
 
 def result_guides() -> None:
     """채점 결과와 방식 화면의 안내(화면 코드 확인): 큰 입력의 실행 오류는 시간 부족이라 하지 않고, 효율성만 실패하면 ‘틀린 곳 같이 찾기’가 없는 까닭을 말하며,
-    튜터 방식 전환 단추는 무엇이 바뀌는지 말하고, 튜터의 질문으로에서 코드 칸으로 가는 길이 보인다. 브라우저 동작은 화면 확인으로 본다."""
+    튜터 방식 전환 단추는 무엇이 바뀌는지 말한다. 브라우저 동작은 화면 확인으로 본다."""
     js = (HERE / "app.js").read_text(encoding="utf-8")
     assert 'c.kind === "efficiency" && (c.status === "timeout" || c.status === "skipped")' in js and "const slowOnly = slowOnlyOf(r);" in js  # 시간 초과만 '느려요'
     assert "아주 큰 입력에서 실행 중 오류가 났어요: " in js and "아주 큰 입력에서 답이 달라요" in js and "답이 맞아서 ‘틀린 곳 같이 찾기’는 열지 않아요." in js
     assert "혼자 풀기로 바뀌어요" not in js and "오른쪽 칸이 해설로 바뀌어요" in js and "오른쪽 칸이 힌트로 바뀌어요" in js
-    assert 'S.talk === "chair" && !s.blocks.some((b, i) => blockState(b, i) === "found")' in js and 'data-tab="direct">코드 전체 칸 열기' in js
     assert '"message": SLOW_MESSAGE' in (HERE / "server.py").read_text(encoding="utf-8")
+
+
+def block_cell_both_ways() -> None:
+    """지금 블록의 코드 칸과 '블록 코드 확인'은 가이드만의 것이 아니다(화면 코드 확인): 의자도 찾기 전 블록에 칸이 있고 확인이 보이며,
+    '블록은 찾는 대로 열려요' 안내와 '칸이 없다'는 전제의 안내 글이 없다. 넘어가기·끝까지 내 방식은 두 방식 모두에 보인다. 브라우저 동작은 화면 흐름 시험(flow/chair_write.mjs)이 본다."""
+    js = (HERE / "app.js").read_text(encoding="utf-8")
+    start = js.index("function renderBlocks") if "function renderBlocks" in js else js.index("blockState(b, i);")
+    area = js[start:js.index("function syncCheck(ta)")]
+    assert "찾는 대로" not in js and "코드 전체 칸 열기" not in js, "찾기 전 칸 안내가 남아 있다"
+    assert "const cell = !current || !empty || S.talk === \"guide\"" not in area, "칸이 가이드 한정이다"
+    check = js[js.index("function showCheck("):js.index("function syncCheck(ta)")]
+    assert "current && S.mode === \"guide\"" not in check, "지금 블록의 확인 단추가 가이드 한정이다"
+    skip = next(line for line in area.splitlines() if "const skip =" in line)
+    assert "S.talk === \"guide\"" not in skip, "넘어가기가 가이드 한정이다"
+    assert 'S.mode === "guide" && (s.guide.filter' not in js[js.index("function nextAction()"):js.index("const allFound")], "코드로 적으라는 말 뒤 주 단추가 가이드 한정이다"
 
 
 def language_memory() -> None:
@@ -3388,6 +3402,7 @@ def main() -> None:
         guide_spoken()
         same_check_once()
         result_guides()
+        block_cell_both_ways()
         language_memory()
         no_tool()
         results()

@@ -12,7 +12,7 @@ from . import fakes
 from ..llm import FakeLlm, LlmTimeout
 from ..common.talk_rules import CHECKED, FALLBACK
 from ..main import Tutor
-from ..turn.moves import HINTS_DONE_UNFOUND, WRITE_TIP
+from ..turn.moves import HINTS_DONE, WRITE_TIP
 from ..store.codec import plan_to_json
 from ..store.schema import SCHEMA
 
@@ -293,7 +293,7 @@ class TutorTest(unittest.TestCase):
             self.assertIn("사용자가 말한 방법:\n두 명단을 정렬해서", fakes.prompt(fake, "plan.draft_blocks"))
             self.assertIn("지금 계획의 흐름: 입력받기(목표-입력받기) → NEXT_SECRET", fakes.prompt(fake, "plan.draft_blocks"))  # 같은 방법이면 다시 짜지 않게
             again = tutor.turn("p1", "chair", "message", text="음 잘 모르겠어요")  # 새 계획의 첫 블록에서 이어 간다(저장 힌트 하나를 이미 냈다)
-            self.assertEqual(again.body["messages"][-1]["text"], HINTS_DONE_UNFOUND)
+            self.assertEqual(again.body["messages"][-1]["text"], HINTS_DONE)
             self.assertEqual(fakes.tasks(fake).count("plan.draft_blocks"), 2)  # 한 문항에 다시 짜기는 한 번
         finally:
             tutor.close()

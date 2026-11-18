@@ -13,6 +13,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+from contextlib import contextmanager
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -61,6 +62,26 @@ class Quiet(SimpleHTTPRequestHandler):
         pass
 
 
+@contextmanager
+def scripted(script: Path):
+    """같은 이름의 .json이 있으면 그 흐름 동안만 가짜 모델에 응답 대본({"scripts": {task: [응답…]}})을 걸고 환경 변수({"env": {…}})를 둔다.
+    대본이 있는 흐름의 모델 호출은 허용하고(끝나면 기록을 비운다), 대본이 없는 흐름은 모델을 부르면 실패한다. 환경은 끝나면 되돌린다."""
+    plan = script.with_suffix(".json")
+    if not plan.exists():
+        yield
+        return
+    data = json.loads(plan.read_text(encoding="utf-8"))
+    saved = {name: os.environ.get(name) for name in data.get("env", {})}
+    os.environ.update(data.get("env", {}))
+    FAKE.scripts = {task: list(items) for task, items in data.get("scripts", {}).items()}
+    try:
+        yield
+    finally:
+        FAKE.scripts, FAKE.calls[:] = {}, []
+        for name, value in saved.items():
+            os.environ.pop(name, None) if value is None else os.environ.__setitem__(name, value)
+
+
 def self_check(script: Path) -> None:
     """흐름을 일부러 실패시켜 본다: 앱이 아닌 빈 화면이 서버 밖 주소를 부르면 막아서 적고, 뷰포트마다 사진을 남기고 1로 끝나야 한다."""
     page = TMP / "broken"
@@ -90,7 +111,8 @@ def main() -> bool:
         httpd, base = serve(server.Handler)
         try:
             for script in scripts:
-                out = run(script, base, shots)
+                with scripted(script):
+                    out = run(script, base, shots)
                 print(f"== {script.name}\n{out.stdout}{out.stderr}", end="", flush=True)
                 if out.returncode:
                     failed.append(script.name)

@@ -16,7 +16,7 @@ from ..main import AGENTS, build
 from ..state import BlockState, DebugState, FilledBlock, Solution, Submission
 from ..feedback.prompts import WAY_TEXT
 from ..turn.code_check import BRACE_CLOSE, BRACE_OPEN, NOT_JOINED, _RUNTIME, brace_note, code_hash, unrun_note
-from ..turn.moves import FOUND_OK, HINTS_DONE, HINTS_DONE_UNFOUND, WRITE_TIP, WRITE_TIP_LAST
+from ..turn.moves import FOUND_OK, HINTS_DONE, WRITE_TIP, WRITE_TIP_LAST
 
 ZERO = _RUNTIME[2][1]  # 0으로 나눈 실행 오류의 쉬운 말
 
@@ -258,7 +258,7 @@ class ChairTest(unittest.TestCase):
             self.assertEqual(fake.calls, [], text)
             replies.append(done["result"]["reply"])
             talk = talk + [fakes.user(text, 0, f"u{n}"), fakes.service(replies[-1], 0, f"s{n}", done["result"]["move"])]
-        self.assertEqual(replies, [fakes.HINTS1[1], FILL_TIP + fakes.HINTS1[2], HINTS_DONE_UNFOUND, "답 코드는 드리지 않아요. " + HINTS_DONE_UNFOUND])
+        self.assertEqual(replies, [fakes.HINTS1[1], FILL_TIP + fakes.HINTS1[2], HINTS_DONE, "답 코드는 드리지 않아요. " + HINTS_DONE])
 
     def test_term_question_and_hard_message_reach_the_prompt(self):
         """'그게 뭐예요?'에 뜻을 풀지 않고 되묻기만 했다. 판정이 뜻 묻기(W)를 가르고, 질문 지시가 짧은 뜻과 예 뒤에 원래 질문으로 돌아가게 한다."""
