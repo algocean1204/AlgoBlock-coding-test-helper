@@ -12,7 +12,7 @@ if (!base || !shots) { console.error('usage: node mode_tabs.mjs <url> <screensho
 mkdirSync(shots, { recursive: true })
 
 const PID = 'hash_1_popular_shelf' // 미리 만든 풀이 순서(계획)가 실린 기본 문제
-// 아직 열지 않은 기본 문제(계획과 검증된 풀이가 실려 있다). 걸음마다 하나씩 꺼내 쓴다(앞 걸음의 대화·방식이 남지 않게)
+// 계획과 검증된 풀이가 실린 기본 문제. 걸음마다 하나씩 꺼내 처음부터로 돌려 쓴다(앞 걸음이나 다른 흐름의 대화·방식이 남지 않게)
 const builtin = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'builtin.json'), 'utf8'))
 const FRESH = builtin.filter((p) => p.id !== PID && p.ready && p.solutions && p.solutions.python)
 const within = (promise, ms, what) => Promise.race([promise, new Promise((_, no) => setTimeout(() => no(new Error(`${what}: ${ms}ms 넘음`)), ms))])
@@ -51,6 +51,9 @@ for (const viewport of VIEWPORTS) {
   let stuck = false
   const need = async (what, fn) => { if (stuck) return; try { await fn() } catch (e) { stuck = true; problems.push(`${what}: ${String(e.message).split('\n')[0]}`) } }
   const context = await browser.newContext()
+  const clean = async (pid) => { const r = await context.request.post(`${base}/api/reset`, { data: { id: pid } }); if (!r.ok()) problems.push(`reset ${pid} ${r.status()}`) } // 대화·방식을 지운다(계획은 남는다)
+  const take = async () => { const p = FRESH.shift(); await clean(p.id); return p }
+  await clean(PID)
   const page = await open(context, viewport, true, problems)
   const selected = (way) => page.locator(TAB(way)).getAttribute('aria-selected')
   const chatText = () => page.locator('#chat-log').innerText()
@@ -138,7 +141,7 @@ for (const viewport of VIEWPORTS) {
   await need('가로 넘침이 없다', async () => { if (await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1)) throw new Error('가로로 넘친다') })
 
   // 6. 보내지 않은 글과 결과 줄은 문제마다 남는다: 다른 문제를 열었다 돌아와도 그대로, 다른 문제에는 옮겨 가지 않는다
-  const mine = FRESH.shift(), other = FRESH.shift()
+  const mine = await take(), other = await take()
   const drafts = await open(context, viewport, true, problems, mine.id)
   const draft = '아직 보내지 않은 생각'
   const go = (pid) => drafts.evaluate((h) => { location.hash = h }, `#/p/${pid}`)
@@ -168,7 +171,7 @@ for (const viewport of VIEWPORTS) {
   })
 
   // 7. 실행이 끝나기 전에 튜터 탭을 누르면 실행이 끝난 뒤 한 번만 시작한다(실행 요청을 붙잡아 둔다)
-  const runner = FRESH.shift()
+  const runner = await take()
   const late = await open(context, viewport, true, problems, runner.id)
   let starts = 0, held, letRun
   const runHeld = new Promise((r) => { held = r })
@@ -192,7 +195,7 @@ for (const viewport of VIEWPORTS) {
   })
 
   // 8. 탭을 누를 때 보낸 상태 요청이 시작 뒤의 상태보다 늦게 와도 첫 질문을 덮지 않는다
-  const racer = FRESH.shift()
+  const racer = await take()
   const race = await open(context, viewport, true, problems, racer.id)
   let armed = false, fetched, letOld, sent
   const oldFetched = new Promise((r) => { fetched = r })
@@ -224,7 +227,7 @@ for (const viewport of VIEWPORTS) {
   })
 
   // 9. 더 정확한 풀이로 바꿔 끼우면(대화가 지워진다) 튜터가 한 번 더 시작한다. 시작한 뒤 대화만 지워지면 '다시 시작' 단추가 남는다
-  const swapper = FRESH.shift()
+  const swapper = await take()
   const swap = await open(context, viewport, true, problems, swapper.id)
   let swapStarts = 0, better = true
   swap.on('request', (r) => { if (r.url().endsWith('/api/turn') && r.postDataJSON()?.event === 'start') swapStarts++ })
