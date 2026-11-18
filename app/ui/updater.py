@@ -26,7 +26,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-VERSION = "0.2.1"  # 앱의 버전은 여기 한 곳에 둔다(algoblock.spec과 build_mac.sh가 이 줄을 읽는다)
+VERSION = "0.2.2"  # 앱의 버전은 여기 한 곳에 둔다(algoblock.spec과 build_mac.sh가 이 줄을 읽는다)
 REPO = "algocean1204/AlgoBlock-coding-test-helper"
 LATEST = f"https://api.github.com/repos/{REPO}/releases/latest"
 DOWNLOADS = f"https://github.com/{REPO}/releases/download/"  # 받는 주소는 이 저장소의 릴리스 파일만
