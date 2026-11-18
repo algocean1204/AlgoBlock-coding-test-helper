@@ -28,6 +28,7 @@ app에서:
    걸리면 그 언어만 빼고 싣는다(그 언어는 열 때 만든다). 모델로 build하면 걸린 까닭을 붙여 다시 받는다.
 """
 
+import ast
 import json
 import math
 import os
@@ -35,7 +36,9 @@ import re
 import sys
 import tempfile
 import zlib
+from bisect import bisect_right
 from collections import Counter
+from itertools import accumulate
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import nullcontext
 from contextvars import copy_context
@@ -259,12 +262,51 @@ def _aligned(score: list[list[float]], floor: float) -> dict:
     return pairs
 
 
+_DEFINED = re.compile(r"(\w+)\s*(?:[-+*/%|&^]|<<|>>)?=(?!=)|\b([A-Za-z_][\w:]*)(?:<[^;()]*>)?(?:\[\])*\s+(\w+)\s*[(;\[{]")  # 대입·선언·함수 머리가 만드는 이름
+
+
+def _made(reference: str, language: str, function: bool) -> set:
+    """그 언어 블록이 만드는 이름(function이면 함수 이름만)."""
+    out = set()
+    for line in reference.splitlines():
+        line = re.sub(r"//.*$", "", _QUOTED.sub(" ", line))
+        if function:
+            out |= {found.group(1) for found in [re.search(r"(\w+)\s*\(", line)] if found and _HEAD.match(line.strip())}
+        else:
+            out |= {a or b for a, kind, b in _DEFINED.findall(line) if a or kind.lower() not in _KEYWORDS | {"new", "throw", "case"}}
+    return {name.replace("_", "").lower() for name in out} - _KEYWORDS
+
+
+def _handoffs(python: list[dict]) -> list[tuple]:
+    """Python 블록이 만들어(대입·함수 정의) 뒤 블록에 넘기는 이름: [(블록 번호, 이름, 만든 줄, 함수인가)].
+    반복 변수와 글자 그대로의 값을 붙인 이름(LIMIT = 24, INF = float("inf"))은 뺀다: 다른 언어에서는 흔히 이름 없이 그 자리에 쓴다."""
+    starts = list(accumulate([0] + [block["reference"].count("\n") + 1 for block in python]))
+    at = lambda line: bisect_right(starts, line - 1) - 1  # noqa: E731
+    source = "\n".join(block["reference"] for block in python)
+    made, used, skip = {}, {}, set()
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, (ast.For, ast.comprehension)):
+            skip |= {name.id for name in ast.walk(node.target) if isinstance(name, ast.Name)}
+        if isinstance(node, ast.Assign) and (isinstance(node.value, ast.Constant) or isinstance(node.value, ast.Call) and isinstance(node.value.func, ast.Name)
+                                             and not node.value.keywords and all(isinstance(arg, ast.Constant) for arg in node.value.args)):
+            skip |= {target.id for target in node.targets if isinstance(target, ast.Name)}
+        if isinstance(node, ast.Name):
+            (made if isinstance(node.ctx, ast.Store) else used).setdefault(node.id, []).append((node.lineno, False))
+        elif isinstance(node, ast.FunctionDef):
+            made.setdefault(node.name, []).append((node.lineno, True))
+    rows = source.splitlines()
+    return [(at(line), name, rows[line - 1], function) for name, places in made.items() if name not in skip
+            for line, function in [min(places)] if any(at(later) > at(line) for later, _ in used.get(name, []))]
+
+
 def misfits(python: list[dict], blocks: list[dict], language: str) -> list[str]:
     """그 언어 블록이 같은 자리의 Python 블록과 같은 일을 하는지 이름과 줄로 견준다(모델 없음). 어긋난 블록마다 까닭 한 줄(비면 통과).
     1. Python 블록에는 일을 하는 줄이 있는데 이 블록에는 함수 머리·값 없는 선언·틀 줄뿐이다.
     2. Python 블록이 쓰는 이름(변수·함수 이름. 여러 블록에 나오는 이름은 가볍게 센다)이 대부분 다른 블록에 있고, 이 블록의 이름도 다른 Python 블록의 것이다.
     3. Python 블록에서 그 언어 풀이에 거의 그대로 있는 줄 가운데 이 블록에 오는 것(차례대로 맞춘 짝이나 가장 닮은 줄이 이 블록에 있다)이 절반이 안 되고,
        나머지가 다른 블록의 서로 다른 줄 둘 이상과 닮았다.
+    4. Python 블록이 만들어 뒤 블록에 넘기는 이름(방향 표, 비교 함수, 정렬한 값)이 그 언어 풀이 어디에도 없고, 이 블록에 그 줄과 닮은 줄도,
+       이름만 바꿔 만든 것(같은 자리에서 새로 만드는 이름. 함수면 함수)도 없다: 그 단계가 그 언어에는 없거나 다른 블록과 합쳐졌다.
     같은 일을 다른 꼴로 쓴 줄(세 줄 if를 한 줄 삼항식으로)은 걸리지 않게 이름이 엇갈리거나 닮은 줄이 다른 블록에 있을 때만 본다."""
     mine = [_words(block["reference"], "python") - _KEYWORDS for block in python]
     theirs = [_words(block["reference"], language) - _KEYWORDS for block in blocks]
@@ -274,6 +316,10 @@ def misfits(python: list[dict], blocks: list[dict], language: str) -> list[str]:
     left, right = lines(python, "python"), lines(blocks, language)
     score = [[2 * len(a & b) / (len(a) + len(b)) for _, b in right] for _, a in left]
     pairs = _aligned(score, 0.4)
+    everywhere, words = set().union(*theirs), set().union(*mine)
+    near = lambda a, b: a == b or min(len(a), len(b)) >= 4 and (a.startswith(b) or b.startswith(a))  # noqa: E731 - sorted와 sort
+    alike = lambda a, b: 2 * sum(any(near(x, y) for y in b) for x in a) / (len(a) + len(b)) if a and b else 0  # noqa: E731
+    handoffs = _handoffs(python)
     found = []
     for k, (block, mirror) in enumerate(zip(python, blocks)):
         label = f"{mirror['id']}({mirror['name']})"
@@ -292,6 +338,14 @@ def misfits(python: list[dict], blocks: list[dict], language: str) -> list[str]:
         if len(away) >= 2 and len(home) * 2 < len(close):
             elsewhere = Counter(right[j][0] for j in away).most_common(1)[0][0]
             found.append(f"{label}: 이 블록의 일을 하는 줄이 {blocks[elsewhere]['id']}에 있다")
+            continue
+        for _, name, row, function in [handoff for handoff in handoffs if handoff[0] == k]:
+            key = name.replace("_", "").lower()
+            look = _words(row, "python") - _KEYWORDS - {key}
+            if key not in everywhere and not any(alike(look, _words(line, language) - _KEYWORDS) >= 0.5 for line in mirror["reference"].splitlines()) \
+                    and not _made(mirror["reference"], language, function) - words:
+                found.append(f"{label}: Python 블록이 만들어 뒤 블록에 넘기는 {name}이(가) 이 언어 풀이에 없다(이 단계가 이 언어에는 없거나 다른 블록과 합쳐졌다)")
+                break
     return found
 
 

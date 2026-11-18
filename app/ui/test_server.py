@@ -4011,6 +4011,18 @@ def lang_plans() -> None:
     assert "앞서 실린 구간이 걸렸다" in first and "같은 일을 하지 않는다" in second and "b2(" in second and "[1, 4]" in second, second
     assert "함수 머리·값 없는 선언 한 줄" in first  # 일을 하는 줄이 무엇인지 알린다
 
+    # 2-2. Python 블록이 만들어 뒤 블록에 넘기는 것(방향 표)이 그 언어 풀이에 아예 없으면 그 블록의 단계가 없는 것이다(되돌리면 실패).
+    #      이름만 바꿔 같은 자리에서 만들었으면 걸리지 않는다
+    python = [{"id": "b1", "name": "방향 표", "reference": "def solution(moves):\n    delta = {'U': -1, 'D': 1}\n    pos = 0"},
+              {"id": "b2", "name": "따라가기", "reference": "    for move in moves:\n        pos += delta[move]\n    return pos"}]
+    inline = [{"id": "b1", "name": "방향 표", "reference": "class Solution {\n    public int solution(String[] moves) {\n        int pos = 0;"},
+              {"id": "b2", "name": "따라가기", "reference": "        for (String move : moves) {\n            pos += move.equals(\"U\") ? -1 : 1;\n        }\n        return pos;\n    }\n}"}]
+    found = make_builtin.misfits(python, inline, "java")
+    assert len(found) == 1 and found[0].startswith("b1(") and "delta" in found[0], found
+    renamed = [{**inline[0], "reference": inline[0]["reference"] + '\n        Map<String, Integer> change = Map.of("U", -1, "D", 1);'},
+               {**inline[1], "reference": inline[1]["reference"].replace('move.equals(\"U\") ? -1 : 1', "change.get(move)")}]
+    assert not make_builtin.misfits(python, renamed, "java"), make_builtin.misfits(python, renamed, "java")
+
     # 3. 묶기(모델 없이): ready.json의 줄 구간을 언어마다 실은 계획(readies)으로 묶는다. 출처 값이 맞지 않으면 실패로 알리고 그 언어만 빼며, 없으면 알리기만 한다
     root = TMP / "lang_root"
     shutil.copytree(HERE / "problems" / "hash" / "1_popular_shelf", root / "hash" / "1_popular_shelf")
