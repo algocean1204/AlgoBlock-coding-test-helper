@@ -154,6 +154,7 @@ xattr -dr com.apple.quarantine /Applications/AlgoBlock.app
 ### 코드 서명 정책
 
 - 지금 릴리스의 macOS 앱과 Windows 실행 파일에는 코드 서명이 없습니다. 그래서 처음 열 때 위의 경고가 뜹니다.
+- Windows 실행 파일의 코드 서명은 [SignPath Foundation](https://signpath.org)의 무료 오픈소스 프로그램에 신청해 심사를 기다리고 있습니다.
 - 릴리스 파일은 이 저장소의 코드로만 만듭니다. Windows 실행 파일은 이 저장소의 CI(GitHub Actions)가, macOS 앱은 `app/packaging/build_mac.sh`가 만듭니다. 파일마다 SHA-256을 릴리스의 `SHA256SUMS`에 적습니다.
 - 역할: 커밋, 바깥 기여의 검토, 릴리스 승인을 모두 유지자 [@algocean1204](https://github.com/algocean1204)가 맡습니다.
 
