@@ -151,6 +151,11 @@ xattr -dr com.apple.quarantine /Applications/AlgoBlock.app
 
 실행 파일에 코드 서명이 없어서 처음 열면 Microsoft Defender SmartScreen의 'Windows의 PC 보호' 창이 뜰 수 있습니다. 앱이 망가졌다는 뜻은 아닙니다. 창에서 **'추가 정보'**를 누른 뒤 **'실행'**을 누릅니다. 이 저장소의 릴리스에서 받은 파일에만 이렇게 합니다.
 
+### 코드 서명 정책
+
+- 지금 릴리스의 macOS 앱과 Windows 실행 파일에는 코드 서명이 없습니다. 그래서 처음 열 때 위의 경고가 뜹니다.
+- 릴리스 파일은 이 저장소의 코드로만 만듭니다. Windows 실행 파일은 이 저장소의 CI(GitHub Actions)가, macOS 앱은 `app/packaging/build_mac.sh`가 만듭니다. 파일마다 SHA-256을 릴리스의 `SHA256SUMS`에 적습니다.
+- 역할: 커밋, 바깥 기여의 검토, 릴리스 승인을 모두 유지자 [@algocean1204](https://github.com/algocean1204)가 맡습니다.
 
 ### 소스로 실행하기
 
@@ -163,6 +168,15 @@ uv run --no-project --python 3.12 --with langgraph --with pypdf python ui/server
 ```
 
 브라우저에서 http://127.0.0.1:8791 을 엽니다. 포트는 `ALGOBLOCK_UI_PORT`로, 자료 폴더는 `ALGOBLOCK_UI_DATA`로 바꿀 수 있습니다. 자료 폴더의 기본값은 `app/ui/data`이고(Git에 올라가지 않습니다) 이곳에 풀이 기록·등록한 문제·넣은 키가 저장됩니다. 키는 화면의 '설정'의 'AI 연결'에서 넣거나 저장소 루트에서 `.env.example`을 `.env`로 복사해 채우는데 키가 없어도 문제 풀기, 채점, 힌트, 해설, 학습 보고서 기능은 모두 쓸 수 있습니다.
+
+## 개인정보
+
+AlgoBlock에는 계정이 없고, 사용 기록을 모으는 서버도 없습니다. 문제, 코드, 대화, 학습 기록은 이 기기의 데이터 폴더에만 저장합니다. 기기 밖으로 나가는 요청은 아래 두 가지입니다.
+
+- 튜터를 쓸 때: 사용자가 연결한 공급자(Anthropic 또는 OpenAI)에 문제 글, 내 말, 내 코드, 채점 결과를 보냅니다. 문제를 넣을 때 올린 그림도 보냅니다. AI를 연결하지 않으면 보내지 않습니다.
+- 업데이트 확인: GitHub에 새 릴리스가 있는지 묻습니다. 키, 문제, 기록은 싣지 않습니다. 설정 → 업데이트에서 자동 확인을 끌 수 있습니다.
+
+나가는 곳과 내용의 전체 목록은 [데이터 폴더](Docs/architecture/data.md#기기-밖으로-나가는-것)에 있습니다.
 
 ## 문서
 
