@@ -53,7 +53,7 @@ AlgoBlock의 기록과 설정은 데이터 폴더 하나에 있다. 이 문서�
 | `setting` | 키와 값(`key`, `value`) 쌍. 다른 표와 달리 문제별로 나뉘지 않는다 |
 | `problem` | 문제 기본 행 |
 | `tutor_session` | 튜터 세션 상태(`solution_json` 포함) |
-| `message` | 대화 말(사용자와 튜터)과 질문 유형(`move`) |
+| `message` | 대화 말(사용자와 튜터), 질문 유형(`move`), 튜터 말의 칸(`parts_json`) |
 | `feedback` | 제출에 대한 피드백 |
 | `submission` | 제출 코드, 통과 여부, 시각, 언어, 결과 종류, 상세(`detail_json`: 정확성·효율성 점수와 가장 긴 실행 시간) |
 | `block_state` | 블록 판정('Y', 'N', '?'), 이름 짝(`renames_json`) |
@@ -68,7 +68,7 @@ AlgoBlock의 기록과 설정은 데이터 폴더 하나에 있다. 이 문서�
 
 ## 스키마 버전
 
-- 버전은 `PRAGMA user_version`에 저장한다. 마이그레이션 목록(`MIGRATIONS`)의 길이가 최신 버전이다. 현재 버전은 10이다.
+- 버전은 `PRAGMA user_version`에 저장한다. 마이그레이션 목록(`MIGRATIONS`)의 길이가 최신 버전이다. 현재 버전은 12다.
 - DB를 열면 저장된 버전 다음부터 차례로 마이그레이션을 돈다. 남은 마이그레이션은 모두 한 트랜잭션 안에서 돈다. 쓰기 잠금(`BEGIN IMMEDIATE`)을 먼저 잡고, 실패하면 모두 되돌린다.
 - 버전별 변경:
   - 2: `message`에 `move` 열
@@ -80,6 +80,8 @@ AlgoBlock의 기록과 설정은 데이터 폴더 하나에 있다. 이 문서�
   - 8: 블록 판정에 '?' 추가(표를 새로 만들어 옮김)
   - 9: `problem_fact`에 `level`과 `tags_json`
   - 10: `study`에 `help_first_at`, `help_after_reset_at`, `reset_at`, `hints_at_reset`. 옛 행은 남은 기록으로 채운다(대화가 있던 문항은 행을 만든다. 본 힌트는 시각이 없어 가장 이른 시각으로 둔다)
+  - 11: `debug_state`에 `trap`
+  - 12: `message`에 `parts_json`(튜터 말의 칸. 옛 말은 NULL로 남고 `text`로 그린다)
 
 ## 기기 밖으로 나가는 것
 
