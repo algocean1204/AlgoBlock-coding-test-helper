@@ -1282,7 +1282,7 @@ async function swapGuide() {
 function renderCheckLine(p) {
   const c = p.check || {}, made = (Number(c.hidden) || 0) + (Number(c.efficiency) || 0), better = p.better && !p.preparing;
   const parts = p.sample ? [] : [p.preparing ? "풀이 준비 중" : p.checking ? "숨은 테스트 만드는 중" : "", made ? `숨은 테스트 ${made}개 만듦` : "", p.verified_name ? `검증: ${p.verified_name}` : "", c.why && p.verified !== "all" ? String(c.why) : "", p.prepare_failed && !p.preparing ? "튜터가 풀이 순서를 준비하지 못했어요." : "",
-    better ? "튜터의 풀이를 더 정확한 것으로 바꿀 수 있어요" : "", better ? "다시 준비하면 대화와 블록 진행은 처음부터예요" : ""].filter(Boolean).map(esc); // 준비가 실패로 끝났으면 말하고 다시 준비하는 길을 둔다
+    better ? "튜터의 풀이를 더 정확한 것으로 바꿀 수 있어요" : "", better ? "다시 준비하면 대화·해설·블록 칸은 처음부터예요(코드 칸과 제출 기록은 남아요)" : ""].filter(Boolean).map(esc); // 준비가 실패로 끝났으면 말하고 다시 준비하는 길을 둔다
   if (p.preparing) parts[0] += ` <span class="secs" data-since="${S.prepAt}">${since(S.prepAt)}초</span> · 보통 1분 안팎`; // 다른 기다림 표시처럼 지난 초
   $("p-check").innerHTML = parts.length ? `${p.preparing || p.checking ? DOTS : ""}<span>${parts.join(" · ")}</span>${p.prepare_failed && !p.preparing ? ' <button type="button" class="btn small" id="prep-again-top" data-model>다시 준비</button>' : ""}${better ? ' <button type="button" class="btn small" id="swap-guide" data-model>다시 준비</button>' : ""}` : "";
   $("p-check").hidden = !parts.length;

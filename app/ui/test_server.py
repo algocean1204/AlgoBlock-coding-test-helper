@@ -1897,6 +1897,72 @@ def two_step_restart() -> None:
         call("/api/problems/delete", id=pid)
 
 
+def two_step_overlap() -> None:
+    """2걸음이 도는 동안 글을 고치면 새 준비의 2걸음이 하나 더 돈다. 먼저 시작한 옛 2걸음이 끝나도 새 2걸음이 도는 동안은 checking이 참이고, 둘 다 끝나야 거짓이다."""
+    from tutor.main import Outcome
+
+    threading, quiet, forget = two_step_helpers()
+    pid = server.register(GOOD)["id"]
+    gates, started, workers = [threading.Event(), threading.Event()], [threading.Event(), threading.Event()], []
+
+    def prepare(self, problem_id):
+        assert self.adopt(problem_id, own_ready("def solution(a, b):\n    return a + b"))
+        return Outcome(200, {"blocks": 1, "patterns": []})
+
+    def recheck(self, problem_id, **kept):
+        n = len(workers)
+        workers.append(threading.current_thread())
+        started[n].set()
+        assert gates[n].wait(30)
+        return None
+
+    def checking():
+        return call("/api/state", id=pid)[1]["problem"]["checking"]
+
+    try:
+        with patch.object(server, "PREPARE", True), patch.object(server, "connected", lambda: True), patch.object(server.Tutor, "prepare", prepare), patch.object(server.Tutor, "recheck", recheck):
+            call("/api/state", id=pid, open=True)
+            assert started[0].wait(10), "1걸음 뒤에 2걸음이 이어지지 않았다"
+            call("/api/problems/edit", id=pid, **{**GOOD, "text": GOOD["text"] + " 음수도 들어온다."})  # 2걸음이 붙잡힌 동안 글을 고친다: 새 준비가 돈다
+            assert started[1].wait(10), "글을 고친 뒤 새 2걸음이 돌지 않았다"
+            gates[0].set()  # 옛 2걸음만 끝낸다
+            workers[0].join(10)
+            assert not workers[0].is_alive() and checking() is True  # 새 2걸음이 아직 돈다
+            gates[1].set()
+            workers[1].join(10)
+            assert not workers[1].is_alive() and checking() is False
+    finally:
+        for gate in gates:
+            gate.set()
+        forget()
+        call("/api/problems/delete", id=pid)
+
+
+def two_step_pending() -> None:
+    """1걸음이 맡긴 채점 결과와 쓴 급(pending)은 앱을 껐다 켜도 남아, 2걸음의 대조 결과에 맞지 않은 예시와 급으로 적힌다. 대조가 끝나면 지운다."""
+    threading, quiet, forget = two_step_helpers()
+    pid = server.register(GOOD)["id"]
+    ready = own_ready("def solution(a, b):\n    return a - b")
+    ready["solution"]["verified"] = False  # 세 번 다 예시를 못 맞힌 가이드
+    try:
+        with server.tutor() as t:
+            assert t.adopt(pid, ready)
+        server.cross_later(pid, {"status": "failed", "cases": [{"id": "1", "kind": "example", "input": "[1, 2]", "expected": "3", "got": "-1", "status": "failed"},
+                                                               {"id": "2", "kind": "example", "input": "[5, 5]", "expected": "10", "got": "0", "status": "failed"}]}, ["small", "middle", "large"])
+        forget()  # 1걸음 뒤에 앱을 껐다 켠 꼴: 메모리는 비고 problems.json만 남는다
+        done = threading.Event()
+        done.set()
+        with patch.object(server, "PREPARE", True), patch.object(server, "connected", lambda: True):
+            call("/api/state", id=pid, open=True)
+            quiet(pid, done)
+        body = call("/api/state", id=pid)[1]["problem"]
+        assert body["verified"] == "none" and body["check"]["tiers"] == ["small", "middle", "large"], body["check"]
+        assert [row["where"] for row in body["check"]["doubts"]] == ["예시 1", "예시 2"], body["check"]
+        assert not getattr(server.PROBLEMS[pid], "pending", None)
+    finally:
+        forget()
+        call("/api/problems/delete", id=pid)
+
 def stale_save() -> None:
     """언어를 바꾸는 사이에 온 옛 언어의 코드·블록은 저장하지 않는다(어느 언어의 코드인지 같이 온다)."""
     pid = server.register(GOOD)["id"]  # 언어는 python
@@ -3588,6 +3654,8 @@ def main() -> None:
         two_step_checking_state()
         two_step_keeps_talk()
         two_step_restart()
+        two_step_overlap()
+        two_step_pending()
         stale_save()
         builtin_prepare()
         own_guide()

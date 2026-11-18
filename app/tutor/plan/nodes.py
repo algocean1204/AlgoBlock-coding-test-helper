@@ -113,7 +113,10 @@ def solve(state: MainState, config) -> dict:
         return {}
     crossed = ""
     if cross is not None and check is not None and strategy in ("fresh", "canonical") and cross.mode(ctx.problem_id):
-        got, crossed = cross_check(state, got, verified_by(report), report, check, cross, tiers)  # 정석 가이드만 실행으로 대조한다(사용자 코드·방법을 따른 가이드는 하지 않는다)
+        if cross.run is None:  # 대조는 나중에 한다(서버 준비의 2걸음): 이 채점 결과와 쓴 급을 맡겨 둔다
+            cross.later(ctx.problem_id, report, tiers)
+        else:  # 정석 가이드만 실행으로 대조한다(사용자 코드·방법을 따른 가이드는 하지 않는다)
+            got, crossed = cross_check(state, got, verified_by(report), report, check, cross, tiers)
     trusted = verified_by(report) is True and crossed != "none"  # 예시를 통과했고 대조에서 다르지 않았다
     return {"solution": Solution(got.approach.strip(), [step.strip() for step in got.steps if step.strip()], got.code, verified_by(report),
                                  [clue.strip() for clue in got.clues if clue.strip()]), **(guide_labels(state, got) if trusted else {})}
@@ -157,7 +160,7 @@ def cross_check(state: MainState, got: Solved, passed: bool | None, report: dict
     생성기가 만든 작은·경계 입력에서 대조한다. 실행은 모두 cross.run(채점기 프로세스)이 하고, 맞으면 그 입력이 숨은 케이스가 된다.
     다르면 그 입력을 보여 주며 가운데 급으로 한 번, 그래도 다르면 큰 급으로 한 번 다시 푼다(다시 푼 코드도 공개 예시를 통과해야 쓴다).
     풀이 가이드 과정을 가운데 급 이상으로 골랐으면 첫 다시 풀기는 그 급 그대로다. 결과의 tiers는 처음 풀이부터 실제로 쓴 급의 차례다
-    (tiers: 풀이 가이드가 예시를 맞히려고 쓴 급들. 없으면 과정의 급 하나로 적는다. 준비해 둔 가이드를 나중에 대조할 때는 그때의 급을 모른다).
+    (tiers: 풀이 가이드가 예시를 맞히려고 쓴 급들. 없으면 과정의 급 하나로 적는다).
     결과(검증, 쓴 호출 수와 급, 확인이 필요한 곳)는 cross.done으로 남긴다. 고른 풀이와 검증(all·examples·none)을 돌려준다."""
     pid = state["ctx"].problem_id
     first = themes.chosen("guide")[0]  # 처음 풀이를 쓴 급(풀이 가이드 과정)

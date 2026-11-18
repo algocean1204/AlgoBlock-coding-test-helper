@@ -3,6 +3,7 @@
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 
 from . import fakes
@@ -65,6 +66,47 @@ class TwoStepLadderTest(unittest.TestCase):
         self.assertLessEqual(seen["done"][0]["calls"], 5)
         extra = [c for c in fake.calls if c["task"] in ("plan.solve", "plan.brute", "plan.cases")]
         self.assertLessEqual(len(extra), 1 + 5 + 2, [c["task"] for c in fake.calls])  # 처음 풀이 + 대조 상한 + 예시 재시도 둘
+
+
+class LaterCrossTest(unittest.TestCase):
+    """대조 없이 준비하고(서버 준비의 1걸음) 나중에 대조할 때(2걸음): 1걸음이 맡긴 채점 결과와 쓴 급으로 대조 결과를 적는다."""
+
+    def setUp(self):
+        self.dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.dir.cleanup)
+
+    def prepare_then_recheck(self, reports):
+        kept, done, path = {}, [], str(Path(self.dir.name) / "t.db")
+        check = lambda pid, code: reports.pop(0) if len(reports) > 1 else reports[0]
+        later = SimpleNamespace(mode=lambda pid: "function", run=None, later=lambda pid, report, tiers: kept.update(report=report, tiers=tiers))
+        first = Tutor(path, client=FakeLlm({"plan.solve": [SOLVED, FIXED, FIXED], **LINED}), check=check, cross=later)
+        try:
+            first.store.put_problem("p1", "python", fakes.PROBLEM, title="추천 서가에 꽂히는 책")
+            first.store.put_fact("p1", "문자열 배열 둘, 남는 원소 하나", [])
+            self.assertEqual(first.prepare("p1").status, 200)
+            self.assertFalse([c["task"] for c in first.client.calls if c["task"] in ("plan.brute", "plan.cases")])  # 1걸음은 대조하지 않는다
+        finally:
+            first.close()
+        cross = SimpleNamespace(mode=lambda pid: "function", run=lambda *a: self.fail("예시를 통과하지 못한 가이드는 대조를 돌리지 않는다"), done=lambda pid, verdict: done.append(verdict))
+        again = Tutor(path, client=FakeLlm({}), check=check, cross=cross)
+        try:
+            self.assertIsNone(again.recheck("p1", **kept))
+        finally:
+            again.close()
+        return done[0]
+
+    def test_unrun_reason_is_kept(self):
+        """도구가 없어 채점하지 못한 가이드: '돌려 볼 케이스가 없어요'가 아니라 도구가 없다는 까닭과 설치 안내가 남는다."""
+        verdict = self.prepare_then_recheck([{"status": "toolchain_missing", "cases": []}])
+        self.assertIn("도구가 없어요", verdict["why"])
+        self.assertIn("설치하면", verdict["why"])
+        self.assertEqual((verdict["verified"], verdict["tiers"]), ("none", ["small"]))
+
+    def test_failed_examples_and_tiers_are_kept(self):
+        """세 번 다 예시를 못 맞힌 가이드: 맞지 않은 예시가 doubts에 남고, 쓴 급이 처음부터 차례로 남는다."""
+        verdict = self.prepare_then_recheck([FAILED])
+        self.assertEqual(verdict["doubts"], [{"where": "예시 1", "note": "기대 결과와 풀이가 맞지 않음"}])
+        self.assertEqual(verdict["tiers"], ["small", "middle", "large"])
 
 
 if __name__ == "__main__":
