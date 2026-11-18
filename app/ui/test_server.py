@@ -7,9 +7,12 @@
 import base64
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
+import time
+import unicodedata
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -1462,6 +1465,353 @@ def table() -> None:
     assert call("/api/state", id=pid)[1]["problem"]["starter"].startswith("def solution(arr, answer_):")
 
 
+def detect_merge() -> None:
+    """감지의 나머지 길: 아주 긴 글은 모델에 보내지 않는다. touched에 mode가 있으면 보낸 방식으로 읽는다. 고친 칸 모양이 틀리면 거절.
+    문제 글로 보이지 않는다는 감지 결과(problem: false)를 실어 등록하면 열어도 뒤 준비를 하지 않고, /api/problems/prepare를 보내야 준비한다."""
+    import time
+    from tutor.main import Outcome
+
+    boj = "합\n\n두 정수의 합을 출력한다.\n1 ≤ a, b ≤ 10\n\n예제 입력 1\n1 2\n\n예제 출력 1\n3\n"
+    fake = FakeLlm({"ingest.outline": [{"problem": False, "mode": "function"}]})
+    with use_llm(fake), patch.object(server, "connected", lambda: True):
+        long = "1 ≤ n ≤ 5\n" * 5000
+        assert call("/api/problems/detect", text=long)[1] == call("/api/problems/detect", text=long, fast=True)[1] and not fake.calls
+    assert call("/api/problems/detect", text=boj, fast=True)[1]["mode"] == "program"
+    forced = call("/api/problems/detect", text=boj, fast=True, mode="function", touched=["mode"])[1]
+    assert (forced["mode"], forced["cases"]) == ("function", []), forced
+    assert "글이어야" in refuses("/api/problems/detect", text=None) and "모양" in refuses("/api/problems/detect", text="x", touched=[{"a": 1}])
+    said = "합 구하기\n문제 설명\n예를 들어 numbers가 [1, 2]이면 3을 반환한다.\n제한사항\n1 ≤ n ≤ 10"  # 모델이 글에 없는 인자 이름을 지어냈다
+    made = {"problem": True, "title": 1, "mode": "function", "names": ["made_up_arg"], "cases": [{"line": 3, "args": ["[1, 2]"], "expected": "3"}]}
+    for touched, bad in (([], "made_up_arg"), (["cases"], "made_up_arg"), ([], "<img src=x onerror=alert(1)>"), ([], "__import__('os')")):
+        fake = FakeLlm({"ingest.outline": [{**made, "names": [bad]}]})
+        with use_llm(fake), patch.object(server, "connected", lambda: True):
+            got = call("/api/problems/detect", text=said, touched=touched)[1]
+        assert got["names"] == [] and bad not in json.dumps(got, ensure_ascii=False), got
+        assert (got["suggest"]["cases"] if touched else got["cases"]) == [{"input": "[[1, 2]]", "expected": "3"}], got
+    fake = FakeLlm({"ingest.outline": [{**made, "names": ["numbers"]}]})
+    with use_llm(fake), patch.object(server, "connected", lambda: True):
+        assert call("/api/problems/detect", text=said, touched=["cases"])[1]["suggest"]["names"] == ["numbers"]  # 글에 있는 이름은 예시와 함께 제안한다
+    assert server.RANGE.search("1 \\le n") and server.RANGE.search("1 \\leq n") and not server.RANGE.search("1 \\left( x \\right)") and not server.RANGE.search("x \\gets 1")
+
+    tries = []
+    with patch.object(server, "PREPARE", True), patch.object(server, "connected", lambda: True), patch.object(server.Tutor, "prepare", lambda self, problem_id: tries.append(problem_id) or Outcome(200, {"blocks": 0, "patterns": []})):
+        pid = server.register({**GOOD, "problem": False})["id"]
+        assert call("/api/state", id=pid, open=True)[1]["problem"]["hold"] and tries == [] and pid not in server.PREPARED, tries  # 열어도 준비하지 않는다
+        call("/api/problems/prepare", id=pid)
+        for _ in range(200):
+            if pid not in server.PREPARING:
+                break
+            time.sleep(0.02)
+        assert tries == [pid] and not call("/api/state", id=pid)[1]["problem"]["hold"], tries
+        assert "고치거나" in refuses("/api/problems/prepare", id=PID)  # 기본 문제는 미룬 것이 없다
+
+
+INGEST = HERE / "testdata" / "ingest"  # 문제 넣기 시험 자료: 지어 쓴 문제 글과 기대(raw는 줄 목록)
+DETECT_KEYS = {"problem", "notice", "title", "mode", "names", "cases", "skipped", "kinds", "bounds", "many", "suggest"}  # 감지 응답에 늘 있는 칸
+DETECT_MORE = {"missed", "spill"}  # 기존 읽기 함수(table_cases·sample_cases)가 알릴 때만 있는 칸
+LINE_KINDS = {"title", "body", "limits", "input", "output", "sample", "noise", ""}  # kinds: 줄마다 하나
+NOT_PROBLEM = "문제 글로 보이지 않아요"
+ZERO_WIDTH = dict.fromkeys(map(ord, "​‌‍⁠﻿"))
+NOISE_TOP = ["홈   문제   문제집   대회   게시판", "문제 목록 > 연습 > 이 문제"]
+NOISE_MID = ["지금 가입하면 첫 달 무료 · 광고", ""]
+NOISE_END = ["", "", "출처: 연습 문제 묶음", "알고리즘 분류", "구현", "", "댓글 2", "방문자1: n이 10만 이하라서 그냥 돌려도 되네요.", "방문자2: 예제 설명이 친절해요."]
+
+
+def corpus() -> list[dict]:
+    return [{**row, "raw": "\n".join(row["raw"])} for row in (json.loads(path.read_text(encoding="utf-8")) for path in sorted(INGEST.glob("*.json")))]
+
+
+def squash(text) -> str:
+    """견주기용: 전각을 반각으로(NFKC), 폭 없는 글자를 빼고, 빈칸(NBSP·전각 공백·탭 포함)을 하나로."""
+    return " ".join(unicodedata.normalize("NFKC", str(text)).translate(ZERO_WIDTH).split())
+
+
+def trimmed(cases: list[dict]) -> list[dict]:
+    """케이스의 입력·기대. 채점기처럼 줄 끝 공백은 보지 않는다."""
+    return [{key: "\n".join(line.rstrip() for line in str(case[key]).split("\n")) for key in ("input", "expected")} for case in cases]
+
+
+def detect(text: str, **body) -> dict:
+    out = call("/api/problems/detect", text=text, **body)[1]
+    assert DETECT_KEYS <= set(out) <= DETECT_KEYS | DETECT_MORE, sorted(out)
+    assert len(out["kinds"]) == len(text.splitlines()) and set(out["kinds"]) <= LINE_KINDS, out["kinds"]
+    return out
+
+
+def line_at(text: str, piece: str, whole: bool = False) -> int:
+    """piece가 든(whole이면 그 줄 전체인) 첫 줄의 번호. 1부터 센다(구획 나누기에 주는 줄 번호와 같다)."""
+    want = squash(piece)
+    return next(n for n, line in enumerate(text.splitlines(), 1) if (squash(line) == want if whole else want in squash(line)))
+
+
+def summary(out: dict, title: bool = True) -> dict:
+    """변형 불변으로 견줄 것: 문제인가·방식·인자 이름·케이스·범위·답이 여럿(·제목)."""
+    return {"problem": out["problem"], "mode": out["mode"], "names": out["names"], "cases": trimmed(out["cases"]),
+            "bounds": sorted(squash(line) for line in out["bounds"]), "many": out["many"], **({"title": squash(out["title"])} if title else {})}
+
+
+def markdown(lines: list[str], heads: list[str], title: str | None) -> str:
+    """평문 → 마크다운: 제목은 #, 구역 머리는 ##, 탭 표는 파이프 표, 예제 구역은 코드 울타리."""
+    out, fence, before = [], False, False
+    for line in lines:
+        if fence and not line.strip():
+            out.append("```")
+            fence = False
+        tab = "\t" in line
+        if line == title:
+            out.append("# " + line)
+        elif line in heads:
+            out.append("## " + line)
+            if line.startswith(("예제", "Sample")):
+                out.append("```")
+                fence = True
+        elif tab:
+            cells = line.split("\t")
+            out.append("| " + " | ".join(cells) + " |")
+            if not before:
+                out.append("|" + "---|" * len(cells))
+        else:
+            out.append(line)
+        before = tab
+    return "\n".join(out + (["```"] if fence else []))
+
+
+def plain_text(lines: list[str]) -> str:
+    """마크다운 → 평문: # 떼기, 파이프 표는 탭 표로, 구분 줄과 코드 울타리는 뺀다."""
+    out = []
+    for line in lines:
+        if line.startswith("```") or re.fullmatch(r"\|[-:| ]+\|", line):
+            continue
+        if line.startswith("|"):
+            line = "\t".join(cell.strip() for cell in line.strip("|").split("|"))
+        out.append(re.sub(r"^#+\s+", "", line))
+    return "\n".join(out)
+
+
+def variants(row: dict):
+    """(이름, 바꾼 글): 줄 끝(CRLF, 외톨이 CR), 빈칸(NBSP, 전각 공백, 폭 없는 공백·BOM), 앞 두 구역 순서, 잡음 넣기, 마크다운↔평문."""
+    raw, heads = row["raw"], row["heads"]
+    lines = raw.split("\n")
+    at = [lines.index(head) for head in heads[:3]]
+    yield "crlf", raw.replace("\n", "\r\n")
+    yield "cr", "".join(line + ("\r" if n % 2 and lines[n + 1] else "\n") for n, line in enumerate(lines[:-1])) + lines[-1]
+    yield "nbsp", raw.replace(" ", " ")
+    yield "wide", raw.replace(" ", "　")
+    yield "zero", "﻿" + "\n".join("​" + line if line else line for line in lines).replace(", ", ",​ ")
+    yield "order", "\n".join(lines[:at[0]] + lines[at[1]:at[2]] + lines[at[0]:at[1]] + lines[at[2]:])
+    yield "noise", "\n".join(NOISE_TOP + lines[:at[1]] + NOISE_MID + lines[at[1]:] + NOISE_END)
+    yield "markdown", plain_text(lines) if raw.startswith("#") else markdown(lines, heads, row["expect"]["title"])
+
+
+def ingest_corpus() -> None:
+    """문제 넣기 감지의 규칙 층(모델 0회, /api/problems/detect): 시험 자료마다 문제인가·방식·인자 이름·케이스·줄마다 구역·수 범위가 기대와 같고,
+    잡음 줄이 뽑은 케이스·범위에 섞이지 않는다. 규칙은 '답이 여럿'을 글의 낱말로 짐작하지 않는다. 키가 없으면 fast가 아니어도 같은 결과다.
+    줄 끝·빈칸·구역 순서·잡음·마크다운 변형에도 결과가 같다. 50KB 글도 2초 안(목표 200ms. 잰 값은 CI 작업 요약에 남긴다)."""
+    rows = corpus()
+    assert {"F01", "F02", "F03", "F04", "F05", "F08a", "F08b", "F08c", "F08d", "F09", "F10", "F11", "F13", "F16", "F18"} <= {row["id"] for row in rows}
+    assert "글이어야" in refuses("/api/problems/detect", text=["x"])
+    bad = []
+    for row in rows:
+        raw, want, where = row["raw"], row["expect"], row["id"]
+        out = detect(raw, fast=True)
+        if detect(raw) != out:
+            bad.append((where, "키 없이 fast가 아닐 때 결과가 다르다"))
+        if out["problem"] is not (want["verdict"] == "problem") or (NOT_PROBLEM in out["notice"]) is out["problem"]:
+            bad.append((where, "문제인가", out["problem"], out["notice"]))
+        if want["mode"] and (out["mode"], out["names"]) != (want["mode"], want["names"]):
+            bad.append((where, "방식·이름", out["mode"], out["names"]))
+        if trimmed(out["cases"]) != want["cases"]:
+            bad.append((where, "케이스", out["cases"]))
+        if want["title"] is not None and squash(out["title"]) != squash(want["title"]):
+            bad.append((where, "제목", out["title"]))
+        if out["many"] is not False:
+            bad.append((where, "규칙이 답이 여럿을 짐작했다"))
+        if "skipped" in want and (out["skipped"], out.get("missed", [])) != (want["skipped"], want["missed"]):
+            bad.append((where, "읽지 못한 줄", out["skipped"], out.get("missed")))
+        for kind, pieces in want["sections"].items():
+            bad += [(where, "구역", piece, kind, out["kinds"][line_at(raw, piece) - 1]) for piece in pieces if out["kinds"][line_at(raw, piece) - 1] != kind]
+        bounds = [squash(line) for line in out["bounds"]]
+        bad += [(where, "범위 없음", line) for line in want["bounds"] if not any(squash(line) in got for got in bounds)]
+        values = squash(json.dumps(out["cases"], ensure_ascii=False))
+        bad += [(where, "잡음이 섞임", line) for line in want["absent"] if squash(line) in values or any(squash(line) in got for got in bounds)]
+    for row in rows:  # 변형 불변(F14). 잡음을 넣은 글의 제목은 모델이 정한다
+        if "heads" not in row:
+            continue
+        keep = row["expect"]["title"] is not None
+        base = summary(detect(row["raw"], fast=True), keep)
+        for name, text in variants(row):
+            got = summary(detect(text, fast=True), keep and name != "noise")
+            if got != {key: value for key, value in base.items() if key in got}:
+                bad.append((row["id"], "변형", name, {key: value for key, value in got.items() if base.get(key) != value}))
+    assert not bad, "\n".join(map(str, bad))
+
+    f01 = next(row for row in rows if row["id"] == "F01")
+    big, n = f01["raw"] + "\n\n\n댓글", 0  # 댓글이 아주 긴 50KB 글(F15)
+    while len(big.encode("utf-8")) < 50 * 1024:
+        n += 1
+        big += f"\n방문자{n}: 저는 앞에서부터 하루씩 세면서 풀었는데 예제 {n % 3 + 1}에서 막혔어요. " + "다시 읽어 보니 이해가 됐어요. " * 8
+    took = []
+    for body in ({"fast": True}, {}):
+        started = time.perf_counter()
+        out = call("/api/problems/detect", text=big, **body)[1]
+        took.append(time.perf_counter() - started)
+        assert (out["mode"], trimmed(out["cases"])) == ("function", f01["expect"]["cases"]), out["cases"]
+    assert max(took) < 2.0, took
+    if os.environ.get("GITHUB_STEP_SUMMARY"):
+        with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary_file:
+            summary_file.write(f"### 문제 넣기 감지(규칙만)\n- {len(big.encode('utf-8')) // 1024}KB 글: {max(took) * 1000:.0f}ms (목표 200ms)\n")
+
+
+class JsonLlm(FakeLlm):
+    """구획 나누기 응답을 설계의 JSON 꼴(dict)로 적어 둔다. 꼴 없이(글로) 부르는 쪽에는 같은 내용을 JSON 글로 준다."""
+
+    def run(self, task, messages, schema, images=None, params=None):
+        queue = self.scripts.get(task)
+        if schema is None and queue and isinstance(queue[0], dict):
+            queue[0] = json.dumps(queue[0], ensure_ascii=False)
+        return super().run(task, messages, schema, images, params)
+
+
+def outline(**fields) -> dict:
+    """구획 나누기(task ingest.outline) 응답 한 벌. 줄 번호는 1부터, 구간은 [처음, 끝](양 끝 포함), samples의 in·out은 머리 줄을 뺀 내용 줄."""
+    return {"problem": True, "title": None, "body": [], "samples": [], "table": None, "cases": [], "noise": [], "mode": "function", "names": [], "many": False, **fields}
+
+
+def spans(numbers) -> list[list[int]]:
+    out = []
+    for n in sorted(numbers):
+        if out and out[-1][1] == n - 1:
+            out[-1][1] = n
+        else:
+            out.append([n, n])
+    return out
+
+
+def with_model(text: str, *answers, **body) -> tuple[dict, list]:
+    """AI가 연결된 것처럼 두고 감지를 한 번 부른다(구획 나누기는 answers를 차례로 받는다). (응답, 모델 호출 기록)."""
+    fake = JsonLlm({"ingest.outline": list(answers)})
+    with use_llm(fake), patch.object(server, "connected", lambda: True):
+        return detect(text, **body), fake.calls
+
+
+def detect_model() -> None:
+    """감지에 구획 나누기(작은 급, task ingest.outline)를 합친다(가짜 모델). 줄에 글자 그대로 없거나 값으로 읽히지 않는 케이스는 버리고,
+    범위 밖·겹친 구간이나 60%를 넘는 잡음은 결과 전체를 버린다(가운데 급 한 번 뒤 규칙만). 규칙이 예시를 깨끗이 읽었으면 규칙의 예시·방식이 이긴다.
+    모델이 실패하면 규칙 결과 그대로. 문제가 아니라고 하면 알리고 뒤 준비를 돌리지 않는다. 사용자가 고친 칸(touched)은 덮지 않고 suggest로만 준다.
+    키가 없거나 fast면 모델 0회. 글 속의 지시에도 응답의 꼴이 그대로이고 모델이 쓴 글이 실리지 않는다."""
+    from tutor.llm import LlmFailed, LlmTimeout, themes
+
+    rows = {row["id"]: row for row in corpus()}
+    small, middle = themes.model_of("small"), themes.model_of("middle")
+    assert themes.pick("ingest.outline")[0] == small
+
+    # 잡음 섞인 글(F03): 모델이 짚은 잡음 줄만 noise가 되고, 남을 줄의 구역과 규칙의 케이스는 그대로. 제목은 모델이 짚은 줄. 작은 급 한 번
+    f03 = rows["F03"]
+    raw3, absent = f03["raw"], f03["expect"]["absent"]
+    n3, title3 = len(raw3.splitlines()), line_at(raw3, "연속 출석 보상", whole=True)
+    fast3 = detect(raw3, fast=True)
+    good3 = outline(title=title3, noise=spans(line_at(raw3, line, whole=True) for line in absent), names=["days", "k"])
+    out, calls = with_model(raw3, good3)
+    assert [(c["task"], c["params"].get("model")) for c in calls] == [("ingest.outline", small)], calls
+    noisy = {line_at(raw3, line, whole=True) - 1 for line in absent}
+    assert {i for i, line in enumerate(raw3.splitlines()) if line.strip() and out["kinds"][i] == "noise"} == noisy, out["kinds"]
+    for kind, pieces in f03["expect"]["sections"].items():
+        for piece in pieces:
+            assert out["kinds"][line_at(raw3, piece) - 1] == fast3["kinds"][line_at(raw3, piece) - 1] == kind, (piece, kind)
+    assert (out["title"], out["mode"], out["names"], trimmed(out["cases"])) == ("연속 출석 보상", "function", ["days", "k"], f03["expect"]["cases"]), out
+    assert (out["problem"], out["notice"], out["suggest"]) == (True, "", {}), out
+
+    # (j) 실패하거나 검사에 걸리면 가운데 급으로 한 번 더(다른 task 없이)
+    for first in (LlmFailed("모양이 맞지 않습니다."), outline(title=title3, noise=[[1, 2], [2, 3]])):
+        out, calls = with_model(raw3, first, good3)
+        assert [(c["task"], c["params"].get("model")) for c in calls] == [("ingest.outline", small), ("ingest.outline", middle)], calls
+        assert out["title"] == "연속 출석 보상" and out["kinds"][line_at(raw3, absent[0], whole=True) - 1] == "noise", out
+
+    # (e) 두 번 다 실패: 규칙 결과 그대로, 호출은 두 번까지
+    for answers in ((LlmFailed("x"), LlmFailed("x")), (LlmTimeout("x"), LlmTimeout("x")), ("이 글은 JSON이 아니다", "[]")):
+        out, calls = with_model(raw3, *answers)
+        assert out == fast3 and 1 <= len(calls) <= 2, (answers, len(calls))
+    assert len(with_model(raw3, LlmFailed("x"), LlmFailed("x"))[1]) == 2
+
+    # (b) 범위 밖·거꾸로·겹친 구간, 없는 제목 줄 / (c) 잡음이 60%를 넘음: 결과 전체를 버린다(두 번 다 그러면 규칙만)
+    heavy = -(-n3 * 3 // 4)
+    for bad in (outline(title=title3, noise=[[1, 2], [2, 3]]), outline(title=title3, noise=[[n3 - 1, n3 + 5]]), outline(title=title3, noise=[[0, 1]]),
+                outline(title=title3, noise=[[5, 4]]), outline(title=n3 + 3), outline(title=title3, body=[[4, 9]], noise=[[8, 9]]),
+                outline(title=title3, noise=[[n3 - heavy + 1, n3]])):
+        out, _ = with_model(raw3, bad, bad)
+        assert out == fast3 and "noise" not in out["kinds"], bad
+
+    # (d) 규칙이 예시를 깨끗이 읽었으면 규칙의 케이스·방식·이름이 이긴다. 함수 방식에는 '답이 여럿'을 켜지 않는다
+    f01 = rows["F01"]
+    raw1 = f01["raw"]
+    row1, notes = line_at(raw1, "[1, 1, 1, 1]"), [line_at(raw1, "입출력 예 설명", whole=True), len(raw1.splitlines())]
+    out, _ = with_model(raw1, outline(title=1, mode="program", names=["a", "b"], table=notes, many=True,
+                                      cases=[{"line": row1, "args": ["[1, 1, 1, 1]", "4"], "expected": "4"}]))
+    assert (out["mode"], out["names"], trimmed(out["cases"]), out["many"]) == ("function", ["days", "k"], f01["expect"]["cases"], False), out
+
+    # 깨끗하지 않으면(빈 줄 하나 뒤 댓글을 예제 출력으로 삼킴) 모델이 짚은 예제 구간을 기존 규칙으로 읽는다
+    raw2 = rows["F02"]["raw"] + "\n\n댓글 2\n방문자1: 예제 2를 보고 이해했어요.\n방문자2: D가 0이면 같은 밝기끼리만 묶여요."
+    assert "spill" in detect(raw2, fast=True)
+    lines2 = raw2.splitlines()
+
+    def block(head: str) -> list[int]:  # 머리 다음 줄부터 빈 줄 앞까지
+        start = end = line_at(raw2, head, whole=True)
+        while end < len(lines2) and lines2[end].strip():
+            end += 1
+        return [start + 1, end]
+
+    samples = [{"in": block(f"예제 입력 {n} 복사"), "out": block(f"예제 출력 {n} 복사")} for n in (1, 2)]
+    out, _ = with_model(raw2, outline(title=1, mode="program", samples=samples, noise=[[line_at(raw2, "댓글 2", whole=True), len(lines2)]]))
+    assert (out["mode"], trimmed(out["cases"])) == ("program", rows["F02"]["expect"]["cases"]) and "spill" not in out, out
+    assert out["kinds"][-1] == "noise"
+
+    # (a) 문장으로 적힌 예시: 규칙은 못 읽는다. 모델 케이스는 그 줄에 글자 그대로 있고 값으로 읽히는 것만 남는다. 제목·잡음도 채운다
+    text = "\n".join(["목록으로 돌아가기", "줄 세우기 비용", "", "문제 설명",
+                      "학생들의 키가 적힌 배열 heights와 정수 d가 주어집니다. 이웃한 두 학생의 키 차이가 d를 넘는 곳마다 비용이 1 듭니다.",
+                      "드는 비용의 합을 return 하세요.", "예를 들어 heights가 [3, 1, 2]이고 d가 1이면 답은 1입니다.",
+                      "heights가 [1, 2, 3]이고 d가 2이면 키 차이가 모두 작아 답은 0입니다.", "", "제한사항", "1 ≤ heights의 길이 ≤ 1,000", "1 ≤ d ≤ 1,000"])
+    fast = detect(text, fast=True)
+    assert fast["cases"] == [] and fast["problem"], fast
+    e1, e2 = line_at(text, "[3, 1, 2]"), line_at(text, "[1, 2, 3]")
+    said = outline(title=line_at(text, "줄 세우기 비용", whole=True), names=["heights", "d"], noise=[[1, 1]], cases=[
+        {"line": e1, "args": ["[3, 1, 2]", "1"], "expected": "1"}, {"line": e2, "args": ["[1, 2, 3]", "2"], "expected": "0"},
+        {"line": e1, "args": ["[9, 9]", "1"], "expected": "0"},  # 그 줄에 없는 값
+        {"line": e2, "args": ["[1, 2, 3]", "2"], "expected": "작아"}])  # 그 줄에 있지만 값으로 읽히지 않는 글
+    read = [{"input": "[[3, 1, 2], 1]", "expected": "1"}, {"input": "[[1, 2, 3], 2]", "expected": "0"}]
+    out, _ = with_model(text, said)
+    assert (out["title"], out["names"], trimmed(out["cases"]), out["kinds"][0], out["suggest"]) == ("줄 세우기 비용", ["heights", "d"], read, "noise", {}), out
+
+    # (g) 사용자가 그사이 고친 칸은 덮지 않고 제안으로만. 고치지 않은 칸(잡음)은 채운다
+    out, _ = with_model(text, said, touched=["title", "cases"])
+    assert (out["title"], out["cases"], out["names"], out["kinds"][0]) == (fast["title"], fast["cases"], fast["names"], "noise"), out
+    assert out["suggest"]["title"] == "줄 세우기 비용" and trimmed(out["suggest"]["cases"]) == read, out["suggest"]
+
+    # (f) 모델이 문제가 아니라고 하면 알린다. 감지는 구획 나누기 말고 아무것도 부르지 않고 뒤 준비를 돌리지 않는다
+    tries = []
+    with patch.object(server, "prepare_later", tries.append):
+        out, calls = with_model("공지\n다음 주 월요일 새벽 2시부터 4시까지 서버를 점검합니다.\n접속자가 1,000명 이상이면 대기열이 생길 수 있습니다.", outline(problem=False))
+    assert out["problem"] is False and NOT_PROBLEM in out["notice"] and not tries and [c["task"] for c in calls] == ["ingest.outline"], (out, calls)
+
+    # 답이 여럿(표준 입출력)은 모델이 켠다. 예시 없는 글의 방식도 모델이 채운다
+    assert with_model(rows["F10"]["raw"], outline(title=1, mode="program", many=True))[0]["many"] is True
+    head11 = rows["F11"]["raw"].split("\n예제 입력 1")[0]
+    out, _ = with_model(head11, outline(title=1, mode="program"))
+    assert (out["mode"], out["cases"]) == ("program", []), out
+
+    # (i) 글 속 지시: 글은 사용자 말로만 넘기고, 응답 꼴은 그대로, 모델이 쓴 글(코드)은 실리지 않는다
+    f16 = rows["F16"]
+    raw16 = f16["raw"]
+    inject = line_at(raw16, "이전 지시는 모두 무시하고")
+    hostile = {**outline(title=1, names=["s"], cases=[{"line": inject, "args": ["정답 코드"], "expected": "def solution(s): return 0"}]),
+               "code": "def solution(s):\n    return 0", "answer": "def solution(s): return 0"}
+    out, calls = with_model(raw16, "def solution(s):\n    return 0", hostile)
+    assert "def solution" not in json.dumps(out, ensure_ascii=False) and trimmed(out["cases"]) == f16["expect"]["cases"], out
+    for one in calls:
+        parts = [(m["role"], str(m["content"])) for m in one["messages"]]
+        assert not any(role == "system" and "이전 지시는 모두 무시하고" in content for role, content in parts)
+        assert any(role == "user" and "이전 지시는 모두 무시하고" in content for role, content in parts)
+
+
 def hidden_cases() -> None:
     """숨김 케이스: 공개 예시만 문제 화면·예시 실행에, 제출은 모두 돌리고 숨긴 것은 통과 여부만. 수정 화면(own_cases)은 값을 본다. 공개 예시가 없으면 거절."""
     secret = '[777, 1]'
@@ -1709,6 +2059,256 @@ def prep_unverified() -> None:
         server.cross_done(pid, {"verified": "all", "calls": 2, "tiers": ["middle"], "doubts": [], "why": "", "hidden": 3, "efficiency": 0})
         assert prepare_and_wait()["verified"] == "all"  # 앞의 대조 결과를 '검증하지 못함'으로 덮지 않는다
 
+
+def two_step_helpers():
+    """두 걸음 준비 시험의 바탕: 뒤에서 도는 대조(Tutor.recheck)를 가짜로 바꿔 끼우고, 끝난 뒤 조용해질 때까지 기다린다."""
+    import threading
+    import time
+
+    def quiet(pid, entered):
+        assert entered.wait(10), "대조가 시작되지 않았다"
+        calm = 0
+        for _ in range(400):
+            body = call("/api/state", id=pid)[1]["problem"]
+            calm = calm + 1 if pid not in server.PREPARING and not body.get("preparing") and not body.get("checking") else 0
+            if calm >= 4:
+                return
+            time.sleep(0.05)
+        raise AssertionError("준비가 끝나지 않았다")
+
+    def forget():
+        for held in (server.PREPARED, server.RECHECKED, server.PREPARING, server.PREP_FAILED, server.CHECKING):
+            held.clear()
+
+    return threading, quiet, forget
+
+
+def two_step_start_is_free() -> None:
+    """등록 문제의 준비는 두 걸음이다. 1걸음(가이드·블록)이 끝나면 2걸음(대조·숨은 테스트)이 길게 도는 동안에도 튜터 시작은 기다리지 않고 모델도 부르지 않는다."""
+    from tutor.main import Outcome
+
+    threading, quiet, forget = two_step_helpers()
+    pid = server.register(GOOD)["id"]
+    entered, release = threading.Event(), threading.Event()
+
+    def prepare(self, problem_id):
+        assert self.adopt(problem_id, own_ready("def solution(a, b):\n    return a + b"))  # 1걸음: 가이드·블록을 저장한다
+        return Outcome(200, {"blocks": 1, "patterns": []})
+
+    def recheck(self, problem_id):
+        entered.set()  # 2걸음의 긴 구간(모델 호출·실행)을 흉내 낸다
+        assert release.wait(30)
+        return None
+
+    fake, answered = FakeLlm({}), []
+
+    def start():
+        with use_llm(fake):
+            answered.append(call("/api/turn", id=pid, mode="chair", event="start"))
+
+    try:
+        with patch.object(server, "PREPARE", True), patch.object(server, "connected", lambda: True), patch.object(server.Tutor, "prepare", prepare), patch.object(server.Tutor, "recheck", recheck):
+            call("/api/state", id=pid, open=True)
+            assert entered.wait(10), "1걸음 뒤에 2걸음이 이어지지 않았다"
+            assert call("/api/state", id=pid)[1]["problem"].get("checking") is True  # 숨은 테스트를 만드는 중
+            worker = threading.Thread(target=start, daemon=True)
+            worker.start()
+            worker.join(5)
+            assert not worker.is_alive(), "튜터 시작이 2걸음을 기다린다"
+            assert answered[0][0] == 200 and not fake.calls, (answered, fake.calls)
+            release.set()
+            quiet(pid, entered)
+    finally:
+        release.set()
+        forget()
+        call("/api/problems/delete", id=pid)
+
+
+def two_step_checking_state() -> None:
+    """2걸음은 preparing이 아니라 checking(숨은 테스트 만드는 중)으로 보이고, 1걸음(가이드·블록 준비)은 preparing으로 보인다."""
+    from tutor.main import Outcome
+
+    threading, quiet, forget = two_step_helpers()
+    pid = server.register(GOOD)["id"]
+    in_prepare, in_recheck, release, release_check = threading.Event(), threading.Event(), threading.Event(), threading.Event()
+
+    def prepare(self, problem_id):
+        in_prepare.set()
+        assert release.wait(30)
+        assert self.adopt(problem_id, own_ready("def solution(a, b):\n    return a + b"))
+        return Outcome(200, {"blocks": 1, "patterns": []})
+
+    def recheck(self, problem_id):
+        in_recheck.set()
+        assert release_check.wait(30)  # 1걸음을 놓아준 뒤에도 2걸음은 따로 붙잡아 둔다
+        return None
+
+    try:
+        with patch.object(server, "PREPARE", True), patch.object(server, "connected", lambda: True), patch.object(server.Tutor, "prepare", prepare), patch.object(server.Tutor, "recheck", recheck):
+            call("/api/state", id=pid, open=True)
+            assert in_prepare.wait(10)
+            body = call("/api/state", id=pid)[1]["problem"]
+            assert body["preparing"] and not body.get("checking"), body
+            release.set()
+            assert in_recheck.wait(10)
+            body = call("/api/state", id=pid)[1]["problem"]
+            assert body.get("checking") is True and not body["preparing"], body
+            release_check.set()
+            quiet(pid, in_recheck)
+            body = call("/api/state", id=pid)[1]["problem"]
+            assert not body.get("checking") and not body["preparing"], body
+    finally:
+        release.set()
+        release_check.set()
+        forget()
+        call("/api/problems/delete", id=pid)
+
+
+def two_step_keeps_talk() -> None:
+    """2걸음이 풀이를 바꿨을 때: 대화가 이미 시작됐으면 대화·블록 진행을 지우지 않고 풀이도 그대로 두며 '다시 준비' 표시만 남긴다. 대화가 없으면 새 풀이로 바꿔 끼운다."""
+    from tutor.main import Outcome
+    from tutor.state import Solution
+
+    threading, quiet, forget = two_step_helpers()
+    old = "def solution(a, b):\n    return a + b"
+    new = Solution("더한다.", ["더한다"], "def solution(a, b):\n    return b + a", True, [])
+    entered = threading.Event()
+
+    def recheck(self, problem_id):
+        entered.set()
+        return new
+
+    def prepare(self, problem_id):
+        return Outcome(200, {"blocks": 1, "patterns": []})
+
+    def counts(pid):
+        with server.tutor() as t:
+            return [t.store.conn.execute(f"SELECT COUNT(*) FROM {table} WHERE problem_id=?", (pid,)).fetchone()[0] for table in ("message", "block_state")], t.store.load(pid).solution.code
+
+    talked, fresh = server.register(GOOD)["id"], server.register({**GOOD, "title": "두 수의 합 둘"})["id"]
+    try:
+        for pid in (talked, fresh):
+            with server.tutor() as t:
+                t.adopt(pid, own_ready(old))
+        with use_llm(FakeLlm({})):
+            call("/api/turn", id=talked, mode="chair", event="start")  # 대화가 시작됐다
+        server.write_json(server.BLOCKS_FILE, {**server.read_json(server.BLOCKS_FILE, {}), talked: {"b1": {"code": "x", "by": "me"}}})
+        before = counts(talked)
+        assert before[0][0] > 0
+        with patch.object(server, "PREPARE", True), patch.object(server, "connected", lambda: True), patch.object(server.Tutor, "recheck", recheck), patch.object(server.Tutor, "prepare", prepare):
+            call("/api/state", id=talked, open=True)
+            quiet(talked, entered)
+            assert counts(talked) == before, (counts(talked), before)  # 대화·블록 진행·풀이 모두 그대로
+            assert server.read_json(server.BLOCKS_FILE, {}).get(talked) == {"b1": {"code": "x", "by": "me"}}
+            assert call("/api/state", id=talked)[1]["problem"]["better"] is True  # 문제 머리에 '다시 준비'가 뜬다
+            assert call("/api/swap", id=talked) == (200, {"ok": True})  # 누르면 그때 바꿔 끼운다(대화는 처음부터)
+            quiet(talked, entered)
+            assert counts(talked) == ([0, 0], new.code) and not call("/api/state", id=talked)[1]["problem"]["better"], counts(talked)
+            entered.clear()
+            call("/api/state", id=fresh, open=True)
+            quiet(fresh, entered)
+            assert counts(fresh)[1] == new.code  # 대화가 없으면 바꿔 끼운다
+    finally:
+        forget()
+        for pid in (talked, fresh):
+            call("/api/problems/delete", id=pid)
+
+
+def two_step_restart() -> None:
+    """앱을 1·2걸음 사이에 끄면(2걸음이 끝나기 전에 서버를 새로 만든 꼴) 다시 열 때 대조가 돈다. 대조 결과는 저장소에 남지 않았다."""
+    threading, quiet, forget = two_step_helpers()
+    pid = server.register(GOOD)["id"]
+    entered, runs = threading.Event(), []
+
+    def recheck(self, problem_id):
+        runs.append(problem_id)
+        entered.set()
+        raise RuntimeError("앱이 꺼졌다")  # 2걸음이 끝나지 못했다
+
+    import contextlib
+    import io
+    try:
+        with server.tutor() as t:
+            t.adopt(pid, own_ready("def solution(a, b):\n    return a + b"))  # 1걸음이 끝난 상태
+        with patch.object(server, "PREPARE", True), patch.object(server, "connected", lambda: True), patch.object(server.Tutor, "recheck", recheck), contextlib.redirect_stderr(io.StringIO()):
+            call("/api/state", id=pid, open=True)
+            quiet(pid, entered)
+            assert runs == [pid] and call("/api/state", id=pid)[1]["problem"]["verified"] == ""
+            forget()  # 서버를 새로 만든 꼴: 메모리의 상태가 없고 저장소만 남는다
+            entered.clear()
+            call("/api/state", id=pid, open=True)
+            quiet(pid, entered)
+            assert runs == [pid, pid], runs  # 다시 열 때 대조가 돈다
+    finally:
+        forget()
+        call("/api/problems/delete", id=pid)
+
+
+def two_step_overlap() -> None:
+    """2걸음이 도는 동안 글을 고치면 새 준비의 2걸음이 하나 더 돈다. 먼저 시작한 옛 2걸음이 끝나도 새 2걸음이 도는 동안은 checking이 참이고, 둘 다 끝나야 거짓이다."""
+    from tutor.main import Outcome
+
+    threading, quiet, forget = two_step_helpers()
+    pid = server.register(GOOD)["id"]
+    gates, started, workers = [threading.Event(), threading.Event()], [threading.Event(), threading.Event()], []
+
+    def prepare(self, problem_id):
+        assert self.adopt(problem_id, own_ready("def solution(a, b):\n    return a + b"))
+        return Outcome(200, {"blocks": 1, "patterns": []})
+
+    def recheck(self, problem_id, **kept):
+        n = len(workers)
+        workers.append(threading.current_thread())
+        started[n].set()
+        assert gates[n].wait(30)
+        return None
+
+    def checking():
+        return call("/api/state", id=pid)[1]["problem"]["checking"]
+
+    try:
+        with patch.object(server, "PREPARE", True), patch.object(server, "connected", lambda: True), patch.object(server.Tutor, "prepare", prepare), patch.object(server.Tutor, "recheck", recheck):
+            call("/api/state", id=pid, open=True)
+            assert started[0].wait(10), "1걸음 뒤에 2걸음이 이어지지 않았다"
+            call("/api/problems/edit", id=pid, **{**GOOD, "text": GOOD["text"] + " 음수도 들어온다."})  # 2걸음이 붙잡힌 동안 글을 고친다: 새 준비가 돈다
+            assert started[1].wait(10), "글을 고친 뒤 새 2걸음이 돌지 않았다"
+            gates[0].set()  # 옛 2걸음만 끝낸다
+            workers[0].join(10)
+            assert not workers[0].is_alive() and checking() is True  # 새 2걸음이 아직 돈다
+            gates[1].set()
+            workers[1].join(10)
+            assert not workers[1].is_alive() and checking() is False
+    finally:
+        for gate in gates:
+            gate.set()
+        forget()
+        call("/api/problems/delete", id=pid)
+
+
+def two_step_pending() -> None:
+    """1걸음이 맡긴 채점 결과와 쓴 급(pending)은 앱을 껐다 켜도 남아, 2걸음의 대조 결과에 맞지 않은 예시와 급으로 적힌다. 대조가 끝나면 지운다."""
+    threading, quiet, forget = two_step_helpers()
+    pid = server.register(GOOD)["id"]
+    ready = own_ready("def solution(a, b):\n    return a - b")
+    ready["solution"]["verified"] = False  # 세 번 다 예시를 못 맞힌 가이드
+    try:
+        with server.tutor() as t:
+            assert t.adopt(pid, ready)
+        server.cross_later(pid, {"status": "failed", "cases": [{"id": "1", "kind": "example", "input": "[1, 2]", "expected": "3", "got": "-1", "status": "failed"},
+                                                               {"id": "2", "kind": "example", "input": "[5, 5]", "expected": "10", "got": "0", "status": "failed"}]}, ["small", "middle", "large"])
+        forget()  # 1걸음 뒤에 앱을 껐다 켠 꼴: 메모리는 비고 problems.json만 남는다
+        done = threading.Event()
+        done.set()
+        with patch.object(server, "PREPARE", True), patch.object(server, "connected", lambda: True):
+            call("/api/state", id=pid, open=True)
+            quiet(pid, done)
+        body = call("/api/state", id=pid)[1]["problem"]
+        assert body["verified"] == "none" and body["check"]["tiers"] == ["small", "middle", "large"], body["check"]
+        assert [row["where"] for row in body["check"]["doubts"]] == ["예시 1", "예시 2"], body["check"]
+        assert not getattr(server.PROBLEMS[pid], "pending", None)
+    finally:
+        forget()
+        call("/api/problems/delete", id=pid)
 
 def stale_save() -> None:
     """언어를 바꾸는 사이에 온 옛 언어의 코드·블록은 저장하지 않는다(어느 언어의 코드인지 같이 온다)."""
@@ -2860,6 +3460,91 @@ console.log(JSON.stringify({ out, repro }));
     assert server.panes_ok(got["repro"]) and got["repro"][0] == 80.5 and got["repro"][2] >= 5, got["repro"]
 
 
+def math_render() -> None:
+    """문제 글의 수식·위첨자(app.js의 rich-pure를 node로): 수식 구간만 수식이 되고, 금액·코드·`a^b`·`max_count`는 그대로이며,
+    붙여 넣은 글의 스크립트·이벤트 속성·javascript: 링크는 무력하다. 병적 입력도 200ms 안에 끝난다. 정적 파일 세 목록(화면이 부르는 것, 서버 표, 묶음 명세)도 맞춘다."""
+    import re
+    import shutil
+    node = shutil.which("node")
+    if not node:
+        return print("node가 없어 수식 렌더 시험은 건너뜀")
+    js = (HERE / "app.js").read_text(encoding="utf-8")
+    source = re.search(r"/\* rich-pure:start.*?\*/(.*?)/\* rich-pure:end \*/", js, re.S).group(1)
+    cases = {
+        "sub": "값 $a_i$ 와 $$\\sum_{i=1}^{n} a_i$$ 끝", "paren": "식 \\(x^2+1\\) 이고", "bracket": "식 \\[x^2+1\\] 이고",
+        "money": "가격은 $5 입니다", "range": "가격은 $5 ~ $10 입니다", "won": "$5짜리 책과 $7짜리 펜", "open": "비용 $x 는 정해지지 않았다",
+        "fence": "앞\n```\na$b^c_d $x$\n```\n뒤", "tick": "변수 `a$b^c_d` 를 쓴다",
+        "pow5": "1 <= N <= 10^5", "pow9": "답을 10^9+7 로 나눈다", "xor": "a^b 를 출력한다",
+        "snake": "max_count 와 A_i와 B_i 를 쓴다", "ol": "1. 첫째\n2. 둘째\n3. 셋째",
+        "broken": "깨진 $\\frac{1$ 식", "href": "$\\href{javascript:alert(1)}{x}$", "img": "<img src=x onerror=alert(1)> 글", "script": "<script>alert(1)</script> 글",
+        "link": "[x](javascript:alert(1)) 와 [y](JaVaScRiPt:alert(2))", "plain": "그냥 글입니다. 수식 없음.",
+        "big": "가나다 $ " * 8000, "dollars": "$" * 1000 + "\n" + "$a$ " * 300, "long": "x_i " * 12000, "open_br": "\\[ a " * 12000, "open_par": "\\( a " * 12000, "tickmath": "값 $a `b` c$ 끝", "rejcode": "\\$`10^5`$", "rejbold": "$$a `**x**` c$",
+    }
+    script = "const esc = (t) => String(t ?? '').replace(/[&<>\"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '\"': '&quot;', \"'\": '&#39;' }[c]));\n" + source + """
+globalThis.window = globalThis;
+const katex = require(%s); globalThis.katex = katex;
+const cases = %s, out = {};
+for (const [k, text] of Object.entries(cases)) {
+  const t = process.hrtime.bigint();
+  const html = rich(text, true, false);
+  const ms = Number(process.hrtime.bigint() - t) / 1e6;
+  const tex = [...html.matchAll(/data-tex="([^"]*)"/g)].map((m) => m[1].replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, "&"));
+  const shown = tex.map((x) => katex.renderToString(x, { throwOnError: false, trust: false }));
+  out[k] = { html, ms, tex, shown };
+}
+console.log(JSON.stringify(out));
+""" % (json.dumps(str(HERE / "katex" / "katex.min.js")), json.dumps(cases))
+    got = json.loads(subprocess.run([node, "-"], input=script, capture_output=True, text=True, check=True).stdout)  # 큰 입력이라 인자 대신 표준 입력으로(리눅스는 인자 하나에 128KB까지다)
+    math = lambda k: len(re.findall(r'class="katex"|data-tex=', got[k]["html"]))  # noqa: E731  (KaTeX 결과나 렌더 자리)
+    for k in ("sub", "paren", "bracket"):
+        assert math(k) >= 1, (k, got[k]["html"])
+    assert math("sub") >= 2, got["sub"]["html"]  # 식 둘(렌더 자리의 글은 원문이어도 된다: 깨지면 그대로 보이게)
+    for k, kept in (("money", "$5"), ("range", "$5 ~ $10"), ("won", "$5짜리"), ("open", "$x")):  # 금액과 닫히지 않은 $는 글자 그대로
+        assert math(k) == 0 and kept in got[k]["html"], (k, got[k]["html"])
+    assert "$7짜리" in got["won"]["html"]
+    for k, kept in (("fence", "a$b^c_d $x$"), ("tick", "a$b^c_d")):  # 코드 안은 그대로
+        assert math(k) == 0 and kept in got[k]["html"] and "<sup>" not in got[k]["html"] and "<em>" not in got[k]["html"], (k, got[k]["html"])
+    assert "<sup>5</sup>" in got["pow5"]["html"] and "10<sup>" in got["pow5"]["html"] and "105" not in got["pow5"]["html"], got["pow5"]["html"]
+    assert re.search(r"10<sup>9(\+7)?</sup>(\+7)?", got["pow9"]["html"]), got["pow9"]["html"]
+    assert "a^b" in got["xor"]["html"] and "<sup>" not in got["xor"]["html"], got["xor"]["html"]  # XOR일 수 있다
+    assert "max_count" in got["snake"]["html"] and "A_i와 B_i" in got["snake"]["html"] and not re.search(r"<(em|i)[ >]", got["snake"]["html"]) and math("snake") == 0, got["snake"]["html"]
+    assert "<ol>" in got["ol"]["html"] and got["ol"]["html"].count("<li>") == 3, got["ol"]["html"]
+    assert math("plain") == 0 and "<sup>" not in got["plain"]["html"]
+    assert "katex-error" not in got["broken"]["html"] and "\\frac{1" in got["broken"]["html"], got["broken"]["html"]  # 깨진 수식은 원문 글(화면에서 KaTeX 결과가 오류 표시면 원문으로 되돌린다)
+    for k, row in got.items():  # 어떤 글도 스크립트·이벤트 속성·javascript: 링크를 만들지 않는다(KaTeX 결과 포함)
+        every = row["html"] + "".join(row["shown"])
+        assert not re.search(r"<(script|img|iframe|object|embed)\b", every, re.I), (k, every[:200])
+        assert not re.search(r"<[^>]*\son\w+\s*=", every, re.I), (k, every[:200])
+        assert not re.search(r"(href|src)\s*=\s*[\"']?\s*javascript:", every, re.I), (k, every[:200])
+    assert "<a " not in got["link"]["html"] or "javascript:" not in got["link"]["html"].lower().split("<a ", 1)[1]
+    assert "b" in got["tickmath"]["tex"][0] and "\u0000" not in got["tickmath"]["html"] and "`b`" in got["tickmath"]["tex"][0], got["tickmath"]  # 수식 안의 백틱은 쓴 그대로
+    assert "<code>10^5</code>" in got["rejcode"]["html"] and "<sup>" not in got["rejcode"]["html"], got["rejcode"]  # 수식이 아닌 $ 구간 안의 코드는 코드 그대로
+    assert "<code>**x**</code>" in got["rejbold"]["html"], got["rejbold"]
+    for k in ("big", "dollars", "long", "open_br", "open_par"):  # 병적 입력(50KB, $ 1000개, 닫히지 않은 \\[·\\( 수천 번)
+        assert got[k]["ms"] < 200, (k, got[k]["ms"])
+
+    # 정적 파일 세 목록: 화면이 부르는 것, 서버 표, 묶음 명세가 같다. 수식 파일은 수식이 있을 때만 받는다(처음 화면은 부르지 않는다)
+    html, css = (HERE / "index.html").read_text(encoding="utf-8"), (HERE / "app.css").read_text(encoding="utf-8")
+    called = set(re.findall(r'(?:src|href)="([^":#]+\.(?:js|css|svg|woff2))"', html)) | set(re.findall(r"url\(\"?([\w./-]+\.woff2)\"?\)", css))
+    served = {path.lstrip("/") for path in server.STATIC}
+    assert {"/" + name for name in called} <= set(server.STATIC), called - served
+    assert not any("katex" in name for name in called), "수식 파일을 처음 화면에서 부른다"
+    assert "/katex/katex.min.js" in js and "/katex/katex.min.css" in js, "app.js가 수식이 있을 때 불러오지 않는다"
+    kcss = (HERE / "katex" / "katex.min.css").read_text(encoding="utf-8")
+    assert not re.search(r"https?://", kcss), "들여온 CSS가 원격 주소를 담고 있다"
+    for ref in re.findall(r"url\(([^)]+)\)", kcss):
+        ref = ref.strip("\"'")
+        assert ref.endswith(".woff2") and "/katex/" + ref in server.STATIC, ref  # woff2만, 모두 서버 표에 있다
+    for name, (file, _) in server.STATIC.items():
+        assert (HERE / file).is_file(), name
+    on_disk = {f"/katex/{p.relative_to(HERE / 'katex').as_posix()}" for p in (HERE / "katex").rglob("*") if p.is_file() and p.suffix in (".js", ".css", ".woff2")}
+    assert on_disk == {p for p in server.STATIC if p.startswith("/katex/")}, on_disk ^ {p for p in server.STATIC if p.startswith("/katex/")}
+    spec = (HERE.parent / "packaging" / "algoblock.spec").read_text(encoding="utf-8")
+    assert "katex" in spec, "묶음 명세에 수식 파일이 없다"
+    for name in {file for file, _ in server.STATIC.values() if not file.startswith("katex/")}:
+        assert name in spec, name
+
+
 def split_fit() -> None:
     """세로 나누기: 계산(app.js의 splitNext, 'split-pure' 구역)이 어떤 높이·글쇠에서도 서버가 받는 몫(15~85)을 내고 두 칸의 최소 높이를 지키는지,
     /api/prefs의 rows 저장·검증, 손잡이 마크업, 단추 이동, 창·낮은 화면 설정을 본다. splitNext({ span, min: [편집기 최소, 결과 최소] }, 결과 높이 px) → 결과 몫(%)."""
@@ -3612,6 +4297,12 @@ def main() -> None:
         key_check_flow()
         key_rows_flow()
         prep_unverified()
+        two_step_start_is_free()
+        two_step_checking_state()
+        two_step_keeps_talk()
+        two_step_restart()
+        two_step_overlap()
+        two_step_pending()
         stale_save()
         builtin_prepare()
         own_guide()
@@ -3624,6 +4315,9 @@ def main() -> None:
         own_starter()
         case_shapes()
         table()
+        detect_merge()
+        ingest_corpus()
+        detect_model()
         tour_pictures()
         tour_follows_screens()
         home_screen()
@@ -3675,6 +4369,7 @@ def main() -> None:
     window_background()
     pane_widths()
     pane_fit()
+    math_render()
     split_fit()
     split_kept()
     stages()

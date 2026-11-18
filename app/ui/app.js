@@ -197,16 +197,25 @@ const waitLine = (where) => (S.busy && S.busy.where === where // 문구가 걸�
 const pending = (where) => (S.busy && S.busy.where === where ? `<div class="msg tutor pending"><span class="who">튜터</span><div class="bubble">${waitLine(where)}</div></div>` : "");
 
 /* ── 글 꾸미기: 코드 울타리, 표(| a | b |), 목록(- ), 소제목, `코드`, **굵게**, 표준 입출력 문제의 예제 구역 ── */
+/* rich-pure:start 글 꾸미기 전체(esc 말고는 다른 것에 기대지 않는다). node로도 시험한다 */
+/* inline-pure:start 코드와 수식 구간은 먼저 떼어 두고 나머지만 굵게·위첨자를 바꾼 뒤 되돌린다(코드·수식 속 **나 ^가 바뀌지 않는다). 수식은 $…$, $$…$$, \(…\), \[…\]: 여는 $ 뒤나 닫는 $ 앞이 공백이거나 닫는 $ 뒤가 숫자면 수식이 아니다(금액). 줄 단위라 여러 줄에 걸친 수식은 보지 않는다 */
+function inline(t) {
+  const kept = [], raws = [];
+  const hold = (html, raw) => `\u0000${kept.push(html) && raws.push(raw ?? html) - 1}\u0000`;
+  const back = (x) => x.replace(/\u0000(\d+)\u0000/g, (_, n) => raws[n]); // 수식 안에 든 코드 자리는 쓴 그대로
+  const text = String(t ?? "").replace(/\u0000/g, "").replace(/`([^`\n]+)`/g, (_, code) => hold(`<code>${esc(code)}</code>`, `\`${code}\``))
+    .replace(/\$\$(.+?)\$\$|\\\[((?:(?!\\\[).)+?)\\\]|\\\(((?:(?!\\\().)+?)\\\)|\$(?=[^\s$])([^$\n]*?\S)\$(?![\d$])/g, (all, d1, d2, i1, i2, at, whole) => {
+      const tex = back(d1 ?? d2 ?? i1 ?? i2);
+      // 받은 수식만 코드 자리를 쓴 그대로 되돌린다. 거절한 구간(앞에 \$나 $$가 붙은 $…$)은 코드 자리를 그대로 두어 코드로 보인다
+      return tex.trim() && !(i2 !== undefined && /[\\$]/.test(whole[at - 1] || "")) ? hold(`<span class="math" data-tex="${esc(tex)}"${i1 === undefined && i2 === undefined ? ' data-display="1"' : ""}>${esc(back(all))}</span>`) : all;
+    });
+  return esc(text).replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>").replace(/(^|[^\w.^])(\d+)\^(\d+)(?![\w^])/g, "$1$2<sup>$3</sup>")
+    .replace(/\u0000(\d+)\u0000/g, (_, n) => kept[n]);
+}
+/* inline-pure:end */
 const HEADING = /^(문제 설명|제한 ?사항|입출력 예( 설명)?|입출력 예 ?#\d+|입력|출력|예시)$/;
 // 예제 구역의 머리(서버 sample_cases와 같은 규칙): 머리 다음부터 다음 머리나 빈 줄 둘 전까지가 그 예제의 글이다
 const SAMPLE_HEAD = /^(?:#+\s*)?(예제\s*입력|입력\s*예|sample\s+input|예제\s*출력|출력\s*예|sample\s+output)\s*(\d+)\s*(?:복사)?\s*:?$/i;
-/* inline-pure:start 백틱 안은 코드 그대로 둔다: 먼저 코드를 떼어 두고 굵게를 바꾼 뒤 되돌린다(코드 속 **가 굵게가 되지 않는다). node로도 시험한다 */
-function inline(t) {
-  const codes = [];
-  return esc(t).replace(/\u0000/g, "").replace(/`([^`\n]+)`/g, (_, code) => `\u0000${codes.push(code) - 1}\u0000`)
-    .replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>").replace(/\u0000(\d+)\u0000/g, (_, n) => `<code>${codes[n]}</code>`);
-}
-/* inline-pure:end */
 
 /** program: 표준 입출력 문제. 예제 구역은 글 그대로 <pre>에 담고, 같은 번호의 입력·출력은 두 칸으로 나란히 둔다. */
 // 탭·공백으로 나눈 입출력 예 표(서버 table_cases·flat_table과 같은 규칙의 가장 작은 판정): 머리 줄의 마지막 칸이 결과 낱말이고 뒤 줄들의 칸 수가 맞을 때만 표다
@@ -263,7 +272,7 @@ function rich(text, headings, program) {
   String(text || "").split(/```[a-zA-Z0-9]*\n?/).forEach((part, i) => {
     if (i % 2) return out.push(`<pre class="code"><code>${esc(part.replace(/\s+$/, ""))}</code></pre>`);
     if (headings && !program) part = plainTables(part); // 문제 글(함수 방식)의 탭·공백 표
-    let para = [], list = [], table = [], sample = null;
+    let para = [], list = [], numbered = [], table = [], sample = null;
     const endSample = () => {
       if (!sample) return;
       const rows = sample.rows.join("\n").replace(/^\s*\n|\n\s*$/g, ""); // 앞뒤 빈 줄만 뗀다(줄 앞 공백은 답이다)
@@ -277,6 +286,7 @@ function rich(text, headings, program) {
       const what = (name) => keep.includes(name);
       if (para.length && !what("para")) { out.push(`<p>${para.map(inline).join("<br>")}</p>`); para = []; }
       if (list.length && !what("list")) { out.push(`<ul>${list.map((x) => `<li>${inline(x)}</li>`).join("")}</ul>`); list = []; }
+      if (numbered.length && !what("numbered")) { out.push(`<ol${numbered[0][0] === 1 ? "" : ` start="${numbered[0][0]}"`}>${numbered.map(([, x]) => `<li>${inline(x)}</li>`).join("")}</ol>`); numbered = []; }
       if (table.length && !what("table")) {
         const rows = table.map((row) => row.replace(/^\||\|$/g, "").split("|").map((cell) => cell.trim())).filter((cells) => !cells.every((cell) => /^[-: ]*$/.test(cell)));
         out.push(`<div class="table-wrap"><table>${rows.map((cells, n) => `<tr>${cells.map((cell) => (n ? `<td>${inline(cell)}</td>` : `<th scope="col">${inline(cell)}</th>`)).join("")}</tr>`).join("")}</table></div>`);
@@ -292,9 +302,11 @@ function rich(text, headings, program) {
         endSample();
         continue;
       }
-      if (!t) { flush("table", "list"); continue; } // 빈 줄은 문단만 끊는다. 표와 목록은 다른 글이 올 때까지 잇는다
+      if (!t) { flush("table", "list", "numbered"); continue; } // 빈 줄은 문단만 끊는다. 표와 목록은 다른 글이 올 때까지 잇는다
       if (t.startsWith("|") && t.length > 1) { flush("table"); table.push(t); continue; }
       if (/^[-•]\s+/.test(t)) { flush("list"); list.push(t.replace(/^[-•]\s+/, "")); continue; }
+      const num = /^(\d{1,2})[.)]\s+(\S.*)$/.exec(t);
+      if (num) { flush("numbered"); numbered.push([+num[1], num[2]]); continue; }
       const title = /^#{1,4}\s+(.+)$/.exec(t);
       if (title || (headings && HEADING.test(t))) { flush(); out.push(`<h3>${inline(title ? title[1] : t)}</h3>`); continue; }
       flush("para");
@@ -305,6 +317,33 @@ function rich(text, headings, program) {
   });
   return out.join("");
 }
+/* rich-pure:end */
+
+/* 수식: 글에 수식 구간(.math)이 생길 때만 KaTeX를 이 앱 안에서 불러온다(원격 주소 없음). 실패하면 원문 글이 그대로 남는다 */
+let katexReady = null;
+function loadKatex() {
+  katexReady ??= new Promise((ok, fail) => {
+    const css = document.createElement("link"), js = document.createElement("script");
+    css.rel = "stylesheet"; css.href = "/katex/katex.min.css"; js.src = "/katex/katex.min.js";
+    js.onload = () => ok(window.katex); js.onerror = () => { css.remove(); js.remove(); fail(); };
+    document.head.append(css, js);
+  }).catch(() => { katexReady = null; return null; }); // 받지 못하면 다음 수식에서 다시 받는다
+  return katexReady;
+}
+async function renderMath() {
+  const todo = [...document.querySelectorAll(".math[data-tex]:not([data-done])")];
+  if (!todo.length) return;
+  todo.forEach((el) => el.setAttribute("data-done", "1"));
+  const katex = await loadKatex();
+  if (!katex) return todo.forEach((el) => el.removeAttribute("data-done")); // 받지 못했으면 원문 그대로, 다음 글에서 다시 시도
+  for (const el of todo) {
+    if (!el.isConnected) continue;
+    const original = el.textContent;
+    try { katex.render(el.dataset.tex, el, { throwOnError: false, displayMode: "display" in el.dataset }); } catch { el.textContent = original; }
+    if (el.querySelector(".katex-error")) el.textContent = original; // 깨진 수식은 KaTeX의 빨간 글 대신 쓴 그대로
+  }
+}
+new MutationObserver(() => renderMath()).observe(document.body, { childList: true, subtree: true });
 
 const kindChip = (kind) => (kind ? `<span class="kind kind-${esc(kind)}">${KIND[kind] ? ico("k-" + kind) : ""}${esc((KIND[kind] || [kind])[0])}</span>` : ""); // 종류가 없으면(코드와 맞지 않아 서버가 비웠다) 꼬리표를 그리지 않는다
 const meMsg = (text, sending) => `<div class="msg me${sending ? " sending" : ""}"><span class="who">나</span><div class="bubble">${esc(text)}</div></div>`;
@@ -1205,7 +1244,7 @@ function applyState(data) {
   S.prepAt = S.problem.preparing ? S.prepAt || Date.now() : 0; // 준비 진행 줄에 지난 초를 보여 준다(새 준비는 0초부터)
   render();
   clearTimeout(prepTimer);
-  if (S.problem.preparing && connected()) { // 튜터가 뒤에서 풀이 순서를 준비하는 중: 3초마다 다시 보고, 끝나면 표시를 걷는다(문제 화면을 떠나면 멈춘다)
+  if ((S.problem.preparing || S.problem.checking) && connected()) { // 튜터가 뒤에서 풀이 순서나 숨은 테스트를 준비하는 중: 3초마다 다시 보고, 끝나면 표시를 걷는다(문제 화면을 떠나면 멈춘다)
     const pid = S.pid;
     prepTimer = setTimeout(() => { if (S.view === "code" && S.pid === pid) loadState(); }, 3000);
   }
@@ -1265,12 +1304,29 @@ async function prepAgain() {
   try { S.note.start = null; S.tried = null; S.problem.prepare_failed = false; S.prepAt = 0; await loadState(true); say(S.problem.preparing ? "튜터가 풀이 순서를 다시 준비해요." : ""); } finally { prepAsking = false; }
 }
 
-/** 등록한 문제의 준비·검증 한 줄: "풀이 준비 중 · 숨은 테스트 n개 만듦 · 검증: 예시와 대조 모두 통과" */
+/** 숨은 테스트를 만들며 찾은 더 정확한 풀이로 바꾼다(대화를 시작해 저절로 바꾸지 않은 것). 대화·블록 진행은 서버가 지우고 코드 칸은 그대로 둔다. */
+async function swapGuide() {
+  if (prepAsking) return;
+  const pid = S.pid;
+  prepAsking = true;
+  $("swap-guide").disabled = true;
+  clearTimeout(blocksTimer); blocksTimer = null; // 지워질 블록 칸을 다시 보내지 않는다
+  try {
+    const r = await api("/api/swap", { id: pid });
+    if (S.pid !== pid) return;
+    if (r.ok) { Object.assign(S, { blockCode: {}, debug: null, quote: null, prepAt: 0 }); S.note.start = null; }
+    await loadState();
+    say(r.ok && S.problem.preparing ? "튜터가 새 풀이로 풀이 순서를 다시 준비해요." : "");
+  } finally { prepAsking = false; }
+}
+
+/** 등록한 문제의 준비·검증 한 줄: "풀이 준비 중 · 숨은 테스트 n개 만듦 · 검증: 예시와 대조 모두 통과". 준비는 두 걸음이다(풀이 순서 → 숨은 테스트) */
 function renderCheckLine(p) {
-  const c = p.check || {}, made = (Number(c.hidden) || 0) + (Number(c.efficiency) || 0);
-  const parts = p.sample ? [] : [p.preparing ? "풀이 준비 중" : "", made ? `숨은 테스트 ${made}개 만듦` : "", p.verified_name ? `검증: ${p.verified_name}` : "", c.why && p.verified !== "all" ? String(c.why) : "", p.prepare_failed && !p.preparing ? "튜터가 풀이 순서를 준비하지 못했어요." : ""].filter(Boolean).map(esc); // 준비가 실패로 끝났으면 말하고 다시 준비하는 길을 둔다
+  const c = p.check || {}, made = (Number(c.hidden) || 0) + (Number(c.efficiency) || 0), better = p.better && !p.preparing;
+  const parts = p.sample ? [] : [p.preparing ? "풀이 준비 중" : p.checking ? "숨은 테스트 만드는 중" : "", made ? `숨은 테스트 ${made}개 만듦` : "", p.verified_name ? `검증: ${p.verified_name}` : "", c.why && p.verified !== "all" ? String(c.why) : "", p.prepare_failed && !p.preparing ? "튜터가 풀이 순서를 준비하지 못했어요." : "",
+    better ? "튜터의 풀이를 더 정확한 것으로 바꿀 수 있어요" : "", better ? "다시 준비하면 대화·해설·블록 칸은 처음부터예요(코드 칸과 제출 기록은 남아요)" : ""].filter(Boolean).map(esc); // 준비가 실패로 끝났으면 말하고 다시 준비하는 길을 둔다
   if (p.preparing) parts[0] += ` <span class="secs" data-since="${S.prepAt}">${since(S.prepAt)}초</span> · 보통 1분 안팎`; // 다른 기다림 표시처럼 지난 초
-  $("p-check").innerHTML = parts.length ? `${p.preparing ? DOTS : ""}<span>${parts.join(" · ")}</span>${p.prepare_failed && !p.preparing ? ' <button type="button" class="btn small" id="prep-again-top" data-model>다시 준비</button>' : ""}` : "";
+  $("p-check").innerHTML = parts.length ? `${p.preparing || p.checking ? DOTS : ""}<span>${parts.join(" · ")}</span>${p.prepare_failed && !p.preparing ? ' <button type="button" class="btn small" id="prep-again-top" data-model>다시 준비</button>' : ""}${better ? ' <button type="button" class="btn small" id="swap-guide" data-model>다시 준비</button>' : ""}` : "";
   $("p-check").hidden = !parts.length;
 }
 
@@ -3222,7 +3278,7 @@ document.addEventListener("click", (e) => {
     "lang-yes": () => changeLanguage(S.langWant), "lang-no": () => { S.langWant = null; render(); $("p-lang-select").focus(); }, "debug-start": debugStart, "to-feedback": askFeedback, "fb-again": askFeedback, "fb-get": askFeedback,
     "old-feedback": () => { location.hash = `#/p/${S.pid}/feedback`; },
     "goto-line": gotoLine,
-    "prep-again": prepAgain, "prep-again-top": prepAgain,
+    "prep-again": prepAgain, "prep-again-top": prepAgain, "swap-guide": swapGuide,
     "cp-save": saveCheckpoint, "cp-restore": () => askCode("restore"), "code-clear": () => askCode("clear"),
     "code-yes": async () => {
       const run = S.codeAsk === "pull" && S.pullThenRun;

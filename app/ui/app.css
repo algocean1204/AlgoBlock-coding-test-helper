@@ -1139,3 +1139,10 @@ details.fold .ladders { box-shadow: none; } details.fold .legend { margin: 0 0 8
 .ready-left { margin-top: 4px; padding-top: 12px; border-top: 1px solid var(--line); } .points.plain.ready-left li { display: grid; grid-template-columns: 7em minmax(0, 1fr) auto; align-items: baseline; gap: 4px 12px; } .ready-left .link { font-size: 13px; }
 #view-home .sides { margin-top: 18px; } #view-home .side > .list-label { margin-top: 0; }
 @media (max-width: 860px) { .ready-left li { grid-template-columns: minmax(0, 1fr); } }
+
+/* 글 속 수식(KaTeX)과 위첨자·번호 목록 */
+.math[data-display] { display: block; overflow-x: auto; padding: 4px 0; text-align: center; }
+.math .katex { font-size: 1.08em; }
+.prose ol, .bubble ol { display: grid; gap: 4px; padding-left: 22px; list-style: decimal; }
+.prose ol li::marker, .bubble ol li::marker { color: var(--faint); }
+sup { font-size: 0.75em; line-height: 0; vertical-align: super; }

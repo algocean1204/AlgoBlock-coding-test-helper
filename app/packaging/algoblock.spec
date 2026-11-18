@@ -30,8 +30,10 @@ hidden = ["server", "window", "casegen"] + collect_submodules("tutor", filter=ke
 hidden += collect_submodules("langgraph") + collect_submodules("qdrant_client.local") + ["onnxruntime", "tokenizers"]
 datas = [(str(UI / name), "ui") for name in ("index.html", "app.css", "app.js", "highlight.js", "builtin.json", "PretendardVariable.woff2", "PretendardVariable-LICENSE.txt", "icon.svg", "favicon.svg", "tour-demos.js", "tour-demos.css")]
 datas += [(str(APP / "tutor" / "plan" / "guide.md"), "tutor/plan")]
+datas += [(str(UI / "katex" / name), "ui/katex") for name in ("katex.min.js", "katex.min.css")]  # 수식(KaTeX) 글꼴까지 정적 파일로
+datas += [(str(path), "ui/katex/fonts") for path in (UI / "katex" / "fonts").glob("*.woff2")]
 # 배포물에 라이선스 글을 같이 넣는다(이 앱의 MIT, 함께 묶는 것들의 고지)
-datas += [(str(APP.parent / "LICENSE"), "licenses"), (str(APP.parent / "Docs" / "THIRD_PARTY_NOTICES.md"), "licenses"), (str(UI / "stageshow" / "LICENSE-stageshow.txt"), "licenses")]
+datas += [(str(APP.parent / "LICENSE"), "licenses"), (str(APP.parent / "Docs" / "THIRD_PARTY_NOTICES.md"), "licenses"), (str(UI / "stageshow" / "LICENSE-stageshow.txt"), "licenses"), (str(UI / "katex" / "LICENSE-katex.txt"), "licenses")]
 datas += [(str(path), str(Path("judge") / path.relative_to(APP / "judge").parent))
           for path in (APP / "judge").rglob("*")
           if path.is_file() and "__pycache__" not in path.parts and path.suffix != ".md"]

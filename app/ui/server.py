@@ -25,7 +25,7 @@ import uuid
 from collections import Counter, defaultdict
 from contextlib import contextmanager, nullcontext
 from datetime import date, datetime, timedelta, timezone
-from functools import lru_cache
+from functools import lru_cache, partial
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from types import SimpleNamespace
@@ -53,11 +53,12 @@ from tutor.common.talk_rules import MANY_ANSWERS  # noqa: E402
 from tutor.debug.rules import out_key  # noqa: E402
 from tutor.turn.code_check import compile_easy  # noqa: E402
 from tutor.save.respond import blocks_body, shown_count  # noqa: E402
-from tutor.ingest import IngestError, ocr_doubts, read_pages, reread  # noqa: E402
+from tutor.ingest import IngestError, ocr_doubts, outline, read_pages, reread  # noqa: E402
 from tutor.ingest.files import split_files  # noqa: E402
 from tutor.eval.scenarios import all_scenarios  # noqa: E402
 from tutor.knowledge.ontology import PITFALL_GROUPS, PITFALLS, TECHNIQUES, pitfall_text, technique_name, techniques_of  # noqa: E402
 from tutor.llm import LlmNotConfigured, themes, use_llm  # noqa: E402
+from tutor.state import Solution  # noqa: E402
 from tutor.store.sqlite import now  # noqa: E402
 
 import casegen  # noqa: E402  (효율성 케이스의 큰 입력을 다시 만든다)
@@ -81,12 +82,15 @@ HINTS_FILE = DATA / "hints.json"  # 혼자 풀기에서 블록마다 이번 풀�
 WAY_FILE = DATA / "ways.json"  # 문제마다 고른 푸는 방식 {문항: solo·chair·guide}. 웹뷰는 localStorage를 남기지 않아 여기에 둔다. 처음부터·문항 지우기에서 지운다
 TOUCHED_FILE = DATA / "touched.json"  # 문제를 마지막으로 손댄 시각 {문항: ISO 시각}(코드 저장·실행·제출·힌트). '이어서 풀기'가 가장 최근에 쓰던 문제를 고른다
 KINDS = ("example", "accuracy", "efficiency")  # 케이스 종류: 공개 예시, 숨긴 정확성, 숨긴 효율성(큰 입력)
+KATEX_FONTS = ("KaTeX_AMS-Regular.woff2", "KaTeX_Caligraphic-Bold.woff2", "KaTeX_Caligraphic-Regular.woff2", "KaTeX_Fraktur-Bold.woff2", "KaTeX_Fraktur-Regular.woff2", "KaTeX_Main-Bold.woff2", "KaTeX_Main-BoldItalic.woff2", "KaTeX_Main-Italic.woff2", "KaTeX_Main-Regular.woff2", "KaTeX_Math-BoldItalic.woff2", "KaTeX_Math-Italic.woff2", "KaTeX_SansSerif-Bold.woff2", "KaTeX_SansSerif-Italic.woff2", "KaTeX_SansSerif-Regular.woff2", "KaTeX_Script-Regular.woff2", "KaTeX_Size1-Regular.woff2", "KaTeX_Size2-Regular.woff2", "KaTeX_Size3-Regular.woff2", "KaTeX_Size4-Regular.woff2", "KaTeX_Typewriter-Regular.woff2")  # 수식 글꼴(woff2만)
 STATIC = {"/": ("index.html", "text/html"), "/index.html": ("index.html", "text/html"),
           "/app.css": ("app.css", "text/css"), "/app.js": ("app.js", "text/javascript"),
           "/highlight.js": ("highlight.js", "text/javascript"),  # 코드 칸의 문법 색(채점 언어 5개)
           "/icon.svg": ("icon.svg", "image/svg+xml"), "/favicon.svg": ("favicon.svg", "image/svg+xml"),  # 앱 아이콘과 탭 아이콘(같은 그림, 여백만 다르다)
           "/tour-demos.js": ("tour-demos.js", "text/javascript"), "/tour-demos.css": ("tour-demos.css", "text/css"),  # 처음 안내의 움직이는 데모(stageshow/에서 미리 빌드, 안내를 열 때만 불러온다)
-          "/PretendardVariable.woff2": ("PretendardVariable.woff2", "font/woff2")}  # 맥 밖에서 쓰는 글꼴(OFL)
+          "/PretendardVariable.woff2": ("PretendardVariable.woff2", "font/woff2"),  # 맥 밖에서 쓰는 글꼴(OFL)
+          "/katex/katex.min.js": ("katex/katex.min.js", "text/javascript"), "/katex/katex.min.css": ("katex/katex.min.css", "text/css"),  # 문제 글의 수식(MIT, 수식이 있을 때만 불러온다)
+          **{f"/katex/fonts/{n}": (f"katex/fonts/{n}", "font/woff2") for n in KATEX_FONTS}}
 KEYS = {"claude": "ANTHROPIC_API_KEY", "openai": "OPENAI_API_KEY"}  # 지원하는 공급자는 Claude·OpenAI 둘이다(그 밖의 키는 저장돼 있어도 읽지 않는다)
 KEY_FORM = {"claude": ("Claude", "sk-ant-"), "openai": ("OpenAI", "sk-")}  # 공급자 키의 꼴: 접두사로 시작하고 영문·숫자·-·_만(빈칸·한글이 든 글은 키가 아니다)
 SAMPLE_TITLES = {"hash_library": "책을 돌려주지 않은 학생", "stack_brackets": "괄호 짝 맞추기", "brute_pairs": "카드 두 장의 합"}
@@ -218,6 +222,9 @@ PREPARED: set[str] = set()
 PREPARING: set[str] = set()  # 지금 뒤에서 미리 만들기가 도는 문항(화면이 '준비 중'을 보여 준다)
 PREP_FAILED: set[str] = set()  # 마지막 미리 만들기가 실패한 문항(화면이 '준비하지 못했어요'와 '다시 준비'를 보여 준다)
 RECHECKED: set[str] = set()  # 이 프로세스에서 대조를 시작한 문항(대조 없이 준비해 둔 등록 문제를 열 때 한 번)
+CHECKING: Counter = Counter()  # 문항마다 지금 뒤에서 도는 대조(준비의 2걸음) 수(화면의 '숨은 테스트 만드는 중'). 겹친 두 대조 가운데 먼저 끝난 쪽이 표시를 걷지 않게 센다
+CHECK_LOCK = threading.Lock()
+GEN: Counter = Counter()  # 문항마다 가이드를 지운 횟수(글·케이스 수정, 언어 바꾸기, 지우기). 잠금 없이 도는 대조가 옛 가이드의 결과를 남기지 않게 본다
 TOOLS: dict[str, bool] = {}  # 언어 → 이 기기에 실행 도구가 있는가. 한 번 세어 두고, 화면이 '다시 확인'하면 다시 센다
 FILE_LOCK = threading.Lock()
 
@@ -442,23 +449,24 @@ def cross_mode(pid: str) -> str | None:
     return p.mode if p is not None and OWN_ID.fullmatch(pid) and getattr(p, "many_answers", False) is not True else None
 
 
-def cross_run(pid: str, code: str, brute: str, maker: str, bounds: list) -> dict:
-    """정답 풀이와 단순 풀이를 생성기의 입력에서 채점기로 대조한다(casemake). 맞으면 숨은·효율성 케이스를 문제에 붙인다(사용자가 넣은 케이스와 따로, made)."""
+def cross_run(pid: str, code: str, brute: str, maker: str, bounds: list, gen: int | None = None) -> dict:
+    """정답 풀이와 단순 풀이를 생성기의 입력에서 채점기로 대조한다(casemake). 맞으면 숨은·효율성 케이스를 문제에 붙인다(사용자가 넣은 케이스와 따로, made).
+    gen: 잠금 없이 대조를 시작할 때의 GEN. 그사이 가이드가 지워졌으면 케이스를 붙이지 않는다."""
     p = PROBLEMS[pid]
     language = LANG.get(pid, p.language)
     examples = [case for case in p.cases if not case.get("made")]
     arity = len(json.loads(examples[0]["input"])) if p.mode == "function" and examples else None
     found = casemake.make(language, p.mode, code, brute, maker, bounds, arity, decimal=p.mode == "program" and getattr(p, "float_output", False) is True)
-    if found["status"] == "same":
-        folder = LARGE / pid
-        shutil.rmtree(folder, ignore_errors=True)
-        made = [{"id": f"m{n}", "kind": "accuracy", "input": given, "expected": expected, "made": True} for n, (given, expected) in enumerate(found["hidden"], 1)]
-        for n, (given, expected) in enumerate(found["large"]):
-            folder.mkdir(parents=True, exist_ok=True)
-            write_json(folder / f"{n}.json", {"input": given, "expected": expected})
-            made.append({"id": f"e{n + 1}", "kind": "efficiency", "gen": n, "made": True})
-        large_case.cache_clear()
-        with FILE_LOCK_ROWS:
+    with FILE_LOCK_ROWS:  # 수정(edit)은 이 잠금 안에서 GEN을 올린다: 그사이 가이드가 지워졌으면 옛 가이드의 케이스를 붙이지 않는다
+        if found["status"] == "same" and (gen is None or GEN[pid] == gen):
+            folder = LARGE / pid
+            shutil.rmtree(folder, ignore_errors=True)
+            made = [{"id": f"m{n}", "kind": "accuracy", "input": given, "expected": expected, "made": True} for n, (given, expected) in enumerate(found["hidden"], 1)]
+            for n, (given, expected) in enumerate(found["large"]):
+                folder.mkdir(parents=True, exist_ok=True)
+                write_json(folder / f"{n}.json", {"input": given, "expected": expected})
+                made.append({"id": f"e{n + 1}", "kind": "efficiency", "gen": n, "made": True})
+            large_case.cache_clear()
             rows = read_json(PROBLEMS_FILE, [])
             for row in rows:
                 if isinstance(row, dict) and row.get("id") == pid:
@@ -467,23 +475,40 @@ def cross_run(pid: str, code: str, brute: str, maker: str, bounds: list) -> dict
                     if found["limit"]:
                         row["limits"] = {language: found["limit"]}
             write_json(PROBLEMS_FILE, rows)
-        reload_problems()
+            reload_problems()
     return {"status": found["status"], "why": found.get("why") or "", "input": found.get("input"), "got": found.get("got"), "want": found.get("want"), "slow": bool(found.get("slow")),
             "hidden": len(found.get("hidden") or []), "efficiency": len(found.get("large") or []), "dropped": found.get("dropped", 0)}
 
 
-def cross_done(pid: str, verdict: dict) -> None:
-    """대조 결과(검증, 쓴 호출 수와 급, 확인이 필요한 곳, 까닭)를 문제에 남긴다. 다음에 열 때 다시 대조하지 않는다."""
+def cross_done(pid: str, verdict: dict, gen: int | None = None) -> None:
+    """대조 결과(검증, 쓴 호출 수와 급, 확인이 필요한 곳, 까닭)를 문제에 남긴다. 다음에 열 때 다시 대조하지 않는다. gen은 cross_run과 같다."""
+    with FILE_LOCK_ROWS:
+        if gen is None or GEN[pid] == gen:
+            set_row(pid, check={**verdict, "at": now()}, pending=None)
+
+
+def cross_later(pid: str, report: dict | None, tiers: list) -> None:
+    """준비의 1걸음: 정석 가이드의 채점 결과(까닭과 예시마다의 결과만)와 쓴 급을 문제에 맡겨 둔다. 2걸음이 대조에 넘긴다(앱을 껐다 켜도)."""
+    slim = None if report is None else {"status": report.get("status"), "cases": [{key: row.get(key) for key in ("id", "kind", "status")} for row in report.get("cases") or []]}
+    set_row(pid, pending={"language": LANG.get(pid, PROBLEMS[pid].language), "report": slim, "tiers": list(tiers)})
+
+
+def set_row(pid: str, **fields) -> None:
+    """problems.json에서 그 문항의 칸을 바꾼다(값이 None이면 지운다)."""
     with FILE_LOCK_ROWS:
         rows = read_json(PROBLEMS_FILE, [])
         for row in rows:
             if isinstance(row, dict) and row.get("id") == pid:
-                row["check"] = {**verdict, "at": now()}
+                for key, value in fields.items():
+                    row.pop(key, None)
+                    if value is not None:
+                        row[key] = value
         write_json(PROBLEMS_FILE, rows)
     reload_problems()
 
 
 CROSS = SimpleNamespace(mode=cross_mode, run=cross_run, done=cross_done)
+LATER = SimpleNamespace(mode=cross_mode, run=None, later=cross_later)  # 준비의 1걸음: 대조하지 않고(run 없음) 채점 결과와 쓴 급만 맡긴다
 UNVERIFIED = {"verified": "none", "calls": 0, "tiers": [], "doubts": [], "hidden": 0, "efficiency": 0,
               "why": "AI의 풀이를 얻지 못해 검증하지 못했어요. 응답 오류였거나 예시가 문제 글과 맞지 않을 수 있어요."}
 
@@ -492,9 +517,9 @@ VERIFIED_WORDS = {"all": "예시와 자동 테스트 모두 통과", "examples":
 
 
 @contextmanager
-def tutor():
-    """요청마다 연결 하나(SQLite 연결은 만든 스레드에서만 쓴다)."""
-    one = Tutor(str(DB), index=index(), check=verify, given=given, cross=CROSS, shape=problem_shape)
+def tutor(cross=CROSS):
+    """요청마다 연결 하나(SQLite 연결은 만든 스레드에서만 쓴다). cross=LATER면 풀이 가이드를 대조하지 않는다(준비의 1걸음)."""
+    one = Tutor(str(DB), index=index(), check=verify, given=given, cross=cross, shape=problem_shape)
     try:
         yield one
     finally:
@@ -513,56 +538,108 @@ def problem(body: dict):
 
 
 def prepare_later(pid: str) -> None:
-    """뼈대(명세·패턴)와 블록 계획을 뒤에서 미리 만든다. 화면은 기다리지 않는다. 실패해도 첫 질문 때 다시 만든다."""
+    """풀이 준비를 뒤에서 두 걸음으로 한다. 화면은 기다리지 않는다. 실패해도 첫 질문 때 다시 만든다.
+    1걸음: 뼈대(명세·패턴), 풀이 가이드, 블록 계획을 대조 없이 만든다(문제 잠금을 쥔다. 튜터 시작은 이것만 기다린다).
+    2걸음: 새로 만든 가이드를 대조해 숨은 테스트를 만든다(recheck. 문제 잠금을 쥐지 않는다)."""
     if not PREPARE or pid in PREPARED or not connected():  # 모델이 연결되지 않았으면 만들 수 없다(AI 없이 풀 때)
+        return
+    if getattr(PROBLEMS.get(pid), "hold", False) is True:  # 문제 글로 보이지 않아 미뤄 둔 문제(/api/problems/prepare가 푼다)
         return
     PREPARED.add(pid)
     PREPARING.add(pid)
     PREP_FAILED.discard(pid)
 
     def run():
+        fresh = False
         try:
-            with LOCKS[pid], model(), tutor() as t:
+            with LOCKS[pid], model(), tutor(LATER) as t:
+                had = t.store.load(pid).canonical
                 out = t.prepare(pid)
                 if out.status >= 400:  # 모델의 답이 어긋났거나 공급자 오류(엔진은 예외 대신 실패 결과를 돌려준다)
                     raise RuntimeError(f"{out.status} {out.body}")
-                if CROSS.mode(pid) and t.store.load(pid).canonical is None and not getattr(PROBLEMS.get(pid), "check", None):
+                guide = t.store.load(pid).canonical
+                if CROSS.mode(pid) and guide is None and not getattr(PROBLEMS.get(pid), "check", None):
                     cross_done(pid, UNVERIFIED)  # 준비는 끝났는데 풀이 가이드를 얻지 못했다: 대조 결과가 없는 채로 두면 화면에서 '검증' 줄이 사라진다
+                fresh = had is None and guide is not None and bool(CROSS.mode(pid))  # 이번에 새로 만든 가이드만 대조한다(있던 가이드로 계획만 다시 짰으면 하지 않는다)
         except Exception as exc:  # noqa: BLE001 - 덤이다
             PREPARED.discard(pid)
             PREP_FAILED.add(pid)
             print(f"prepare {pid}: {type(exc).__name__}: {exc}"[:500], file=sys.stderr)
         finally:
+            if fresh:
+                checking(pid, 1)  # 준비 표시를 걷기 전에 단다(화면의 다시 보기가 둘 다 꺼진 틈을 보고 멈추지 않게)
             PREPARING.discard(pid)
+        if fresh:
+            RECHECKED.add(pid)
+            recheck(pid)
 
     threading.Thread(target=run, daemon=True, name=f"prepare-{pid}").start()
 
 
 def recheck_later(pid: str) -> None:
-    """대조 없이 준비해 둔 등록 문제를 뒤에서 한 번 대조한다(Tutor.recheck). 다시 푼 풀이가 대조를 통과해 가이드가 바뀌면,
-    옛 코드로 짠 블록 계획을 지우고 새 가이드로 다시 짠다(사용자의 코드·제출 기록은 남는다)."""
-    if not PREPARE or pid in RECHECKED or pid in PREPARING or not connected():
+    """대조 없이 준비해 둔 등록 문제(대조 기능 전에 등록했거나 2걸음이 끝나기 전에 앱을 껐다)를 열 때 뒤에서 한 번 대조한다."""
+    if not PREPARE or pid in RECHECKED or pid in PREPARING or pid in CHECKING or not CROSS.mode(pid) or not connected():
         return
     RECHECKED.add(pid)
-    PREPARING.add(pid)
+    checking(pid, 1)
+    threading.Thread(target=recheck, args=(pid,), daemon=True, name=f"recheck-{pid}").start()
 
-    def run():
-        try:
-            with LOCKS[pid], model(), tutor() as t:
-                new = t.recheck(pid)
-                if new is not None:
-                    drop_plan(t, pid)
-                    ctx = t.store.load(pid)
-                    t.store.save_success(ctx, None, 0, None, [], None, solution=new)
-                    out = t.prepare(pid)
-                    if out.status >= 400:
-                        raise RuntimeError(f"{out.status} {out.body}")
-        except Exception as exc:  # noqa: BLE001 - 덤이다(다시 열면 지금 계획 그대로 푼다)
-            print(f"recheck {pid}: {type(exc).__name__}: {exc}"[:500], file=sys.stderr)
-        finally:
-            PREPARING.discard(pid)
 
-    threading.Thread(target=run, daemon=True, name=f"recheck-{pid}").start()
+def checking(pid: str, step: int) -> None:
+    """뒤에서 도는 대조 수를 더하거나 뺀다(0이 되면 표시를 걷는다)."""
+    with CHECK_LOCK:
+        CHECKING[pid] += step
+        if CHECKING[pid] <= 0:
+            del CHECKING[pid]
+
+
+def recheck(pid: str) -> None:
+    """준비의 2걸음: 정석 가이드를 대조한다(Tutor.recheck). 모델 호출·실행이 긴 구간이라 문제 잠금을 쥐지 않는다(튜터 시작이 기다리지 않는다).
+    1걸음이 맡겨 둔 채점 결과와 쓴 급(pending. 같은 언어의 것만)을 대조에 넘긴다. 부르는 쪽이 먼저 checking(pid, 1)을 한다.
+    다시 푼 풀이가 대조를 통과해 가이드가 바뀌면 잠금을 잡고 바꿔 끼운다(옛 코드로 짠 계획을 지우고 새 가이드로 다시 짠다. 코드·제출 기록은 남는다).
+    그사이 튜터와 풀기 시작했으면 바꿔 끼우지 않는다: 대화를 지우지 않고 새 가이드를 문제에 남긴다(화면이 '다시 준비'를 보인다)."""
+    gen = GEN[pid]
+    try:
+        cross = SimpleNamespace(mode=cross_mode, run=partial(cross_run, gen=gen), done=partial(cross_done, gen=gen))
+        with model(), tutor(cross) as t:
+            ctx, kept = t.store.load(pid), getattr(PROBLEMS.get(pid), "pending", None) or {}
+            if ctx is None or kept.get("language") != ctx.language:  # 다른 언어의 가이드를 만들 때 맡긴 것이다
+                kept = {}
+            new = t.recheck(pid, **{key: kept[key] for key in ("report", "tiers") if key in kept})
+        if new is not None:
+            with LOCKS[pid], tutor() as t:
+                if GEN[pid] != gen:  # 그사이 글을 고쳤거나 언어를 바꿨다: 옛 가이드에서 나온 풀이다
+                    return
+                if began(t, pid):
+                    set_row(pid, better={"language": t.store.load(pid).language, **vars(new)})
+                    return
+                swap(t, pid, new)
+            prepare_later(pid)
+    except Exception as exc:  # noqa: BLE001 - 덤이다(다시 열면 지금 계획 그대로 푼다)
+        print(f"recheck {pid}: {type(exc).__name__}: {exc}"[:500], file=sys.stderr)
+    finally:
+        checking(pid, -1)
+
+
+def began(t, pid: str) -> bool:
+    """튜터와 풀기 시작했는가(대화·해설·블록 진행·블록 칸의 코드). 계획을 바꿔 끼우면 모두 지워진다."""
+    ctx = t.store.load(pid)
+    return bool(ctx.chair or ctx.guide or ctx.debug or ctx.followups or ctx.explain or ctx.block_states or read_json(BLOCKS_FILE, {}).get(pid))
+
+
+def better_of(p, language: str) -> Solution | None:
+    """2걸음이 찾았지만 대화가 있어 바꿔 끼우지 않은 더 정확한 풀이(이 언어의 것만)."""
+    row = getattr(p, "better", None)
+    if not isinstance(row, dict) or row.get("language") != language:
+        return None
+    return Solution(**{key: value for key, value in row.items() if key != "language"})
+
+
+def swap(t, pid: str, new: Solution) -> None:
+    """가이드를 바꿔 끼운다: 옛 가이드로 짠 계획·대화·블록 진행을 지우고 새 가이드만 남긴다(계획은 prepare_later가 다시 짠다). 문제 잠금 안에서 부른다."""
+    drop_plan(t, pid)
+    t.store.save_success(t.store.load(pid), None, 0, None, [], None, solution=new)
+    set_row(pid, better=None)
 
 
 def chatgpt_status() -> dict:
@@ -1264,7 +1341,8 @@ def assets(pid: str) -> list[dict]:
     return read_json(ASSETS / pid / "index.json", []) if OWN_ID.fullmatch(pid) else []
 
 
-RANGE = re.compile(r"\d[^\n]{0,40}?(?:≤|<=|<|≥|>=|이상|이하|미만|초과)|(?:≤|<=|<|≥|>=|이상|이하|미만|초과)[^\n]{0,40}?\d")  # 제한사항의 수 범위 한 자리
+_CMP = r"(?:≤|<=|<|≥|>=|이상|이하|미만|초과|\\[lg](?:eq?|t)(?![A-Za-z]))"  # 비교 낱말. TeX의 \le·\leq·\ge·\geq·\lt·\gt도(\left·\gets는 아니다)
+RANGE = re.compile(rf"\d[^\n]{{0,40}}?{_CMP}|{_CMP}[^\n]{{0,40}}?\d")  # 제한사항의 수 범위 한 자리
 
 
 def read_doubts(text: str, mode: str) -> list[dict]:
@@ -1322,6 +1400,92 @@ def read_files(body: dict) -> dict:
         raise Refuse("이미지에서 글을 읽으려면 AI를 연결해야 해요. 연결하거나, 글을 직접 붙여 넣어 주세요.", 503, "llm_not_configured") from None
 
 
+READERS = SimpleNamespace(table=table_cases, samples=sample_cases, value=cell_value)  # 모델이 짚은 구간을 읽는 규칙 파서
+NOT_PROBLEM = "문제 글로 보이지 않아요. 그래도 등록할 수 있어요."
+SECTIONS = [(kind, re.compile(words, re.IGNORECASE)) for kind, words in (  # 구역 머리 낱말(사이트를 가리지 않는 일반 낱말)
+    ("body", r"문제(?:\s*설명)?|설명|참고|힌트|노트|problem(?:\s+description)?|description|statement|notes?|hints?"),
+    ("limits", r"제한\s*사항|제한|제약(?:\s*조건|\s*사항)?|constraints?|limits?"),
+    ("input", r"입력|input"), ("output", r"출력|output"),
+    ("sample", r"입출력\s*예(?:\s*설명|\s*#?\s*\d+)?|예제(?:\s*설명)?|예시|examples?|samples?"))]
+TOUCHED = {"title": ("title",), "mode": ("mode",), "cases": ("cases", "names"), "many": ("many",)}  # 사용자가 고친 칸 → 감지가 덮지 않고 제안(suggest)으로만 주는 칸
+
+
+def section_of(line: str) -> str:
+    """구역 머리 줄이면 그 구역(body·limits·input·output·sample), 아니면 빈 글. 마크다운 #·굵게·끝의 쌍점은 뗀다. 예제 머리는 SAMPLE_HEAD로 본다."""
+    if SAMPLE_HEAD.fullmatch(line):
+        return "sample"
+    head = line.strip().strip("#*:： ")
+    return next((kind for kind, words in SECTIONS if words.fullmatch(head)), "")
+
+
+def title_at(lines: list[str]) -> int | None:
+    """제목 줄(0부터): 구역 머리를 건너뛴 첫 줄이 마크다운 제목(#)이거나 40자 이하이고 문장이 아니면 그 줄, 아니면 None."""
+    for n, line in enumerate(lines):
+        text = line.strip()
+        if text and not section_of(text):
+            return n if re.match(r"#{1,6}\s", text) or (len(text) <= 40 and not re.search(r"[.?]$|(입니다|합니다|주어집니다)$", text)) else None
+    return None
+
+
+def detected(raw: list[str], lines: list[str], rule: dict, kinds: list[str], title: int | None, mode: str | None, told: dict | None) -> dict:
+    """감지 응답 하나. 방식: 정한 방식 → 규칙이 예시를 찾은 방식 → 모델의 방식 → 함수. 규칙이 예시를 깨끗이 읽었으면(읽지 못한 줄·넘친 글이 없으면) 규칙의 예시,
+    아니고 모델이 짚은 구간에서 읽은 예시가 있으면 그것. bounds: 제한·입력 구역에서 수 범위가 있는 줄(원래 글 그대로)."""
+    mode = mode or next((kind for kind in rule if rule[kind]["cases"] or rule[kind]["skipped"]), None) or (told["mode"] if told else "function")
+    found = rule[mode]
+    if told and not (found["cases"] and not found["skipped"] and not found.get("missed") and not found.get("spill")) and told[mode]["cases"]:
+        found = told[mode]
+    seen = any(part["cases"] or part["skipped"] for part in [*rule.values(), *([told["function"], told["program"]] if told else [])])
+    problem = (told is None or told["problem"]) and (seen or any(RANGE.search(line) for line, kind in zip(lines, kinds) if kind != "noise"))
+    name = re.sub(r"^#{1,6}\s*", "", lines[title]).strip() if title is not None else ""
+    return {"problem": problem, "notice": "" if problem else NOT_PROBLEM, "title": name if len(name) <= 80 else "", "mode": mode, **found, "kinds": kinds,
+            "bounds": [raw[n] for n, (line, kind) in enumerate(zip(lines, kinds)) if kind in ("limits", "input") and RANGE.search(line)],
+            "many": bool(told and told["many"] and mode == "program"), "suggest": {}}
+
+
+def detect(body: dict) -> dict:
+    """붙여 넣은 글에서 방식·예시·제목·수 범위와 줄마다의 구역(kinds: title·body·limits·input·output·sample·noise·빈 글)을 찾는다. 저장하지 않는다.
+    먼저 규칙(구역 머리 낱말, table_cases·sample_cases. 모델 0회). fast가 아니고 AI가 연결돼 있으면 문제 나누기 모델이 줄 구간을 짚어 보탠다
+    (outline.ask: 그 과정의 급으로 1회, 호출이 실패하거나 검사에 걸리면 가운데 급으로 1회. 공급자 연결은 모양이 깨진 답을 한 번 더 받는다. 둘 다 안 되면 규칙 결과 그대로).
+    모델은 제목 줄·방식·잡음 줄·빈 예시와 그 인자 이름·답이 여럿만 채운다. 글에 없는 글은 싣지 않는다: 제목은 그 줄 그대로, 예시 값과 인자 이름은 글에 글자 그대로 있는 것만.
+    줄은 str.splitlines로 나눈다(kinds의 길이가 그 줄 수다). touched(사용자가 고친 칸 이름)는 규칙 결과 그대로 두고 모델이 다르게 본 값은 suggest에 싣는다.
+    touched에 mode가 있으면 보낸 mode로 읽는다. problem이 거짓이면(모델이 문제 글이 아니라고 했거나, 예시도 잡음이 아닌 줄의 수 범위도 없음) notice를 싣는다.
+    등록할 때 problem: false를 그대로 보내면 뒤 준비를 미룬다."""
+    text, touched = body.get("text"), body.get("touched") or []
+    if not isinstance(text, str):
+        raise Refuse("문제 글은 글이어야 해요.", field="text")
+    if not isinstance(touched, list) or not all(isinstance(key, str) for key in touched):
+        raise Refuse("고친 칸 모양이 맞지 않아요.")
+    raw = text.splitlines()
+    lines = [outline.normalize(line) for line in raw]  # 줄 끝·빈칸·전각을 고른 줄. 줄 번호는 원래 글과 같다
+    joined = "\n".join(lines)
+    mode = body.get("mode") if "mode" in touched and body.get("mode") in ("function", "program") else None
+    rule, title = {"function": table_cases(joined), "program": sample_cases(joined)}, title_at(lines)
+    kinds, now = [], ""
+    for line in lines:
+        now = section_of(line) or now
+        kinds.append(now)
+    if title is not None:
+        kinds[title] = "title"
+    fast = detected(raw, lines, rule, kinds, title, mode, None)
+    told = None if body.get("fast") is True or not connected() or len(joined) > outline.MAX_CHARS else outline.ask(lines, READERS)
+    if told is None:
+        return fast
+    if told["title"] is not None:
+        title = told["title"] - 1
+        kinds = ["" if kind == "title" else kind for kind in kinds]
+        kinds[title] = "title"
+    for a, b in told["noise"]:
+        kinds[a - 1:b] = ["noise"] * (b - a + 1)
+    out = detected(raw, lines, rule, kinds, title, mode, told)
+    for key in TOUCHED.keys() & set(touched):
+        for field in TOUCHED[key]:
+            if out[field] != fast[field]:
+                out["suggest"][field], out[field] = out[field], fast[field]
+        if key == "cases":  # 읽지 못한 줄 수와 알림도 규칙 결과 그대로
+            out = {**{k: v for k, v in out.items() if k not in ("skipped", "missed", "spill")}, **{k: fast[k] for k in ("skipped", "missed", "spill") if k in fast}}
+    return out
+
+
 def chosen_theme(body: dict) -> str:
     """등록·수정 요청의 주제(theme): 빈 글(정하지 않음)이거나 주제 15개 가운데 하나."""
     theme = body.get("theme") or ""
@@ -1368,7 +1532,8 @@ def register(body: dict, once: bool = False) -> dict:
     pid = "u" + uuid.uuid4().hex[:8]
     names = arg_names(body, cases) if mode == "function" else None
     row = {"id": pid, "title": title, "language": language, "mode": mode, "text": text, "cases": cases, **({"names": names} if names else {}),
-           **({"theme": theme} if theme else {}), **({"level": level} if level else {}), **answer_flags(body, mode)}
+           **({"theme": theme} if theme else {}), **({"level": level} if level else {}), **answer_flags(body, mode),
+           **({"hold": True} if body.get("problem") is False else {})}  # 감지(detect)가 문제 글로 보지 않았다: 사용자가 한 번 더 누를 때까지 뒤 준비를 미룬다
     with tutor() as t:
         t.store.put_problem(pid, language, text, title=title)
     with FILE_LOCK_ROWS:
@@ -1412,12 +1577,12 @@ def edit(body: dict) -> dict:
             if level:
                 row["level"] = level
         if text_changed or cases_changed:  # 대조로 만든 케이스와 결과는 옛 글·케이스에서 나왔다. 다음 준비(또는 열 때의 대조)가 다시 만든다
-            row.pop("made", None)
-            row.pop("check", None)
-            row.pop("limits", None)
+            for key in ("made", "check", "limits", "better", "pending"):
+                row.pop(key, None)
             shutil.rmtree(LARGE / pid, ignore_errors=True)
             large_case.cache_clear()
             RECHECKED.discard(pid)
+            GEN[pid] += 1
         if "names" in body:  # 입출력 예 표에서 다시 채웠다. 없으면 예전 이름 그대로
             names = arg_names(body, cases) if found.mode == "function" else None
             row.pop("names", None)
@@ -1449,8 +1614,23 @@ def edit(body: dict) -> dict:
     return {"id": pid}
 
 
+def unhold(body: dict) -> dict:
+    """문제 글로 보이지 않아 미뤄 둔 뒤 준비를 사용자가 한 번 더 눌러 시작한다(연결이 없으면 미룸만 푼다)."""
+    pid = own(body).id
+    with FILE_LOCK_ROWS:
+        rows = read_json(PROBLEMS_FILE, [])
+        for raw in rows:
+            if isinstance(raw, dict) and raw.get("id") == pid:
+                raw.pop("hold", None)
+        write_json(PROBLEMS_FILE, rows)
+        reload_problems()
+    prepare_later(pid)
+    return {"id": pid, "preparing": pid in PREPARING}
+
+
 def delete(body: dict) -> dict:
-    """등록한 문항과 그 기록(엔진 저장소의 모든 표, 블록 코드, 언어별 코드, 체크포인트, 올린 원본)을 지운다. 뒤에서 미리 만들기가 돌고 있으면 끝나기를 기다린다."""
+    """등록한 문항과 그 기록(엔진 저장소의 모든 표, 블록 코드, 언어별 코드, 체크포인트, 올린 원본)을 지운다. 준비의 1걸음이 돌고 있으면 끝나기를 기다린다.
+    2걸음(대조)은 기다리지 않는다: 지운 뒤에 끝난 대조는 아무것도 남기지 않는다(GEN)."""
     pid = own(body).id
     with LOCKS[pid], FILE_LOCK_ROWS:
         write_json(PROBLEMS_FILE, [raw for raw in read_json(PROBLEMS_FILE, []) if not (isinstance(raw, dict) and raw.get("id") == pid)])
@@ -1467,6 +1647,7 @@ def delete(body: dict) -> dict:
         LANG.pop(pid, None)
         REPORTS.pop(pid, None)
         PREPARED.discard(pid)
+        GEN[pid] += 1
     return {"ok": True}
 
 
@@ -1869,6 +2050,7 @@ def drop_plan(t, pid: str, *more: str) -> None:
         for table in ("message", "block_state", "debug_state", "tutor_session", "solution", *more):
             t.store.conn.execute(f"DELETE FROM {table} WHERE problem_id=?", (pid,))
     PREPARED.discard(pid)
+    GEN[pid] += 1
     REPORTS.pop(pid, None)
     write_json(BLOCKS_FILE, {key: value for key, value in read_json(BLOCKS_FILE, {}).items() if key != pid})
     own_way(pid, False)
@@ -2054,7 +2236,7 @@ def state_body(t, p, body: dict) -> dict:
     examples = row["examples"] if row else [{"input": case["input"], "expected": case["expected"], "note": ""} for case in p.cases if case.get("kind", "example") == "example"]
     # 내가 등록한 문제는 수정 화면이 숨긴 케이스까지 값을 보여 준다(내가 넣은 것이다). 문제 화면은 examples만 쓴다
     mine = {} if p.sample else {"own_cases": [{"input": case["input"], "expected": case["expected"], "hidden": case.get("kind", "example") != "example"} for case in p.cases if not case.get("made")],
-                                **{key: getattr(p, key, False) is True for key in ANSWER_FLAGS}}
+                                **{key: getattr(p, key, False) is True for key in (*ANSWER_FLAGS, "hold")}}  # hold: 문제 글로 보이지 않아 뒤 준비를 미뤘다
     return {"problem": {"id": pid, "title": p.title, "language": ctx.language, "text": p.text, "sample": p.sample, "builtin": p.builtin, "mode": p.mode,
                         "theme": p.theme, "theme_name": p.theme_name or (theme_name(planned) if planned else ""), "level": p.level, **labels_of(t, p, ctx.language),
                         "languages": row["languages"] if row else list(check_judge().LANGUAGES), "starter": row["starters"].get(ctx.language, "") if row else own_starter(p, ctx.language),
@@ -2064,7 +2246,8 @@ def state_body(t, p, body: dict) -> dict:
                                   "passed_now": passed_now,
                                   "unaided_open": unaided_open(p, problem_subs(t, pid), study, talked, passed_now)},
                         "code": ctx.direct_code or "", "passed": passed, "submitted": total,
-                        "tools": tools(), "preparing": pid in PREPARING, "prepare_failed": pid in PREP_FAILED and ctx.plan is None, "assets": assets(pid), "checkpoint_at": (checkpoint(pid, ctx.language) or {}).get("at"), **mine},
+                        "tools": tools(), "preparing": pid in PREPARING, "checking": pid in CHECKING, "better": better_of(p, ctx.language) is not None,
+                        "prepare_failed": pid in PREP_FAILED and ctx.plan is None, "assets": assets(pid), "checkpoint_at": (checkpoint(pid, ctx.language) or {}).get("at"), **mine},
             "session": t.session(pid, body.get("mode")).body, "blocks": read_json(BLOCKS_FILE, {}).get(pid, {}), "own_way": pid in read_json(OWN_FILE, {}),
             "way": way_of(t, pid), "has_feedback": t.store.get_feedback(pid) is not None}
 
@@ -2443,6 +2626,10 @@ def handle(path: str, body: dict) -> tuple[int, dict]:
             raise Refuse("문제 글은 글이어야 해요.", field="text")
         found, other = (sample_cases, table_cases) if body.get("mode") == "program" else (table_cases, sample_cases)
         return 200, {**found(body["text"]), "other": len(other(body["text"])["cases"])}  # other: 다른 방식으로 찾은 케이스 수(방식을 바꾸자고 한다)
+    if path == "/api/problems/detect":  # 붙여 넣은 글에서 방식·예시·제목·잡음 줄 찾기(fast면 규칙만)
+        return 200, detect(body)
+    if path == "/api/problems/prepare":  # 문제 글로 보이지 않아 미뤄 둔 준비를 시작한다
+        return 200, unhold(body)
     if path == "/api/tools":  # 언어 도구 있음·없음. refresh가 참이면 다시 센다(도구를 설치한 뒤)
         return 200, {"tools": tools(body.get("refresh") is True)}
     if path == "/api/accounts":
@@ -2666,6 +2853,14 @@ def handle(path: str, body: dict) -> tuple[int, dict]:
             with LOCKS[pid]:
                 reset(t, pid)
             return 200, {"ok": True}
+        if path == "/api/swap":  # 2걸음이 찾은 더 정확한 풀이로 바꿔 끼운다(화면의 '다시 준비'. 대화·블록 진행은 지우고 계획을 다시 짠다)
+            with LOCKS[pid]:  # 언어도 잠금 안에서 읽는다(언어 바꾸기가 끝난 뒤의 언어로 고른다)
+                new = better_of(PROBLEMS[pid], t.store.load(pid).language)
+                if new is not None:
+                    swap(t, pid, new)
+            if new is not None:
+                prepare_later(pid)
+            return 200, {"ok": new is not None}
         if path == "/api/submit":
             return 200, result_body(judge(t, p, language, need_code(body)))
         if path == "/api/feedback/get":

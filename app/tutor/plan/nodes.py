@@ -72,6 +72,7 @@ def solve(state: MainState, config) -> dict:
     사용자 코드나 사용자가 말한 방법을 따를 때만 그 방법의 가이드를 따로 만든다(정석 가이드는 덮어쓰지 않는다).
     모델이 실패하면 가이드 없이 간다(블록은 예전 방식으로 짠다).
     사용자 방법 따르기에서 그 방법으로 못 풀면(followed=false, 또는 채점 실패) 지금 계획을 지킨다.
+    채점에서 틀리면 한 급 올려 다시 푼다(작음 → 가운데 → 큼. 과정의 급이 이미 가운데 이상이면 첫 다시 풀기는 그 급 그대로). 쓴 급은 대조 결과(tiers)에 남는다.
     """
     ctx, strategy = state["ctx"], state.get("strategy") or "fresh"
     if ctx.canonical is not None and strategy in ("fresh", "canonical"):
@@ -84,12 +85,15 @@ def solve(state: MainState, config) -> dict:
     fixed = given(ctx.problem_id, ctx.language) if given is not None and strategy in ("fresh", "canonical") else None
     if fixed and (fixed.get("code") or "").strip():
         return _given_guide(state, fixed, check)
-    retry, got, report = "", None, None
+    first = themes.chosen("guide")[0]  # 처음 풀이를 쓴 급(풀이 가이드 과정)
+    retry, got, report, tiers, up = "", None, None, [], iter(("middle", "large"))
+    used, model = first, model_name()
     for _ in range(SOLVE_TRIES):
         try:
-            got: Solved = llm(model_name()).use(solve_messages(state, retry), solved_schema(state), task="plan.solve")
+            got: Solved = llm(model).use(solve_messages(state, retry), solved_schema(state), task="plan.solve")
         except LlmError:
             return {}
+        tiers.append(used)
         code = strip_fence(got.code or "").strip("\n")
         got = replace(got, code=code)
         if strategy == "follow" and not got.followed:
@@ -101,6 +105,7 @@ def solve(state: MainState, config) -> dict:
         if report is None or report.get("status") not in REWRITABLE:  # 통과했거나, 채점하지 못했다(케이스·채점기·도구가 없음. 다시 써도 같다)
             break
         retry = "\n".join(part for part in (f"코드:\n{code}", f"채점 결과: {report.get('status')}", symptom(report), error_tail(report)) if part)
+        used, model = climb(next(up, "large"), first)  # 예시를 통과하지 못했다: 한 급 올려 다시 푼다(머리만 다르면 같은 급으로)
     else:
         if strategy == "follow":
             return {"replanned": "rejected", "result": None}  # 사용자 방법으로는 통과하는 코드를 못 썼다
@@ -108,7 +113,10 @@ def solve(state: MainState, config) -> dict:
         return {}
     crossed = ""
     if cross is not None and check is not None and strategy in ("fresh", "canonical") and cross.mode(ctx.problem_id):
-        got, crossed = cross_check(state, got, verified_by(report), report, check, cross)  # 정석 가이드만 실행으로 대조한다(사용자 코드·방법을 따른 가이드는 하지 않는다)
+        if cross.run is None:  # 대조는 나중에 한다(서버 준비의 2걸음): 이 채점 결과와 쓴 급을 맡겨 둔다
+            cross.later(ctx.problem_id, report, tiers)
+        else:  # 정석 가이드만 실행으로 대조한다(사용자 코드·방법을 따른 가이드는 하지 않는다)
+            got, crossed = cross_check(state, got, verified_by(report), report, check, cross, tiers)
     trusted = verified_by(report) is True and crossed != "none"  # 예시를 통과했고 대조에서 다르지 않았다
     return {"solution": Solution(got.approach.strip(), [step.strip() for step in got.steps if step.strip()], got.code, verified_by(report),
                                  [clue.strip() for clue in got.clues if clue.strip()]), **(guide_labels(state, got) if trusted else {})}
@@ -142,15 +150,21 @@ EXTRA_CALLS = 5  # 대조가 문제 하나의 준비에 더 쓰는 모델 호출
 VERIFIED = {"same": "all", "differ": "none"}  # 대조 결과 → 문제의 검증: 예시와 대조 모두 통과, 검증하지 못함. 그 밖(대조하지 못함)은 예시만 통과(examples)
 
 
-def cross_check(state: MainState, got: Solved, passed: bool | None, report: dict | None, check, cross) -> tuple[Solved, str]:
+def climb(tier: str, first: str) -> tuple[str, str]:
+    """다시 풀 (급, 모델). 처음 풀이가 작은 급(기본값)이면 그 칸의 급으로 올리고, 가운데 이상이면 가운데 칸은 그 과정의 모델 그대로다."""
+    return (first, model_name()) if tier == "middle" and first != "small" else (tier, themes.model_of(tier))
+
+
+def cross_check(state: MainState, got: Solved, passed: bool | None, report: dict | None, check, cross, tiers: list | None = None) -> tuple[Solved, str]:
     """모델의 풀이는 실행으로 확인한 것만 믿는다. 공개 예시를 통과한 정답 풀이를, 정의 그대로 옮긴 단순 풀이와
     생성기가 만든 작은·경계 입력에서 대조한다. 실행은 모두 cross.run(채점기 프로세스)이 하고, 맞으면 그 입력이 숨은 케이스가 된다.
     다르면 그 입력을 보여 주며 가운데 급으로 한 번, 그래도 다르면 큰 급으로 한 번 다시 푼다(다시 푼 코드도 공개 예시를 통과해야 쓴다).
-    풀이 가이드 과정을 가운데 급 이상으로 골랐으면 첫 다시 풀기는 그 급 그대로다. 결과의 tiers는 처음 풀이부터 실제로 쓴 급의 차례다.
+    풀이 가이드 과정을 가운데 급 이상으로 골랐으면 첫 다시 풀기는 그 급 그대로다. 결과의 tiers는 처음 풀이부터 실제로 쓴 급의 차례다
+    (tiers: 풀이 가이드가 예시를 맞히려고 쓴 급들. 없으면 과정의 급 하나로 적는다).
     결과(검증, 쓴 호출 수와 급, 확인이 필요한 곳)는 cross.done으로 남긴다. 고른 풀이와 검증(all·examples·none)을 돌려준다."""
     pid = state["ctx"].problem_id
     first = themes.chosen("guide")[0]  # 처음 풀이를 쓴 급(풀이 가이드 과정)
-    verdict = {"verified": "none", "calls": 0, "tiers": [first], "doubts": [], "why": "", "hidden": 0, "efficiency": 0}
+    verdict = {"verified": "none", "calls": 0, "tiers": list(tiers or [first]), "doubts": [], "why": "", "hidden": 0, "efficiency": 0}
     if passed is None:  # 채점하지 못했다: 풀이가 틀렸다고 말하지 않는다
         status = (report or {}).get("status") or "no_cases"
         verdict.update(why=f"튜터의 풀이를 확인하지 못했어요. {unrun_why(status)}.{UNRUN_FIX.get(status, '')}")
@@ -181,8 +195,7 @@ def cross_check(state: MainState, got: Solved, passed: bool | None, report: dict
         retry = "\n".join([f"코드:\n{got.code}", "문제 정의를 그대로 옮긴 느린 풀이와 결과가 다른 입력이 있다(느린 풀이가 틀렸을 수도 있으니 문제 글로 다시 따진다).",
                            f"입력: {found.get('input')}", f"이 코드의 결과: {found.get('got')}", f"느린 풀이의 결과: {found.get('want')}"])
         try:
-            # 처음 풀이가 작은 급(기본값)이면 가운데 급으로 올리고, 가운데 이상이면 그 과정의 모델 그대로 다시 푼다
-            used, model = (first, model_name()) if tier == "middle" and first != "small" else (tier, themes.model_of(tier))
+            used, model = climb(tier, first)
             again: Solved = llm(model).use(solve_messages(state, retry), solved_schema(state), task="plan.solve")
         except LlmError:
             break

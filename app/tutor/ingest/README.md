@@ -1,6 +1,6 @@
 # ingest — 문항 읽기
 
-폴더 `tutor/ingest/`: `files.py`(파일 나누기), `text.py`(글 잇기, PDF), `ocr.py`(tesseract), `transcribe.py`(모델로 이미지 옮겨 적기), `check.py`(읽기 검증), `nodes.py`·`graph.py`(그래프).
+폴더 `tutor/ingest/`: `files.py`(파일 나누기), `text.py`(글 잇기, PDF), `ocr.py`(tesseract), `transcribe.py`(모델로 이미지 옮겨 적기), `check.py`(읽기 검증), `nodes.py`·`graph.py`(그래프), `outline.py`(구획 나누기. 그래프 밖).
 
 ## 하는 일
 
@@ -67,11 +67,21 @@ flowchart TD
 - `ocr_doubts(done)`(`check.py`): AI가 읽은 장의 숫자를 tesseract 결과와 견준다. 모델을 부르지 않는다. 양쪽에 저마다 없는 수가 있을 때만 어긋난 장으로 낸다. tesseract가 없거나 못 믿을 글이면 견주지 않는다.
 - `reread(done, index)`: AI가 읽은 장 하나를 한 번 더 읽어(모델 1회) 그 장의 글을 바꾸고 본문을 다시 잇는다.
 
+## 구획 나누기
+
+`outline.py`. 화면 서버의 `/api/problems/detect`가 부른다. 그래프 밖이고 저장하지 않는다.
+
+- `normalize(text)`: 줄 끝 `\r\n`·`\r`를 `\n`으로, NBSP 같은 공백과 전각 공백을 빈칸으로, 폭 없는 글자를 지우고, 전각 영문·숫자·기호와 빼기 기호(U+2212)를 보통 글자로 바꾼다. 위 첨자(`10⁵`)는 그대로 둔다.
+- `ask(lines, read)`: 줄 번호를 붙인 글을 task `ingest.outline`(문제 나누기 과정)에 주고 줄 구간만 받는다: `problem`, `title`, `body`, `samples`, `table`, `cases`, `noise`, `mode`, `names`, `many`. 호출이 실패하거나 검사에 걸리면 가운데 급으로 한 번 더 묻는다(과정을 가운데 이상으로 골랐으면 그 급 그대로). 그래도 안 되면 `None`이다. 연결이 없으면 다시 묻지 않는다.
+- `checked`(모델 없음): 구간이 글 안에 있고 거꾸로 되지 않고 서로 겹치지 않아야 한다. 제목 줄은 잡음 안에 있으면 안 되고, 잡음은 전체 줄의 60%를 넘으면 안 된다. 어긋나면 그 답 전체를 버린다. 문장 예시(`cases`)는 값마다 그 줄에 글자 그대로 있고 `read.value`로 읽혀야 하며, 아니면 그 예시만 버린다. 인자 이름(`names`)은 모두 식별자 꼴이고 글에 낱말로 글자 그대로 있어야 하며, 하나라도 아니면 비운다.
+- 표 구간은 `read.table`, 예제 구간은 `예제 입력 N`·`예제 출력 N` 머리를 붙여 `read.samples`로 읽는다. 화면 서버는 여기에 `table_cases`·`sample_cases`·`cell_value`를 넣는다. 모델이 쓴 글은 문제 글이나 케이스에 넣지 않는다.
+
 ## 시험
 
 `tutor/tests/test_ingest.py`. 모델을 부르지 않는다.
 
 - 규칙: md·txt 잇는 순서, UTF-8과 CP949, 글 있는 PDF와 빈 PDF, 거절하는 경우, OCR 판정 경계(19·20자, 깨짐 10%).
+- 구획 나누기: 구간·겹침·잡음 상한·문장 예시 검사, 실패하면 가운데 급으로 한 번, 연결이 없으면 한 번만 부른다, 정규화가 위 첨자를 두는지.
 - 가짜 모델과 가짜 OCR: 모델이 이미지를 읽으면 tesseract를 건너뛴다. 모델이 없으면 tesseract로 읽는다. 모델이 두 번 실패하면 그 장을 tesseract로 읽고, 그도 못 읽으면 그 장 번호로 실패한다. 캡처가 겹친 줄은 한 번만 넣는다. PDF의 제어 문자는 공백으로 바꾼다.
 
 ## 알려진 한계
