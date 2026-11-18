@@ -109,7 +109,7 @@ KEY_CHECK_FILE = DATA / "keychecks.json"  # 공급자마다 마지막 키 확인
 KEY_FILE = DATA / "keys.json"  # 화면에서 넣은 API 키. 이 기기에만, 소유자만 읽게(0600) 둔다
 PREFS_FILE = DATA / "prefs.json"  # 화면 설정: 처음 안내를 봤는지(tour_seen), 과정별 급과 추론 정도(stages. 예전에는 테마별 모델 themes), 마지막으로 고른 풀이 언어(language), 화면 색(scheme: light·dark. 없으면 운영체제 설정을 따른다), 문제·코드·튜터 세 칸의 너비 몫(panes. 합 100. 없으면 기본 배치), 코드 칸 안 결과 칸의 높이 몫(rows. 15~85. 없으면 기본)
 MODELS_FILE = DATA / "models.json"  # 공급자 목록에서 고른 시리즈마다 최신 이름 {연결: {"at": ISO 시각, "names": {시리즈: 이름}}}. 하루에 한 번까지만 다시 받는다
-KEPT_FILE = DATA / "kept.json"  # 언어를 바꿀 때 보관한 준비 결과 {문항: {언어: {"solution": 줄, "session": 줄}}}. 그 언어로 돌아오면 되살린다(모델 0회)
+KEPT_FILE = DATA / "kept.json"  # 언어를 바꿀 때 보관한 준비 결과와 대화 {문항: {언어: {"solution": 줄, "session": 줄, "talk": 대화·블록 진행}}}. 그 언어로 돌아오면 되살린다(모델 0회)
 
 
 def load_keys() -> None:
@@ -1959,7 +1959,7 @@ def need_code(body: dict) -> str:
 
 
 def reset(t, pid: str) -> None:
-    """대화·블록 진행·피드백·해설 모드의 글(다른 언어로 보관한 것도)·다른 언어로 쓰던 코드를 지운다. 제출 기록(통과 횟수), 문항 뼈대, 정석 풀이 가이드,
+    """대화·블록 진행·해설 모드의 글(다른 언어로 보관한 것도)·피드백·다른 언어로 쓰던 코드를 지운다. 제출 기록(통과 횟수), 문항 뼈대, 정석 풀이 가이드,
     체크포인트는 남긴다. 엔진에 초기화 기능이 없어 표를 직접 지운다. 학습 기록에 새 풀이의 시작을 적는다(mark_reset)."""
     # 정석 가이드로 짠 계획은 그대로 두고 첫 블록으로만 돌린다(다시 풀어도 같은 블록 순서로 배운다).
     # 사용자 방법으로 다시 짠 계획이었다면 지운다(다음에 정석 가이드로 다시 짠다).
@@ -1975,9 +1975,11 @@ def reset(t, pid: str) -> None:
     if pid in codes:  # 다른 언어로 쓰던 코드도 비운다(언어를 바꿔 되살리면 처음부터가 아니다). 체크포인트는 남긴다(되살리면 도움으로 센다)
         write_json(CODES_FILE, {key: value for key, value in codes.items() if key != pid})
     kept = read_json(KEPT_FILE, {})
-    for saved in (kept.get(pid) or {}).values():  # 다른 언어로 보관한 해설 모드의 글도 비운다(언어를 바꿔 되살리지 않게)
-        if isinstance(saved, dict) and isinstance(saved.get("session"), dict):
-            saved["session"]["explain_json"] = None
+    for saved in (kept.get(pid) or {}).values():  # 다른 언어로 보관한 대화·블록 진행과 해설 모드의 글도 비운다(언어를 바꿔 되살리지 않게)
+        if isinstance(saved, dict):
+            saved.pop("talk", None)
+            if isinstance(saved.get("session"), dict):
+                saved["session"]["explain_json"] = None
     if pid in kept:
         write_json(KEPT_FILE, kept)
     REPORTS.pop(pid, None)
@@ -1986,11 +1988,13 @@ def reset(t, pid: str) -> None:
     own_way(pid, False)
 
 
-def change_language(t, p, language: str, code: str | None) -> None:
-    """언어를 바꾼다. 쓰던 코드는 예전 언어 것으로 적어 두고 새 언어에서 쓰던 코드를 꺼낸다.
-    풀이 가이드와 블록은 언어마다 코드가 달라 지운다(대화·블록 진행도 함께). 제출 기록, 문항 뼈대, 피드백, 학습 기록은 남긴다.
-    지우기 전에 예전 언어의 가이드·계획·해설을 보관하고, 새 언어로 보관한 것이 있으면 되살린다(원래 언어로 돌아와도 모델을 다시 부르지 않는다)."""
+def change_language(t, p, language: str, code: str | None, blocks: dict | None = None) -> None:
+    """언어를 바꾼다. 쓰던 코드(blocks: 아직 저장하지 않은 블록 칸)는 예전 언어 것으로 적어 두고 새 언어에서 쓰던 코드를 꺼낸다.
+    풀이 가이드·블록 계획·대화·블록 진행은 언어마다 달라, 예전 언어의 것을 보관하고 새 언어로 보관한 것이 있으면 되살린다
+    (원래 언어로 돌아오면 하던 대화가 그대로고 모델을 다시 부르지 않는다). 제출 기록, 문항 뼈대, 피드백, 학습 기록은 언어와 상관없이 남긴다."""
     pid, ctx = p.id, t.store.load(p.id)
+    if blocks is not None:
+        write_json(BLOCKS_FILE, {**read_json(BLOCKS_FILE, {}), pid: blocks})
     codes = read_json(CODES_FILE, {})
     mine = {**codes.get(pid, {}), ctx.language: ctx.direct_code if code is None else code}
     write_json(CODES_FILE, {**codes, pid: mine})
@@ -2017,26 +2021,36 @@ def retire_languages() -> None:
 
 
 SOLUTION_COLUMNS = ("approach", "steps_json", "code", "verified", "clues_json")
-SESSION_COLUMNS = ("plan_json", "explain_json", "solution_json")  # 대화 진행(open_count)은 보관하지 않는다(되살리면 첫 블록부터)
+SESSION_COLUMNS = ("plan_json", "explain_json", "solution_json")  # 대화 진행(open_count)은 대화와 함께 talk에 둔다(talk가 없는 옛 보관분은 첫 블록부터)
+TALK_TABLES = ("message", "block_state", "debug_state")  # 언어마다 따로 보관하는 대화(꼬리질문·디버그 대화 포함)·블록 판정·디버그 상태
 
 
 def keep_plan(t, pid: str, language: str) -> None:
-    """이 언어의 풀이 가이드·블록 계획·해설을 보관한다(없으면 아무것도 하지 않는다)."""
+    """이 언어의 풀이 가이드·블록 계획·해설과 대화·블록 진행(열린 블록 수, 블록 칸, 내 방식)을 보관한다(없으면 아무것도 하지 않는다)."""
     kept = {}
     for name, table, columns in (("solution", "solution", SOLUTION_COLUMNS), ("session", "tutor_session", SESSION_COLUMNS)):
         row = t.store.conn.execute(f"SELECT {', '.join(columns)} FROM {table} WHERE problem_id=?", (pid,)).fetchone()
         if row is not None and any(value is not None for value in tuple(row)):
             kept[name] = dict(zip(columns, tuple(row)))
+    talk = {table: [dict(row) for row in t.store.conn.execute(f"SELECT * FROM {table} WHERE problem_id=?", (pid,))] for table in TALK_TABLES}
+    talk.update(blocks=read_json(BLOCKS_FILE, {}).get(pid) or {}, own_way=pid in read_json(OWN_FILE, {}))
+    if any(talk.values()):
+        session = t.store.conn.execute("SELECT open_count FROM tutor_session WHERE problem_id=?", (pid,)).fetchone()
+        kept["talk"] = {**talk, "open_count": session[0] if session else 0}
     if kept:
         saved = read_json(KEPT_FILE, {})
         write_json(KEPT_FILE, {**saved, pid: {**(saved.get(pid) or {}), language: kept}})
 
 
 def restore_plan(t, pid: str, language: str) -> None:
-    """보관해 둔 그 언어의 준비 결과를 되살린다. 손으로 고쳐 모양이 다른 것은 건너뛴다(다시 준비한다)."""
-    kept = (read_json(KEPT_FILE, {}).get(pid) or {}).get(language)
+    """보관해 둔 그 언어의 준비 결과와 대화·블록 진행을 되살린다. 손으로 고쳐 모양이 다른 계획은 건너뛴다(다시 준비한다)."""
+    saved = read_json(KEPT_FILE, {})
+    kept = (saved.get(pid) or {}).get(language)
     if not isinstance(kept, dict):
         return
+    talk = kept.pop("talk", None)
+    talk = talk if isinstance(talk, dict) else {}
+    opened = talk["open_count"] if type(talk.get("open_count")) is int else 1  # 대화를 보관하기 전의 옛 보관분은 첫 블록부터
     with t.store.conn:
         for name, table, columns in (("solution", "solution", SOLUTION_COLUMNS), ("session", "tutor_session", SESSION_COLUMNS)):
             row = kept.get(name)
@@ -2044,7 +2058,19 @@ def restore_plan(t, pid: str, language: str) -> None:
                 continue
             extra = ("open_count",) if table == "tutor_session" else ()
             t.store.conn.execute(f"INSERT OR REPLACE INTO {table}(problem_id, {', '.join(columns + extra)}) VALUES({', '.join('?' * (len(columns) + len(extra) + 1))})",
-                                 (pid, *(row[column] for column in columns), *((1,) if extra else ())))
+                                 (pid, *(row[column] for column in columns), *((opened,) if extra else ())))
+        for table in TALK_TABLES:  # 말 id도 그대로 넣는다(꼬리질문이 말 id로 잇는다. AUTOINCREMENT라 지운 id를 다른 말이 받지 않는다)
+            known = {column[1] for column in t.store.conn.execute(f"PRAGMA table_info({table})")} - {"problem_id"}
+            rows = talk.get(table)
+            for row in rows if isinstance(rows, list) else []:
+                names = [name for name in row if name in known] if isinstance(row, dict) else []
+                if names:  # 모르는 열은 빼고, 손으로 고쳐 넣을 수 없는 줄은 건너뛴다(IGNORE)
+                    t.store.conn.execute(f"INSERT OR IGNORE INTO {table}(problem_id, {', '.join(names)}) VALUES({', '.join('?' * (len(names) + 1))})", (pid, *(row[name] for name in names)))
+    if talk:  # 되살린 대화는 보관분에서 뺀다(지금 언어의 대화는 저장소에만 있다)
+        write_json(KEPT_FILE, saved)
+        if isinstance(talk.get("blocks"), dict) and talk["blocks"]:
+            write_json(BLOCKS_FILE, {**read_json(BLOCKS_FILE, {}), pid: talk["blocks"]})
+        own_way(pid, talk.get("own_way") is True)
 
 
 def forget_kept(pid: str) -> None:
@@ -2770,9 +2796,10 @@ def handle(path: str, body: dict) -> tuple[int, dict]:
             wanted = str(body.get("language") or "")
             if wanted not in (row["languages"] if row else check_judge().LANGUAGES):
                 raise Refuse("이 문제에서 고를 수 없는 언어예요.", field="language")
+            blocks = blocks_of(body) if "blocks" in body else None  # 화면이 아직 저장하지 않은 블록 칸(예전 언어의 것)
             if wanted != language:
                 with LOCKS[pid]:
-                    change_language(t, p, wanted, code)
+                    change_language(t, p, wanted, code, blocks)
                 language = wanted
             write_json(PREFS_FILE, {**read_json(PREFS_FILE, {}), "language": wanted})  # 다음에 처음 여는 문제도 이 언어로
             body = {**body, "open": True}  # 새 언어의 블록 계획을 뒤에서 만들어 둔다(아래 /api/state와 같은 길)
