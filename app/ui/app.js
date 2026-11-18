@@ -208,8 +208,8 @@ function inline(t) {
   const text = String(t ?? "").replace(/\u0000/g, "").replace(/`([^`\n]+)`/g, (_, code) => hold(`<code>${esc(code)}</code>`, `\`${code}\``))
     .replace(/\$\$(.+?)\$\$|\\\[((?:(?!\\\[).)+?)\\\]|\\\(((?:(?!\\\().)+?)\\\)|\$(?=[^\s$])([^$\n]*?\S)\$(?![\d$])/g, (all, d1, d2, i1, i2, at, whole) => {
       const tex = back(d1 ?? d2 ?? i1 ?? i2);
-      all = back(all);
-      return tex.trim() && !(i2 !== undefined && /[\\$]/.test(whole[at - 1] || "")) ? hold(`<span class="math" data-tex="${esc(tex)}"${i1 === undefined && i2 === undefined ? ' data-display="1"' : ""}>${esc(all)}</span>`) : all;
+      // 받은 수식만 코드 자리를 쓴 그대로 되돌린다. 거절한 구간(앞에 \$나 $$가 붙은 $…$)은 코드 자리를 그대로 두어 코드로 보인다
+      return tex.trim() && !(i2 !== undefined && /[\\$]/.test(whole[at - 1] || "")) ? hold(`<span class="math" data-tex="${esc(tex)}"${i1 === undefined && i2 === undefined ? ' data-display="1"' : ""}>${esc(back(all))}</span>`) : all;
     });
   return esc(text).replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>").replace(/(^|[^\w.^])(\d+)\^(\d+)(?![\w^])/g, "$1$2<sup>$3</sup>")
     .replace(/\u0000(\d+)\u0000/g, (_, n) => kept[n]);
