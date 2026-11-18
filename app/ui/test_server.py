@@ -2754,15 +2754,35 @@ console.log(JSON.stringify({ out, repro }));
     assert server.panes_ok(got["repro"]) and got["repro"][0] == 80.5 and got["repro"][2] >= 5, got["repro"]
 
 
+def stages_split_verify() -> None:
+    """과정 표의 문제 나누기·검증 풀이: 화면 목록에 있고, 급을 바꾸면 그 task의 모델이 바뀐다. 예전 ingest 저장은 다섯 과정으로 옮겨진다."""
+    from tutor.llm import themes
+
+    rows = {row["key"]: row for row in call("/api/accounts")[1]["themes"]}
+    assert {"split", "verify"} <= set(rows)
+    assert (rows["split"]["default_tier"], rows["split"]["default_effort"], rows["verify"]["default_tier"], rows["verify"]["default_effort"]) == ("small", "low", "middle", "low")
+    assert themes.pick("plan.brute")[0] == "claude/claude-sonnet-5-5" and themes.pick("ingest.outline")[0] == "claude/claude-haiku-5-5"
+    call("/api/theme", theme="verify", tier="small", effort="")
+    assert themes.pick("plan.brute")[0] == "claude/claude-haiku-5-5" and themes.pick("plan.solve")[0] == "claude/claude-haiku-5-5"
+    call("/api/theme", theme="split", tier="large", effort="high")
+    assert themes.pick("ingest.outline") == ("claude/claude-opus-5-5", "high")
+    assert server.read_json(server.PREFS_FILE, {})["stages"]["split"] == {"tier": "large", "effort": "high"}
+    call("/api/theme", theme="verify", tier="", effort=""), call("/api/theme", theme="split", tier="", effort="")
+    assert themes.pick("plan.brute")[0] == "claude/claude-sonnet-5-5" and themes.pick("ingest.outline") == ("claude/claude-haiku-5-5", "low")
+    themes.choose(themes.from_old({"ingest": {"model": "claude/claude-opus-5-5", "effort": ""}}))  # 서버를 켤 때 예전 설정을 읽는 길
+    assert themes.pick("ingest.outline")[0] == themes.pick("plan.brute")[0] == "claude/claude-opus-5-5"
+    themes.choose({})
+
+
 def stages() -> None:
     """과정별 모델: 급과 추론 정도를 고르면 저장되고 바로 쓰인다. 빈 값은 기본값. 모르는 과정·급·정도는 거절한다.
     예전 설정(테마별 모델 이름, Grok·OpenRouter 키)은 조용히 옮기거나 버린다."""
     from tutor.llm import themes
 
     rows = {row["key"]: row for row in call("/api/accounts")[1]["themes"]}
-    assert list(rows) == ["read", "guide", "blocks", "talk", "judge", "explain", "feedback", "debug"]
+    assert list(rows) == ["split", "read", "guide", "verify", "blocks", "talk", "judge", "explain", "feedback", "debug"]
     assert {key: (row["default_tier"], row["default_effort"]) for key, row in rows.items()} == {
-        "read": ("middle", "high"), "guide": ("small", "high"), "blocks": ("small", "high"), "talk": ("small", "low"),
+        "split": ("small", "low"), "verify": ("middle", "low"), "read": ("middle", "high"), "guide": ("small", "high"), "blocks": ("small", "high"), "talk": ("small", "low"),
         "judge": ("small", "low"), "explain": ("small", "medium"), "feedback": ("small", "medium"), "debug": ("small", "medium")}
     assert (rows["read"]["model"], rows["read"]["model_label"], rows["guide"]["model_label"]) == ("claude/claude-sonnet-5-5", "Sonnet 5.5", "Haiku 5.5")
     assert [tier["label"] for tier in call("/api/accounts")[1]["tiers"]] == ["Haiku 5.5", "Sonnet 5.5", "Opus 5.5"]
@@ -2788,11 +2808,12 @@ def stages() -> None:
     prefs = server.read_json(server.PREFS_FILE, {})
     themes.choose(prefs.get("stages") or themes.from_old(prefs.get("themes")))  # 서버를 켤 때와 같은 길
     rows = {row["key"]: row for row in call("/api/accounts")[1]["themes"]}
-    assert [rows[key]["model_label"] for key in ("read", "guide", "blocks", "talk", "judge")] == ["Opus 5.5"] * 3 + ["Haiku 5.5"] * 2 and rows["talk"]["effort"] == "high"
+    assert [rows[key]["model_label"] for key in ("split", "read", "guide", "verify", "blocks", "talk", "judge")] == ["Opus 5.5"] * 5 + ["Haiku 5.5"] * 2 and rows["talk"]["effort"] == "high"
     call("/api/theme", theme="judge", tier="", effort="")
     prefs = server.read_json(server.PREFS_FILE, {})
     assert "themes" not in prefs and prefs["stages"]["read"] == {"tier": "large", "effort": ""}
-    call("/api/theme", theme="read", tier="", effort=""), call("/api/theme", theme="guide", tier="", effort=""), call("/api/theme", theme="blocks", tier="", effort=""), call("/api/theme", theme="talk", tier="", effort="")
+    for key in ("split", "read", "guide", "verify", "blocks", "talk"):
+        call("/api/theme", theme=key, tier="", effort="")
     assert all(row["tier"] == row["default_tier"] and row["effort"] == row["default_effort"] for row in call("/api/accounts")[1]["themes"])
 
     # keys.json의 값이 글이 아니면 그 항목만 건너뛰고, 걷어 낸 공급자의 키(Grok·OpenRouter)는 읽지 않는다
@@ -3443,6 +3464,7 @@ def main() -> None:
     pane_widths()
     pane_fit()
     stages()
+    stages_split_verify()
     newest_models()
     read_check()
     cross_cases()
