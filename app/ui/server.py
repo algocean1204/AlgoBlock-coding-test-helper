@@ -273,12 +273,12 @@ def first_line(text: str) -> str:
 
 
 # 기본 문제(make_builtin.py가 ui/problems에서 묶는다): 글, 케이스(공개 예시·숨긴 정확성·숨긴 효율성), 실전 신호, 언어별 정답 풀이·시작 코드,
-# 그리고 미리 만들어 둔 뼈대·풀이 가이드·블록 계획(ready. 없을 수 있다). 단계가 없는 예전 형식은 읽지 않는다
+# 그리고 미리 만들어 둔 뼈대·풀이 가이드·블록 계획(ready는 Python, readies는 다른 언어. 없을 수 있다). 단계가 없는 예전 형식은 읽지 않는다
 def supported(row: dict) -> dict:
     """저장된 문제 자료에서 지원하지 않는 언어(예전에 있던 Go·Kotlin 등)의 칸을 거른다. 자료 파일은 고치지 않고 읽을 때만 거른다."""
     ok = check_judge().LANGUAGES
     row = {**row, "languages": [name for name in row.get("languages") or [] if name in ok]}
-    for key in ("solutions", "starters", "limits"):
+    for key in ("solutions", "starters", "limits", "readies"):
         if isinstance(row.get(key), dict):
             row[key] = {name: value for name, value in row[key].items() if name in ok}
     return row
@@ -1880,9 +1880,16 @@ def hints_now(study: dict, rows: list) -> int:
     return min(max(0, study["hints_seen"] - study["hints_at_reset"]), len(rows))
 
 
+def builtin_ready(pid: str, language: str) -> dict | None:
+    """기본 문제에 실린 그 언어의 뼈대·풀이 가이드·블록 계획(make_builtin이 언어마다 만든다). 없으면 None."""
+    row = BUILTIN.get(pid) or {}
+    return row.get("ready") if language == "python" else (row.get("readies") or {}).get(language)
+
+
 def hint_rows(t, pid: str) -> list[dict]:
-    """미리 만든 힌트를 순서대로: 블록 1의 힌트 1·2·3, 블록 2의 … 기본 문제는 실린 계획에서, 아니면 저장된 계획에서 읽는다(모델 0회)."""
-    blocks = (((BUILTIN.get(pid) or {}).get("ready") or {}).get("plan") or {}).get("blocks")
+    """미리 만든 힌트를 순서대로: 블록 1의 힌트 1·2·3, 블록 2의 … 기본 문제는 실린 계획에서(그 언어의 것, 없으면 Python의 것), 아니면 저장된 계획에서 읽는다(모델 0회)."""
+    ready = builtin_ready(pid, LANG.get(pid, "python")) or (BUILTIN.get(pid) or {}).get("ready") or {}
+    blocks = (ready.get("plan") or {}).get("blocks")
     if blocks is None:
         plan = t.store.load(pid).plan
         blocks = [{"hints": block.hints, "kind": block.kind, "name": block.name} for block in plan.blocks] if plan else []
@@ -2545,8 +2552,9 @@ def handle(path: str, body: dict) -> tuple[int, dict]:
                 language = wanted
             write_json(PREFS_FILE, {**read_json(PREFS_FILE, {}), "language": wanted})  # 다음에 처음 여는 문제도 이 언어로
             body = {**body, "open": True}  # 새 언어의 블록 계획을 뒤에서 만들어 둔다(아래 /api/state와 같은 길)
-        if row and row.get("ready") and language == "python" and path in ("/api/state", "/api/language", "/api/turn", "/api/explain"):
-            t.adopt(pid, row["ready"])  # 기본 문제는 미리 만들어 둔 풀이 가이드와 블록으로 바로 시작한다(계획이 이미 있으면 그대로 둔다)
+        ready = builtin_ready(pid, language) if row else None
+        if ready and path in ("/api/state", "/api/language", "/api/turn", "/api/explain"):
+            t.adopt(pid, ready)  # 기본 문제는 미리 만들어 둔 그 언어의 풀이 가이드와 블록으로 바로 시작한다(계획이 이미 있으면 그대로 둔다)
         if path in ("/api/state", "/api/language"):
             return 200, state_body(t, p, body)
         if path == "/api/run":  # 공개 예시만, 또는 직접 넣은 값(input) 하나로 돌려 본다. 제출로 남기지 않는다

@@ -3,8 +3,9 @@
 app에서:
   python3 ui/make_builtin.py build --no-model          # 검사를 통과한 문제를 묶는다. 가이드·블록은 ready.json에 있는 것만 싣는다(모델 0회). 다른 언어 풀이도 싣는다(그 언어 도구가 필요)
   python3 ui/make_builtin.py build                     # ready.json이 없거나 낡은 문제는 풀이 가이드(단서·방향·단계)와 블록·힌트를 만든다(모델을 부른다. 키가 있어야 한다)
+  ALGOBLOCK_UI_CLIENT=cli python3 ui/make_builtin.py build   # 모델 대신 이 PC의 Claude Code(claude -p)를 부른다(개발용. 키를 쓰지 않는다)
   옵션: --model 모델:정도   문제 넣기 테마의 모델(예: claude/claude-opus-5-5:high)
-        --redo ID …        그 문제의 가이드·블록을 다시 만든다(다른 문제는 글과 정답 풀이가 그대로면 ready.json의 것을 다시 쓴다)
+        --redo ID …        그 문제의 가이드·블록과 언어별 줄 구간을 다시 만든다(다른 문제는 글과 정답 풀이가 그대로면 ready.json의 것을 다시 쓴다)
         --no-langs         파이썬 정답 풀이만 검사해 싣는다(기본은 다른 언어 정답 풀이(solution.java 등)도 검사해 싣는다. 그 언어의 도구가 기기에 있어야 한다.
                            이 옵션으로 묶으면 이미 실린 문제의 다른 언어 풀이가 묶음에서 빠진다)
         --only 폴더 …      그 문제만 검사하고 묶는다(예: hash/1_popular_shelf). 다른 문제의 행은 지금 묶음의 것을 그대로 둔다(문제 하나를 더할 때)
@@ -20,6 +21,10 @@ app에서:
    source가 지금 글·정답 풀이와 같으면 ready.json을 그대로 싣고, 다르면 다시 만들어 ready.json을 새로 쓴다.
    ready.json이 없으면(옮기는 첫 한 번) 이전 builtin.json의 것을 ready.json으로 옮긴다.
    ready.json은 손으로 고쳐도 된다. 싣기 전에 2번과 같은 모양 검사(shape)를 하고, 걸리면 그 문제를 실패로 알리고 가이드 없이 싣는다.
+4. 다른 언어의 가이드·블록(readies)은 Python 계획의 글(이름·목표·확인·힌트, 단서·방향·단계)을 그대로 쓰고 그 언어 정답 풀이의 줄 구간만 다르다.
+   줄 구간은 모델에게 받아 cut_by_lines로 맞추고 ready.json의 langs에 둔다. 그 언어 코드에 없는 이름을 부르는 힌트만 다시 받는다.
+   그 언어 풀이를 Python 블록의 차례대로 나눌 수 없다는 답이면 {"source", "fits": false}를 적고 그 언어는 싣지 않는다(알림만 한다).
+   싣기 전에 lang_ready로 본다(출처 값, 구간이 그 언어 풀이를 빈틈·겹침 없이 덮는가, 모양 검사, 힌트의 이름). 걸리면 그 언어만 빼고 싣는다(그 언어는 열 때 만든다).
 """
 
 import json
@@ -28,9 +33,11 @@ import sys
 import tempfile
 import zlib
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import nullcontext
 from contextvars import copy_context
-from dataclasses import asdict
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
+from types import SimpleNamespace
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
@@ -41,6 +48,7 @@ import problemkit  # noqa: E402
 from stubs import LANGUAGES, stub  # noqa: E402
 
 from tutor.common.scope import ALGORITHMS  # noqa: E402
+from tutor.common.solution import body_lines  # noqa: E402
 
 OUT = HERE / "builtin.json"
 ROOT = HERE / "problems"
@@ -133,15 +141,18 @@ def ready_of(row: dict) -> dict:
     return ready
 
 
-def shape(ready: dict, python: str) -> None:
-    """실을 수 있는 가이드·블록인지 본다(모델이 만든 것과 손으로 고친 ready.json 둘 다). 걸리면 RuntimeError."""
+def shape(ready: dict, code: str, language: str = "python") -> None:
+    """실을 수 있는 가이드·블록인지 본다(모델이 만든 것과 손으로 고친 ready.json 둘 다). code는 그 언어의 정답 풀이. 걸리면 RuntimeError."""
     solution, blocks = ready["solution"], ready["plan"]["blocks"]
     if "\n".join(block["reference"] for block in blocks) != solution["code"]:
         raise RuntimeError("블록을 이은 것이 가이드 코드와 다르다")
-    if solution["code"].rstrip("\n") != python.rstrip("\n"):
+    if solution["code"].rstrip("\n") != code.rstrip("\n"):
         raise RuntimeError("가이드 코드가 정답 풀이와 다르다")
     if any(len(block["hints"]) < 3 or not all(block["hints"]) or not block["name"] or not block["goal"] for block in blocks):
         raise RuntimeError("힌트가 3개보다 적거나, 빈 힌트·이름·목표가 있는 블록이 있다")
+    empty = [block["id"] for block in blocks if not body_lines(block["reference"], language)]
+    if empty:
+        raise RuntimeError(f"틀 줄·빈 줄·주석만 있는 블록이 있다: {', '.join(empty)}")
     if not solution["clues"] or not solution["verified"]:
         raise RuntimeError("단서가 없거나 검증되지 않은 가이드다")
     start = 1
@@ -150,6 +161,137 @@ def shape(ready: dict, python: str) -> None:
         if block.get("lines") and list(block["lines"]) != [start, start + size - 1]:
             raise RuntimeError(f"블록 {block.get('id')}의 lines {block['lines']}가 코드 줄({start}~{start + size - 1})과 다르다")
         start += size
+
+
+def lang_source(row: dict, language: str) -> int:
+    """그 언어의 줄 구간이 기대는 것(Python 계획의 블록 구간과 그 언어 정답 풀이)의 crc. 다르면 줄 구간을 다시 받는다."""
+    return zlib.crc32(json.dumps([[block["reference"] for block in row["ready"]["plan"]["blocks"]], row["solutions"][language]], ensure_ascii=False).encode())
+
+
+def stray_names(hint: str, row: dict, language: str) -> list[str]:
+    """힌트가 부르는 코드 이름 가운데 그 언어 정답 풀이에 없는 것(다른 언어 풀이에만 있고 문제 글에도 없는 이름)."""
+    from tutor.common.talk_rules import code_names
+
+    return sorted(set(code_names(hint, "\n".join(row["solutions"].values()), row["text"])) - set(code_names(hint, row["solutions"][language], "")))
+
+
+def lang_ready(row: dict, language: str, saved: dict) -> dict:
+    """Python 계획(row["ready"])의 글에 그 언어 정답 풀이의 줄 구간을 입힌 가이드·블록. 걸리면 RuntimeError.
+    saved = ready.json의 langs[언어]: {"source": lang_source, "lines": 블록마다 [처음, 끝],
+    "hints": {블록 id: [다시 받은 힌트, 그대로 쓰는 자리는 빈 글]}(그 언어 코드에 없는 이름을 부른 힌트가 있을 때만)}."""
+    from tutor.plan.nodes import cut_by_lines
+    from tutor.state import Block
+
+    ready, code = row["ready"], row["solutions"][language].strip("\n")
+    blocks, spans = ready["plan"]["blocks"], [list(span) for span in saved.get("lines") or []]
+    if saved.get("source") != lang_source(row, language):
+        raise RuntimeError("출처 값이 지금 Python 계획의 블록 구간·그 언어 정답 풀이와 다르다")
+    cut = cut_by_lines([Block(block["id"], block["kind"], block["name"], block["goal"], lines=span) for block, span in zip(blocks, spans)], code, language) \
+        if len(spans) == len(blocks) else None
+    if cut is None or [block.lines for block in cut] != spans:
+        raise RuntimeError(f"줄 구간 {spans}이 블록마다 하나씩 그 언어 정답 풀이를 1번 줄부터 끝까지 빈틈·겹침 없이 나누지 않는다")
+    mine = saved.get("hints") or {}
+
+    def hint(block: dict, n: int, text: str) -> str:  # Python 힌트가 그 언어 코드에 없는 이름을 부를 때만 다시 받은 것을 쓴다
+        again = (mine.get(block["id"]) or [])[n:n + 1]
+        return again[0] if stray_names(text, row, language) and again and again[0] else text
+
+    out = {**ready, "solution": {**ready["solution"], "code": code},
+           "plan": {**ready["plan"], "blocks": [{**block, "reference": got.reference, "lines": got.lines, "hints": [hint(block, n, text) for n, text in enumerate(block["hints"])]}
+                                                for block, got in zip(blocks, cut)]}}
+    shape(out, code, language)
+    found = [f"{block['id']} 힌트가 그 언어 코드에 없는 이름 {stray_names(text, row, language)}을 부른다" for block in out["plan"]["blocks"] for text in block["hints"]
+             if stray_names(text, row, language)] + problemkit.ready_bound(out)
+    if found:
+        raise RuntimeError("; ".join(found))
+    return out
+
+
+@dataclass
+class Span:
+    id: str
+    lines: list[int]
+
+
+@dataclass
+class Spans:
+    """그 언어 풀이에서 블록마다 맡을 줄 구간(모델 출력). fits: 그 언어 풀이를 같은 블록으로 같은 차례에 나눌 수 있는가"""
+
+    blocks: list[Span]
+    fits: bool = True
+
+
+def span_messages(row: dict, language: str, code: str, before: str = "") -> list[dict]:
+    """before: 앞 답과 그 답을 쓸 수 없었던 까닭(다시 받을 때)."""
+    from tutor.debug.rules import numbered
+
+    lines = [f"같은 풀이를 Python과 {language}로 썼다. Python 풀이는 아래 블록으로 나뉘어 있다(차례대로. 코드는 그 블록이 맡은 Python 줄이다).",
+             *[f"- {block['id']} {block['name']}: {block['goal']}\n{block['reference']}" for block in row["ready"]["plan"]["blocks"]], "",
+             f"{language} 풀이(줄 번호 붙임):\n{numbered(code)}", "",
+             f"{language} 풀이를 같은 블록으로 나눈다. 블록의 수·id·차례는 그대로다. 블록마다 그 블록의 일을 하는 {language} 줄을 lines에 [처음 줄 번호, 끝 줄 번호]로 적는다.",
+             "첫 블록은 1번 줄에서 시작하고, 다음 블록은 앞 블록의 끝 줄 바로 다음 줄에서 시작하고, 마지막 블록은 마지막 줄에서 끝난다. import·클래스와 함수의 머리·닫는 괄호·빈 줄도 앞이나 뒤 블록에 넣는다.",
+             "블록마다 그 블록의 일을 하는 줄이 하나는 있어야 한다(틀 줄·빈 줄·주석만으로 된 블록은 쓸 수 없다).",
+             f"어떤 블록의 일을 하는 줄이 {language} 풀이에 같은 차례로 이어져 있지 않으면(도움 함수가 다른 자리에 있다, 다른 블록 안에 섞여 있다, 그 일을 하는 줄이 따로 없다) "
+             "다른 블록의 줄을 옮겨 채우지 말고 fits를 false로, blocks를 빈 목록으로 한다.",
+             'JSON {"fits": true 또는 false, "blocks": [{"id", "lines": [처음, 끝]}]}']
+    if before:
+        lines += ["", f"앞 답은 쓸 수 없었다: {before}"]
+    return [{"role": "system", "content": "너는 코딩테스트 튜터의 블록 설계자다. 블록으로 나눈 풀이를 다른 언어로 쓴 코드에서 블록마다 맡을 줄을 찾는다."},
+            {"role": "user", "content": "\n".join(lines)}]
+
+
+def lang_plan(row: dict, language: str) -> dict:
+    """ready.json의 langs[언어]를 만든다: 줄 구간을 모델에게 받아 cut_by_lines로 맞추고(작은 어긋남은 고친다), 그 언어 코드에 없는 이름을 부르는 힌트만 다시 받는다.
+    블록의 글은 Python 계획 그대로다. lang_ready의 검사를 통과한 것만 돌려준다. 다시 받을 때는 앞 답과 그 답을 쓸 수 없었던 까닭을 함께 보낸다.
+    그 언어 풀이를 같은 블록·같은 차례로 나눌 수 없다는 답(fits false)이면 {"source", "fits": False}를 돌려준다(그 언어는 싣지 않는다).
+    세 번까지 해 보고 안 되면 RuntimeError. 모델을 부른다."""
+    from tutor.common.talk_rules import hint_problems, repeated_hints
+    from tutor.llm import LlmError, llm, model_name
+    from tutor.plan.nodes import cut_by_lines
+    from tutor.plan.prompts import hint_messages
+    from tutor.state import Block, MendedHints
+
+    code = row["solutions"][language].strip("\n")
+    blocks = [Block(block["id"], block["kind"], block["name"], block["goal"], checks=block["checks"], hints=block["hints"]) for block in row["ready"]["plan"]["blocks"]]
+    why, before = "", ""
+    for _ in range(3):  # 모델 답이 흔들려 한 번 안 되는 일이 있다
+        try:
+            answer = llm(model_name()).use(span_messages(row, language, code, before), Spans, task="plan.draft_blocks")
+            if not answer.fits:
+                return {"source": lang_source(row, language), "fits": False}
+            got = {span.id: span.lines for span in answer.blocks}
+            before = f"{json.dumps([[block.id, got.get(block.id)] for block in blocks])}. "
+            cut = cut_by_lines([replace(block, lines=list(got.get(block.id) or [])) for block in blocks], code, language)
+            if cut is None:
+                raise RuntimeError(f"줄 구간을 쓸 수 없다: {[got.get(block.id) for block in blocks]}")
+            empty = [block.id for block in cut if not body_lines(block.reference, language)]
+            if empty:  # 힌트를 다시 받기 전에 본다(lang_ready의 모양 검사와 같은 것)
+                raise RuntimeError(f"틀 줄·빈 줄·주석만 있는 블록이 있다: {', '.join(empty)}")
+            saved = {"source": lang_source(row, language), "lines": [block.lines for block in cut]}
+            bad = {block.id: [n for n, text in enumerate(block.hints) if stray_names(text, row, language)] for block in cut}
+            bad = {key: rows for key, rows in bad.items() if rows}
+            if bad:
+                said = {block.id: [f"{language} 코드에 없는 이름 {', '.join(stray_names(block.hints[n], row, language))}을 부른 {n + 1}번 질문" for n in bad[block.id]]
+                        for block in cut if block.id in bad}
+                new = {item.id: item.hints for item in llm(model_name()).use(hint_messages({"ctx": SimpleNamespace(problem_text=row["text"])}, cut, said), MendedHints, task="plan.hints").blocks}
+                saved["hints"] = {}
+                for at, block in enumerate(cut):
+                    if block.id not in bad:
+                        continue
+                    again = ["" for _ in block.hints]
+                    for n in bad[block.id]:
+                        again[n] = ((new.get(block.id) or [])[n:n + 1] or [""])[0].strip()
+                    merged = [again[n] or text for n, text in enumerate(block.hints)]
+                    if not all(again[n] and not hint_problems(again[n], problem=row["text"], reference=block.reference, later_names=[b.name for b in cut[at + 1:]], clue=n == 1, code=code)
+                               for n in bad[block.id]) or repeated_hints(merged):
+                        raise RuntimeError(f"{block.id}의 다시 받은 힌트가 원칙을 어겼다: {[again[n] for n in bad[block.id]]}")
+                    saved["hints"][block.id] = again
+            lang_ready(row, language, saved)
+            return saved
+        except (LlmError, RuntimeError) as exc:
+            why = f"{type(exc).__name__}: {str(exc)[:400]}"
+            before = (before + str(exc)[:400]) if isinstance(exc, RuntimeError) else ""
+    raise RuntimeError(f"{language}의 줄 구간을 만들지 못했다: {why}")
 
 
 def build(args: list[str]) -> int:
@@ -185,14 +327,16 @@ def build(args: list[str]) -> int:
         except Exception as exc:  # noqa: BLE001 - 하나가 안 돼도 나머지는 묶는다
             return name, None, f"{type(exc).__name__}: {str(exc)[:1500]}"
         before, path = old.get(row["id"]) or {}, folder / "ready.json"
+        langs = {}  # ready.json의 langs: 언어마다 줄 구간(lang_ready)
 
         def keep(ready: dict) -> None:
-            path.write_text(json.dumps({"source": row["source"], "ready": ready}, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+            path.write_text(json.dumps({"source": row["source"], "ready": ready, **({"langs": langs} if langs else {})}, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
 
         if not path.exists() and before.get("ready") and before.get("source") == row["source"] and row["id"] not in redo:
             keep(before["ready"])  # 옮기는 첫 한 번: 이전 builtin.json의 가이드·블록을 ready.json으로 옮긴다
         try:
             kept = json.loads(path.read_text(encoding="utf-8")) if path.exists() and row["id"] not in redo else {}
+            langs.update(kept.get("langs") or {})
             if kept.get("source") == row["source"]:
                 shape(kept["ready"], row["solutions"]["python"])  # 손으로 고친 것이 구조를 깨지 않았는지
         except Exception as exc:  # noqa: BLE001
@@ -215,11 +359,38 @@ def build(args: list[str]) -> int:
         else:  # 있던 가이드가 낡았거나 다시 만들라고 골랐다: 조용히 빠지면 안 된다
             have = f"ready.json의 출처 값 {kept['source']}이(가) 지금 글·정답 풀이의 값 {row['source']}과 다르다" if kept.get("source") is not None else "--redo로 다시 만들라고 골랐다"
             return name, row, f"가이드 없이 싣는다: {have}. 모델 없이는 다시 만들 수 없다(모델로 build하거나, 가이드와 상관없는 수정이면 출처 값을 맞춘다)"
-        return name, row, ""
+        failed = []
+        for language in [language for language in row["solutions"] if language != "python"] if row.get("ready") else []:  # 다른 언어의 가이드·블록
+            if (langs.get(language) or {}).get("source") != lang_source(row, language):
+                if "--no-model" in args and language not in langs:
+                    print(f"알림 {name}: ready.json에 {language} 줄 구간이 없어 그 언어의 가이드·블록 없이 싣는다(모델로 build하면 만든다)", file=sys.stderr)
+                    continue
+                if "--no-model" in args:
+                    failed.append(f"{language}: ready.json의 줄 구간이 지금 Python 계획의 블록 구간이나 그 언어 정답 풀이와 맞지 않아 그 언어의 가이드·블록 없이 싣는다(모델로 build하면 다시 받는다)")
+                    continue
+                try:
+                    langs[language] = lang_plan(row, language)
+                except RuntimeError as exc:
+                    failed.append(f"{language}: {exc}")
+                    continue
+                keep(row["ready"])
+            if langs[language].get("fits") is False:  # 그 언어 풀이의 차례가 Python 블록과 달라 나눌 수 없다: 열 때 만드는 길로 둔다
+                print(f"알림 {name}: {language} 풀이를 Python 블록의 차례대로 나눌 수 없어 그 언어의 가이드·블록 없이 싣는다(그 언어는 처음 시작할 때 만든다)", file=sys.stderr)
+                continue
+            try:
+                row.setdefault("readies", {})[language] = lang_ready(row, language, langs[language])
+            except RuntimeError as exc:
+                failed.append(f"{language}: ready.json의 줄 구간이 틀렸다(그 언어의 가이드·블록 없이 싣는다): {exc}")
+        return name, row, "; ".join(failed)
 
-    contexts = [copy_context() for _ in folders]
-    with ThreadPoolExecutor(max_workers=int(value("--workers", "4"))) as pool:
-        done = list(pool.map(lambda pair: pair[0].run(one, pair[1]), zip(contexts, folders)))
+    cli = os.environ.get("ALGOBLOCK_UI_CLIENT") == "cli" and "--no-model" not in args  # 개발용: 모델 대신 이 PC의 Claude Code를 부른다
+    if cli:
+        from tutor.eval.cli_client import ClaudeCli
+        from tutor.llm import use_llm
+    with use_llm(ClaudeCli()) if cli else nullcontext():
+        contexts = [copy_context() for _ in folders]
+        with ThreadPoolExecutor(max_workers=int(value("--workers", "4"))) as pool:
+            done = list(pool.map(lambda pair: pair[0].run(one, pair[1]), zip(contexts, folders)))
     rows, bad = [], 0
     for name, row, why in done:
         if row is not None:
@@ -233,8 +404,9 @@ def build(args: list[str]) -> int:
     order = {key: n for n, key in enumerate(ALGORITHMS)}
     rows.sort(key=lambda row: (order.get(row["theme"], 99), row["level"], row["id"]))
     out.write_text(json.dumps(rows, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
-    ready = sum(bool(row.get("ready")) for row in rows)
-    print(f"{len(rows)}개를 묶었다(이번에 검사한 문제 {len(folders)}개, 가이드·블록 {ready}개, 언어 {sorted({language for row in rows for language in row['languages']})}) → {out}")
+    ready, readies = sum(bool(row.get("ready")) for row in rows), sum(len(row.get("readies") or {}) for row in rows)
+    print(f"{len(rows)}개를 묶었다(이번에 검사한 문제 {len(folders)}개, 가이드·블록 {ready}개, 다른 언어의 가이드·블록 {readies}개, "
+          f"언어 {sorted({language for row in rows for language in row['languages']})}) → {out}")
     return 1 if bad else 0
 
 
