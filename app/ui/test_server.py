@@ -3985,7 +3985,9 @@ def language_switch_faults() -> None:
     """언어를 바꾸는 중에 실패해도 대화와 블록 칸의 글을 잃지 않는다(모델 0회).
     손으로 고친 보관분: 형이 맞지 않는 줄은 건너뛰고 바꾸기는 끝난다(언어와 코드가 함께 바뀐다).
     저장소를 바꾸는 중의 실패: 예전 언어의 대화가 그대로고, 대화가 없으면 새로 시작하는 화면처럼 하고 언어를 오가도 처음 말이 남는다.
-    되살린 뒤 블록 칸 파일 쓰기의 실패: 그 언어의 블록 칸 글이 보관분이나 파일에 남는다."""
+    방금 담은 사본은 빼서, 실패 뒤에 고친 칸 글을 다시 연 화면이 옛 사본으로 덮지 않는다.
+    되살린 뒤 블록 칸 파일 쓰기의 실패: 그 언어의 칸 글이 보관분에 남고, 다시 연 화면이나 다음 바꾸기가 마저 쓴다
+    (다른 언어의 칸 글이 이 언어의 것으로 보이거나 담기지 않는다. 그사이 상태를 새로 받지 않은 화면이 보낸 코드·칸 글은 다른 언어의 것이라 쓰지 않는다)."""
     pid = server.register(GOOD)["id"]
     plans = {"python": own_ready("def solution(a, b):\n    return a + b"), "java": own_ready("class Solution { int solution(int a, int b) { return a + b; } }")}
     fake = FakeLlm({})
@@ -4034,6 +4036,9 @@ def language_switch_faults() -> None:
                 pass
         with server.tutor() as t:
             assert t.store.load(pid).language == "python" and talk_of(pid) == before, "바꾸는 중에 실패하자 예전 언어의 대화가 사라졌다"
+        edited = {"b1": {"code": "return a + b  # 실패 뒤에 고침", "by": "me"}}
+        call("/api/blocks", id=pid, blocks=edited, language="python")
+        assert call("/api/state", id=pid, open=True)[1]["blocks"] == edited, "되돌려진 바꾸기의 옛 사본이 그 뒤에 고친 칸 글을 덮었다"
         assert firsts() == (py_first, java_first), "다시 시작하고 언어를 오가자 처음 말이 사라졌다"
 
         write = server.write_json
@@ -4041,14 +4046,33 @@ def language_switch_faults() -> None:
             if path == server.BLOCKS_FILE:
                 raise OSError(28, "No space left on device")
             return write(path, data)
-        with patch.object(server, "write_json", full):
-            try:
-                call("/api/language", id=pid, language="java")
-                raise AssertionError("블록 칸 쓰기 실패를 알려야 한다")
-            except OSError:
-                pass
-        kept_blocks = ((server.read_json(server.KEPT_FILE, {}).get(pid) or {}).get("java") or {}).get("talk", {}).get("blocks")
-        assert java_blocks in (kept_blocks, server.read_json(server.BLOCKS_FILE, {}).get(pid)), "블록 칸의 글이 어디에도 남지 않았다"
+
+        def blocks_write_fails(language: str) -> None:
+            with patch.object(server, "write_json", full):
+                try:
+                    call("/api/language", id=pid, language=language)
+                    raise AssertionError("블록 칸 쓰기 실패를 알려야 한다")
+                except OSError:
+                    pass
+
+        def kept_blocks(language: str):
+            return (((server.read_json(server.KEPT_FILE, {}).get(pid) or {}).get(language) or {}).get("talk") or {}).get("blocks")
+
+        py_blocks, py_code = {"b1": {"code": "return a + b  # 파이썬 칸", "by": "me"}}, "def solution(a, b):\n    return a + b  # 파이썬 코드"
+        call("/api/blocks", id=pid, blocks=py_blocks, language="python")
+        call("/api/code", id=pid, code=py_code, language="python")
+        blocks_write_fails("java")  # 칸 파일에는 파이썬 칸 글이 남고 언어는 자바다
+        assert java_blocks in (kept_blocks("java"), server.read_json(server.BLOCKS_FILE, {}).get(pid)), "블록 칸의 글이 어디에도 남지 않았다"
+        assert call("/api/state", id=pid, open=True)[1]["blocks"] == java_blocks, "다시 연 화면의 블록 칸에 다른 언어의 글이 보인다"
+        call("/api/language", id=pid, language="python")
+        call("/api/language", id=pid, language="java")  # 더 실패 없이 한 번 더 오간다
+        assert (server.read_json(server.BLOCKS_FILE, {}).get(pid), kept_blocks("python")) == (java_blocks, py_blocks), "오간 뒤 어느 언어의 칸 글이 사라졌다"
+
+        blocks_write_fails("python")  # 칸 파일에는 자바 칸 글이 남는다. 화면은 상태를 새로 받지 않아 아직 자바의 코드·칸 글을 보낸다
+        call("/api/language", id=pid, language="cpp", code=java_code, blocks=java_blocks)
+        back = call("/api/language", id=pid, language="python")[1]
+        assert (back["blocks"], back["problem"]["code"]) == (py_blocks, py_code), "다른 언어의 코드·칸 글이 파이썬의 것으로 담겼다"
+        assert call("/api/language", id=pid, language="java")[1]["blocks"] == java_blocks
         assert not fake.calls, fake.calls
     call("/api/problems/delete", id=pid)
 

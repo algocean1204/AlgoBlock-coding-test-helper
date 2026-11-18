@@ -1993,16 +1993,22 @@ def change_language(t, p, language: str, code: str | None, blocks: dict | None =
     풀이 가이드·블록 계획·대화·블록 진행은 언어마다 달라, 예전 언어의 것을 보관하고 새 언어로 보관한 것이 있으면 되살린다
     (원래 언어로 돌아오면 하던 대화가 그대로고 모델을 다시 부르지 않는다). 제출 기록, 문항 뼈대, 피드백, 학습 기록은 언어와 상관없이 남긴다."""
     pid, ctx = p.id, t.store.load(p.id)
+    if settle_left(pid, ctx.language):  # 지난 바꾸기를 마저 끝냈다: 화면은 그 뒤 상태를 새로 받지 않아 다른 언어의 코드·칸 글을 보내고 있다
+        code = blocks = None
     if blocks is not None:
         write_json(BLOCKS_FILE, {**read_json(BLOCKS_FILE, {}), pid: blocks})
     codes = read_json(CODES_FILE, {})
     mine = {**codes.get(pid, {}), ctx.language: ctx.direct_code if code is None else code}
     write_json(CODES_FILE, {**codes, pid: mine})
     keep_plan(t, pid, ctx.language)
-    with t.store.conn:  # 지우기·언어와 코드·되살리기를 한 트랜잭션으로(중간에 실패하면 예전 언어의 계획과 대화가 저장소에 그대로 남는다)
-        drop_rows(t, pid)
-        t.store.conn.execute("UPDATE problem SET language=?, direct_code=? WHERE id=?", (language, mine.get(language, ""), pid))
-        talk = restore_plan(t, pid, language)
+    try:
+        with t.store.conn:  # 지우기·언어와 코드·되살리기를 한 트랜잭션으로(중간에 실패하면 예전 언어의 계획과 대화가 저장소에 그대로 남는다)
+            drop_rows(t, pid)
+            t.store.conn.execute("UPDATE problem SET language=?, direct_code=? WHERE id=?", (language, mine.get(language, ""), pid))
+            talk = restore_plan(t, pid, language)
+    except BaseException:
+        unkeep_talk(pid, ctx.language)  # 저장소가 그대로이니 방금 담은 대화 사본을 뺀다(남기면 바로잡기가 그 뒤에 고친 칸 글을 옛 사본으로 덮는다)
+        raise
     LANG[pid] = language
     forget_plan(pid)
     settle_talk(pid, language, talk)
@@ -2084,11 +2090,26 @@ def settle_talk(pid: str, language: str, talk: dict) -> None:
     rows = {key: value for key, value in read_json(BLOCKS_FILE, {}).items() if key != pid}
     write_json(BLOCKS_FILE, {**rows, pid: blocks} if blocks else rows)
     own_way(pid, talk.get("own_way") is True)
+    unkeep_talk(pid, language)  # 되살린 대화는 보관분에서 뺀다(지금 언어의 대화는 저장소에만 있다)
+
+
+def unkeep_talk(pid: str, language: str) -> None:
+    """보관분에서 그 언어의 talk를 뺀다."""
     saved = read_json(KEPT_FILE, {})
     kept = (saved.get(pid) or {}).get(language)
-    if isinstance(kept, dict) and "talk" in kept:  # 되살린 대화는 보관분에서 뺀다(지금 언어의 대화는 저장소에만 있다)
+    if isinstance(kept, dict) and "talk" in kept:
         del kept["talk"]
         write_json(KEPT_FILE, saved)
+
+
+def settle_left(pid: str, language: str) -> bool:
+    """지난 언어 바꾸기가 저장소를 바꾼 뒤 파일을 다 쓰지 못했으면(지금 언어의 talk가 보관분에 남아 있다) 마저 쓴다. 마저 썼으면 True.
+    남은 채로 두면 칸 파일에 다른 언어의 글이 이 언어의 것으로 보이고, 다음 바꾸기가 그 글을 이 언어의 것으로 담아 이 언어의 칸 글을 잃는다."""
+    kept = (read_json(KEPT_FILE, {}).get(pid) or {}).get(language)
+    if not (isinstance(kept, dict) and "talk" in kept):
+        return False
+    settle_talk(pid, language, kept["talk"] if isinstance(kept["talk"], dict) else {})
+    return True
 
 
 def forget_kept(pid: str) -> None:
@@ -2835,6 +2856,13 @@ def handle(path: str, body: dict) -> tuple[int, dict]:
         if ready and path in ("/api/state", "/api/language", "/api/turn", "/api/explain"):
             t.adopt(pid, ready)  # 기본 문제는 미리 만들어 둔 그 언어의 풀이 가이드와 블록으로 바로 시작한다(계획이 이미 있으면 그대로 둔다)
         if path in ("/api/state", "/api/language"):
+            # 화면이 문제를 새로 열 때만(그때만 블록 칸을 받아 채운다. 준비 중 3초마다 다시 읽는 상태에서는 kept.json을 읽지 않는다):
+            # 지난 언어 바꾸기가 파일을 다 쓰지 못했으면 마저 쓴다. 바꾸기나 준비가 잠금을 쥐고 있으면 기다리지 않고 다음에 연다
+            if body.get("open") is True and LOCKS[pid].acquire(blocking=False):
+                try:
+                    settle_left(pid, language)
+                finally:
+                    LOCKS[pid].release()
             return 200, state_body(t, p, body)
         if path == "/api/run":  # 공개 예시만, 또는 직접 넣은 값(input) 하나로 돌려 본다. 제출로 남기지 않는다
             code = need_code(body)
