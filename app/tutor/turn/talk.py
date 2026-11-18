@@ -2,14 +2,15 @@
 
 import logging
 
-from ..common.solution import solution_lines
+from ..common.solution import solution_lines, solution_of
 from ..llm import cached_user
 from ..common.progress_view import active_plan
 from ..common.scope import algorithm_line
 from ..common.talk_prompts import CONCEPT_FIRST, HARD_STEP, learner_lines
-from ..common.talk_rules import FALLBACK, defer_ask, deferred_user, kind_word, many_asks_line, note_fallback, repair, reply_problems
+from ..common.talk_rules import FALLBACK, code_leaks, defer_ask, deferred_user, kind_word, many_asks_line, note_fallback, repair, reply_problems
 from ..knowledge.ontology import hidden_terms
 from ..request_check.nodes import mode_messages
+from ..save.respond import shown_count
 from ..state import MainState, MovePlan, TurnContext
 from .moves import hard
 
@@ -101,12 +102,19 @@ def checked_reply(state: MainState, move: MovePlan, text: str) -> tuple[str, lis
     # 가이드가 사용자 말에 답하는 턴은 뒤 블록 이름을 좁혀 본다. 걸리지 않으면 '3문장 초과'는 대체 질문 대신 repair가 뒤 세 문장으로 자른다
     replying = (state["request"].mode == "guide" and turn is not None and turn.event == "message" and bool(turn.text)
                 and not getattr(state.get("verdict"), "aside", ""))
-    check = dict(move=move.move, problem=ctx.problem_text, reference=reference, later_names=[b.name for b in plan.blocks[move.target + 1 :]],
+    hidden = move.target + 1
+    if move.move == "term":  # 되묻기 답: 의자에서 아직 찾지 않은 지금 블록의 이름도 막는다(화면이 이름을 가리는 것과 같다)
+        hidden = min(hidden, shown_count(ctx, state["request"].mode))
+    check = dict(move=move.move, problem=ctx.problem_text, reference=reference, later_names=[b.name for b in plan.blocks[hidden:]],
                  said=said, language=ctx.language, loose_names=replying, user=turn_text(state))
     problems = reply_problems(text, **check)
     if not problems or not {"코드 펜스", "참고 코드", "뒤 블록 이름", "금지 표현", "동의로 시작", "3인칭 메모", "영어 지시문"} & set(problems):
         text = repair(text, ctx.problem_text, said, move.move, reference, ctx.language, turn_text(state))
         problems = reply_problems(text, **check)
+    if move.move == "term":  # 되묻기 답의 문법 예가 이 문제의 이름·코드 줄을 썼다(참고 코드 줄과 글자가 같을 때만 막아 변형이 샜다)
+        code = "\n".join([*(b.reference for b in plan.blocks), getattr(solution_of(state), "code", ""), ctx.starter])
+        if code_leaks(text, code, ctx.language):
+            problems.append("이 문제의 코드")
     if problems:
         LOG.info("대체 질문", extra={"move": move.move, "problems": problems})
         note_fallback(f"{state['request'].mode}.{move.move}", problems, text)

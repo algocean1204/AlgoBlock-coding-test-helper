@@ -231,6 +231,55 @@ class TalkBankTest(unittest.TestCase):
                         self.assertNotEqual(done["result"]["move"], "term")
 
 
+class TermLeakTest(unittest.TestCase):
+    """되묻기 답(term)의 결정적 검사. 이 문제의 이름을 쓴 코드, 참고 코드 줄과 공백만 다른 코드, 의자에서 찾기 전 지금 블록 이름은 대체 질문으로 바뀐다.
+    상관없는 이름으로 쓴 문법 예는 그대로 나간다. 어느 쪽이든 호출은 판정 1 + 생성 1이고 진행과 힌트 번호는 그대로다."""
+
+    LEAKS = [("plus", "`for x in items`처럼 쓰면 값을 하나씩 꺼내요. 그럼 처음 질문으로 돌아가서, 무엇을 하나씩 볼까요?"),
+             ("plus", "`if x>0:`처럼 쓰면 조건을 걸 수 있어요. 그럼 언제 합에 더해야 할까요?"),
+             ("plus", "`total+=x`처럼 쓰면 값을 더해요. 그럼 언제 더해야 할까요?"),
+             ("plus", "`for n in items:`처럼 쓰면 값을 하나씩 꺼내요. 그럼 무엇을 하나씩 볼까요?"),
+             ("plus", "`items[0]`처럼 쓰면 첫 값을 꺼내요. 그럼 무엇을 하나씩 볼까요?"),
+             ("shelf", "`count[t] = count.get(t, 0) + 1`처럼 쓰면 개수를 셀 수 있어요. 그럼 제목마다 무엇을 기록해 둘까요?"),
+             ("shelf", "seen[t] = count.get(t, 0) + 1 처럼 쓰면 개수를 셀 수 있어요. 그럼 제목마다 무엇을 기록해 둘까요?")]  # 백틱 없는 대입 줄
+    NAMED = "지금은 양수만 더하기 블록이니 하나씩 보는 문법부터 볼게요. 그럼 items의 값을 어떻게 하나씩 볼까요?"
+    FINE = ["`for fruit in fruits:`처럼 쓰면 과일을 하나씩 꺼내요. 그럼 처음 질문으로 돌아가서, items의 값을 어떻게 하나씩 볼까요?",
+            "`for x in fruits:`처럼 쓰면 과일을 하나씩 꺼내요. 그럼 처음 질문으로 돌아가서, items의 값을 어떻게 하나씩 볼까요?"]
+
+    def turn(self, mode, scene, reply):
+        """[check]Q 뒤 말 만들기 답을 넣는다. 나간 말을 돌려주고, 호출·진행과 다음 '모르겠어요'의 힌트 번호를 본다."""
+        ctx = scene_context(mode, scene)
+        done, fake = talked(mode, ctx, GRAMMAR, "[check]Q", reply)
+        self.assertEqual((done["result"]["move"], done["result"]["advance"], done["open_count"], fakes.tasks(fake)),
+                         ("term", False, 1, [f"{mode}.judge", ASK[mode]]))
+        later, fake2 = fakes.go(said(mode, "모르겠어요")(saved(done, mode)[0]), {})
+        self.assertEqual((later["result"]["reply"], later["open_count"], fake2.calls), (bank.SCENES[scene]["hints"][1], 1, []))
+        return done["result"]["reply"]
+
+    def test_problem_code_falls_back(self):
+        from ..common.talk_rules import FALLBACK
+
+        for mode in ("chair", "guide"):
+            for scene, reply in self.LEAKS:
+                with self.subTest(mode=mode, reply=reply):
+                    self.assertEqual(self.turn(mode, scene, reply), FALLBACK["term"])
+
+    def test_unfound_block_name_falls_back_only_in_chair(self):
+        from ..common.talk_rules import FALLBACK
+
+        self.assertEqual(self.turn("chair", "plus", self.NAMED), FALLBACK["term"])  # 의자: 지금 블록 이름은 찾을 답이다
+        self.assertEqual(self.turn("guide", "plus", self.NAMED), self.NAMED)  # 가이드: 지금 블록 이름은 이미 보인다
+
+    def test_unrelated_example_goes_out(self):
+        for mode in ("chair", "guide"):
+            for reply in self.FINE:
+                with self.subTest(mode=mode, reply=reply):
+                    self.assertEqual(self.turn(mode, "plus", reply), reply)
+
+    def test_term_step_hides_current_block_name_in_chair(self):
+        self.assertIn("지금 블록 이름", CHAIR_STEPS["term"])
+
+
 @unittest.skipUnless(os.environ.get("ALGOBLOCK_LIVE") == "1", "ALGOBLOCK_LIVE=1일 때만")
 class LiveTalkBankTest(unittest.TestCase):
     def test_misjudged_share(self):

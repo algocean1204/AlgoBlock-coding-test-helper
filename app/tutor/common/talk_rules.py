@@ -11,7 +11,7 @@ import re
 import sys
 from difflib import SequenceMatcher
 
-from .solution import body_lines, bound_names, frame_flags
+from .solution import _WORDS, body_lines, bound_names, frame_flags
 
 BANNED = (
     "정답", "맞아요", "맞습니다", "틀렸어요", "완벽", "훌륭", "잘했어요", "좋아요", "좋은 질문", "좋은 생각",
@@ -517,6 +517,23 @@ def code_names(text: str, code: str, problem: str) -> list[str]:
     """말에 나온 코드 이름 가운데 문제 글에 없는 것('day일까지 점검이 몇 번인지': day는 참고 코드의 인자 이름이다). 코드 구간(백틱)은 보지 않는다."""
     names = set(_NAME.findall(code or "")) - set(_NAME.findall(problem or ""))
     return sorted(set(_NAME.findall(without_code(text or ""))) & names)
+
+
+_OWN_NAME = re.compile(r"(?<![\w.])[A-Za-z_]\w+")  # 두 글자 이상, 점 뒤(메서드·속성)는 아닌 이름
+
+
+def code_leaks(text: str, code: str, language: str) -> bool:
+    """말의 코드 구간·코드 모양 줄이 이 문제의 코드를 옮겼는가. 되묻기 답(term)의 문법 예가 이 문제의 변수와 답 줄을 썼다.
+    code의 이름(예약어·내장 이름, 대문자로 시작하는 형·클래스 이름은 뺀다)을 쓰거나, 공백을 빼고 견줘 code의 줄을 담으면 참.
+    한 글자 이름과 예약어만 같은 예('for x in fruits:')는 거짓이다."""
+    parts = []
+    outside_code(text or "", lambda line: line, lambda span: parts.append(span) or span)
+    words = _WORDS["python" if language == "python" else "other"]
+    names = {name for name in _OWN_NAME.findall(code or "") if name not in words and not name[0].isupper()}
+    # 견줄 줄: 끝의 ':', ';', '{'를 뗀 5자 이상, 예약어가 아닌 이름이 있는 줄('} else {', 'else:'는 뺀다)
+    rows = [row for row in (_squash(line).rstrip(":;{") for line in (code or "").splitlines())
+            if len(row) >= 5 and any(word not in words for word in re.findall(r"[A-Za-z_]\w*", row))]
+    return any(names & set(_OWN_NAME.findall(part)) or any(row in _squash(part) for row in rows) for part in parts)
 
 
 SAME_HINT = 0.8  # 공백을 뺀 두 질문이 이만큼 같으면 같은 질문을 되풀이한 것이다
