@@ -9,7 +9,7 @@ AlgoBlock의 문서가 어디에 있는지 읽는 사람별로 모았다. 코드
 | [guide/install.md](guide/install.md) | 내려받기, 처음 여는 법, 소스로 실행하기, 채점 언어의 도구 |
 | [guide/connect-ai.md](guide/connect-ai.md) | 튜터를 쓰려면 무엇을 연결하나, 키는 어디에 저장되나, 과정별 모델 |
 | [guide/solve.md](guide/solve.md) | 세 가지 푸는 방식, 블록, 힌트와 해설, 결과 뒤 할 일, 학습 보고서 |
-| [guide/add-problem.md](guide/add-problem.md) | 내 문제를 넣는 세 걸음, 검증 표시의 뜻, 단계와 주제 |
+| [guide/add-problem.md](guide/add-problem.md) | 내 문제를 넣는 한 화면, 제목과 예시를 채우는 규칙, 검증 표시의 뜻, 단계와 주제 |
 | [guide/beta.md](guide/beta.md) | 베타로 써 보는 범위, 시작하는 순서, 알아 둘 한계와 비용, 피드백 남기는 곳 |
 
 ## 고치려는 사람
