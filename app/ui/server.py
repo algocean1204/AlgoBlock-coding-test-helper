@@ -1999,11 +1999,13 @@ def change_language(t, p, language: str, code: str | None, blocks: dict | None =
     mine = {**codes.get(pid, {}), ctx.language: ctx.direct_code if code is None else code}
     write_json(CODES_FILE, {**codes, pid: mine})
     keep_plan(t, pid, ctx.language)
-    drop_plan(t, pid)
-    t.store.set_language(pid, language)
-    restore_plan(t, pid, language)
-    t.store.update_code(pid, mine.get(language, ""))
+    with t.store.conn:  # 지우기·언어와 코드·되살리기를 한 트랜잭션으로(중간에 실패하면 예전 언어의 계획과 대화가 저장소에 그대로 남는다)
+        drop_rows(t, pid)
+        t.store.conn.execute("UPDATE problem SET language=?, direct_code=? WHERE id=?", (language, mine.get(language, ""), pid))
+        talk = restore_plan(t, pid, language)
     LANG[pid] = language
+    forget_plan(pid)
+    settle_talk(pid, language, talk)
 
 
 def retire_languages() -> None:
@@ -2042,35 +2044,51 @@ def keep_plan(t, pid: str, language: str) -> None:
         write_json(KEPT_FILE, {**saved, pid: {**(saved.get(pid) or {}), language: kept}})
 
 
-def restore_plan(t, pid: str, language: str) -> None:
-    """보관해 둔 그 언어의 준비 결과와 대화·블록 진행을 되살린다. 손으로 고쳐 모양이 다른 계획은 건너뛴다(다시 준비한다)."""
+def sql_values(values) -> bool:
+    """SQLite에 그대로 넣을 수 있는 값들인가(손으로 고친 kept.json의 사전·목록·참거짓·너무 큰 수가 아니다)."""
+    return all(value is None or type(value) in (str, float) or (type(value) is int and -2 ** 63 <= value < 2 ** 63) for value in values)
+
+
+def restore_plan(t, pid: str, language: str) -> dict:
+    """보관해 둔 그 언어의 준비 결과와 대화·블록 진행의 줄을 저장소에 넣고 그 언어의 talk(없으면 빈 사전)를 돌려준다. 트랜잭션은 부르는 쪽이 연다.
+    손으로 고쳐 모양이나 값의 형이 맞지 않는 계획과 줄은 건너뛴다(계획은 다시 준비한다)."""
+    kept = (read_json(KEPT_FILE, {}).get(pid) or {}).get(language)
+    if not isinstance(kept, dict):
+        return {}
+    talk = kept["talk"] if isinstance(kept.get("talk"), dict) else {}
+    opened = talk["open_count"] if type(talk.get("open_count")) is int else 1  # 대화를 보관하기 전의 옛 보관분은 첫 블록부터
+    for name, table, columns in (("solution", "solution", SOLUTION_COLUMNS), ("session", "tutor_session", SESSION_COLUMNS)):
+        row = kept.get(name)
+        if not isinstance(row, dict) or set(row) != set(columns) or not sql_values(row.values()):
+            continue
+        extra = ("open_count",) if table == "tutor_session" else ()
+        t.store.conn.execute(f"INSERT OR REPLACE INTO {table}(problem_id, {', '.join(columns + extra)}) VALUES({', '.join('?' * (len(columns) + len(extra) + 1))})",
+                             (pid, *(row[column] for column in columns), *((opened,) if extra else ())))
+    for table in TALK_TABLES:  # 말 id도 그대로 넣는다(꼬리질문이 말 id로 잇는다. AUTOINCREMENT라 지운 id를 다른 말이 받지 않는다)
+        known = {column[1] for column in t.store.conn.execute(f"PRAGMA table_info({table})")} - {"problem_id"}
+        rows = talk.get(table)
+        for row in rows if isinstance(rows, list) else []:
+            names = [name for name in row if name in known] if isinstance(row, dict) else []
+            if names and sql_values(row[name] for name in names):  # 모르는 열은 빼고, 값의 형이 맞지 않거나 제약에 걸리는 줄은 건너뛴다(IGNORE)
+                t.store.conn.execute(f"INSERT OR IGNORE INTO {table}(problem_id, {', '.join(names)}) VALUES({', '.join('?' * (len(names) + 1))})", (pid, *(row[name] for name in names)))
+    return talk
+
+
+def settle_talk(pid: str, language: str, talk: dict) -> None:
+    """저장소에 되살린 뒤의 파일: 블록 칸과 '끝까지 내 방식으로'를 그 언어의 것으로 쓰고, 보관분의 talk는 맨 끝에 뺀다
+    (중간에 쓰기가 실패해도 블록 칸의 글이 보관분에 남는다)."""
+    try:
+        blocks = blocks_of({"blocks": talk.get("blocks")})
+    except Refuse:  # 손으로 고쳐 모양이 맞지 않는 블록 칸은 버린다
+        blocks = {}
+    rows = {key: value for key, value in read_json(BLOCKS_FILE, {}).items() if key != pid}
+    write_json(BLOCKS_FILE, {**rows, pid: blocks} if blocks else rows)
+    own_way(pid, talk.get("own_way") is True)
     saved = read_json(KEPT_FILE, {})
     kept = (saved.get(pid) or {}).get(language)
-    if not isinstance(kept, dict):
-        return
-    talk = kept.pop("talk", None)
-    talk = talk if isinstance(talk, dict) else {}
-    opened = talk["open_count"] if type(talk.get("open_count")) is int else 1  # 대화를 보관하기 전의 옛 보관분은 첫 블록부터
-    with t.store.conn:
-        for name, table, columns in (("solution", "solution", SOLUTION_COLUMNS), ("session", "tutor_session", SESSION_COLUMNS)):
-            row = kept.get(name)
-            if not isinstance(row, dict) or set(row) != set(columns):
-                continue
-            extra = ("open_count",) if table == "tutor_session" else ()
-            t.store.conn.execute(f"INSERT OR REPLACE INTO {table}(problem_id, {', '.join(columns + extra)}) VALUES({', '.join('?' * (len(columns) + len(extra) + 1))})",
-                                 (pid, *(row[column] for column in columns), *((opened,) if extra else ())))
-        for table in TALK_TABLES:  # 말 id도 그대로 넣는다(꼬리질문이 말 id로 잇는다. AUTOINCREMENT라 지운 id를 다른 말이 받지 않는다)
-            known = {column[1] for column in t.store.conn.execute(f"PRAGMA table_info({table})")} - {"problem_id"}
-            rows = talk.get(table)
-            for row in rows if isinstance(rows, list) else []:
-                names = [name for name in row if name in known] if isinstance(row, dict) else []
-                if names:  # 모르는 열은 빼고, 손으로 고쳐 넣을 수 없는 줄은 건너뛴다(IGNORE)
-                    t.store.conn.execute(f"INSERT OR IGNORE INTO {table}(problem_id, {', '.join(names)}) VALUES({', '.join('?' * (len(names) + 1))})", (pid, *(row[name] for name in names)))
-    if talk:  # 되살린 대화는 보관분에서 뺀다(지금 언어의 대화는 저장소에만 있다)
+    if isinstance(kept, dict) and "talk" in kept:  # 되살린 대화는 보관분에서 뺀다(지금 언어의 대화는 저장소에만 있다)
+        del kept["talk"]
         write_json(KEPT_FILE, saved)
-        if isinstance(talk.get("blocks"), dict) and talk["blocks"]:
-            write_json(BLOCKS_FILE, {**read_json(BLOCKS_FILE, {}), pid: talk["blocks"]})
-        own_way(pid, talk.get("own_way") is True)
 
 
 def forget_kept(pid: str) -> None:
@@ -2083,13 +2101,23 @@ def forget_kept(pid: str) -> None:
 def drop_plan(t, pid: str, *more: str) -> None:
     """풀이 가이드·블록 계획·대화·블록 진행·디버그 상태를 지운다(more: 함께 지울 표). 다음에 열 때 다시 준비한다."""
     with t.store.conn:
-        for table in ("message", "block_state", "debug_state", "tutor_session", "solution", *more):
-            t.store.conn.execute(f"DELETE FROM {table} WHERE problem_id=?", (pid,))
+        drop_rows(t, pid, *more)
+    forget_plan(pid)
+    write_json(BLOCKS_FILE, {key: value for key, value in read_json(BLOCKS_FILE, {}).items() if key != pid})
+    own_way(pid, False)
+
+
+def drop_rows(t, pid: str, *more: str) -> None:
+    """계획·대화·블록 진행·디버그 상태의 줄을 지운다. 트랜잭션은 부르는 쪽이 연다."""
+    for table in ("message", "block_state", "debug_state", "tutor_session", "solution", *more):
+        t.store.conn.execute(f"DELETE FROM {table} WHERE problem_id=?", (pid,))
+
+
+def forget_plan(pid: str) -> None:
+    """지운 계획에 딸린 메모리 상태를 버린다(뒤에서 돌던 대조는 GEN으로 옛 가이드의 결과를 남기지 않는다)."""
     PREPARED.discard(pid)
     GEN[pid] += 1
     REPORTS.pop(pid, None)
-    write_json(BLOCKS_FILE, {key: value for key, value in read_json(BLOCKS_FILE, {}).items() if key != pid})
-    own_way(pid, False)
 
 
 def own_way(pid: str, on: bool) -> None:

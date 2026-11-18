@@ -3947,6 +3947,7 @@ def language_round_trip_keeps_talk() -> None:
 
         back = call("/api/language", id=pid, language="python")[1]
         assert talk_of(pid) == (python[0], python[1], typed, True), (talk_of(pid), python)  # A의 것이 그대로(블록 칸은 바꾸기 직전에 보낸 것)
+        assert "talk" not in server.read_json(server.KEPT_FILE, {})[pid]["python"]  # 되살린 대화는 보관분에서 뺀다(두 군데에 남지 않는다)
         assert back["blocks"] == typed and back["own_way"] is True and back["session"]["blocks"]
         assert call("/api/language", id=pid, language="java")[1]["problem"]["language"] == "java" and talk_of(pid) == java  # B도 B의 것
         call("/api/language", id=pid, language="python")
@@ -3978,6 +3979,78 @@ def language_round_trip_keeps_talk() -> None:
     change = js[js.index("async function changeLanguage("):js.index("\n}\n", js.index("async function changeLanguage("))]
     assert re.search(r'api\("/api/language", \{[^}]*\bblocks\b', change) and "harvest()" in change, "언어를 바꿀 때 아직 저장하지 않은 블록 칸을 함께 보내야 한다"
     assert "langWant" not in js and "wantLanguage" not in js, "언어 바꾸기 확인이 남았다"
+
+
+def language_switch_faults() -> None:
+    """언어를 바꾸는 중에 실패해도 대화와 블록 칸의 글을 잃지 않는다(모델 0회).
+    손으로 고친 보관분: 형이 맞지 않는 줄은 건너뛰고 바꾸기는 끝난다(언어와 코드가 함께 바뀐다).
+    저장소를 바꾸는 중의 실패: 예전 언어의 대화가 그대로고, 대화가 없으면 새로 시작하는 화면처럼 하고 언어를 오가도 처음 말이 남는다.
+    되살린 뒤 블록 칸 파일 쓰기의 실패: 그 언어의 블록 칸 글이 보관분이나 파일에 남는다."""
+    pid = server.register(GOOD)["id"]
+    plans = {"python": own_ready("def solution(a, b):\n    return a + b"), "java": own_ready("class Solution { int solution(int a, int b) { return a + b; } }")}
+    fake = FakeLlm({})
+
+    def start(language: str) -> str:  # 계획이 없으면 넣고, 대화가 없으면 시작한다(화면이 튜터 탭에서 스스로 시작하듯). 첫 말 id
+        with server.tutor() as t:
+            if t.store.load(pid).plan is None:
+                t.adopt(pid, plans[language])
+            if not t.store.load(pid).chair:
+                call("/api/turn", id=pid, mode="chair", event="start")
+            return t.store.load(pid).chair[0].id
+
+    def firsts() -> tuple[str, str]:  # 두 언어를 오간 뒤 각 언어의 첫 말 id
+        call("/api/language", id=pid, language="java")
+        java = start("java")
+        call("/api/language", id=pid, language="python")
+        return start("python"), java
+
+    with use_llm(fake):
+        py_first = start("python")
+        call("/api/language", id=pid, language="java")
+        java_first = start("java")
+        java_blocks, java_code = {"b1": {"code": "return a + b; // 자바 칸", "by": "me"}}, "class Solution {}"
+        call("/api/blocks", id=pid, blocks=java_blocks, language="java")
+        call("/api/code", id=pid, code=java_code, language="java")
+        call("/api/language", id=pid, language="python")  # 자바의 대화·블록 칸은 이제 보관분에만 있다
+
+        saved = server.read_json(server.KEPT_FILE, {})
+        talk = saved[pid]["java"]["talk"]
+        talk["message"].append({**talk["message"][0], "id": 99999, "text": {"손으로": "넣은 사전"}})
+        talk["block_state"].append({"block_id": "b9", "code": ["목록"], "code_hash": "h", "verdict": "Y", "at": "t"})
+        server.write_json(server.KEPT_FILE, saved)
+        moved = call("/api/language", id=pid, language="java")[1]["problem"]
+        with server.tutor() as t:
+            ids = [m.id for m in t.store.load(pid).chair]
+        assert (moved["language"], moved["code"]) == ("java", java_code) and ids[0] == java_first and "99999" not in ids, (moved["language"], moved["code"], ids)
+        assert all(row[1] != "b9" for row in talk_of(pid)[0][1])  # 형이 맞지 않는 줄은 건너뛴다
+        call("/api/language", id=pid, language="python")
+
+        before = talk_of(pid)
+        with patch.object(server, "restore_plan", side_effect=RuntimeError("되살리는 중 실패")):
+            try:
+                call("/api/language", id=pid, language="java")
+                raise AssertionError("되살리는 중 실패를 알려야 한다")
+            except RuntimeError:
+                pass
+        with server.tutor() as t:
+            assert t.store.load(pid).language == "python" and talk_of(pid) == before, "바꾸는 중에 실패하자 예전 언어의 대화가 사라졌다"
+        assert firsts() == (py_first, java_first), "다시 시작하고 언어를 오가자 처음 말이 사라졌다"
+
+        write = server.write_json
+        def full(path, data):  # 블록 칸 파일만 쓰지 못한다(디스크가 가득 참)
+            if path == server.BLOCKS_FILE:
+                raise OSError(28, "No space left on device")
+            return write(path, data)
+        with patch.object(server, "write_json", full):
+            try:
+                call("/api/language", id=pid, language="java")
+                raise AssertionError("블록 칸 쓰기 실패를 알려야 한다")
+            except OSError:
+                pass
+        kept_blocks = ((server.read_json(server.KEPT_FILE, {}).get(pid) or {}).get("java") or {}).get("talk", {}).get("blocks")
+        assert java_blocks in (kept_blocks, server.read_json(server.BLOCKS_FILE, {}).get(pid)), "블록 칸의 글이 어디에도 남지 않았다"
+        assert not fake.calls, fake.calls
+    call("/api/problems/delete", id=pid)
 
 
 def own_ready(code: str) -> dict:
@@ -4698,6 +4771,7 @@ def main() -> None:
         guessed_level()
         kept_languages()
         language_round_trip_keeps_talk()
+        language_switch_faults()
         edit_changes()
         explicit_mode()
         program_mode()
