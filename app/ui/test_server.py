@@ -1983,8 +1983,14 @@ def key_check_flow() -> None:
     def to_first(request, timeout):  # 공식 주소 대신 첫 루프백 서버로 보내되, 헤더와 기본 opener(리다이렉트를 따르지 않는 것)는 그대로 쓴다
         return keycheck.OPENER.open(urllib.request.Request(f"http://127.0.0.1:{first.server_port}/", headers=dict(request.header_items())), timeout=timeout)
 
-    Second.do_POST = Second.do_GET
-    First.do_POST = First.do_GET
+    def drained(handler):  # 본문을 다 읽고 답한다(읽지 않고 닫으면 Windows가 연결을 리셋해 리다이렉트 대신 연결 오류가 난다)
+        def do_POST(self):
+            self.rfile.read(int(self.headers.get("Content-Length") or 0))
+            handler(self)
+        return do_POST
+
+    Second.do_POST = drained(Second.do_GET)
+    First.do_POST = drained(First.do_GET)
     from app.llm import wire
     from app.llm.errors import LlmFailed
     from app.llm.openai.oauth import chat as oauth_chat, token as oauth_token
