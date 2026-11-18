@@ -51,7 +51,9 @@ for (const viewport of VIEWPORTS) {
   let stuck = false
   const need = async (what, fn) => { if (stuck) return; try { await fn() } catch (e) { stuck = true; problems.push(`${what}: ${String(e.message).split('\n')[0]}`) } }
   const context = await browser.newContext()
-  const clean = async (pid) => { const r = await context.request.post(`${base}/api/reset`, { data: { id: pid } }); if (!r.ok()) problems.push(`reset ${pid} ${r.status()}`) } // 대화·방식을 지운다(계획은 남는다)
+  const clean = async (pid) => { // 대화·방식을 지운다(계획은 남는다). 실패해도 던지지 않고 적는다(뒤 걸음과 사진이 남게)
+    try { const r = await context.request.post(`${base}/api/reset`, { data: { id: pid } }); if (!r.ok()) problems.push(`reset ${pid} ${r.status()}`) } catch (e) { problems.push(`reset ${pid}: ${String(e.message).split('\n')[0]}`) }
+  }
   const take = async () => { const p = FRESH.shift(); await clean(p.id); return p }
   await clean(PID)
   const page = await open(context, viewport, true, problems)
@@ -142,7 +144,7 @@ for (const viewport of VIEWPORTS) {
 
   // 6. 보내지 않은 글과 결과 줄은 문제마다 남는다: 다른 문제를 열었다 돌아와도 그대로, 다른 문제에는 옮겨 가지 않는다
   const mine = await take(), other = await take()
-  const drafts = await open(context, viewport, true, problems, mine.id)
+  const drafts = await open(await browser.newContext(), viewport, true, problems, mine.id)
   const draft = '아직 보내지 않은 생각'
   const go = (pid) => drafts.evaluate((h) => { location.hash = h }, `#/p/${pid}`)
   const titleOf = (pid) => drafts.waitForFunction((id) => location.hash.endsWith(id) && document.getElementById('p-title')?.textContent.trim().length > 0, pid, { timeout: 5000 })
@@ -170,9 +172,11 @@ for (const viewport of VIEWPORTS) {
     if ((await drafts.locator('#result .verdict').innerText()) !== verdict) throw new Error('결과 줄이 달라졌다')
   })
 
+  await drafts.context().close()
+
   // 7. 실행이 끝나기 전에 튜터 탭을 누르면 실행이 끝난 뒤 한 번만 시작한다(실행 요청을 붙잡아 둔다)
   const runner = await take()
-  const late = await open(context, viewport, true, problems, runner.id)
+  const late = await open(await browser.newContext(), viewport, true, problems, runner.id)
   let starts = 0, held, letRun
   const runHeld = new Promise((r) => { held = r })
   const runGate = new Promise((r) => { letRun = r })
@@ -194,9 +198,11 @@ for (const viewport of VIEWPORTS) {
     if (starts !== 1) throw new Error(`시작 요청 ${starts}회`)
   })
 
+  await late.context().close()
+
   // 8. 탭을 누를 때 보낸 상태 요청이 시작 뒤의 상태보다 늦게 와도 첫 질문을 덮지 않는다
   const racer = await take()
-  const race = await open(context, viewport, true, problems, racer.id)
+  const race = await open(await browser.newContext(), viewport, true, problems, racer.id)
   let armed = false, fetched, letOld, sent
   const oldFetched = new Promise((r) => { fetched = r })
   const oldGate = new Promise((r) => { letOld = r })
@@ -226,9 +232,11 @@ for (const viewport of VIEWPORTS) {
     if (!(await race.locator('#chat-log').isVisible()) || (await race.locator('#chat-log').innerText()) !== first) throw new Error('늦은 상태 응답이 대화를 옛 상태로 덮었다')
   })
 
+  await race.context().close()
+
   // 9. 더 정확한 풀이로 바꿔 끼우면(대화가 지워진다) 튜터가 한 번 더 시작한다. 시작한 뒤 대화만 지워지면 '다시 시작' 단추가 남는다
   const swapper = await take()
-  const swap = await open(context, viewport, true, problems, swapper.id)
+  const swap = await open(await browser.newContext(), viewport, true, problems, swapper.id)
   let swapStarts = 0, better = true
   swap.on('request', (r) => { if (r.url().endsWith('/api/turn') && r.postDataJSON()?.event === 'start') swapStarts++ })
   const wipe = () => swap.request.post(`${base}/api/reset`, { data: { id: swapper.id } }) // 서버의 대화를 지운다(계획은 남는다)
@@ -258,6 +266,8 @@ for (const viewport of VIEWPORTS) {
     if (swapStarts !== 3) throw new Error(`다시 시작 단추가 시작하지 않았다(${swapStarts}회)`)
   })
 
+  await swap.context().close()
+
   // 10. 문제를 고쳐 저장하고 돌아오면, 고치기 전에 담아 둔 보내지 않은 글과 결과 줄을 되살리지 않는다
   let ed = null, ownId = null
   const edGo = (h) => ed.evaluate((x) => { location.hash = x }, h)
@@ -267,7 +277,7 @@ for (const viewport of VIEWPORTS) {
       cases: [{ input: '[1, 2]', expected: '3' }, { input: '[5, 5]', expected: '10' }] } })
     if (!res.ok()) throw new Error(`등록 ${res.status()}`)
     ownId = (await res.json()).id
-    ed = await open(context, viewport, true, problems, ownId)
+    ed = await open(await browser.newContext(), viewport, true, problems, ownId)
     await tabReady(ed, 'solo')
     await ed.locator('#code').fill('def solution(a, b):\n    return a + b\n')
     await ed.locator('#run-own summary').click()
@@ -285,12 +295,13 @@ for (const viewport of VIEWPORTS) {
     await edGo(`#/edit/${ownId}`)
     await ed.waitForFunction(() => document.getElementById('new-title')?.value.trim().length > 0, null, { timeout: 5000 })
     await ed.locator('#new-title').fill('두 수의 합 고침')
-    await ed.locator('#new-next').click()
     await ed.locator('#new-submit').click()
     await edAt(ownId, '두 수의 합 고침')
     for (const id of DRAFT_IDS) if ((await ed.locator(`#${id}`).inputValue()) !== '') throw new Error(`#${id}에 고치기 전 글이 돌아왔다`)
     if (await ed.locator('#result .verdict').count()) throw new Error('고치기 전 케이스로 받은 결과 줄이 돌아왔다')
   })
+
+  await ed?.context().close()
 
   // 11. 연결이 없으면 튜터 탭 안에 연결 안내 카드(탭은 그대로 보이고, 모델은 부르지 않는다). 그 탭은 방식으로 남지 않는다
   const off = await open(await browser.newContext(), viewport, false, problems)
@@ -312,7 +323,8 @@ for (const viewport of VIEWPORTS) {
 
   if (problems.length) {
     failed++
-    await page.screenshot({ path: join(shots, `mode_tabs-${tag}.png`) }).catch(() => {})
+    await page.bringToFront().catch(() => {})
+    await page.screenshot({ path: join(shots, `mode_tabs-${tag}.png`) }).catch((e) => console.error(`screenshot ${tag}: ${String(e.message).split('\n')[0]}`))
     console.error(`FAIL ${tag}\n  - ${problems.join('\n  - ')}`)
   } else console.log(`ok ${tag}`)
   await context.close()

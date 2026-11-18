@@ -3380,7 +3380,7 @@ def confirm_allowlist() -> None:
         for tag in re.findall(r"<[a-z]+\b[^>]*\bclass=\"[^\"]*\bconfirm\b[^\"]*\"[^>]*>", (HERE / name).read_text(encoding="utf-8")):
             found = re.search(r"\bid=\"([^\"$]+)\"", tag)
             ids.add(found.group(1) if found else "block-fill")  # 블록 채우기 확인은 id 없이 그린다
-    allowed = {"new-clear-confirm", "reset-confirm", "del-confirm", "key-delete-confirm", "code-confirm", "case-fill-confirm", "edit-confirm", "block-fill", "lang-confirm"}
+    allowed = {"new-clear-confirm", "reset-confirm", "del-confirm", "key-delete-confirm", "code-confirm", "edit-confirm", "block-fill", "lang-confirm"}
     assert ids == allowed, (sorted(ids - allowed), sorted(allowed - ids))
 
 
