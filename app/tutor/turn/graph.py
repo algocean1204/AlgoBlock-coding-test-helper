@@ -6,8 +6,10 @@ prepare -- block_filled --> check_code(N3) --> pick_move
 prepare -- start --> pick_move
 judge는 내용 없는 짧은 말('모르겠어요', '힌트', '답 알려 주세요')을 규칙으로 먼저 가른다(모델 0회)
 pick_move -- 저장 힌트·고정 말 있음 --> check_reply(N6)
-pick_move -- 생성 필요(내용 있는 말, 저장 힌트 없는 옛 계획) --> speak(N5) --> check_reply --> END
+pick_move -- 생성 필요(내용 있는 말, 저장 힌트 없는 옛 계획, 미룬 물음을 안고 여는 블록) --> speak(N5) --> check_reply --> END
 """
+
+from dataclasses import replace
 
 from langgraph.graph import END, START, StateGraph
 
@@ -19,7 +21,7 @@ from .code_check import check_code
 from .context import prepare
 from ..common.talk_rules import OWN_WAY, WITHDRAWN, rename_note
 from .moves import found_tip, pick_move, rule_verdict
-from .talk import checked_reply, clean_text, speak_messages
+from .talk import carries_deferred, checked_reply, clean_text, speak_messages
 
 STEPS = {"N1": "prepare", "N2": "judge", "N3": "check_code", "N4": "pick_move", "N5": "speak", "N6": "check_reply"}
 
@@ -51,6 +53,8 @@ def turn_graph(mode: str, judge_messages, judge_rule: str, system: str, steps: d
         request = state["request"]
         if request.own_way and request.skip and verdict is not None and verdict.ok and not verdict.ran:  # 넘어가기 판정 그대로('확인 전'), 다음 블록 말 대신 고정 말
             return {"move": MovePlan("done", state["turn"].index, True, saved=OWN_WAY)}
+        if move.target != state["turn"].index and move.saved and carries_deferred(state):
+            move = replace(move, saved=None)  # 미룬 물음이 있다: 저장 힌트 대신 모델이 새 블록을 연다(드문 경우에만 모델 1회)
         return {"move": move}
 
     def speak(state: MainState) -> dict:

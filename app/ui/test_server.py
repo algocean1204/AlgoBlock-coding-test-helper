@@ -251,6 +251,8 @@ def builtin(fake) -> None:
     for case in wrong["cases"]:  # 숨은 테스트는 틀려도 입력·기대값·내 결과를 싣지 않는다(공개 예시만). 큰 입력의 크기도 싣지 않는다
         assert ("input" in case) == ("expected" in case) == ("got" in case) == (case["kind"] == "example") and "size" not in case, case
     timed = call("/api/submit", id=PID, code=slow)[1]  # 답은 맞지만 느린 풀이: 정확성은 다 맞고 효율성에서 시간 초과
+    held = server.REPORTS[PID][1]["cases"]  # 들고 있는 결과에는 큰 입력 글이 없다(문제마다 수 MB)
+    assert any(case["kind"] == "efficiency" for case in held) and all(case["input"] == "" for case in held if case["kind"] == "efficiency")
     assert timed["status"] == "timeout" and timed["score"]["accuracy"][0] == timed["score"]["accuracy"][1] and timed["score"]["efficiency"][0] < 2
     debug = call("/api/debug", id=PID, code=slow)[1]
     assert debug["efficiency_only"] and not debug["passed"]  # 틀린 줄을 찾을 일이 아니다(모델 0회)
