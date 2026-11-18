@@ -480,7 +480,7 @@ a.ladder-next:hover { background: var(--fill); }
 .own-tools .confirm { justify-content: flex-end; text-align: right; }
 .own-tools .confirm > span, #edit-confirm > span { flex-basis: 100%; }
 /* 언어 도구가 없을 때 실행·제출 옆의 까닭 줄, 연결 칸의 언어 도구 목록 */
-.code-actions .note { padding: 4px 10px; font-size: 12.5px; }
+.run-bar .note { padding: 4px 10px; font-size: 12.5px; }
 .tools-list { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; justify-self: stretch; }
 .tools-list li { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 14px; }
 #code-error { margin: 8px 16px 0; }
@@ -507,7 +507,7 @@ a.ladder-next:hover { background: var(--fill); }
 .sep::before { content: ""; position: absolute; left: 50%; top: 50%; width: 4px; height: 32px; margin: -16px 0 0 -2px; border-radius: 2px; background: var(--muted); transition: background-color 0.15s, height 0.15s, margin-top 0.15s; }
 .sep:hover::before, .sep:focus-visible::before, .sep.dragging::before { background: var(--accent-text); height: 56px; margin-top: -28px; }
 .sep:focus-visible { outline: 2px solid var(--accent-text); outline-offset: -2px; border-radius: 7px; }
-body.resizing { cursor: col-resize; user-select: none; -webkit-user-select: none; }
+body.resizing { cursor: col-resize; user-select: none; -webkit-user-select: none; } body.resizing.rows { cursor: row-resize; }
 body.resizing .pane { pointer-events: none; }
 .pane { min-width: 0; min-height: 0; display: flex; flex-direction: column; background: var(--surface); border-radius: var(--r-lg); box-shadow: var(--shadow-card); overflow: hidden; }
 .pane-head { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 48px; padding: 8px 10px 8px 16px; box-shadow: 0 1px 0 var(--line); position: relative; z-index: 1; }
@@ -607,8 +607,8 @@ pre.code.bad { color: var(--danger); }
 #blocks-note:empty { display: none; }
 
 /* ── 편집기 ── */
-.editor-panel { display: flex; flex-direction: column; padding: 0; flex: 1 1 0; min-height: calc(12 * var(--code-line) + 20px); } /* 결과가 열려도 편집기는 12줄쯤을 지킨다(결과 칸이 줄어 제 안에서 스크롤) */
-.editor { position: relative; flex: 1; min-height: 160px; display: flex; background: var(--code-bg); overflow: hidden; }
+.editor-panel { display: flex; flex-direction: column; padding: 0; flex: 1 1 0; min-height: calc(4 * var(--code-line) + 20px); } /* 결과 칸을 끝까지 키워도 편집기는 4줄쯤을 지킨다 */
+.editor { position: relative; flex: 1; display: flex; background: var(--code-bg); overflow: hidden; }
 .editor::after { content: ""; position: absolute; inset: 0; z-index: 3; pointer-events: none; box-shadow: inset 0 0 0 2px var(--accent-text); opacity: 0; transition: opacity 0.15s; } /* 초점 테두리가 줄 번호 위에 */
 .editor:focus-within::after { opacity: 1; }
 /* 스크롤은 바깥 칸 하나가 한다: 색 글(pre)이 크기를 정하고 글상자가 같은 칸을 채우므로 글상자는 스크롤할 것이 없다. 줄 번호는 가로로 붙어 있다 */
@@ -645,12 +645,24 @@ pre.code.bad { color: var(--danger); }
 .line-note { flex: none; display: flex; align-items: center; gap: 8px; padding: 6px 8px 6px 16px; background: var(--warning-soft); color: var(--warning); font-size: 13.5px; font-weight: 600; }
 .line-note .btn { margin-left: auto; background: transparent; box-shadow: inset 0 0 0 1px currentColor; color: inherit; }
 
-.tab-hint { flex: none; margin: 0; padding: 4px 14px 0; font-size: 12.5px; color: var(--muted); visibility: hidden; } .tab-hint.on { visibility: visible; } /* 자리는 늘 잡아 두어, 보였다 사라질 때 단추가 밀리지 않는다 */
+/* 코드 칸의 위(블록·편집기)와 결과는 몫(flex-grow)으로 나뉜다. 끌어서 바꾸면 app.js가 두 칸의 flex-grow를 적는다. 결과가 없으면 위가 다 쓴다 */
+.code-main { position: relative; flex: 60 1 0px; min-height: calc(4 * var(--code-line) + 20px); display: flex; flex-direction: column; }
+.sep-row { flex: none; position: relative; z-index: 2; height: 10px; border-top: 1px solid var(--line); background: var(--surface-2); cursor: row-resize; touch-action: none; }
+.sep-row::after { content: ""; position: absolute; inset: 0 0 -6px; } /* 누르는 자리는 16px. 편집기의 가로 스크롤 막대를 가리지 않게 아래로만 넓힌다 */
+.sep-row::before { content: ""; position: absolute; left: 50%; top: 50%; width: 32px; height: 4px; margin: -2px 0 0 -16px; border-radius: 2px; background: var(--muted); transition: background-color 0.15s, width 0.15s, margin-left 0.15s; }
+.sep-row:hover::before, .sep-row:focus-visible::before, .sep-row.dragging::before { background: var(--accent-text); width: 56px; margin-left: -28px; }
+.sep-row:focus-visible { outline: 2px solid var(--accent-text); outline-offset: -2px; border-radius: 0; }
+.sep-row + .result { border-top: 0; }
+/* Tab 안내는 자리를 차지하지 않고 코드 칸 오른쪽 아래에 겹쳐 뜬다 */
+.tab-hint { position: absolute; right: 12px; bottom: 10px; z-index: 4; max-width: calc(100% - 24px); margin: 0; padding: 4px 10px; border-radius: var(--r-sm); background: var(--surface); box-shadow: var(--shadow-lift); font-size: 12.5px; color: var(--muted); pointer-events: none; visibility: hidden; } .tab-hint.on { visibility: visible; }
 .code-actions { flex: none; display: flex; align-items: center; gap: 8px; padding: 10px 12px; box-shadow: 0 -1px 0 var(--line); position: relative; }
-.code-actions #submit { min-width: 76px; }
+/* 실행·제출은 오른쪽 칸 머리 바로 아래. 혼자 풀기의 좁은 칸(150px)에서는 세로로 쌓는다 */
+.run-bar { flex: none; display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 10px 12px; box-shadow: 0 1px 0 var(--line); position: relative; z-index: 1; }
+.run-bar #submit { min-width: 76px; }
+.panes.railed .run-bar { flex-direction: column; align-items: stretch; }
 .code-actions #code-note { font-size: 12.5px; margin-left: auto; text-align: right; }
 .code-actions { flex-wrap: wrap; }
-.code-actions .confirm { flex: 1 1 100%; flex-wrap: wrap; row-gap: 4px; } /* 물음은 눌렀던 단추 바로 옆(이 줄)에 뜬다 */
+.code-actions .confirm { flex: 1 1 100%; flex-wrap: wrap; row-gap: 4px; } /* 코드 칸의 물음(모아서 실행·블록 코드 가져오기·체크포인트·초기화)은 코드 칸 아래 이 줄에 뜬다 */
 .run-own > summary { padding: 4px 6px; border-radius: 6px; font-size: 13px; font-weight: 600; color: var(--muted); cursor: pointer; }
 .run-own[open] { order: 1; flex-basis: 100%; }
 .run-own-row { display: flex; align-items: flex-start; gap: 8px; margin-top: 6px; }
@@ -662,7 +674,7 @@ pre.code.bad { color: var(--danger); }
 .own-run pre.code { margin: 0; }
 
 /* ── 채점 결과 ── */
-.result { flex: 0 1 auto; min-height: 0; max-height: 40%; overflow: auto; padding: 14px 16px 16px; border-top: 1px solid var(--line); background: var(--surface-2); display: grid; gap: 12px; }
+.result { flex: 40 1 0px; min-height: 0; overflow: auto; padding: 14px 16px 16px; border-top: 1px solid var(--line); background: var(--surface-2); display: grid; align-content: start; gap: 12px; } /* 높이는 몫(.code-main 참고)이 정한다 */
 .verdict { display: flex; align-items: center; gap: 8px; font-size: 16px; font-weight: 700; }
 .verdict .badge { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; color: var(--on-solid); }
 .verdict .badge .ico { width: 12px; height: 12px; }
@@ -1044,7 +1056,7 @@ details.fold .ladders { box-shadow: none; } details.fold .legend { margin: 0 0 8
   .mode-hint { display: none; }
   .steps li:not(.now) { font-size: 0; gap: 0; }
 }
-@media (max-width: 1179px) { /* 문제 칸은 위 띠로 접히고(한 번 눌러 펼친다) 코드 칸과 주 동작이 첫 화면에 보인다 */
+@media (max-width: 1079px) { /* 문제 칸은 위 띠로 접히고(한 번 눌러 펼친다) 코드 칸과 주 동작이 첫 화면에 보인다 */
   .panes, .panes.folded { --min-code: 320px; --min-tutor: 300px; grid-template-columns: minmax(var(--min-code), var(--col-code, 1.2fr)) 10px minmax(var(--min-tutor), var(--col-tutor, 1fr)); grid-template-rows: auto minmax(0, 1fr); gap: 10px 0; padding: 6px 12px 12px; }
   .panes.railed { grid-template-columns: minmax(0, 1fr) 10px 140px; }
   .panes.folded.railed { grid-template-columns: minmax(390px, 1fr) 10px 150px; } /* 예전 그대로(접은 채 좁아진 혼자 풀기) */
@@ -1053,14 +1065,19 @@ details.fold .ladders { box-shadow: none; } details.fold .legend { margin: 0 0 8
   #pane-problem .pane-head { min-height: 40px; padding: 4px 8px 4px 16px; }
   .panes:not(.peek) #pane-problem .pane-body, .panes:not(.peek) #p-check { display: none; }
   #problem-fold { display: none; }
-  .editor-panel { min-height: calc(6 * var(--code-line) + 20px); }
   .problem-bar { padding: 8px 12px 0 16px; min-height: 0; }
   .status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); } /* 좁아도 읽어 주는 도구에는 남긴다 */
   .top .timer { margin-left: auto; }
   .top #tour-open { margin-left: auto; }
   .top .timer:not(:empty) + #tour-open { margin-left: 0; }
 }
-@media (min-width: 1180px) { #problem-peek { display: none; } }
+@media (min-width: 1080px) { #problem-peek { display: none; } }
+@media (max-height: 760px) { /* 낮은 화면(125% 배율의 1366x768 등): 머리 줄을 줄이고 푸는 차례 줄을 숨겨 코드·결과 칸에 높이를 준다 */
+  .top { height: 44px; }
+  .problem-bar { min-height: 0; padding-top: 6px; }
+  .steps { display: none; }
+}
+@media (max-height: 760px) and (max-width: 1079px) { #pane-problem, .panes.folded #pane-problem { max-height: 32vh; } } /* 펼친 문제 띠가 결과 칸을 화면 밖으로 밀지 않게 */
 @media (max-width: 760px) { /* 아주 좁으면 위에서 아래로 쌓는다 */
   .panes, .panes.folded, .panes.railed, .panes.folded.railed { grid-template-columns: minmax(0, 1fr); gap: 10px; }
   .sep { display: none; }

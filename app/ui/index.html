@@ -247,35 +247,36 @@
           </div>
         </header>
         <p id="kept-note" class="note kept" role="status" hidden>적어 둔 코드는 ‘코드 전체’에 그대로 있어요.</p>
-        <div id="panel-blocks" role="tabpanel" aria-labelledby="tab-blocks" class="pane-body">
-          <ol id="blocks" class="blocks"></ol>
-          <div id="blocks-note" role="status"></div>
-        </div>
-        <div id="panel-direct" role="tabpanel" aria-labelledby="tab-direct" class="pane-body editor-panel" hidden>
-          <p id="line-note" class="line-note" hidden></p>
-          <p id="starter-note" class="line-note" hidden>케이스 값의 모양을 알아보지 못해 시작 코드를 만들지 못했어요. solution 함수를 직접 만들어 풀이를 담아 주세요.</p>
-          <div class="editor" id="editor">
-            <div class="code-scroll" id="code-scroll">
-              <div class="gutter" id="gutter" aria-hidden="true"></div>
-              <div class="code-stack">
-                <div class="line-mark" id="line-mark" hidden></div>
-                <pre class="hl" id="code-hl" aria-hidden="true"></pre>
-                <textarea id="code" aria-label="내 코드" aria-describedby="code-help" spellcheck="false" autocapitalize="off" autocomplete="off" wrap="off" data-send="submit" placeholder="여기에 전체 코드를 써요. 풀이는 solution 함수에 담아요."></textarea>
+        <div id="code-main" class="code-main">
+          <div id="panel-blocks" role="tabpanel" aria-labelledby="tab-blocks" class="pane-body">
+            <ol id="blocks" class="blocks"></ol>
+            <div id="blocks-note" role="status"></div>
+          </div>
+          <div id="panel-direct" role="tabpanel" aria-labelledby="tab-direct" class="pane-body editor-panel" hidden>
+            <p id="line-note" class="line-note" hidden></p>
+            <p id="starter-note" class="line-note" hidden>케이스 값의 모양을 알아보지 못해 시작 코드를 만들지 못했어요. solution 함수를 직접 만들어 풀이를 담아 주세요.</p>
+            <div class="editor" id="editor">
+              <div class="code-scroll" id="code-scroll">
+                <div class="gutter" id="gutter" aria-hidden="true"></div>
+                <div class="code-stack">
+                  <div class="line-mark" id="line-mark" hidden></div>
+                  <pre class="hl" id="code-hl" aria-hidden="true"></pre>
+                  <textarea id="code" aria-label="내 코드" aria-describedby="code-help" spellcheck="false" autocapitalize="off" autocomplete="off" wrap="off" data-send="submit" placeholder="여기에 전체 코드를 써요. 풀이는 solution 함수에 담아요."></textarea>
+                </div>
               </div>
             </div>
+            <p id="code-help" class="sr-only">Tab은 들여쓰기예요. 다음 칸으로 가려면 Esc를 누른 뒤 Tab을 누르세요. Ctrl+Enter 또는 Cmd+Enter로 제출해요.</p>
           </div>
-          <p id="code-help" class="sr-only">Tab은 들여쓰기예요. 다음 칸으로 가려면 Esc를 누른 뒤 Tab을 누르세요. Ctrl+Enter 또는 Cmd+Enter로 제출해요.</p>
+          <p id="tab-hint" class="tab-hint" aria-hidden="true">Tab은 들여쓰기예요. 다음 칸으로 나가려면 Esc를 누른 뒤 Tab을 누르세요.</p>
         </div>
-        <p id="tab-hint" class="tab-hint" aria-hidden="true">Tab은 들여쓰기예요. 다음 칸으로 나가려면 Esc를 누른 뒤 Tab을 누르세요.</p>
+        <div class="sep-row" id="sep-result" role="separator" tabindex="0" aria-orientation="horizontal" aria-controls="code-main" aria-label="코드와 결과 칸 사이 경계" hidden></div>
+        <section id="result" class="result" aria-label="채점 결과" hidden></section>
         <div class="code-actions">
           <span id="code-confirm" class="confirm" role="group" aria-label="코드 칸 확인" hidden>
             <span id="code-confirm-text" role="status"></span>
             <button type="button" id="code-yes" class="btn danger small"></button>
             <button type="button" id="code-no" class="btn quiet small">그대로 두기</button>
           </span>
-          <button type="button" id="compose-run" class="btn" data-model hidden>모아서 실행</button>
-          <button type="button" id="run" class="btn" data-model>예시 실행</button>
-          <button type="button" id="submit" class="btn" data-model>제출</button>
           <details id="run-own" class="run-own">
             <summary>내 입력으로 실행</summary>
             <div class="run-own-row">
@@ -284,11 +285,10 @@
               <button type="button" id="run-own-go" class="btn small" data-model>이 값으로 실행</button>
             </div>
           </details>
-          <span id="tool-note" class="note warn" role="status" hidden></span>
+          <button type="button" id="result-big" class="btn quiet small" hidden>결과 크게 보기</button>
           <button type="button" id="pull-blocks" class="btn quiet small" hidden>블록 코드 가져오기</button>
           <span id="code-note" class="muted"></span>
         </div>
-        <section id="result" class="result" aria-label="채점 결과" hidden></section>
       </section>
 
       <div class="sep" id="sep-tutor" role="separator" tabindex="0" aria-orientation="vertical" aria-controls="pane-code" aria-label="코드 칸과 튜터 칸 사이 경계"></div>
@@ -306,6 +306,12 @@
           </span>
         </header>
         <div id="way-info-box" class="head-info"></div>
+        <div class="run-bar" role="group" aria-label="실행과 제출">
+          <button type="button" id="compose-run" class="btn" data-model hidden>모아서 실행</button>
+          <button type="button" id="run" class="btn" data-model>예시 실행</button>
+          <button type="button" id="submit" class="btn" data-model>제출</button>
+          <span id="tool-note" class="note warn" role="status" hidden></span>
+        </div>
         <div class="tutor-body" id="tutor-body">
           <div id="way-box" class="pane-body way" hidden></div>
           <div id="rail" class="rail" hidden>
