@@ -648,7 +648,7 @@ def code_leaks(text: str, pieces: list[str], language: str, program: bool = Fals
     견주는 조각은 주석·틀 줄을 뺀 줄에서 나온, 만든 이름이 있고 공백을 빼고 5자 이상인 조각이다. 낱말 단위로 견주므로 'if xs > 0'은 'if x > 0'으로 시작하지 않는다.
     한 글자 이름만 같은 예('for x in fruits:')는 거짓이다.
     백틱 없이 말 속에 쓴 코드('if x > 0: 처럼', 'if (x > 0) {처럼')는 코드 모양 줄로 잡히지 않는다: 말 줄의 낱말 사이에 이 문제의 문장 조각(낱말 둘 이상)이 그대로 있으면 참.
-    말 줄에서는 이름만 보지 않는다(이름을 말로 가리키는 것은 된다)."""
+    말 줄에서는 이름만 보지 않는다(이름을 말로 가리키는 것은 된다). 이름과 ', ( ) [ ] { }'만으로 된 조각('most, seconds')도 보지 않는다(이름을 늘어놓은 말과 같다)."""
     parts, prose = [], []
     outside_code(text or "", lambda line: prose.append(line) or line, lambda span: parts.append(span.strip("`")) or span)
     made = problem_names(pieces, language, program)
@@ -658,7 +658,8 @@ def code_leaks(text: str, pieces: list[str], language: str, program: bool = Fals
     if any(names & set(_OWN_NAME.findall(part)) or any(said[:len(row)] == row for said in statements(part, language) for row in rows) for part in parts):
         return True
     words = [_TOKEN.findall(line) for line in prose]
-    return any(said[at:at + len(row)] == row for said in words for row in rows if len(row) >= 2 for at in range(len(said)))
+    rows = [row for row in rows if len(row) >= 2 and any(word not in made and word not in ",()[]{}" for word in row)]  # 키워드·연산자·대입 같은 낱말이 있는 조각만
+    return any(said[at:at + len(row)] == row for said in words for row in rows for at in range(len(said)))
 
 
 SAME_HINT = 0.8  # 공백을 뺀 두 질문이 이만큼 같으면 같은 질문을 되풀이한 것이다

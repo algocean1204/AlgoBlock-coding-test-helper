@@ -360,6 +360,16 @@ class TermLeakTest(unittest.TestCase):
                 with self.subTest(mode=mode, note=note):
                     reply = self.turn(mode, self.scene(mode, "plus", language), {"note": note, "question": self.BACK})
                     self.assertEqual(reply, self.BACK + "\n" + note)
+        # 이름만 나열한 조각('return new int[]{most, seconds};'의 'most, seconds')은 말 줄에서 막지 않는다(평범한 말과 문제 글 인용이 막혔다)
+        returns = {"java": "        int most = 0;\n        int seconds = 0;\n        return new int[]{most, seconds};",
+                   "cpp": "        int most = 0;\n        int seconds = 0;\n        return {most, seconds};"}
+        note, asked = "most, seconds 두 값을 구해요.", "[most, seconds]를 돌려주려면 무엇을 먼저 구할까요?"
+        for mode in ("chair", "guide"):
+            for language, code in returns.items():
+                ctx = self.scene(mode, "plus", language)
+                ctx = replace(ctx, plan=fakes.planned([ctx.plan.blocks[0], replace(ctx.plan.blocks[1], reference=code)]))
+                with self.subTest(mode=mode, language=language):
+                    self.assertEqual(self.turn(mode, ctx, {"note": note, "question": asked}), asked + "\n" + note)
 
     def test_term_step_hides_current_block_name_in_chair(self):
         self.assertIn("지금 블록 이름", CHAIR_STEPS["term"])
