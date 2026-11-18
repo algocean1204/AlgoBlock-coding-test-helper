@@ -42,6 +42,11 @@ class TrickyTest(unittest.TestCase):
         self.assertEqual(len(found["tags"]), len(found["hidden"]))
         self.assertEqual(casemake.generate(SMALL)["tricky"], [])  # 없는 함수는 빈 목록
 
+    def test_failing_tricky_function_is_skipped(self):
+        found = make(SMALL + "def tricky():\n    raise ValueError('x')\n")  # 함정 함수만 실패하면 함정 입력 없이 간다
+        self.assertEqual(found["status"], "same", found)
+        self.assertEqual(found["counts"]["tricky"], 0)
+
     def test_tricky_inputs_are_used_and_out_of_range_ones_dropped(self):
         found = make(SMALL + TRICKY)
         self.assertEqual(found["status"], "same", found)

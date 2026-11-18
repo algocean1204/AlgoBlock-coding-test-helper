@@ -42,11 +42,12 @@ class TrickyNodesTest(unittest.TestCase):
         tutor.store.put_fact("p1", "문자열 배열 둘, 남는 원소 하나", [])
         return tutor, fake, seen
 
-    def test_generator_prompt_asks_for_tricky_and_never_for_answers(self):
+    def test_generator_prompt_asks_for_tricky_and_inputs_only(self):
         for mode in ("function", "program"):
             text = "\n".join(message["content"] if isinstance(message["content"], str) else str(message["content"]) for message in maker_messages("정수의 합을 구한다.", mode))
             self.assertIn("tricky()", text)
             self.assertIn("small()", text)  # 기존 함수 요구는 그대로
+            self.assertIn("답은 쓰지 않고 입력만", text)  # 함정 입력도 입력만 만든다(기대값은 앱이 단순 풀이로 정한다)
 
     def test_distinguishing_big_input_needs_no_extra_generator_call(self):
         tutor, fake, seen = self.crossed({"plan.solve": [SOLVED], "plan.brute": [BRUTE], "plan.cases": [MAKER], **LINED}, [SAME])
@@ -71,6 +72,19 @@ class TrickyNodesTest(unittest.TestCase):
         self.assertEqual(tutor.prepare("p1").status, 200)
         done = seen["done"][0]
         self.assertEqual((done["calls"], done["indistinct"], done["counts"]), (3, False, COUNTS))
+
+    def test_remake_happens_once_even_when_the_first_result_differs(self):
+        differ = {"status": "differ", "input": "[]", "got": "1", "want": "2"}
+        other = {**SOLVED, "code": CODE.replace("count = {}", "count = dict()")}
+        tutor, fake, seen = self.crossed({"plan.solve": [SOLVED, other, other], "plan.brute": [BRUTE], "plan.cases": [MAKER, AGAIN, AGAIN], **LINED}, [BLIND, differ, BLIND])
+        self.assertEqual(tutor.prepare("p1").status, 200)
+        self.assertEqual(fakes.tasks(fake).count("plan.cases"), 2)
+
+    def test_remake_that_errors_keeps_the_first_result(self):
+        tutor, fake, seen = self.crossed({"plan.solve": [SOLVED], "plan.brute": [BRUTE], "plan.cases": [MAKER, AGAIN], **LINED}, [BLIND, {"status": "error", "why": "x"}])
+        self.assertEqual(tutor.prepare("p1").status, 200)
+        done = seen["done"][0]
+        self.assertEqual((done["verified"], done["indistinct"], done["counts"]), ("all", True, COUNTS))
 
     def test_failed_retry_keeps_the_first_result(self):
         tutor, fake, seen = self.crossed({"plan.solve": [SOLVED], "plan.brute": [BRUTE], "plan.cases": [MAKER, LlmTimeout("시간 초과")], **LINED}, [BLIND])

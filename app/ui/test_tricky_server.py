@@ -51,6 +51,15 @@ class TrickyServerTest(unittest.TestCase):
         row = next(row for row in server.handle("/api/problems", {})[1]["problems"] if row["id"] == pid)
         self.assertEqual((row["check"]["counts"], row["check"]["indistinct"]), (found["counts"], found["indistinct"]))  # 문제 머리의 요약이 읽는 곳
 
+    def test_submit_marks_only_made_cases(self):
+        pid = server.register({"title": "배열의 합 둘", "text": TEXT + " ", "cases": [{"input": "[[1, 2, 3]]", "expected": "6"}]})["id"]
+        self.assertEqual(server.cross_run(pid, CODE, "def solution(a):\n    return sum(a)", MAKER, BOUNDS)["status"], "same")
+        rows = server.handle("/api/submit", {"id": pid, "code": CODE})[1]["cases"]
+        self.assertTrue(rows)
+        for row in rows:
+            self.assertEqual(bool(row.get("made")), row["id"][0] in "me", row)  # 자동 케이스(m·e)만 made, 공개 예시는 없다
+        self.assertTrue(any(not row.get("made") for row in rows) and any(row.get("made") for row in rows))
+
 
 if __name__ == "__main__":
     unittest.main()
