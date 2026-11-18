@@ -179,7 +179,7 @@ AlgoBlock에는 계정이 없고, 사용 기록을 모으는 서버도 없습니
 
 ## 문서
 
-- 쓰는 사람: [설치](Docs/guide/install.md) · [AI 연결](Docs/guide/connect-ai.md) · [풀기](Docs/guide/solve.md) · [내 문제 넣기](Docs/guide/add-problem.md)
+- 쓰는 사람: [설치](Docs/guide/install.md) · [AI 연결](Docs/guide/connect-ai.md) · [풀기](Docs/guide/solve.md) · [내 문제 넣기](Docs/guide/add-problem.md) · [베타로 써 보기](Docs/guide/beta.md)
 - 고치는 사람: [문서 지도](Docs/README.md) · [구조](Docs/architecture/overview.md) · [기여 안내](.github/CONTRIBUTING.md)
 - 보안 문제 알리기: [SECURITY.md](.github/SECURITY.md)
 - 질문은 Discussions에, 버그와 제안은 이슈 양식으로 올립니다.
