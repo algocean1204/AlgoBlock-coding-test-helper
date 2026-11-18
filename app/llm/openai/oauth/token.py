@@ -24,7 +24,7 @@ from urllib.parse import parse_qs, urlencode, urlsplit
 from app.llm.errors import LlmError, LlmFailed, LlmNotConfigured, LlmTimeout
 from app.llm.openai.oauth import idtoken
 from app.llm.openai.oauth.pkce import ISSUER, PLAN_SCOPE, REGISTER_CLIENT, RESOURCE, TOKEN_URL, authorize_url, make_pkce
-from app.llm.wire import timeout_seconds
+from app.llm.wire import OPENER, timeout_seconds
 
 # OpenAI 동의 화면이 "현재 워크스페이스와 플랜으로 계속할 수 없습니다"를 띄우는 계정은 연결할 수 없다. 앱은 그 화면을 볼 수 없으니
 # 막힌 뒤의 안내에 이 경우를 함께 적는다(취소하면 access_denied, 그대로 계속하면 코드 교환이 invalid_grant로 끝난다)
@@ -231,7 +231,7 @@ def _token(form: dict) -> dict:
     request = urllib.request.Request(TOKEN_URL, data=urlencode(form).encode("utf-8"),
                                      headers={"Content-Type": "application/x-www-form-urlencoded", "Accept": "application/json"}, method="POST")
     try:
-        with urllib.request.urlopen(request, timeout=timeout_seconds()) as response:
+        with OPENER.open(request, timeout=timeout_seconds()) as response:
             payload = json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         raise Refused(_code_of(exc.read()), exc.code) from None

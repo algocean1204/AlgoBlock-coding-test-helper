@@ -1857,6 +1857,34 @@ def key_flow() -> None:
         assert refuses("/api/key/delete", name="x") and refuses("/api/key/delete", name=["claude"])
         after = call("/api/key/delete", name="openai")[1]["keys"]  # 지운 공급자만 빠진다
         assert after == {"claude": True, "openai": False} and server.read_json(server.KEY_FILE, {}) == {"ANTHROPIC_API_KEY": claude}
+        # 키 파일은 처음부터 소유자만 읽게 만든다(남은 임시 파일의 권한도 따르지 않는다). 넣기·지우기가 겹쳐도 한쪽 변경이 사라지지 않는다
+        modes = []
+        real_open = os.open
+        tmp = server.KEY_FILE.with_suffix(".tmp")
+        tmp.write_text("{}", encoding="utf-8")
+        tmp.chmod(0o644)
+        with patch.object(server.os, "open", lambda path, flags, mode=0o777: modes.append(mode) or real_open(path, flags, mode)):
+            server.save_key("ANTHROPIC_API_KEY", claude)
+        assert modes == [0o600], modes
+        if os.name != "nt":
+            assert server.KEY_FILE.stat().st_mode & 0o777 == 0o600
+        import threading
+        threads = [threading.Thread(target=server.save_key, args=(f"K{n}", "v")) for n in range(8)]
+        for one in threads:
+            one.start()
+        for one in threads:
+            one.join()
+        assert set(server.read_json(server.KEY_FILE, {})) == {"ANTHROPIC_API_KEY", *(f"K{n}" for n in range(8))}
+        for n in range(8):
+            server.drop_key(f"K{n}")
+        assert server.read_json(server.KEY_FILE, {}) == {"ANTHROPIC_API_KEY": claude}
+        with patch.object(server.os, "fsync", lambda fd: (_ for _ in ()).throw(OSError("디스크가 찼다"))):  # 쓰다가 실패하면 원래 키 파일이 그대로다
+            try:
+                server.save_key("OPENAI_API_KEY", openai)
+                raise AssertionError("쓰기 실패는 알려야 한다")
+            except OSError:
+                pass
+        assert server.read_json(server.KEY_FILE, {}) == {"ANTHROPIC_API_KEY": claude} and not server.KEY_FILE.with_suffix(".tmp").exists()
         try:
             call("/api/key/delete", name="openai")
             raise AssertionError("넣지 않은 키를 지울 수는 없다")
@@ -1948,8 +1976,26 @@ def key_check_flow() -> None:
     def to_first(request, timeout):  # 공식 주소 대신 첫 루프백 서버로 보내되, 헤더와 기본 opener(리다이렉트를 따르지 않는 것)는 그대로 쓴다
         return keycheck.OPENER.open(urllib.request.Request(f"http://127.0.0.1:{first.server_port}/", headers=dict(request.header_items())), timeout=timeout)
 
+    Second.do_POST = Second.do_GET
+    First.do_POST = First.do_GET
+    from app.llm import wire
+    from app.llm.errors import LlmFailed
+    from app.llm.openai.oauth import chat as oauth_chat, token as oauth_token
+
+    def refused(send) -> Exception | None:
+        try:
+            send()
+        except Exception as exc:  # 리다이렉트는 실패로 끝난다(따라가지 않는다)
+            return exc
+        return None
+
     try:
         assert keycheck.check("claude", secret, opener=to_first) == "offline" and keycheck.check("openai", "sk-proj-" + "r" * 20, opener=to_first) == "offline"
+        here = f"http://127.0.0.1:{first.server_port}/"
+        assert isinstance(refused(lambda: wire.post_json(here, {"x-api-key": secret}, {"model": "m"}, timeout=5)), LlmFailed)  # 모델 요청(API 키 연결은 모두 이 길)
+        assert refused(lambda: oauth_chat.post_sse(here, {"Authorization": "Bearer " + secret}, {"model": "m"})) is not None  # ChatGPT 요청
+        with patch.object(oauth_token, "TOKEN_URL", here):
+            assert refused(lambda: oauth_token._token({"refresh_token": secret})) is not None  # 토큰 갱신
         assert got == [], got  # 두 번째 호스트에는 요청도 헤더도 가지 않았다
     finally:
         for one in (first, second):

@@ -50,7 +50,7 @@ def post_sse(url: str, headers: dict, body: dict) -> dict:
         return reply if isinstance(reply, dict) else read_sse(reply.splitlines())
     request = urllib.request.Request(url, data=json.dumps(body).encode("utf-8"), headers=headers, method="POST")
     try:
-        with urllib.request.urlopen(request, timeout=limit) as response:
+        with wire.OPENER.open(request, timeout=limit) as response:
             return read_sse(line.decode("utf-8") for line in response)
     except urllib.error.HTTPError as exc:
         raise refused(exc.code, exc.read(), exc.headers.get("x-request-id") or "") from None
