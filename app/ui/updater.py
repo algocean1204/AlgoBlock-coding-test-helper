@@ -868,6 +868,8 @@ def handle(body: dict, stop) -> dict:
     """/api/update. action: status(지금 상태), check(지금 확인), auto(자동 확인 켜고 끄기, on), skip(이 버전 건너뛰기),
     download(받기), install(바꾸고 다시 켜기, 묶인 macOS·Windows 앱), reveal(받은 파일 보기)."""
     action = body.get("action")
+    if dev() and action in ("check", "download", "install"):
+        raise Refused("개발용 앱은 업데이트를 확인하지도 받지도 않아요. 개발용 빌드를 다시 만들어 주세요.")
     if action == "check":  # 일정과 상관없이 바로 묻는다. 성공하면 다음 자동 확인은 24시간 뒤
         record(check_in_time(), time.time(), auto=False)
     elif action == "auto":
