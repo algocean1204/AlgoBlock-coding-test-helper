@@ -77,12 +77,12 @@
     <div id="list-body"></div>
   </section>
 
-  <!-- 03 내 문제 넣기: 세 걸음(글 넣기 → 확인하기 → 등록). 한 화면에 한 걸음, 걸음마다 주 동작 하나 -->
-  <section id="view-new" class="page narrow" hidden aria-labelledby="new-title-h">
+  <!-- 03 내 문제 넣기: 한 화면. 글을 넣으면 규칙으로 바로 제목·방식·예시를 채우고(모델 0회), AI가 연결돼 있으면 뒤에서 한 번 더 본다 -->
+  <section id="view-new" class="page" hidden aria-labelledby="new-title-h">
     <header class="page-head">
       <div>
         <h1 id="new-title-h" tabindex="-1">내 문제 넣기</h1>
-        <p class="lead" id="new-lead">가진 문제를 글이나 사진으로 넣어 같은 방식으로 풀어요.</p>
+        <p class="lead" id="new-lead">문제 글을 붙여 넣으면 제목과 입출력 예를 스스로 채워요. 확인하고 등록하면 바로 풀어요.</p>
       </div>
       <div class="draft-tools">
         <button type="button" id="new-clear" class="btn quiet small" hidden>새로 쓰기</button>
@@ -93,57 +93,61 @@
         </span>
       </div>
     </header>
-    <ol id="wsteps" class="wsteps" aria-label="넣는 순서">
-      <li data-wstep="1"><span class="step-no" aria-hidden="true">1</span>글 넣기</li>
-      <li data-wstep="2"><span class="step-no" aria-hidden="true">2</span>확인하기</li>
-      <li data-wstep="3"><span class="step-no" aria-hidden="true">3</span>등록</li>
-    </ol>
-    <form id="new-form" class="form-card" data-step="1" novalidate>
-      <h2 id="wstep-title" class="wstep-title" tabindex="-1"></h2>
-      <div class="field files" data-in="1">
+    <form id="new-form" class="form-card" novalidate>
+      <div class="field files">
         <button type="button" id="drop" class="drop" data-model aria-describedby="drop-note"><svg class="ico" aria-hidden="true"><use href="#i-plus"/></svg>파일에서 가져오기 <span class="muted">사진 · PDF · 글</span></button>
-        <small id="drop-note" class="hint">여기에 파일을 끌어다 놓아도 돼요. 사진은 ‘다음’을 누르면 글로 읽어 와요. AI가 연결돼 있으면 AI가 읽고(사용량이 들어요), 아니면 이 기기의 글자 읽기로 읽어요. PDF와 글 파일은 AI를 쓰지 않아요.</small>
+        <small id="drop-note" class="hint">여기에 파일을 끌어다 놓아도 돼요. 사진은 ‘글 읽어 오기’를 누르면 글로 읽어 와요. AI가 연결돼 있으면 AI가 읽고(사용량이 들어요), 아니면 이 기기의 글자 읽기로 읽어요. PDF와 글 파일은 AI를 쓰지 않아요.</small>
         <input type="file" id="new-files" multiple accept=".png,.jpg,.jpeg,.webp,.gif,.pdf,.md,.txt" hidden>
         <ol id="file-list" class="file-list" aria-label="올린 파일" hidden></ol>
         <div class="read-row"><button type="button" id="read-files" class="btn small" data-model hidden>글 읽어 오기</button><span id="read-wait" class="hint" role="status" hidden></span><span id="read-done" class="hint" hidden>읽어 왔어요</span></div>
       </div>
-      <div class="field" data-in="1 2">
+      <div class="field">
         <label for="new-text">문제 글</label>
         <div id="doubts" class="note warn doubts" role="status" hidden></div>
-        <textarea id="new-text" aria-label="문제 글" rows="9" data-send="new-next" placeholder="문제 설명, 제한사항, 입출력 예를 그대로 붙여 넣어요"></textarea>
+        <textarea id="new-text" aria-label="문제 글" rows="6" data-send="new-submit" placeholder="문제 설명, 제한사항, 입출력 예를 그대로 붙여 넣어요. 웹 페이지에서 복사해도 돼요"></textarea>
         <p id="read-note" class="hint" role="status" hidden>읽어 온 글이에요. 틀린 곳이 없는지 확인하고 고쳐 주세요.</p>
       </div>
-      <div class="field" data-in="2">
+      <div id="detect-line" class="detect-line" hidden>
+        <span id="detect-text"></span>
+        <button type="button" id="noise-show" class="btn quiet small" aria-expanded="false" aria-controls="noise-lines" hidden>보기</button>
+        <span id="detect-suggest" hidden><span id="detect-suggest-text"></span> <button type="button" id="suggest-use" class="btn small">AI가 읽은 대로 바꾸기</button></span>
+        <div id="noise-lines" class="noise-lines" role="group" aria-label="문제 밖으로 본 줄" hidden></div>
+      </div>
+      <div class="field" id="title-field" hidden>
         <label for="new-title">제목</label>
         <input id="new-title" type="text" aria-label="제목" aria-describedby="new-title-note" autocomplete="off">
         <small id="new-title-note" class="hint">문제 목록에 보이는 이름이에요.</small>
       </div>
-      <fieldset class="cases" data-in="2">
-        <legend>테스트 케이스</legend>
-        <button type="button" id="case-fill" class="btn small" hidden>입출력 예에서 채우기</button>
-        <p class="hint" id="case-help">넣을 값은 인자 목록 전체를 대괄호로 감싸 적어요. 인자가 둘이면 [1, 2], 배열 하나가 인자면 [[1, 2, 3]]처럼 한 번 더 감싸요.</p>
-        <p id="mode-guess" class="hint mode-guess" hidden><span id="mode-guess-text"></span><button type="button" id="mode-switch" class="btn small"></button></p>
-        <p id="case-float" class="hint" hidden>실수는 0.000001 차이까지 같은 값으로 봐요.</p>
-        <p id="case-fill-confirm" class="confirm" hidden>
-          <span id="case-fill-ask">지금 적힌 케이스를 표의 것으로 바꿀까요?</span>
-          <button type="button" id="case-fill-yes" class="btn danger small">바꾸기</button>
-          <button type="button" id="case-fill-no" class="btn quiet small">그대로 두기</button>
-        </p>
-        <p id="case-note" class="hint" role="status" hidden></p>
-        <div id="case-rows"></div>
-        <button type="button" id="case-add" class="btn small">케이스 추가</button>
-        <div class="field" id="case-names-field" hidden>
-          <label for="case-names">인자 이름 <span class="muted">선택</span></label>
-          <input id="case-names" type="text" autocomplete="off" aria-describedby="case-names-note" placeholder="예: numbers, k">
-          <small id="case-names-note" class="hint">문제 글이 부르는 이름을 쉼표로 적으면 시작 코드의 인자 이름이 돼요. 비우면 a, b, c예요.</small>
-        </div>
-        <div class="field" id="case-flags" hidden>
-          <label class="case-hide"><input type="checkbox" id="new-float">실수 답(0.000001 차이까지 같게 봄)</label>
-          <label class="case-hide"><input type="checkbox" id="new-many" aria-describedby="new-many-note">답이 여럿일 수 있음</label>
-          <small id="new-many-note" class="hint">답이 여럿이면 예시와 다른 답은 맞는지 가릴 수 없다고 알려요. 숨은 테스트는 만들지 않아요.</small>
-        </div>
-      </fieldset>
-      <details id="new-more" class="more-set" data-in="2">
+      <div id="new-split" class="split" hidden>
+        <section id="intake-problem" class="split-pane" aria-labelledby="intake-problem-h">
+          <div class="split-head"><h2 id="intake-problem-h">문제</h2><button type="button" id="raw-edit" class="btn quiet small" aria-controls="new-text">원문 고치기</button></div>
+          <div id="preview" class="prose"></div>
+        </section>
+        <section id="intake-io" class="split-pane" aria-labelledby="intake-io-h">
+          <div class="split-head"><h2 id="intake-io-h">입출력 예</h2><span id="mode-chip" class="tag"></span><button type="button" id="case-edit" class="btn quiet small" aria-expanded="false" aria-controls="case-box">고치기</button></div>
+          <p id="case-note" class="hint" role="status" hidden></p>
+          <ol id="case-cards" class="case-cards" aria-label="입출력 예"></ol>
+          <fieldset id="case-box" class="cases" hidden>
+            <legend class="sr-only">테스트 케이스 고치기</legend>
+            <p class="hint" id="case-help">넣을 값은 인자 목록 전체를 대괄호로 감싸 적어요. 인자가 둘이면 [1, 2], 배열 하나가 인자면 [[1, 2, 3]]처럼 한 번 더 감싸요.</p>
+            <p id="case-float" class="hint" hidden>실수는 0.000001 차이까지 같은 값으로 봐요.</p>
+            <div id="case-rows"></div>
+            <button type="button" id="case-add" class="btn small">케이스 추가</button>
+            <div class="field" id="case-names-field" hidden>
+              <label for="case-names">인자 이름 <span class="muted">선택</span></label>
+              <input id="case-names" type="text" autocomplete="off" aria-describedby="case-names-note" placeholder="예: numbers, k">
+              <small id="case-names-note" class="hint">문제 글이 부르는 이름을 쉼표로 적으면 시작 코드의 인자 이름이 돼요. 비우면 a, b, c예요.</small>
+            </div>
+          </fieldset>
+          <div class="field" id="case-flags" hidden>
+            <label class="case-hide"><input type="checkbox" id="new-float">실수 답(0.000001 차이까지 같게 봄)</label>
+            <label class="case-hide"><input type="checkbox" id="new-many" aria-describedby="new-many-note">답이 여럿일 수 있음</label>
+            <small id="new-many-note" class="hint">답이 여럿이면 예시와 다른 답은 맞는지 가릴 수 없다고 알려요. 숨은 테스트는 만들지 않아요.</small>
+          </div>
+          <details id="io-raw-box" class="more-set" hidden><summary>글의 입출력 예 보기</summary><div id="io-raw" class="prose"></div></details>
+        </section>
+      </div>
+      <details id="new-more" class="more-set">
         <summary>더 정하기 <span class="muted">언어 · 입출력 방식 · 주제 · 단계</span></summary>
         <div class="more-grid">
           <div class="field" id="new-lang-field">
@@ -165,7 +169,6 @@
           </div>
         </div>
       </details>
-      <div id="new-summary" class="summary" data-in="3"></div>
       <p id="new-error" class="note error" role="alert" hidden></p>
       <p id="edit-confirm" class="confirm" hidden>
         <span id="edit-confirm-text">문제 글이나 케이스를 바꾸면 튜터와 나눈 대화와 블록 진행이 지워져요. 제출 기록과 코드는 남아요.</span>
@@ -173,8 +176,7 @@
         <button type="button" id="edit-no" class="btn quiet small">그대로 두기</button>
       </p>
       <div class="wizard-nav">
-        <button type="button" id="new-back" class="btn quiet">이전</button>
-        <button type="button" id="new-next" class="btn primary" data-model>다음</button>
+        <p id="new-note" class="hint"></p>
         <button type="submit" id="new-submit" class="btn primary" data-model>등록하고 풀러 가기</button>
       </div>
     </form>
@@ -545,10 +547,10 @@
       <div class="mini">
         <div class="mini-head"><span class="mini-title">내 문제 넣기</span></div>
         <div class="mini-form">
-          <ol class="wsteps mini-steps"><li class="now"><span class="step-no">1</span>글 넣기</li><li class="a1"><span class="step-no">2</span>확인하기</li><li class="a2"><span class="step-no">3</span>등록</li></ol>
-          <span class="drop">파일에서 가져오기 · 사진 · PDF · 글</span>
-          <p class="hint-line a1">두 정수 a, b가 주어질 때, 둘 가운데 큰 수를 return 하도록 solution 함수를 완성해 주세요.</p>
-          <div class="inline-form a2"><span class="fake-input case-val">[3, 8]</span><span class="fake-input case-val">8</span></div>
+          <ol class="mini-steps"><li class="now"><span class="step-no">1</span>붙여 넣기</li><li class="a1"><span class="step-no">2</span>스스로 채움</li><li class="a2"><span class="step-no">3</span>등록</li></ol>
+          <span class="drop">문제 글 붙여 넣기 · 사진 · PDF · 글</span>
+          <p class="hint a1">예시 2개를 채웠어요</p>
+          <div class="mini-split a2"><p class="hint-line">두 정수 a, b 가운데 큰 수를 return 하도록 solution 함수를 완성해 주세요.</p><div class="mini-cards"><span class="fake-input case-val">solution(3, 8) → 8</span><span class="fake-input case-val">solution(5, 2) → 5</span></div></div>
         </div>
       </div>
     </div>

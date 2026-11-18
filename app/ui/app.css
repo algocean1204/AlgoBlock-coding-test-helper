@@ -427,7 +427,6 @@ a.ladder-next:hover { background: var(--fill); }
 .field > input, .field > textarea { justify-self: stretch; }
 .cases { display: grid; gap: 10px; justify-items: start; padding-top: 20px; border-top: 1px solid var(--line); }
 .cases { position: relative; }
-#case-fill { position: absolute; top: 14px; right: 0; } /* '테스트 케이스' 머리 옆 */
 #case-rows { display: grid; gap: 8px; justify-self: stretch; }
 .case-row { display: grid; grid-template-columns: 24px minmax(0, 3fr) minmax(0, 2fr) auto auto; gap: 8px; align-items: center; }
 .case-hide { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; color: var(--muted); cursor: pointer; white-space: nowrap; }
@@ -448,7 +447,6 @@ a.ladder-next:hover { background: var(--fill); }
 .drop:hover, .drop.over { border-color: var(--accent-text); background: var(--accent-soft); color: var(--accent-text); }
 .file-list { display: flex; flex-wrap: wrap; gap: 8px; justify-self: stretch; }
 .read-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
-.mode-guess { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; } /* 함수 방식에 예제 구역이 있는 글(또는 그 반대): 방식을 바꾸자고 한다 */
 .draft-tools { display: flex; align-items: center; } .draft-tools .confirm { flex-wrap: wrap; justify-content: flex-end; }
 #read-wait { display: inline-flex; align-items: center; gap: 8px; }
 #read-wait[hidden] { display: none; }
@@ -946,24 +944,45 @@ a.lv.done:hover { background: var(--lvc); color: var(--on-lv); filter: brightnes
 .btn.big { min-height: 44px; padding: 0 22px; font-size: 15px; }
 .link-btn { padding: 0; border: 0; background: none; color: var(--accent-text); font: inherit; font-weight: 650; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
 
-/* ── 내 문제 넣기: 세 걸음. 칸마다 data-in에 적힌 걸음에서만 보인다 ── */
-.wsteps { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: -10px 0 16px; }
-.wsteps li { display: flex; align-items: center; gap: 6px; font-size: 13.5px; font-weight: 600; color: var(--muted); white-space: nowrap; }
-.wsteps li + li::before { content: ""; width: 24px; height: 1px; margin-right: 4px; background: var(--line-strong); opacity: 0.5; }
-.wsteps .step-no { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--fill-2); color: var(--text); font-size: 12px; font-weight: 700; }
-.wsteps li.now { color: var(--text); } .wsteps li.now .step-no { background: var(--accent); color: var(--on-accent); }
-.wsteps li.done .step-no { background: var(--success-soft); color: var(--success); }
-.wstep-title { font-size: 18px; font-weight: 700; } .wstep-title:focus-visible { outline: none; }
-#new-form[data-step="1"] [data-in]:not([data-in~="1"]), #new-form[data-step="2"] [data-in]:not([data-in~="2"]), #new-form[data-step="3"] [data-in]:not([data-in~="3"]) { display: none; }
-.wizard-nav { position: sticky; bottom: 0; z-index: 2; display: flex; align-items: center; gap: 8px; margin: 0 -24px -24px; padding: 12px 24px 16px; background: var(--surface); border-radius: 0 0 var(--r-lg) var(--r-lg); box-shadow: 0 -1px 0 var(--line); } /* 걸음의 주 동작은 스크롤해도 늘 보인다 */
-.wizard-nav .btn.primary { margin-left: auto; min-height: 42px; padding: 0 20px; }
+/* ── 내 문제 넣기: 한 화면. 글 → 감지 줄 → 두 칸(문제 | 입출력 예) → 등록 ── */
+#view-new { max-width: 1080px; }
+#new-text { resize: vertical; }
+#new-form.filled .drop { min-height: 40px; padding: 8px; } #new-form.filled #drop-note { display: none; } /* 글을 넣은 뒤에는 두 칸이 한 화면에 더 들어오게 */
+.detect-line { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; padding: 9px 14px; border-radius: var(--r-md); background: var(--fill); font-size: 14px; line-height: 1.5; }
+.detect-line.warn { background: var(--warning-soft); } .detect-line.warn #detect-text { color: var(--warning); }
+#detect-suggest { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+.noise-lines { flex-basis: 100%; display: grid; gap: 6px; padding: 8px 10px; border-radius: var(--r-md); background: var(--surface); overflow-wrap: anywhere; }
+.noise-lines ul { display: grid; gap: 4px; }
+.noise-lines li { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-family: var(--mono); font-size: 12.5px; color: var(--muted); }
+.noise-lines li:not(.kept) span { text-decoration: line-through; } .noise-lines li .btn { flex: none; font-family: var(--sans); }
+.split { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+@media (max-width: 860px) { .split { grid-template-columns: minmax(0, 1fr); } } /* 좁으면 문제 위, 입출력 예 아래 */
+.split-pane { display: grid; gap: 10px; min-width: 0; padding: 14px 16px; border: 1px solid var(--line); border-radius: var(--r-md); }
+.split-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
+.split-head h2 { margin-right: auto; font-size: 14px; font-weight: 700; }
+#preview:empty::before { content: "글을 읽는 중…"; color: var(--muted); font-size: 13.5px; }
+.case-cards { display: grid; gap: 8px; }
+.case-card { display: grid; gap: 4px; min-width: 0; padding: 8px 10px; border-radius: var(--r-md); background: var(--fill); font-size: 13.5px; }
+.case-card .no { font-size: 12px; font-weight: 600; color: var(--muted); }
+.case-card code { font-family: var(--mono); overflow-wrap: anywhere; }
+.case-card pre { margin: 0; max-height: 9em; overflow: auto; font-family: var(--mono); font-size: 13px; white-space: pre; }
+.case-card .io-pair { gap: 8px; } .case-card .io-pair > div { min-width: 0; }
+.split .cases { padding-top: 0; border-top: 0; }
+.wizard-nav { position: sticky; bottom: 0; z-index: 2; display: flex; align-items: center; gap: 8px; margin: 0 -24px -24px; padding: 12px 24px 16px; background: var(--surface); border-radius: 0 0 var(--r-lg) var(--r-lg); box-shadow: 0 -1px 0 var(--line); } /* 등록 단추는 스크롤해도 늘 보인다 */
+.wizard-nav .btn.primary { margin-left: auto; min-height: 42px; padding: 0 20px; flex: none; }
+#new-note { min-width: 0; }
 .drop { display: flex; align-items: center; justify-content: center; gap: 8px; }
 .drop .ico { width: 16px; height: 16px; }
 .more-set > summary { width: fit-content; padding: 4px 2px; font-size: 14px; font-weight: 650; cursor: pointer; }
 .more-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 20px; margin-top: 12px; }
 .doubts { justify-self: stretch; } .doubts ul { margin-top: 4px; padding-left: 18px; list-style: disc; }
-.sum-list { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 8px 18px; font-size: 14.5px; }
-.sum-list dt { color: var(--muted); } .summary .note { margin-top: 16px; }
+/* 처음 안내의 등록 그림: 하는 차례 세 칸 */
+.mini-steps { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.mini-steps li { display: flex; align-items: center; gap: 6px; font-size: 13.5px; font-weight: 600; color: var(--muted); white-space: nowrap; }
+.mini-steps li + li::before { content: ""; width: 24px; height: 1px; margin-right: 4px; background: var(--line-strong); opacity: 0.5; }
+.mini-steps .step-no { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--fill-2); color: var(--text); font-size: 12px; font-weight: 700; }
+.mini-steps li.now { color: var(--text); } .mini-steps li.now .step-no { background: var(--accent); color: var(--on-accent); }
+.mini-split { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 8px; } .mini-cards { display: grid; gap: 6px; align-content: start; } .mini-cards .fake-input { letter-spacing: 0; font-size: 12.5px; } /* 처음 안내의 등록 그림: 문제 | 입출력 예 두 칸 */
 
 /* ── 문제 화면: 이름표, 더 보기, 준비 줄, 고르는 칸, 접힌 혼자 풀기 ── */
 .more { position: relative; }
@@ -1049,7 +1068,6 @@ details.fold .ladders { box-shadow: none; } details.fold .legend { margin: 0 0 8
 .mini .entry .btn { justify-self: start; margin-top: 4px; width: fit-content; }
 .mini .way-card { padding: 7px 12px; gap: 0; } .mini .way-card span { font-size: 12px; }
 .mini-form:has(.way-card) { gap: 6px; padding-top: 12px; }
-.mini-steps { margin: 0; }
 
 /* ── 좁은 창 ── */
 @media (max-width: 1320px) {
