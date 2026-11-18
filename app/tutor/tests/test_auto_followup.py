@@ -4,6 +4,7 @@
 
 import os
 import unittest
+from dataclasses import replace
 
 from . import fakes
 from . import talk_bank as bank
@@ -232,8 +233,8 @@ class TalkBankTest(unittest.TestCase):
 
 
 class TermLeakTest(unittest.TestCase):
-    """되묻기 답(term)의 결정적 검사. 이 문제의 이름을 쓴 코드, 참고 코드 줄과 공백만 다른 코드, 의자에서 찾기 전 지금 블록 이름은 대체 질문으로 바뀐다.
-    상관없는 이름으로 쓴 문법 예는 그대로 나간다. 어느 쪽이든 호출은 판정 1 + 생성 1이고 진행과 힌트 번호는 그대로다."""
+    """되묻기 답(term)의 결정적 검사. 이 문제 코드가 만든 이름을 쓴 코드, 참고 코드 줄과 공백만 다른 코드, 의자에서 찾기 전 지금 블록 이름은 대체 질문으로 바뀐다.
+    상관없는 이름으로 쓴 문법 예는 언어마다 그대로 나간다(예약어·형·가져오기 줄만 같은 예). 어느 쪽이든 호출은 판정 1 + 생성 1이고 진행과 힌트 번호는 그대로다."""
 
     LEAKS = [("plus", "`for x in items`처럼 쓰면 값을 하나씩 꺼내요. 그럼 처음 질문으로 돌아가서, 무엇을 하나씩 볼까요?"),
              ("plus", "`if x>0:`처럼 쓰면 조건을 걸 수 있어요. 그럼 언제 합에 더해야 할까요?"),
@@ -243,12 +244,37 @@ class TermLeakTest(unittest.TestCase):
              ("shelf", "`count[t] = count.get(t, 0) + 1`처럼 쓰면 개수를 셀 수 있어요. 그럼 제목마다 무엇을 기록해 둘까요?"),
              ("shelf", "seen[t] = count.get(t, 0) + 1 처럼 쓰면 개수를 셀 수 있어요. 그럼 제목마다 무엇을 기록해 둘까요?")]  # 백틱 없는 대입 줄
     NAMED = "지금은 양수만 더하기 블록이니 하나씩 보는 문법부터 볼게요. 그럼 items의 값을 어떻게 하나씩 볼까요?"
-    FINE = ["`for fruit in fruits:`처럼 쓰면 과일을 하나씩 꺼내요. 그럼 처음 질문으로 돌아가서, items의 값을 어떻게 하나씩 볼까요?",
-            "`for x in fruits:`처럼 쓰면 과일을 하나씩 꺼내요. 그럼 처음 질문으로 돌아가서, items의 값을 어떻게 하나씩 볼까요?"]
+    STARTERS = {"plus": "def solution(items):\n    answer = 0\n    return answer", "shelf": "def solution(loans, k):\n    answer = []\n    return answer"}
+    # 양수만 더하기 장면을 언어마다 옮긴 것: (시작 코드, 지금 블록 참고 코드, 상관없는 문법 예)
+    LANGS = {
+        "python": ("def solution(items):\n    answer = 0\n    return answer", "    for x in items:\n        if x > 0:\n            total += x",
+                   ["`for fruit in fruits:`", "`for x in fruits:`", "`import math`"]),
+        "java": ("class Solution {\n    public int solution(int[] items) {\n        int answer = 0;\n        return answer;\n    }\n}",
+                 "        int total = 0;\n        for (int x : items) {\n            if (x > 0) total += x;\n        }",
+                 ["`int[] marks = new int[3];`", "`import java.util.*;`", "`for (int i = 0; i < marks.length; i++) {`"]),
+        "javascript": ("function solution(items) {\n    let answer = 0;\n    return answer;\n}",
+                       "    let total = 0;\n    for (const x of items) {\n        if (x > 0) total += x;\n    }",
+                       ["`function add(a, b) {`", "`const fruits = [];`", "`for (const fruit of fruits) {`"]),
+        "cpp": ("#include <vector>\nusing namespace std;\n\nint solution(vector<int> items) {\n    int answer = 0;\n    return answer;\n}",
+                "    int total = 0;\n    for (int x : items) {\n        if (x > 0) total += x;\n    }",
+                ["`#include <string>`", "`max(a, b)`", "`sort(marks.begin(), marks.end());`"]),
+        "rust": ("fn solution(items: Vec<i32>) -> i32 {\n    let answer = 0;\n    answer\n}",
+                 "    let mut total = 0;\n    for x in items {\n        if x > 0 { total += x; }\n    }",
+                 ["`let score: i32 = 90;`", "`fn add(a: i32, b: i32) -> i32 {`", "`use std::collections::HashMap;`", "`x as usize`"]),
+    }
+    TAIL = "처럼 쓰면 돼요. 그럼 처음 질문으로 돌아가서, items의 값을 어떻게 하나씩 볼까요?"
 
-    def turn(self, mode, scene, reply):
-        """[check]Q 뒤 말 만들기 답을 넣는다. 나간 말을 돌려주고, 호출·진행과 다음 '모르겠어요'의 힌트 번호를 본다."""
+    def scene(self, mode, scene, language=None):
+        """말 은행 장면에 시작 코드를 붙인 문맥(진입 함수의 인자가 이 문제의 이름이다). language를 주면 지금 블록 코드를 그 언어로 바꾼다."""
         ctx = scene_context(mode, scene)
+        if language is None:
+            return replace(ctx, starter=self.STARTERS[scene])
+        starter, reference, _ = self.LANGS[language]
+        plan = fakes.planned([replace(ctx.plan.blocks[0], reference=reference), *ctx.plan.blocks[1:]])
+        return replace(ctx, language=language, starter=starter, plan=plan)
+
+    def turn(self, mode, ctx, reply, scene="plus"):
+        """[check]Q 뒤 말 만들기 답을 넣는다. 나간 말을 돌려주고, 호출·진행과 다음 '모르겠어요'의 힌트 번호를 본다."""
         done, fake = talked(mode, ctx, GRAMMAR, "[check]Q", reply)
         self.assertEqual((done["result"]["move"], done["result"]["advance"], done["open_count"], fakes.tasks(fake)),
                          ("term", False, 1, [f"{mode}.judge", ASK[mode]]))
@@ -262,19 +288,23 @@ class TermLeakTest(unittest.TestCase):
         for mode in ("chair", "guide"):
             for scene, reply in self.LEAKS:
                 with self.subTest(mode=mode, reply=reply):
-                    self.assertEqual(self.turn(mode, scene, reply), FALLBACK["term"])
+                    self.assertEqual(self.turn(mode, self.scene(mode, scene), reply, scene), FALLBACK["term"])
+            for language in self.LANGS:  # 진입 함수의 인자를 쓴 코드는 언어마다 막힌다
+                with self.subTest(mode=mode, language=language):
+                    self.assertEqual(self.turn(mode, self.scene(mode, "plus", language), "`items[0]`" + self.TAIL), FALLBACK["term"])
 
     def test_unfound_block_name_falls_back_only_in_chair(self):
         from ..common.talk_rules import FALLBACK
 
-        self.assertEqual(self.turn("chair", "plus", self.NAMED), FALLBACK["term"])  # 의자: 지금 블록 이름은 찾을 답이다
-        self.assertEqual(self.turn("guide", "plus", self.NAMED), self.NAMED)  # 가이드: 지금 블록 이름은 이미 보인다
+        self.assertEqual(self.turn("chair", self.scene("chair", "plus"), self.NAMED), FALLBACK["term"])  # 의자: 지금 블록 이름은 찾을 답이다
+        self.assertEqual(self.turn("guide", self.scene("guide", "plus"), self.NAMED), self.NAMED)  # 가이드: 지금 블록 이름은 이미 보인다
 
     def test_unrelated_example_goes_out(self):
         for mode in ("chair", "guide"):
-            for reply in self.FINE:
-                with self.subTest(mode=mode, reply=reply):
-                    self.assertEqual(self.turn(mode, "plus", reply), reply)
+            for language, (_, _, examples) in self.LANGS.items():
+                for example in examples:
+                    with self.subTest(mode=mode, language=language, example=example):
+                        self.assertEqual(self.turn(mode, self.scene(mode, "plus", language), example + self.TAIL), example + self.TAIL)
 
     def test_term_step_hides_current_block_name_in_chair(self):
         self.assertIn("지금 블록 이름", CHAIR_STEPS["term"])

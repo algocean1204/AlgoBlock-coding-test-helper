@@ -112,8 +112,8 @@ def checked_reply(state: MainState, move: MovePlan, text: str) -> tuple[str, lis
         text = repair(text, ctx.problem_text, said, move.move, reference, ctx.language, turn_text(state))
         problems = reply_problems(text, **check)
     if move.move == "term":  # 되묻기 답의 문법 예가 이 문제의 이름·코드 줄을 썼다(참고 코드 줄과 글자가 같을 때만 막아 변형이 샜다)
-        code = "\n".join([*(b.reference for b in plan.blocks), getattr(solution_of(state), "code", ""), ctx.starter])
-        if code_leaks(text, code, ctx.language):
+        pieces = [*(b.reference for b in plan.blocks), getattr(solution_of(state), "code", ""), ctx.starter]
+        if code_leaks(text, pieces, ctx.language, ctx.mode == "program"):
             problems.append("이 문제의 코드")
     if problems:
         LOG.info("대체 질문", extra={"move": move.move, "problems": problems})
