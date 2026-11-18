@@ -2176,6 +2176,9 @@ function renderResult() {
   box.innerHTML = html + notice;
 }
 
+let judgeNo = 0; // 채점 요청의 순번(실행·제출, 디버그의 다시 채점). 결과에 붙여, 늦게 온 옛 요청의 결과가 더 새 결과를 덮지 않게 한다
+const newerThanShown = (no) => no > ((S.result && S.result.no) || 0);
+
 async function submitCode() {
   await judgeCode(false);
 }
@@ -2202,10 +2205,12 @@ async function judgeCode(run, input) {
   const code = $("code").value;
   const own = input !== undefined;
   if (own && input.length > MAX_OWN) { S.result = { alert: { type: "error", text: "직접 입력은 20,000자까지 넣을 수 있어요." } }; return render(); } // 서버의 본문 상한(1MB)보다 먼저 알린다
+  const no = ++judgeNo;
   const r = await work(own ? "직접 넣은 값으로 실행하는 중…" : run ? "예시를 실행하는 중…" : "채점하는 중…", "result", () => api(run ? "/api/run" : "/api/submit", { id: pid, code, ...(own ? { input } : {}) }));
   if (!r || S.pid !== pid) return;
   $("code")._seen = code;
-  S.result = r.ok ? { ...r.data, run, own, looks: looksLike(code) } : { alert: errorNote(r.error) };
+  if (!newerThanShown(no)) return void (run ? render() : loadState()); // 그사이 보낸 디버그의 다시 채점(더 새 코드)이 먼저 와 결과 칸에 있다
+  S.result = r.ok ? { ...r.data, run, own, looks: looksLike(code), no } : { alert: errorNote(r.error), no };
   S.casesOpen = null;
   if (r.ok && r.data.ok && !run && !own && S.debug) { S.debug.passed = true; S.debug.line = null; } // 제출로 통과했다: 틀린 곳 찾기의 옛 질문과 짚은 줄을 걷는다
   say(!r.ok ? "" : own ? "직접 넣은 값으로 실행했어요." : run ? (r.data.ok ? "예시를 모두 맞혔어요." : r.data.many ? `${MANY_HEAD}.` : "예시에서 틀려요.") : r.data.ok ? "채점 결과: 통과" : `채점 결과: ${r.data.many ? MANY_HEAD : "아직 틀려요"}`);
@@ -2659,6 +2664,7 @@ async function debugCall(text) {
   d.note = null;
   S.sending = text ? { text } : null;
   if (text) takeText($("debug-say"));
+  const no = ++judgeNo; // 디버그는 고친 코드를 다시 채점한다. 기다리는 동안 실행·제출한 더 새 결과를 늦게 온 답이 덮지 않게
   const r = await work(text ? "튜터가 답을 읽는 중…" : "튜터가 코드를 보는 중…", "debug", () => api("/api/debug", { id: pid, code, text }));
   if (text && !(r && r.ok)) giveBack("debug-say", pid, text); // 보낸 글이 사라지지 않게
   if (!r || S.pid !== pid) return;
@@ -2666,16 +2672,17 @@ async function debugCall(text) {
     d.note = errorNote(r.error);
     if (text) d.note = { ...d.note, text: `${d.note.text} 쓴 글은 입력 칸에 그대로 있어요.` };
   } else {
-    if (r.data.judged) S.result = r.data.judged;
+    const fresh = newerThanShown(no);
+    if (fresh && r.data.judged) S.result = { ...r.data.judged, no };
     d.code = code;
-    d.passed = !!r.data.passed;
+    if (fresh) d.passed = !!r.data.passed;
     // 대화를 바꿔 끼우지 않고 잇는다. 서버 기록(r.data.messages)은 쌓이기만 해서 새로 온 것만 더한다(d.seen: 이미 더한 수)
-    const fresh = r.data.messages ? r.data.messages.slice(d.seen || 0) : [...(text ? [{ role: "user", text }] : []), { role: "service", text: r.data.message }];
+    const said = r.data.messages ? r.data.messages.slice(d.seen || 0) : [...(text ? [{ role: "user", text }] : []), { role: "service", text: r.data.message }];
     if (r.data.messages) d.seen = r.data.messages.length;
-    const at = fresh.findIndex((m) => m.role === "service"), regraded = r.data.judged && d.messages.length && !d.passed;
-    if (regraded && at >= 0) fresh.splice(at, 0, { role: "regrade", text: `다시 채점했어요: ${judgedLine(r.data.judged)}` }); // 고친 코드를 다시 채점했다: 구분선 아래에 새 질문
-    d.messages = d.messages.concat(fresh);
-    if (!d.passed) d.line = r.data.efficiency_only ? null : r.data.line;
+    const at = said.findIndex((m) => m.role === "service"), regraded = r.data.judged && d.messages.length && !r.data.passed;
+    if (regraded && at >= 0) said.splice(at, 0, { role: "regrade", text: `다시 채점했어요: ${judgedLine(r.data.judged)}` }); // 고친 코드를 다시 채점했다: 구분선 아래에 새 질문
+    d.messages = d.messages.concat(said);
+    if (fresh && !d.passed) d.line = r.data.efficiency_only ? null : r.data.line;
     $("code")._seen = code;
   }
   say(!r.ok ? "" : d.passed ? "고친 코드가 통과했어요." : d.line ? `튜터가 ${d.line}번째 줄을 짚었어요.` : "튜터가 물었어요.");

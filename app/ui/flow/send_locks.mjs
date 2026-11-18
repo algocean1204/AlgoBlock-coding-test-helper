@@ -228,8 +228,9 @@ for (const viewport of VIEWPORTS) {
       await page.locator('#code').press('Enter')
       await sleep(200)
       if (!(await t.value('code')).includes('\n') || t.count(isSubmit)) throw new Error('Enter가 줄을 바꾸지 않았거나 제출했다')
+      t.rules.unshift({ pred: isSubmit, handler: async (route) => { await sleep(1800); return route.continue() } }) // 채점이 느려도 끝을 기다리는지 본다
       await page.locator('#code').press('Control+Enter')
-      await page.waitForFunction(() => document.querySelector('#result .verdict, #result .note'), null, { timeout: 15000 })
+      await page.waitForFunction(() => { const run = document.getElementById('run'); return !run.disabled && run.getAttribute('aria-disabled') !== 'true' && document.querySelector('#result .verdict') }, null, { timeout: 15000 }) // 진행 문구(.note)가 아니라 결과가 나오고 실행 줄이 풀릴 때까지
       if (t.count(isSubmit) !== 1) throw new Error(`제출 ${t.count(isSubmit)}회`)
     })
     await need('내 입력 칸: Enter는 줄바꿈, Ctrl+Enter는 실행', async () => {
@@ -426,6 +427,47 @@ for (const viewport of VIEWPORTS) {
     })
   })
 
+  // ── 6b. 디버그 답을 기다리는 사이 제출이 통과하면 늦게 온 디버그 응답이 통과 결과와 표시를 덮지 않는다 ──
+  await flow('debug-late-answer', viewport, async (t) => {
+    const { need, page } = t
+    let wrongResult
+    await need('틀린 코드의 채점 결과(실패)를 얻어 둔다', async () => {
+      const r = await page.request.post(`${base}/api/run`, { data: { id: problem.id, code: WRONG } })
+      wrongResult = await r.json()
+      if (wrongResult.ok) throw new Error('틀린 코드가 통과했다')
+    })
+    await need('튜터의 질문으로를 시작해 틀린 곳 찾기를 연다', async () => {
+      await t.pick('chair')
+      t.rules.unshift({ pred: (q) => isDebug(q) && !q.body.text, handler: (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ message: '어디서 값이 사라질까요?', passed: false, line: null }) }) })
+      await t.wrongRun()
+      await page.locator('#debug-start').click()
+      await page.locator('#debug-say').waitFor({ state: 'visible', timeout: 5000 })
+      await page.waitForFunction(() => document.querySelector('#debug-log .msg.tutor:not(.pending)') && !document.querySelector('#debug-log .msg.tutor.pending'), null, { timeout: 5000 }) // 첫 질문이 와서 기다림이 끝날 때까지
+    })
+    let gate
+    await need('디버그 답을 붙잡아 둔 채 정답을 제출하면 통과한다', async () => {
+      gate = t.hold((q) => isDebug(q) && q.body.text)
+      await page.locator('#debug-say').fill('모르겠어요')
+      await t.open('#debug-send')
+      await page.locator('#debug-send').click()
+      await page.waitForFunction(() => document.querySelector('#debug-log .msg.tutor.pending'), null, { timeout: 2000 })
+      await page.locator('#code').fill(problem.solutions.python)
+      await t.open('#submit')
+      await page.locator('#submit').click()
+      await page.waitForFunction(() => document.querySelector('#result .verdict.pass') && document.querySelector('#debug-log .note.ok'), null, { timeout: 15000 })
+    })
+    await need('늦게 온 디버그 응답(채점 실패·통과 아님)이 풀려도 결과 칸은 통과로 남는다', async () => {
+      gate.release({ json: { message: '아직 틀려요', passed: false, line: 1, judged: wrongResult } })
+      await page.waitForFunction(() => !document.querySelector('#debug-log .msg.tutor.pending'), null, { timeout: 4000 })
+      await sleep(500)
+      if (!(await page.locator('#result .verdict.pass').count()) || await page.locator('#result .verdict.fail').count()) throw new Error('결과 칸이 통과가 아니다')
+    })
+    await need('디버그 통과 표시가 남고 입력 칸은 닫힌 채다', async () => {
+      if (!(await page.locator('#debug-log .note.ok').count())) throw new Error('통과 표시가 사라졌다')
+      if (!(await page.locator('#debug-composer').evaluate((el) => el.hidden))) throw new Error('입력 칸이 다시 열렸다')
+    })
+  })
+
   // ── 7. 다시 그리기: 튜터 답이 와도 블록 칸의 커서가 남는다 / 같은 HTML이면 다시 그리지 않는다 ──
   await flow('cursor-kept', viewport, async (t) => {
     const { need, page } = t
@@ -545,11 +587,14 @@ for (const viewport of VIEWPORTS) {
         if (base) while (blocks.length < 8) blocks.push({ ...base, id: `b-${blocks.length}` })
         return json
       }
-      await page.evaluate(() => loadState(true))
-      await page.waitForFunction(() => document.querySelectorAll('#chat-log .msg.tutor').length >= 60, null, { timeout: 5000 })
-      await page.evaluate(() => render())
-      const p = await t.perf()
-      if (!(p.rerender_ms >= 0 && p.rerender_ms <= 50)) throw new Error(`rerender_ms=${p.rerender_ms}`)
+      // 내용이 바뀌는 실제 다시 그리기를 잰다(같은 HTML 건너뛰기가 아니다). 상태를 받은 직후 읽어 뒤의 건너뛰기가 값을 덮지 않게 한다
+      const p = await page.evaluate(async () => {
+        const before = document.querySelectorAll('#chat-log .msg.tutor').length
+        await loadState(true)
+        return { before, after: document.querySelectorAll('#chat-log .msg.tutor').length, ms: window.__ab.perf.rerender_ms }
+      })
+      if (!(p.after >= 60 && p.after > p.before)) throw new Error(`내용이 바뀌지 않았다(${p.before} → ${p.after})`)
+      if (!(p.ms >= 0 && p.ms <= 50)) throw new Error(`rerender_ms=${p.ms}`)
     })
     await need('300줄 코드에 100자를 쳐도 50ms 넘는 긴 작업이 2회 이하다', async () => {
       await t.direct()
