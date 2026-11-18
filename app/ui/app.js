@@ -1161,10 +1161,11 @@ async function showCode(pid) {
   await loadState(true);
 }
 
+let stateAsked = 0; // 마지막으로 보낸 상태 요청의 번호
 async function loadState(open) {
-  const pid = S.pid, asked = S.talk;
+  const pid = S.pid, asked = S.talk, n = ++stateAsked;
   const r = await api("/api/state", { id: pid, mode: asked, open: !!open });
-  if (S.pid !== pid) return;
+  if (S.pid !== pid || n !== stateAsked) return; // 뒤에 보낸 요청이 있으면 버린다(늦게 온 앞 응답이 시작한 대화를 옛 상태로 덮지 않게)
   $("code-error").hidden = r.ok;
   if (!r.ok && r.error.code === "not_found") { // 지워진(없는) 문제: 목록으로 보낸다
     S.pid = null;
@@ -1978,7 +1979,7 @@ function selectTab(tab, on) {
 
 /** 방식을 바꾼다. remember: 탭을 눌러 고른 것(서버가 이 문제에 남긴다). 대화는 지우지 않는다. 튜터 방식에 대화가 없으면 바로 시작한다(maybeStart). */
 function setMode(mode, remember) {
-  if (remember) { api("/api/way", { id: S.pid, way: mode }); S.tried = null; } // 누르면 실패한 시작도 다시 한다
+  if (remember) { if (connected() || !tutorWay(mode)) api("/api/way", { id: S.pid, way: mode }); S.tried = null; } // 누르면 실패한 시작도 다시 한다. 연결이 없으면 튜터 방식을 남기지 않는다(연결한 뒤 열자마자 시작해 도움으로 세지 않게)
   S.note.start = null; // 앞 방식의 시작 실패 글을 옮기지 않는다
   if (mode === S.mode && !(S.debug && S.debug.open)) { render(); return maybeStart(); }
   S.mode = mode;
@@ -3374,7 +3375,7 @@ document.addEventListener("keydown", (e) => {
 });
 
 $("more").addEventListener("toggle", () => { if (!$("more").open) { $("reset-confirm").hidden = true; $("reset").hidden = false; } }); // 메뉴를 닫으면 처음부터의 물음도 접는다
-/** 더 보기: 키보드로 메뉴 밖으로 나가면(Tab) 닫는다. 열린 채 남은 메뉴가 그 아래 단추(방식 바꾸기 등)를 덮지 않게. */
+/** 더 보기: 키보드로 메뉴 밖으로 나가면(Tab) 닫는다. 열린 채 남은 메뉴가 그 아래 방식 탭을 덮지 않게. */
 $("more").addEventListener("focusout", (e) => { if ($("more").open && e.relatedTarget && !$("more").contains(e.relatedTarget)) $("more").open = false; });
 /* ── 키보드 초점 ── */
 const focusable = (x) => !!x && !x.disabled && !x.closest("[hidden]") && !!x.offsetParent;

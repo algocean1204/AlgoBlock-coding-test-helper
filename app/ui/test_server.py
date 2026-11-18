@@ -2595,9 +2595,26 @@ def way_saved() -> None:
         raise AssertionError("없는 문제는 거절한다")
     except server.Refuse as exc:
         assert exc.status in (400, 404), exc.status
+    call("/api/reset", id=first)  # 처음부터: 방식도 지워 처음 연 문제처럼 혼자 풀기로 연다
+    assert call("/api/state", id=first)[1]["way"] == "solo"
+    assert first not in server.read_json(server.WAY_FILE, {}), "처음부터 뒤에도 방식 기록이 남았다"
     call("/api/problems/delete", id=first)  # 문제를 지우면 방식 기록도 정리한다
     call("/api/problems/delete", id=second)
     assert not [f.name for f in server.DATA.glob("*.json") if first in f.read_text(encoding="utf-8")], "지운 문제의 방식 기록이 남았다"
+
+
+def way_from_talk() -> None:
+    """방식을 고른 적이 없으면 마지막 대화의 방식으로 연다(/api/way 없이 튜터를 시작한 예전 기록)."""
+    pid = server.register(GOOD)["id"]
+    fake = FakeLlm({})
+    with use_llm(fake), server.tutor() as t:
+        t.adopt(pid, own_ready("def solution(a, b):\n    return a + b"))
+    with use_llm(fake):
+        for mode in ("chair", "guide"):  # 마지막 말이 늦은 쪽
+            assert call("/api/turn", id=pid, mode=mode, event="start")[0] == 200, mode
+            assert call("/api/state", id=pid)[1]["way"] == mode, mode
+    assert pid not in server.read_json(server.WAY_FILE, {}) and not fake.calls, fake.calls
+    call("/api/problems/delete", id=pid)
 
 
 def way_snapshot() -> tuple:
@@ -3666,6 +3683,7 @@ def main() -> None:
     read_check()
     cross_cases()
     way_saved()
+    way_from_talk()
     mode_switch_keeps()
     way_restart()
     way_not_in_browser()
