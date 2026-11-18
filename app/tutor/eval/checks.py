@@ -74,8 +74,8 @@ def stuck_streak(rows: list[dict]) -> int:
     """같은 블록에서 넘어가지 못한 사용자 말이 연속으로 가장 길게 이어진 수."""
     best = streak = 0
     for row in rows:
-        if row["kind"] == "fill" or row.get("event") == "next":
-            streak = 0  # 채우기로 넘어갔으면 새 블록에서 다시 센다
+        if row["kind"] == "fill" or row.get("event") == "next" or (row.get("event") == "block_filled" and row.get("advance")):
+            streak = 0  # 채우기나 블록 코드 확인으로 넘어갔으면 새 블록에서 다시 센다
             continue
         if row["kind"] != "turn" or row.get("event") != "message":
             continue

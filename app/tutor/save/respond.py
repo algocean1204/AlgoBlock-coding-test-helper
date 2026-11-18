@@ -19,12 +19,19 @@ def blocks_body(plan, open_count: int | None = None, language: str = "python") -
 DONE_MOVES = ("recap", "run", "close")  # 마지막 블록까지 찾은 뒤의 말
 
 
+def chair_said(ctx, moves, index: int | None = None) -> bool:
+    """의자의 튜터가 지금 계획에서(마지막 다시 짜기 뒤) 그 차례의 말을 했는가. index를 주면 그 블록의 말만 본다."""
+    cut = max((i for i, m in enumerate(ctx.chair) if m.role == "service" and m.move == "replan"), default=0)
+    return any(m.role == "service" and m.move in moves and (index is None or m.block_index == index) for m in ctx.chair[cut:])
+
+
 def shown_count(ctx, mode: str | None) -> int:
-    """이름을 보여 줄 블록 수. 가이드는 지금 블록까지(빈칸을 채우는 모드), 의자는 이미 찾은 블록까지(지금 블록 이름은 사용자가 찾을 답이다)."""
+    """이름을 보여 줄 블록 수. 가이드는 지금 블록까지(빈칸을 채우는 모드), 의자는 이미 찾은 블록까지(지금 블록 이름은 사용자가 찾을 답이다).
+    의자에서 지금 블록을 말로 찾았거나(코드로 적으라는 말 write) 끝냈으면(마지막 블록을 내 방식으로 넘긴 done) 그 블록 이름까지 보인다."""
     if mode != "chair":
         return ctx.open_count
-    done = any(m.role == "service" and m.move in DONE_MOVES for m in ctx.chair)
-    return ctx.open_count if done else max(ctx.open_count - 1, 0)
+    named = chair_said(ctx, DONE_MOVES) or chair_said(ctx, ("write", "done"), ctx.open_count - 1)
+    return ctx.open_count if named else max(ctx.open_count - 1, 0)
 
 
 def messages_body(items) -> list[dict]:
