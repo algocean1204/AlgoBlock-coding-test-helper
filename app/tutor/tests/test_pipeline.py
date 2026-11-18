@@ -16,7 +16,7 @@ from ..main import AGENTS, build
 from ..state import BlockState, DebugState, FilledBlock, Solution, Submission
 from ..feedback.prompts import WAY_TEXT
 from ..turn.code_check import BRACE_CLOSE, BRACE_OPEN, NOT_JOINED, _RUNTIME, brace_note, code_hash, unrun_note
-from ..turn.moves import FOUND_OK, FOUND_TIP, HINTS_DONE, HINTS_DONE_UNFOUND, WRITE_TIP
+from ..turn.moves import FOUND_OK, HINTS_DONE, HINTS_DONE_UNFOUND, WRITE_TIP, WRITE_TIP_LAST
 
 ZERO = _RUNTIME[2][1]  # 0으로 나눈 실행 오류의 쉬운 말
 
@@ -126,21 +126,37 @@ class ChairTest(unittest.TestCase):
             self.assertNotIn(leak, ask)
 
     def test_basis_then_advance_with_saved_next(self):
+        """근거 질문에 평서로 답하면 판정 없이(모델 0회) 그 블록의 코드로 적으라는 고정 말이고, 넘기지 않는다.
+        다음 블록은 그 블록 코드 확인이 통과해야 열리고, 그때 다음 블록의 첫 저장 힌트가 다음 블록 번호로 나간다."""
         talk = [fakes.service(fakes.HINTS1[0], 0, "m1"), fakes.user("이름을 세면 돼요", 0), fakes.service("근거는요?", 0, "m2", "basis")]
         done, fake = fakes.go(chair_state("문제에 제목이 같으면 같은 책이라고 해서요", chair=talk), {})
-        self.assertEqual(fakes.tasks(fake), [])  # 근거 질문의 답은 판정하지 않고 넘어간다(모델 0회)
-        # 찾은 블록의 안내와 다음 블록의 첫 질문은 다른 말이다(한 말에 붙어 다음 블록 아래에 보였다)
-        self.assertEqual(done["result"], {"reply": OPEN_LEAD + fakes.HINTS2[0], "advance": True, "move": "open", "found": FOUND_TIP.strip()})
-        self.assertEqual(done["open_count"], 2)
+        self.assertEqual(fakes.tasks(fake), [])
+        self.assertEqual((done["result"], done["open_count"]), ({"reply": WRITE_TIP, "advance": False, "move": "write"}, 1))
+        asked, fake = fakes.go(chair_state("문제에 그렇게 적혀 있지 않나요?", chair=talk), {"chair.judge": ["[check]Y t"], "chair.ask": ["그 문장대로 예시를 따라가면 무엇이 나오나요?"]})
+        self.assertEqual(fakes.tasks(fake), ["chair.judge", "chair.ask"])  # 물음 꼴의 답은 판정한다. 맞아도 넘기지 않고 스스로 확인하게 묻는다
+        self.assertEqual((asked["result"]["move"], asked["result"]["advance"], asked["open_count"]), ("verify", False, 1))
+        # 말 → 블록: 이어서 그 블록의 코드를 확인받아 통과하면 다음 블록이 열린다(모델 0회)
+        wrote = [*talk, fakes.user("문제에 제목이 같으면 같은 책이라고 해서요", 0, "u2"), fakes.service(WRITE_TIP, 0, "m3", "write")]
+        done, fake = fakes.go(chair_state("REF_ONE", event="block_filled", chair=wrote), {})
+        self.assertEqual((fake.calls, done["result"]["reply"], done["result"]["advance"], done["open_count"], done["move"].target),
+                         ([], OPEN_LEAD + fakes.HINTS2[0], True, 2, 1))
         from ..feedback.prompts import record_lines
-        found = [fakes.user("이름을 세면 돼요", 0), fakes.service(FOUND_TIP.strip(), 0, "m3", "found"), fakes.service(OPEN_LEAD + fakes.HINTS2[0], 1, "m4")]
-        self.assertEqual(record_lines(fakes.context(chair=found), fakes.planned(fakes.two())), [])  # 찾은 블록에 남긴 안내는 막힌 답이 아니다
+        found = [fakes.user("이름을 세면 돼요", 0), fakes.service(WRITE_TIP, 0, "m3", "write"), fakes.service(OPEN_LEAD + fakes.HINTS2[0], 1, "m4")]
+        self.assertEqual(record_lines(fakes.context(chair=found), fakes.planned(fakes.two())), [])  # 코드로 적으라는 말은 막힌 답이 아니다
 
     def test_last_block_recap(self):
+        """마지막 블록을 말로 맞혀도 정리 질문으로 넘기지 않고 마지막 블록의 코드로 적으라는 고정 말이다(생성 0회).
+        그 블록 코드 확인이 통과하면 정리 질문이고, 모델에게 거절로 알리지 않는다."""
         plan = fakes.planned([fakes.hinted()[0]])
         done, fake = fakes.go(chair_state("문제 글에 그렇게 적혀 있어요", plan=plan), {"chair.judge": ["[check]Y t"], "chair.ask": ["처음부터 무엇을 정했는지 말해 볼까요?"]})
-        self.assertEqual((done["result"]["move"], done["result"]["advance"], done["open_count"]), ("recap", True, 1))
-        self.assertIn("처음부터 순서대로", fakes.prompt(fake, "chair.ask"))
+        self.assertEqual(fakes.tasks(fake), ["chair.judge"])
+        self.assertEqual((done["result"]["move"], done["result"]["advance"], done["result"]["reply"], done["open_count"]), ("write", False, WRITE_TIP_LAST, 1))
+        wrote = [fakes.user("문제 글에 그렇게 적혀 있어요", 0), fakes.service(WRITE_TIP_LAST, 0, "m2", "write")]
+        done, fake = fakes.go(chair_state("REF_ONE", event="block_filled", plan=plan, chair=wrote), {"chair.ask": ["처음부터 무엇을 정했는지 말해 볼까요?"]})
+        self.assertEqual((fakes.tasks(fake), done["result"]["move"], done["result"]["advance"], done["open_count"]), (["chair.ask"], "recap", True, 1))
+        asked = fakes.prompt(fake, "chair.ask")
+        self.assertIn("처음부터 순서대로", asked)
+        self.assertNotIn("아직 넘어가지 않는다", asked)
 
     def test_after_recap_answer_close_without_model(self):
         plan = fakes.planned([fakes.hinted()[0]])

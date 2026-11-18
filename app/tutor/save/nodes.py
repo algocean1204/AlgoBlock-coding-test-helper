@@ -34,8 +34,6 @@ def collect(state: MainState) -> dict:
         if user:
             rows.append(_row(mode, "main", "user", user, current_index(state), None, checked))
         move = state.get("move")
-        if result.get("found"):  # 의자에서 말로 찾은 블록의 안내는 그 블록의 말로, 다음 블록의 첫 질문과 나눠 남긴다
-            rows.append(_row(mode, "main", "service", result["found"], current_index(state), None, "found"))
         rows.append(_row(mode, "main", "service", result.get("reply", ""), move.target if move else None, None, result.get("move")))
         # 같은 블록 코드를 다시 확인해 같은 판정·같은 말이 나왔다: 대화에 같은 짝을 또 쌓지 않는다(바뀌지 않은 코드를 거듭 확인하면 같은 말이 줄줄이 쌓였다)
         chat = ctx.chair if mode == "chair" else ctx.guide
