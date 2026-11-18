@@ -88,10 +88,10 @@ def record_lines(ctx, plan) -> list[str]:
 
     def settled(mode: str, i) -> str:
         """그 블록이 뒤에 어떻게 되었는가(찾았거나 통과한 블록을 '막힌 지점'으로 짚었다). 근거가 남은 것만 쓴다.
-        열린 블록 수로 '찾았다'고 보면 '이 블록 채우기'로 연 블록까지 찾은 것이 되었다: 말로 찾았다는 근거는 그 블록의 찾음 안내(move found)다."""
+        열린 블록 수로 '찾았다'고 보면 '이 블록 채우기'로 연 블록까지 찾은 것이 되었다: 말로 찾았다는 근거는 그 블록에서 코드로 적으라는 말(move write. 옛 기록은 찾음 안내 found)이다."""
         if passed(i):
             return "(그 뒤 블록 코드 확인을 통과했다. 막힌 곳이 아니다)"
-        if mode == "chair" and any(m.role == "service" and m.block_index == i and m.move == "found" for m in ctx.chair):
+        if mode == "chair" and any(m.role == "service" and m.block_index == i and m.move in ("write", "found") for m in ctx.chair):
             return "(그 뒤 이 블록을 찾았다. 막힌 곳이 아니다)"
         return ""
 
