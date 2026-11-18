@@ -646,14 +646,19 @@ def code_leaks(text: str, pieces: list[str], language: str, program: bool = Fals
     """말의 코드 구간·코드 모양 줄이 이 문제의 코드를 옮겼는가. 되묻기 답(term)의 문법 예가 이 문제의 변수와 답 줄을 썼다.
     이 문제 코드가 만든 두 글자 이상의 이름(problem_names)을 쓰거나, 문장 조각(statements)이 이 문제 코드의 문장 조각과 같거나 그것으로 시작하면 참.
     견주는 조각은 주석·틀 줄을 뺀 줄에서 나온, 만든 이름이 있고 공백을 빼고 5자 이상인 조각이다. 낱말 단위로 견주므로 'if xs > 0'은 'if x > 0'으로 시작하지 않는다.
-    한 글자 이름만 같은 예('for x in fruits:')는 거짓이다."""
-    parts = []
-    outside_code(text or "", lambda line: line, lambda span: parts.append(span.strip("`")) or span)
+    한 글자 이름만 같은 예('for x in fruits:')는 거짓이다.
+    백틱 없이 말 속에 쓴 코드('if x > 0: 처럼', 'if (x > 0) {처럼')는 코드 모양 줄로 잡히지 않는다: 말 줄의 낱말 사이에 이 문제의 문장 조각(낱말 둘 이상)이 그대로 있으면 참.
+    말 줄에서는 이름만 보지 않는다(이름을 말로 가리키는 것은 된다)."""
+    parts, prose = [], []
+    outside_code(text or "", lambda line: prose.append(line) or line, lambda span: parts.append(span.strip("`")) or span)
     made = problem_names(pieces, language, program)
     names = {name for name in made if len(name) >= 2}
     rows = [row for code in pieces for row in statements("\n".join(body_lines(code, language, program)), language)
             if made & set(row) and len("".join(row)) >= 5]
-    return any(names & set(_OWN_NAME.findall(part)) or any(said[:len(row)] == row for said in statements(part, language) for row in rows) for part in parts)
+    if any(names & set(_OWN_NAME.findall(part)) or any(said[:len(row)] == row for said in statements(part, language) for row in rows) for part in parts):
+        return True
+    words = [_TOKEN.findall(line) for line in prose]
+    return any(said[at:at + len(row)] == row for said in words for row in rows if len(row) >= 2 for at in range(len(said)))
 
 
 SAME_HINT = 0.8  # 공백을 뺀 두 질문이 이만큼 같으면 같은 질문을 되풀이한 것이다
