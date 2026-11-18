@@ -8,7 +8,7 @@ from ..common.talk_rules import RETRY_LEAD, open_lead
 
 OPEN_LEAD = open_lead("chair", "loop")  # 시험 계획의 둘째 블록은 반복이다
 from ..state import TurnContext, Verdict
-from ..turn.moves import FOUND_OK, HINTS_DONE_UNFOUND, WRITE_TIP, WRITE_TIP_LAST, pick_move
+from ..turn.moves import FOUND_OK, HINTS_DONE, WRITE_TIP, WRITE_TIP_LAST, pick_move
 
 PLAN = fakes.planned(fakes.hinted())
 
@@ -80,9 +80,9 @@ class ChairMoveTest(unittest.TestCase):
         third = self.pick(Verdict(False), text="몰라요", used=["open", "clue"])
         self.assertEqual((third.move, third.saved), ("trace", fakes.HINTS1[2]))
         done = self.pick(Verdict(False), text="몰라요", used=["open", "clue", "trace"])
-        self.assertEqual((done.saved, done.lead), (HINTS_DONE_UNFOUND, ""))  # 아직 찾지 못한 블록에는 코드 칸이 없다
+        self.assertEqual((done.saved, done.lead), (HINTS_DONE, ""))  # 아직 찾지 못한 블록에도 코드 칸이 있다
         asked = self.pick(Verdict(False, aside="A"), text="답 알려 주세요", used=["open", "clue", "trace"])
-        self.assertEqual((asked.lead, asked.saved), ("답 코드는 드리지 않아요. ", HINTS_DONE_UNFOUND))  # 같은 '이 블록 채우기' 안내는 한 번만
+        self.assertEqual((asked.lead, asked.saved), ("답 코드는 드리지 않아요. ", HINTS_DONE))  # 같은 '이 블록 채우기' 안내는 한 번만
 
     def test_confused_long_answer_gets_help_not_assume(self):
         got = self.pick(Verdict(False, miss=1), text="모르겠어요, 반복문으로 하나씩 보면 될지 감이 안 와요", used=["open"])

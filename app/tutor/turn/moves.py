@@ -20,9 +20,8 @@ OPENING = ("start", "next", "replan")  # 사용자 말 없이 블록의 첫 질�
 FOLLOW_UNTIL = 1  # 둘째 블록까지만 사용자 방법으로 다시 짠다. 뒤에서는 지금 계획으로 이어 간다
 RUNG0 = ("replan",)  # 사다리 첫 칸으로 세는 다른 이름
 FOUND_OK = "통과예요. 이 블록의 코드는 할 일을 해내요."  # 의자에서 이미 찾은 블록의 코드 확인이 통과했다(묻지 않는다. 동의로 시작하지 않는다)
-# 저장 힌트를 1·2·3번까지 다 낸 뒤의 고정 말(3번을 되풀이하지 않는다)
+# 저장 힌트를 1·2·3번까지 다 낸 뒤의 고정 말(3번을 되풀이하지 않는다). 의자의 찾기 전 블록에도 코드 칸이 있어 두 방식이 같다
 HINTS_DONE = "이 블록의 힌트는 다 봤어요. 블록 칸에 적어 확인받거나, '이 블록 채우기'로 이 블록만 볼 수 있어요."
-HINTS_DONE_UNFOUND = "이 블록의 힌트는 다 봤어요. '이 블록 채우기'로 이 블록만 볼 수 있어요."  # 의자에서 아직 찾지 못한 블록(코드 칸이 없다)
 # 말로 맞혔다. 다음 블록은 블록 코드 확인(또는 넘어가기·채우기)으로만 열린다(말로 열면 코드 칸이 빈 채 지나갔다). 의자·가이드 같다
 WRITE_TIP = "그 생각을 이 블록의 코드 칸에 코드로 적고 '블록 코드 확인'을 눌러 보세요. 확인을 통과하면 다음 블록이 열려요."
 WRITE_TIP_LAST = "그 생각을 이 블록의 코드 칸에 코드로 적고 '블록 코드 확인'을 눌러 보세요. 마지막 블록이라, 확인을 통과하면 모은 코드로 풀이를 돌려 볼 수 있어요."
@@ -97,7 +96,7 @@ def _pick_move(mode: str, plan: BlockPlan, turn: TurnContext, verdict: Verdict |
             return ladder(lead, signal)
         if seen >= len(hints):  # 고정 말이 '이 블록 채우기'를 알리니 같은 안내를 앞말에서 뺀다
             kept = " ".join(part for part in sentences(lead) if "이 블록 채우기" not in part)
-            return MovePlan(LADDER[mode][-1], index, False, kept + " " if kept else "", HINTS_DONE_UNFOUND if mode == "chair" and not found else HINTS_DONE)
+            return MovePlan(LADDER[mode][-1], index, False, kept + " " if kept else "", HINTS_DONE)
         return MovePlan("replan" if turn.event == "replan" else LADDER[mode][min(seen, 2)], index, False, lead, hints[seen])
 
     def advance() -> MovePlan:
