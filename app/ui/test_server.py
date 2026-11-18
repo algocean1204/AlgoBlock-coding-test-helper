@@ -1857,6 +1857,34 @@ def key_flow() -> None:
         assert refuses("/api/key/delete", name="x") and refuses("/api/key/delete", name=["claude"])
         after = call("/api/key/delete", name="openai")[1]["keys"]  # 지운 공급자만 빠진다
         assert after == {"claude": True, "openai": False} and server.read_json(server.KEY_FILE, {}) == {"ANTHROPIC_API_KEY": claude}
+        # 키 파일은 처음부터 소유자만 읽게 만든다(남은 임시 파일의 권한도 따르지 않는다). 넣기·지우기가 겹쳐도 한쪽 변경이 사라지지 않는다
+        modes = []
+        real_open = os.open
+        tmp = server.KEY_FILE.with_suffix(".tmp")
+        tmp.write_text("{}", encoding="utf-8")
+        tmp.chmod(0o644)
+        with patch.object(server.os, "open", lambda path, flags, mode=0o777: modes.append(mode) or real_open(path, flags, mode)):
+            server.save_key("ANTHROPIC_API_KEY", claude)
+        assert modes == [0o600], modes
+        if os.name != "nt":
+            assert server.KEY_FILE.stat().st_mode & 0o777 == 0o600
+        import threading
+        threads = [threading.Thread(target=server.save_key, args=(f"K{n}", "v")) for n in range(8)]
+        for one in threads:
+            one.start()
+        for one in threads:
+            one.join()
+        assert set(server.read_json(server.KEY_FILE, {})) == {"ANTHROPIC_API_KEY", *(f"K{n}" for n in range(8))}
+        for n in range(8):
+            server.drop_key(f"K{n}")
+        assert server.read_json(server.KEY_FILE, {}) == {"ANTHROPIC_API_KEY": claude}
+        with patch.object(server.os, "fsync", lambda fd: (_ for _ in ()).throw(OSError("디스크가 찼다"))):  # 쓰다가 실패하면 원래 키 파일이 그대로다
+            try:
+                server.save_key("OPENAI_API_KEY", openai)
+                raise AssertionError("쓰기 실패는 알려야 한다")
+            except OSError:
+                pass
+        assert server.read_json(server.KEY_FILE, {}) == {"ANTHROPIC_API_KEY": claude} and not server.KEY_FILE.with_suffix(".tmp").exists()
         try:
             call("/api/key/delete", name="openai")
             raise AssertionError("넣지 않은 키를 지울 수는 없다")
