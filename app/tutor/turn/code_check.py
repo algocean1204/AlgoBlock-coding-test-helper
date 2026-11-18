@@ -32,6 +32,7 @@ from .pairs import pair_block
 from ..debug.rules import batchim, call_text
 from ..llm import cached_user
 from ..common.progress_view import active_plan, current_index, found_check
+from ..save.respond import shown_count
 from ..common.verdict import FOUND_RULE, ask_verdict
 from ..state import BlockState, MainState, Verdict
 
@@ -100,6 +101,11 @@ WHILE_NOTE = "반복을 끝내는 줄(값을 늘리거나 줄이는 줄)을 뒤 
 HOLD_PARAMS = ("튜터가 채운 다음 블록 코드는 이 블록의 함수를 {names} 차례로 넘겨 불러요. 내 함수의 매개변수가 그 차례의 어느 값인지 찾지 못해 이어 돌리지 못했어요. "
                "내 매개변수를 그 차례와 이름으로 바꾸거나, 맞다고 생각하면 '이대로 넘어가기'를 눌러요.")
 # 반복 안에서 시작해 밖에서 끝나는 블록을 평평하게 적으면 바깥 줄도 반복 안에 놓였다(Python만)
+# 의자에서 이름이 아직 가려진 블록(찾기 전): 튜터 코드의 이름은 곧 찾을 답이라 위 세 말 대신 이름 없이 말한다
+HOLD_HIDDEN = ("튜터가 채운 다음 블록 코드가 이 블록에서 받아 쓰는 값을 내 코드에서 찾지 못해 이어 돌리지 못했어요. "
+               "이 블록을 찾으면 튜터가 쓰는 이름이 보여요. 맞다고 생각하면 '이대로 넘어가기'를 눌러요.")
+GUESSED_CUT_HIDDEN = ("튜터의 코드와 이을 이름의 짝을 시간 안에 다 돌려 보지 못해서 이어지지 않는 건지 확인하지 못했어요. "
+                      "맞다고 생각하면 '이대로 넘어가기'를 눌러요.")
 INDENT_NOTE = "이 블록은 앞 블록에서 연 반복이나 조건 안에서 시작해요. 그 밖에서 할 일이 있으면 그 줄을 첫 줄보다 덜 들여 써 주세요."
 KIND_WORD = {"compile_error": "컴파일 오류", "runtime_error": "실행 오류"}
 
@@ -113,14 +119,19 @@ def code_hash(code: str) -> str:
     return hashlib.sha256(kept_code(code).encode("utf-8")).hexdigest()
 
 
-def hold_name(names: list[str], params: bool = False) -> str:
+def hold_name(names: list[str], params: bool = False, hide: bool = False) -> str:
+    """hide: 의자에서 이름이 아직 가려진 블록이다(이름을 싣지 않는다)."""
+    if hide:
+        return HOLD_HIDDEN
     names = list(dict.fromkeys(names))
     return (HOLD_PARAMS if params else HOLD_NAME).format(names=", ".join(f"`{name}`" for name in names), josa="이라는" if names and batchim(names[-1]) else "라는")
 
 
-def assumed(pairs: list[list[str]], cut: bool = False) -> str:
+def assumed(pairs: list[list[str]], cut: bool = False, hide: bool = False) -> str:
     """어림 짝 문장. pairs: [[내 이름, 계획 이름], …]. 같은 이름끼리의 짝은 말하지 않는다. cut: 다른 짝을 다 시도하지 못했다(짝 말이 비어도 그 사실은 말한다).
-    둘 다 없으면 빈 글."""
+    둘 다 없으면 빈 글. hide: 의자에서 이름이 아직 가려진 블록이다(짝을 말하지 않고, 다 시도하지 못했으면 그 사실만)."""
+    if hide:
+        return GUESSED_CUT_HIDDEN if cut else ""
     shown = [f"`{m}` → `{p}`" for m, p in pairs if m != p]
     return ((GUESSED.format(pairs=", ".join(shown)) if shown else "") + (GUESSED_CUT if cut else "")).strip()
 
@@ -407,6 +418,11 @@ def _recreated(name: str, later: list[str], language: str, program: bool) -> boo
     return False
 
 
+def name_hidden(state: MainState, index: int) -> bool:
+    """의자에서 이름이 아직 가려진 블록(말로 찾거나 끝내기 전)을 확인한다: 확인 말에 튜터 코드의 이름을 싣지 않는다. 가이드는 언제나 False."""
+    return state["request"].mode == "chair" and index >= shown_count(state["ctx"], "chair")
+
+
 def run_verdict(state: MainState, plan, index: int, code: str, check) -> dict | None:
     """실행 판정. 모델에 넘길 때는 None. 돌려주는 것: verdict, stored(저장할 짝 [[내 이름, 계획 이름], …]), told(알릴 굳은 짝), fixes(다시 고른 앞 블록 상태).
     이어 붙이는 것은 지금 화면의 글 그대로다 — 저장된 블록(적었거나 채운 블록, 앞이든 뒤든)은 저장된 글, 지금 블록은 넣은 글, 나머지는 계획 코드(표로 이름을 바꿈).
@@ -537,25 +553,26 @@ def run_verdict(state: MainState, plan, index: int, code: str, check) -> dict | 
     loop = lambda text, word: re.search(rf"(^|\s){word}\b", "\n".join(body_lines(text, language, program)))  # noqa: E731
     status, timeout = told.get("status"), told.get("status") == "timeout"
     unchecked = [i for i in sorted(mine) if states[plan.blocks[i].id].verdict == "?"]  # 이 실행에 글이 들어간 확인 전 블록(이대로 넘어가기 등)
+    hide = name_hidden(state, index)
     if not timeout and info.params:
-        got = Verdict(False, seen=hold_name(info.params, params=True), hint=False, unsure=True)
+        got = Verdict(False, seen=hold_name(info.params, params=True, hide=hide), hint=False, unsure=True)
     elif not timeout and (no_pair or lost):
         # 짝이 없는 이름 하나만 말해 같은 블록을 세 번 확인했다. 어림으로만 이은 이름(굳은 짝·그대로 쓴 이름·앞 블록의 짝은 빼고)도 한 번에 말한다
         unsure = [n for n in info.candidates if n not in no_pair and n in later_words and not any(n in base[i] for i in later) and n not in info.own
                   and n not in fn and not _recreated(n, [refs[i] for i in later], language, program)]
         names = [n for n in info.open if n in no_pair or n in unsure]
-        got = Verdict(False, seen=hold_name(names + ([missing] if lost else [])), hint=False, unsure=True)
+        got = Verdict(False, seen=hold_name(names + ([missing] if lost else []), hide=hide), hint=False, unsure=True)
     elif ctx.many_answers and status == "failed":  # 답이 여럿일 수 있는 문제: 예시의 답과 다르다는 것만으로는 맞는지 모른다
         got = Verdict(False, seen=MANY_ANSWERS, hint=False, unsure=True)
     else:
-        note = assumed([[m, p] for p, m in guessed.items()], cut)  # 어림 짝으로 이었다면 그 가정을 사실로 말한다. 다 시도하지 못했으면 그 사실도
-        got = failure_verdict(told, spans, program, lead, not plan_blocks, note, cut, unchecked)
+        note = assumed([[m, p] for p, m in guessed.items()], cut, hide)  # 어림 짝으로 이었다면 그 가정을 사실로 말한다. 다 시도하지 못했으면 그 사실도
+        got = failure_verdict(told, spans, program, lead, not plan_blocks, note, cut, unchecked, hide)
         # while을 열었다: 시간 초과면 언제나, 그 밖의 실패도 계획이 이 자리를 for로 열고 뒤 블록을 계획 코드로 이었으면(증가가 뒤 블록에 없다)
         if loop(code, "while") and (timeout or (later and loop(refs[index], "for") and not loop(refs[index], "while"))):
             got.seen, got.hint = _add(got.seen, WHILE_NOTE), False
         # 괄호 수가 계획과 다르면 컴파일 오류에 그 사실을 덧붙인다(실행 전에 거부하면 진입 줄 꼴이 다른 맞는 코드를 막았다)
         earlier = [(mine[i], refs[i]) for i in sorted(mine) if i < index]  # 이 실행에 내 글로 들어간 앞 블록(괄호 수는 여기까지 이어서 센다)
-        if status in KIND_WORD and (note := brace_note(code, plan.blocks[index], language, program, earlier)):  # 컴파일 오류, 그리고 문법 오류를 실행 오류로 알리는 언어(JavaScript)
+        if status in KIND_WORD and (note := brace_note(code, plan.blocks[index], language, program, earlier, hide)):  # 컴파일 오류, 그리고 문법 오류를 실행 오류로 알리는 언어(JavaScript)
             got.seen, got.hint = _add(got.seen, note), False
     rows = [row for row in code.splitlines() if row.strip()]
     if (language == "python" and frame_of(refs[index], language, program)["outer"]
@@ -597,11 +614,12 @@ def _place(report: dict, spans: list[dict]) -> tuple[str, int, int, str] | None:
 
 
 def failure_verdict(report: dict, spans: list[dict], program: bool, lead: str, alone: bool, assume: str = "", cut: bool = False,
-                    unchecked: list[int] = ()) -> Verdict:
+                    unchecked: list[int] = (), hide: bool = False) -> Verdict:
     """이어 돌린 실행이 끝까지 돌았는데 통과하지 못한 판정과 말. '이어지지 않아요'(N)다: 말은 사실(무엇이 났고 어디서 났는가) → 어림 짝을 썼으면 그 짝(assume) →
     두 가지 가능성과 할 수 있는 일(NOT_JOINED). 틀렸다고 단정하지 않는다. alone: 이 프로그램에 튜터의 코드가 없다(내 블록뿐이라 그 사실로 말하고 두 가능성을 말하지 않는다).
     cut: 어림 짝을 다 시도하지 못해 결론을 내지 못했다 → '확인 전'(말은 사실과 그 짝까지).
-    unchecked: 이 실행에 글이 들어간 확인 전 블록(순번) → 그 사실을 말하고 '확인 전'(어느 블록 때문인지 모른다. 힌트를 붙이지 않는다)."""
+    unchecked: 이 실행에 글이 들어간 확인 전 블록(순번) → 그 사실을 말하고 '확인 전'(어느 블록 때문인지 모른다. 힌트를 붙이지 않는다).
+    hide: 의자에서 이름이 아직 가려진 블록이다. 오류가 내 줄이 아닌 곳(튜터의 코드, 이음매, 모르는 줄)에서 났으면 오류 원문을 싣지 않는다(튜터 코드의 줄과 이름이 든다)."""
     status = report.get("status")
     hint = False
     if status in KIND_WORD:
@@ -609,17 +627,19 @@ def failure_verdict(report: dict, spans: list[dict], program: bool, lead: str, a
         raw = row if row.endswith(EASY_END) else f"`{row}`"  # 쉬운 말로 바꾼 줄(_easy)은 원문처럼 감싸지 않는다
         place, kind = _place(report, spans), KIND_WORD[status]
         if place is None:
-            said = f"{kind}가 났는데 어느 줄에서 났는지는 알 수 없어요.\n{raw}"
+            said = f"{kind}가 났는데 어느 줄에서 났는지는 알 수 없어요."
         elif place[0] == "tutor":
-            said = f"튜터의 코드({place[1] + 1}번 블록 자리)에서 {kind}가 났어요.\n{raw}"
+            said = f"튜터의 코드({place[1] + 1}번 블록 자리)에서 {kind}가 났어요."
         elif place[0] == "join":  # 내 블록이 끝난 바로 뒤에서 튜터의 블록이 이어지지 않는다: 튜터의 블록 탓이라 하지 않고 내 블록의 끝을 짚는다
             said = (f"내 {place[2] + 1}번 블록의 마지막 줄(`{_tick(place[3])}`) 뒤에 튜터의 코드({place[1] + 1}번 블록 자리)를 이으면 {kind}가 나요. "
-                    f"내 블록의 끝과 다음 블록의 시작이 문법으로 맞물리지 않아요. 내 블록을 어디서 닫았는지 보세요.\n{raw}")
+                    f"내 블록의 끝과 다음 블록의 시작이 문법으로 맞물리지 않아요. 내 블록을 어디서 닫았는지 보세요.")
         elif place[0] == "other":
-            said = f"다른 블록의 코드에서 {kind}가 났어요.\n{raw}"
+            said = f"다른 블록의 코드에서 {kind}가 났어요."
         else:
             whose = "내 블록" if place[0] == "this" else f"내 {place[1] + 1}번 블록"
-            said = f"{whose} {place[2]}번째 줄(`{_tick(place[3])}`)에서 {kind}가 났어요.\n{raw}"
+            said = f"{whose} {place[2]}번째 줄(`{_tick(place[3])}`)에서 {kind}가 났어요."
+        if not (hide and not alone and (place is None or place[0] not in ("this", "mine"))):
+            said = f"{said}\n{raw}"
     else:
         said = seen_line(report, program, lead)
         hint = status != "timeout"  # 값이 달랐다: 다음 힌트를 붙인다
@@ -661,11 +681,12 @@ def _opener(row: str) -> str:
     return f"이 블록에서 연 괄호(`{_tick(row)}`)" if row else "앞에서 연 괄호(`{`)"
 
 
-def brace_note(code: str, block, language: str, program: bool, earlier: list[tuple[str, str]] = ()) -> str:
+def brace_note(code: str, block, language: str, program: bool, earlier: list[tuple[str, str]] = (), hide: bool = False) -> str:
     """중괄호 언어에서 이 블록이 끝날 때 열려 있는 괄호 수가 계획과 다르면 그 안내(실행이 실패한 뒤의 참고 글). Python은 들여쓰기를 틀 정보가 맞춘다.
     계획은 반복을 다음 블록까지 열어 두는데 '}'로 닫아 적은 블록이 통과했고, 모은 코드에 '}'가 하나 더 붙어 컴파일 오류였다.
     earlier: 이 실행에 내 글로 들어간 앞 블록 [(내 글, 계획 코드)]. 괄호 수는 블록 하나가 아니라 여기까지 이어서 견준다
-    (앞 블록에서 이미 닫은 사람에게 다음 블록마다 반대 안내를 했다). 중괄호 없는 한 줄 for·if는 차가 같아(0) 여기서 걸리지 않는다."""
+    (앞 블록에서 이미 닫은 사람에게 다음 블록마다 반대 안내를 했다). 중괄호 없는 한 줄 for·if는 차가 같아(0) 여기서 걸리지 않는다.
+    hide: 의자에서 이름이 아직 가려진 블록이다. 튜터 코드의 줄은 인용하지 않는다(내 코드의 줄은 그대로)."""
     if language == "python" or not block.reference.strip():
         return ""
     # 여는 괄호가 있는 틀 줄(진입 클래스·함수 머리)이 있으면 그 수는 진입 줄 꼴을 알아보는 규칙에 기댄다: 꼴이 다르면(화살표 함수, std:: 반환형) 틀린 안내였다
@@ -675,7 +696,7 @@ def brace_note(code: str, block, language: str, program: bool, earlier: list[tup
     count = lambda text: open_braces(text, language, program)  # noqa: E731
     gap = count(code) - count(block.reference) + sum(count(mine) - count(ref) for mine, ref in earlier)  # 이 블록 끝에서 내 쪽이 더 열어 둔 괄호 수
     if gap < 0:
-        return BRACE_OPEN.format(opener=_opener(unclosed_row(block.reference, language, program)))
+        return BRACE_OPEN.format(opener="이 블록에서 연 괄호" if hide else _opener(unclosed_row(block.reference, language, program)))
     return BRACE_CLOSE.format(opener=_opener(unclosed_row(code, language, program))) if gap > 0 else ""
 
 

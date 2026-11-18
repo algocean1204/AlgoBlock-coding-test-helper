@@ -140,5 +140,23 @@
    "out_of_scope": false,
    "link": ""
   }
+ },
+ "langs": {
+  "java": {
+   "source": 3975293231,
+   "fits": false
+  },
+  "javascript": {
+   "source": 2719112190,
+   "fits": false
+  },
+  "cpp": {
+   "source": 250291757,
+   "fits": false
+  },
+  "rust": {
+   "source": 783581370,
+   "fits": false
+  }
  }
 }

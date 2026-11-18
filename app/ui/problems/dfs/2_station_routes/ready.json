@@ -162,5 +162,48 @@
    "out_of_scope": false,
    "link": ""
   }
+ },
+ "langs": {
+  "java": {
+   "source": 2434332488,
+   "fits": false
+  },
+  "javascript": {
+   "source": 3010561159,
+   "lines": [
+    [
+     1,
+     3
+    ],
+    [
+     4,
+     7
+    ],
+    [
+     8,
+     9
+    ],
+    [
+     10,
+     12
+    ],
+    [
+     13,
+     17
+    ],
+    [
+     18,
+     21
+    ]
+   ]
+  },
+  "cpp": {
+   "source": 1140500289,
+   "fits": false
+  },
+  "rust": {
+   "source": 618814597,
+   "fits": false
+  }
  }
 }

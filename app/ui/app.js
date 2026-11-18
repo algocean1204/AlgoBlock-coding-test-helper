@@ -28,7 +28,7 @@ const WAY_INFO = {
     ai: "없음 — 힌트와 해설은 미리 만든 글이에요.",
     ready: "힌트와 해설을 열지 않고 제출 3번 안에 통과하면 ‘도움 없이 통과’로 세요." },
   chair: { name: "튜터의 질문으로", line: "튜터가 질문만 해요. 풀이 순서를 내가 찾아요.", needsAi: true,
-    does: "튜터가 한 번에 질문 하나를 던져요. 답을 알려 주지 않고, 풀이를 이루는 블록을 내가 하나씩 찾아내게 이끌어요. 찾은 블록마다 코드를 적어요.",
+    does: "튜터가 한 번에 질문 하나를 던져요. 답을 알려 주지 않고, 풀이를 이루는 블록을 내가 하나씩 찾아내게 이끌어요. 지금 블록의 코드를 적어 ‘블록 코드 확인’을 통과하면 다음 블록이 열려요.",
     when: "어디서부터 시작할지 모르겠지만, 풀이는 스스로 떠올리고 싶을 때.",
     ai: "보통 — 내가 답할 때마다 튜터가 읽고 다음 질문을 해요.",
     ready: "‘그 밖의 통과’로 남아요." },
@@ -105,6 +105,7 @@ const S = {
   langWant: null, // 바꾸려는 언어(확인을 기다리는 중)
   codeAsk: null, // 코드 칸 확인을 기다리는 일: restore(체크포인트로 되돌리기), clear(초기화), pull(블록 코드 가져오기로 바꾸기)
   fillAsk: null, // '이 블록 채우기'로 적은 코드를 바꿀지 묻는 블록 id
+  ownAsk: null, // 의자에서 '끝까지 내 방식으로 쓰기'를 묻는 블록 id(찾지 않은 뒤 블록의 이름이 보인다)
   casesOpen: null, // 케이스 목록을 사용자가 펼쳤는지(null이면 기본값)
   quote: null, // 꼬리질문을 열어 둔 튜터 말 id
   sending: null, // 보내는 중인 내 말 {where, text}
@@ -406,7 +407,7 @@ function showSettings(part, from) {
 function route() {
   flushSaves();
   // 화면을 옮기면(뒤로 가기 포함) 코드 칸·블록·문제의 확인 줄과 원본 보기 창을 닫는다(돌아왔을 때 남은 확인 줄을 눌러 코드를 잃지 않게)
-  S.codeAsk = S.fillAsk = null;
+  S.codeAsk = S.fillAsk = S.ownAsk = null;
   $("reset-confirm").hidden = $("del-confirm").hidden = true;
   $("reset").hidden = $("p-edit").hidden = $("p-delete").hidden = false;
   if ($("asset").open) closeAsset();
@@ -1171,7 +1172,7 @@ const closeAsset = () => { const box = $("asset"); box.close ? box.close() : box
 /* ── 05–08 코드 화면 ── */
 function clearProblem(pid) {
   Object.assign(S, { pid, problem: null, session: null, hasFeedback: false, mode: null, tried: null, startAfter: false, soloOpen: null, talk: "chair", codeTab: "direct", blockCode: {}, result: null,
-    quote: null, sending: null, debug: null, note: {}, codeNote: "", fb: null, solo: null, langWant: null, codeAsk: null, fillAsk: null, prepAt: 0, keptNote: false, keptSeen: false, nextUp: null, pullThenRun: false, tagsOpen: false });
+    quote: null, sending: null, debug: null, note: {}, codeNote: "", fb: null, solo: null, langWant: null, codeAsk: null, fillAsk: null, ownAsk: null, prepAt: 0, keptNote: false, keptSeen: false, nextUp: null, pullThenRun: false, tagsOpen: false });
   for (const id of ["code", ...DRAFTS]) $(id).value = "";
   for (const id of ["p-title", "p-text", "blocks", "chat-log", "explain-box", "tutor-note", "result", "solo-box"]) $(id).innerHTML = "";
   for (const id of ["result", "sep-result", "result-big", "debug-sheet", "composer", "fq-composer", "chat-log", "explain-box", "old-feedback", "solo-box", "lang-confirm"]) $(id).hidden = true;
@@ -1354,10 +1355,10 @@ function renderSteps(stage, el) {
 const effCrash = (r) => r.cases.find((c) => c.kind === "efficiency" && c.status === "runtime_error");
 /** 답은 맞고 큰 입력에서 시간만 모자랐다(돌리지 않은 테스트는 앞선 시간 초과 탓). 큰 입력에서 답이 다르거나 오류가 났으면 틀린 곳이 있다. */
 const slowOnlyOf = (r) => !r.ok && !r.run && r.cases.length > 0 && r.cases.every((c) => c.status === "passed" || (c.kind === "efficiency" && (c.status === "timeout" || c.status === "skipped")));
-/** '끝까지 내 방식으로 쓰기'가 지금 보이는 튜터 차례(가이드)에 켜져 있다. */
 /** 이번 풀이에서 이미 통과했다: 풀던 중의 실패 말과 '끝까지 쓰는 중' 안내를 지금 상태처럼 보이지 않는다. */
 const passedNow = () => !!(S.problem && S.problem.study.passed_now);
-const ownWayOn = () => !!S.ownWay && S.mode === "guide" && S.talk === "guide";
+/** '끝까지 내 방식으로 쓰기'가 지금 보이는 튜터 방식(의자·가이드)에 켜져 있다. */
+const ownWayOn = () => !!S.ownWay && tutorWay(S.mode) && S.talk === S.mode;
 /** 튜터 블록을 다 열고(의자는 다 찾고) 빈 칸이 없다: 모아서 실행할 때. */
 const blocksReady = () => S.session.blocks.length > 0 && (S.mode === "chair" ? allFound() : S.session.open_count >= S.session.blocks.length || passedAloneAt() >= 0) && !emptyBlocks().length;
 
@@ -1376,8 +1377,8 @@ function nextAction() {
   if (!r && S.problem.passed > 0) return "review"; // 통과한 문제를 다시 열었다: 쓰는 걸음이 아니라 돌아보는 걸음이다
   if (tutorWay(S.mode) || S.mode === "explain") {
     if (S.mode === "explain" ? !s.explain : !s[S.mode].length) return "start";
-    if (S.mode === "guide" && ownWayOn()) return "compose"; // 끝까지 내 방식으로 쓰기: 블록마다 확인하지 않고 모아서 실행으로 확인한다
-    if (S.mode === "guide" && (s.guide.filter((m) => m.role === "service").pop() || {}).move === "write") return "check"; // 튜터의 마지막 말이 코드를 적으라는 것: 다음은 다시 보내기가 아니라 그 블록의 코드 확인
+    if (ownWayOn()) return "compose"; // 끝까지 내 방식으로 쓰기: 블록마다 확인하지 않고 모아서 실행으로 확인한다
+    if (tutorWay(S.mode) && (s[S.mode].filter((m) => m.role === "service").pop() || {}).move === "write") return "check"; // 튜터의 마지막 말이 코드를 적으라는 것(두 방식): 다음은 다시 보내기가 아니라 그 블록의 코드 확인
     if (tutorWay(S.mode) && !blocksReady()) return "talk";
     if (tutorWay(S.mode) && (S.codeTab === "blocks" || codeEmpty())) return "compose";
   }
@@ -1385,17 +1386,23 @@ function nextAction() {
   return S.problem.cases && S.problem.cases.example ? "run" : "submit";
 }
 
-const allFound = () => S.mode === "chair" && S.session.blocks.length > 0 && S.session.blocks.every((b) => b.name);
+/** 의자에서 블록을 모두 찾았다: 이름이 다 보이고, 튜터가 지금 계획에서 마지막 블록까지 찾은 뒤의 말(정리 질문·마침)을 했다.
+    마지막 블록 이름은 코드로 적으라는 말에도 드러난다. 그때는 아직 그 블록의 확인이 남았다. */
+const allFound = () => {
+  const s = S.session;
+  if (S.mode !== "chair" || !s.blocks.length || !s.blocks.every((b) => b.name)) return false;
+  const said = s.chair.filter((m) => m.role === "service").map((m) => m.move);
+  return said.slice(said.lastIndexOf("replan") + 1).some((m) => ["recap", "run", "close"].includes(m));
+};
 
+/** 블록 자리: 잠김(아직 안 열림), 지나옴(지금 블록보다 앞), 지금. 의자의 지금 블록도 이름이 드러나기 전부터 코드 칸과 확인이 있다. */
 function blockState(b, i) {
   const current = S.session.open_count - 1;
-  if (i > current) return "locked";
-  if (i < current) return "found";
-  return S.talk === "chair" && b.name ? "found" : "current"; // 의자는 지금 블록 이름이 답이라 찾기 전에는 가린다
+  return i > current ? "locked" : i < current ? "found" : "current";
 }
 
-/** 의자에서 아직 찾지 못한 지금 블록인가(채우면 찾을 답인 이름과 코드가 드러난다). */
-const unfoundBlock = (id) => { const i = S.session.blocks.findIndex((b) => b.id === id); return i >= 0 && S.talk === "chair" && blockState(S.session.blocks[i], i) === "current"; };
+/** 의자에서 아직 찾지 못한 지금 블록인가(이름이 가려져 있다. 채우면 찾을 답인 이름과 코드가 드러난다). */
+const unfoundBlock = (id) => S.talk === "chair" && S.session.blocks.some((b, i) => b.id === id && !b.name && blockState(b, i) === "current");
 
 /** 블록 칸에 사람이(또는 도구가) 넣은 값을 상태로 옮긴다. 그리기 전에 부르면 적던 글이 남는다. */
 function harvest() {
@@ -1439,23 +1446,23 @@ function renderBlocks() {
       }
       const saved = S.blockCode[b.id] || { code: "", by: "" };
       const current = state === "current";
-      const empty = !saved.code.trim();
-      const cell = !current || !empty || S.talk === "guide";
+      const empty = !saved.code.trim(), unfound = unfoundBlock(b.id);
       const check = showCheck(b, state, current), st = empty ? "" : blockStatus(b, saved), line = saved.line || {};
       const result = !passedNow() && st && st !== "pass" && sameCode(b, saved) && line.text ? `<p class="block-result is-${line.ok === false ? "fail" : "wait"}">${inline(line.text)}${line.skipped ? "" : ' <span class="muted">자세한 말은 오른쪽 튜터의 말에 있어요.</span>'}</p>` : "";
-      const skip = current && S.talk === "guide" && (st === "fail" || st === "wait") && sameCode(b, saved) && !!line.text; // 마지막 확인이 통과가 아니면 갇히지 않게 넘어갈 길을 준다
+      const skip = current && (st === "fail" || st === "wait") && sameCode(b, saved) && !!line.text; // 마지막 확인이 통과가 아니면 갇히지 않게 넘어갈 길을 준다
       return `<li class="block is-${state}${st ? ` st-${st}` : ""}"${current ? ' aria-current="step"' : ""}>
         <span class="no" aria-hidden="true">${n}</span>
         <div class="block-head"><span class="sr-only">블록 ${n}.</span>${kindChip(b.kind)}<span class="block-name">${esc(b.name || "지금 찾는 블록")}</span>
           ${st ? `<span class="st">${saved.by === "tutor" ? '<span class="by">튜터가 채움</span>' : ""}<span class="st-chip">${STATUS[st]}</span></span>` : ""}</div>
         ${current && KIND[b.kind] ? `<p class="kind-desc">${esc(KIND[b.kind][1])}</p>` : ""}
-        ${cell ? `<div class="code-stack codey-box"><pre class="hl" aria-hidden="true"></pre><textarea class="codey" data-block="${esc(b.id)}" aria-label="블록 ${n} 코드" spellcheck="false" autocapitalize="off" wrap="off" placeholder="이 블록의 코드 (들여쓰기는 쓴 그대로 모여요)">${esc(saved.code)}</textarea></div>` : ""}
+        <div class="code-stack codey-box"><pre class="hl" aria-hidden="true"></pre><textarea class="codey" data-block="${esc(b.id)}" aria-label="블록 ${n} 코드" spellcheck="false" autocapitalize="off" wrap="off" placeholder="${unfound ? "찾은 생각을 이 블록의 코드로 적어 보세요. 이름은 찾으면 보여요" : "이 블록의 코드 (들여쓰기는 쓴 그대로 모여요)"}">${esc(saved.code)}</textarea></div>
         ${result}
         <div class="block-actions">
           ${check ? `<button type="button" class="btn small" data-check="${esc(b.id)}" data-model${current ? "" : ` aria-label="블록 ${n} 코드 확인"`}>블록 코드 확인</button>` : ""}
           ${skip ? `<button type="button" class="btn quiet small" data-skip="${esc(b.id)}">이대로 넘어가기</button>` : ""}
-          ${skip && !S.ownWay ? `<button type="button" class="btn quiet small" data-own="${esc(b.id)}" title="이 블록은 넘어가고 남은 블록을 모두 열어요. 블록마다 확인하지 않고, 다 쓴 뒤 ‘모아서 실행’으로 확인해요">끝까지 내 방식으로 쓰기</button>` : ""}
-          ${S.fillAsk === b.id ? (current && S.talk === "chair" ? `<span class="confirm"><span>아직 찾지 못한 블록이에요. 채우면 이 블록의 이름과 튜터의 코드가 보여요.</span><button type="button" class="btn danger small" data-fill-yes="${esc(b.id)}" data-model>그래도 채우기</button><button type="button" class="btn quiet small" data-fill-no="${esc(b.id)}">더 생각해 보기</button></span>`
+          ${skip && !S.ownWay ? (S.ownAsk === b.id ? `<span class="confirm"><span>아직 찾지 않은 뒤 블록이 모두 열려요. 마지막 블록을 뺀 블록은 이름도 보여요.</span><button type="button" class="btn danger small" data-own-yes="${esc(b.id)}">그래도 열기</button><button type="button" class="btn quiet small" data-own-no="${esc(b.id)}">더 생각해 보기</button></span>`
+            : `<button type="button" class="btn quiet small" data-own="${esc(b.id)}" title="이 블록은 넘어가고 남은 블록을 모두 열어요. 블록마다 확인하지 않고, 다 쓴 뒤 ‘모아서 실행’으로 확인해요">끝까지 내 방식으로 쓰기</button>`) : ""}
+          ${S.fillAsk === b.id ? (unfound ? `<span class="confirm"><span>아직 찾지 못한 블록이에요. 채우면 ${i < s.blocks.length - 1 ? "이 블록의 이름과 " : ""}튜터의 코드가 보여요.</span><button type="button" class="btn danger small" data-fill-yes="${esc(b.id)}" data-model>그래도 채우기</button><button type="button" class="btn quiet small" data-fill-no="${esc(b.id)}">더 생각해 보기</button></span>`
       : `<span class="confirm"><span>적은 코드를 튜터의 코드로 바꿀까요?</span><button type="button" class="btn danger small" data-fill-yes="${esc(b.id)}" data-model>바꾸기</button><button type="button" class="btn quiet small" data-fill-no="${esc(b.id)}">그대로 두기</button></span>`)
     : `<button type="button" class="btn quiet small" data-fill="${esc(b.id)}" data-model${current ? "" : ` aria-label="블록 ${n} 채우기"`}>이 블록 채우기</button>`}
         </div>
@@ -1466,20 +1473,18 @@ function renderBlocks() {
     if (opened.at === at && s.open_count > opened.n) { const now = list.querySelector('[aria-current="step"]') || list.querySelectorAll(".block:not(.is-locked)")[s.open_count - 1]; if (now) now.scrollIntoView({ block: "nearest" }); }
     list._opened = { at, n: s.open_count };
   }
-  // 튜터의 질문으로: 블록을 찾기 전에는 블록 칸이 없다. 코드를 먼저 쓰고 싶은 사람이 ‘코드 전체’ 탭을 찾아 헤매지 않게 길을 보인다
-  const nocell = S.talk === "chair" && !s.blocks.some((b, i) => blockState(b, i) === "found") ? '<div class="note" role="status">블록은 찾는 대로 하나씩 열려요. 먼저 코드를 써 보고 싶으면 ‘코드 전체’ 칸에 쓸 수 있어요. <button type="button" class="btn quiet small" data-tab="direct">코드 전체 칸 열기</button></div>' : "";
   const own = ownWayOn() && !passedNow() ? `<div class="note" role="status">내 방식으로 끝까지 쓰는 중이에요. 블록마다 확인하지 않고, 다 쓴 뒤 ‘모아서 실행’으로 확인해요. <button type="button" class="btn quiet small" data-own-off>튜터 차례로 돌아가기</button></div>` : "";
-  $("blocks-note").innerHTML = (S.busy && S.busy.where === "blocks" ? `<div class="note">${waitLine("blocks")}</div>` : "") + nocell + own + noteHtml(S.note.blocks);
+  $("blocks-note").innerHTML = (S.busy && S.busy.where === "blocks" ? `<div class="note">${waitLine("blocks")}</div>` : "") + own + noteHtml(S.note.blocks);
 }
 
-/** '블록 코드 확인' 단추를 보이는가: 가이드의 지금 블록, 의자에서 찾은 블록, 가이드의 앞 블록 가운데 칸 글이 저장된 글과 다르거나 '확인 전'(stale)인 것.
+/** '블록 코드 확인' 단추를 보이는가: 지금 블록(두 방식), 의자에서 지나온 블록, 가이드의 앞 블록 가운데 칸 글이 저장된 글과 다르거나 '확인 전'(stale)인 것.
     고쳐도 곧바로 단추가 보이지 않았고, 실패한 다시 확인 뒤에는 단추가 사라졌다. */
 function showCheck(b, state, current) {
   if (ownWayOn()) return false; // 끝까지 내 방식으로 쓰는 동안은 블록마다 확인하지 않는다
   const s = S.session, saved = S.blockCode[b.id] || { code: "" };
   // 대화로 찾은 앞 블록(확인 기록이 없다)도 코드를 적으면 단추가 보인다
   const edited = state === "found" && S.mode === "guide" && !!saved.code.trim() && (!sameCode(b, saved) || b.verdict !== "Y");
-  return (current && S.mode === "guide" && s.guide.length > 0) || edited || (state === "found" && S.mode === "chair" && S.talk === "chair" && s.chair.length > 0);
+  return (current && tutorWay(S.mode) && s[S.talk].length > 0) || edited || (state === "found" && S.mode === "chair" && S.talk === "chair" && s.chair.length > 0);
 }
 /** 입력 때 그 블록의 단추만 다시 그린다(칸을 다시 그리지 않아 커서가 그대로다). */
 function syncCheck(ta) {
@@ -1550,13 +1555,13 @@ function passedAloneAt() {
   return at;
 }
 
-/** 열린 블록 가운데 코드 칸이 빈 것의 순번(0부터). 잠긴 블록과, 의자에서 아직 찾지 못한 지금 블록(칸이 없다), 튜터가 건너뛰어도 된다고 한 블록(passedAloneAt 뒤)은 보지 않는다. */
+/** 열린 블록 가운데 코드 칸이 빈 것의 순번(0부터). 잠긴 블록과 튜터가 건너뛰어도 된다고 한 블록(passedAloneAt 뒤)은 보지 않는다. */
 function emptyBlocks() {
   harvest();
   if (!S.session) return [];
   const alone = passedAloneAt();
   return S.session.blocks.map((b, i) => [b, i, blockState(b, i)])
-    .filter(([b, i, state]) => state !== "locked" && !(state === "current" && S.talk === "chair") && !(alone >= 0 && i > alone) && !((S.blockCode[b.id] || {}).code || "").trim()).map(([, i]) => i);
+    .filter(([b, i, state]) => state !== "locked" && !(alone >= 0 && i > alone) && !((S.blockCode[b.id] || {}).code || "").trim()).map(([, i]) => i);
 }
 const gapText = (gaps) => `블록 ${gaps.map((i) => i + 1).join(", ")}의 코드 칸이 비어 있어요. 직접 적거나 ‘이 블록 채우기’를 눌러 주세요.`;
 
@@ -2337,7 +2342,7 @@ async function fillBlock(blockId) {
 }
 
 const REPEATED = "코드가 그대로라 확인 결과도 같아서 대화에 다시 적지 않았어요. 튜터의 마지막 말을 보고 코드를 고친 뒤 다시 확인해 보세요.";
-/** 블록 코드 확인: 가이드는 지금 블록, 의자는 이미 찾은 블록(맞는지만 알려 주고 진행은 그대로). */
+/** 블록 코드 확인: 지금 블록은 통과하면 다음 블록이 열린다(두 방식). 앞 블록은 맞는지만 알려 주고 진행은 그대로다. */
 async function checkBlock(blockId) {
   harvest();
   const pid = S.pid, mode = S.talk, block = S.session.blocks.find((b) => b.id === blockId);
@@ -2376,7 +2381,7 @@ async function ownWayBlock(blockId) {
   const code = block ? (S.blockCode[block.id] || {}).code || "" : "";
   if (!code.trim()) return;
   S.note.blocks = S.note.chat = null;
-  const r = await api("/api/turn", { id: pid, mode: "guide", event: "block_filled", block_id: block.id, code, skip: true, quiet: true, own_way: true });
+  const r = await api("/api/turn", { id: pid, mode: S.talk, event: "block_filled", block_id: block.id, code, skip: true, quiet: true, own_way: true });
   if (S.pid !== pid) return;
   if (!r.ok) S.note.chat = errorNote(r.error);
   say(r.ok ? "남은 블록을 모두 열었어요. 다 쓴 뒤 모아서 실행으로 확인해요." : "");
@@ -3233,7 +3238,14 @@ document.addEventListener("click", (e) => {
   if (el.dataset.fillNo) { S.fillAsk = null; render(); return void document.querySelector(`[data-fill="${CSS.escape(el.dataset.fillNo)}"]`).focus(); }
   if (el.dataset.check) return void checkBlock(el.dataset.check);
   if (el.dataset.skip) return void skipBlock(el.dataset.skip);
-  if (el.dataset.own) return void ownWayBlock(el.dataset.own);
+  if (el.dataset.own) { // 의자는 찾지 않은 뒤 블록의 이름이 보이니 먼저 묻는다('이 블록 채우기'와 같다)
+    if (S.talk !== "chair" || S.session.open_count >= S.session.blocks.length) return void ownWayBlock(el.dataset.own);
+    S.ownAsk = el.dataset.own;
+    render();
+    return void document.querySelector(`[data-own-no="${CSS.escape(S.ownAsk)}"]`).focus();
+  }
+  if (el.dataset.ownYes) { S.ownAsk = null; return void ownWayBlock(el.dataset.ownYes); }
+  if (el.dataset.ownNo) { S.ownAsk = null; render(); return void document.querySelector(`[data-own="${CSS.escape(el.dataset.ownNo)}"]`).focus(); }
   if (el.hasAttribute("data-own-off")) return void ownWayOff();
   if (el.dataset.theme) return void setTheme(el.dataset.theme, el.dataset.pick, el.dataset.effort);
   if (el.closest("#more .more-menu") && el.id !== "reset") $("more").open = false; // 더 보기에서 고르면 닫는다. 처음부터의 물음만 그 단추 자리에서 묻는다
