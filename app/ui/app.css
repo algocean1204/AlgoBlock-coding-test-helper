@@ -980,25 +980,15 @@ a.lv.done:hover { background: var(--lvc); color: var(--on-lv); filter: brightnes
 #way-title { font-size: 14px; font-weight: 650; color: var(--text); }
 .head-tools { display: inline-flex; gap: 2px; margin-left: auto; }
 #pane-tutor .pane-head { flex-wrap: wrap; }
-.way { display: grid; align-content: start; gap: 14px; }
-.ways { display: grid; gap: 10px; }
-.way-card { display: grid; gap: 4px; padding: 14px 16px; border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--surface); color: var(--text); font: inherit; text-align: left; cursor: pointer; transition: border-color 0.15s, background-color 0.15s, transform 0.08s; }
-.way-card strong { display: flex; align-items: center; gap: 8px; font-size: 16px; font-weight: 700; }
-.way-card span { font-size: 13.5px; line-height: 1.55; color: var(--muted); }
-.way-card:hover { border-color: var(--accent-text); }
-.way-card:active { transform: scale(0.99); }
-.way-card.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
-.way-card.primary span { color: var(--on-accent); }
-.way-card.primary .tag { background: rgb(255 255 255 / 0.2); color: var(--on-accent); }
-.way-card .tag { font-size: 11.5px; }
-.wayrow { position: relative; display: grid; gap: 6px; } .wayrow .way-card { padding-right: 52px; }
-.way-card.main { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
-.way-card[aria-disabled="true"] { cursor: not-allowed; } .way-card[aria-disabled="true"]:hover { border-color: var(--line); }
-.way-card .tag.lock { gap: 4px; } .way-card .tag.lock .ico { width: 12px; height: 12px; }
-.ways-gap { display: flex; align-items: center; gap: 10px; font-size: 12.5px; color: var(--muted); } .ways-gap::before, .ways-gap::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+/* 푸는 방식 탭: 셋이 늘 보인다. 좁으면 줄을 바꾸고, 혼자 풀기의 좁은 칸(150px)에서는 세로로 쌓는다 */
+#way-tabs { flex-wrap: wrap; min-width: 0; }
+#way-tabs [role="tab"][data-ai]::after { flex: none; margin-left: 6px; }
+.panes.railed #way-tabs { flex-direction: column; align-items: stretch; width: 100%; }
+.panes.railed #way-tabs [role="tab"] { min-height: 32px; padding: 0 10px; white-space: normal; text-align: left; line-height: 1.3; }
+.panes.railed #way-tabs [role="tab"][data-ai]::after { display: none; } /* 150px 칸에서는 이름이 한 줄에 들게 AI 표시를 뺀다(넓은 칸에서는 보인다) */
+#way-note { flex: none; margin: 8px 16px 0; }
 .info-btn { display: inline-grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 999px; background: transparent; color: var(--muted); cursor: pointer; flex: none; }
 .info-btn:hover, .info-btn[aria-expanded="true"] { color: var(--accent-text); background: var(--fill); } .info-btn .ico { width: 18px; height: 18px; }
-.wayrow > .info-btn { position: absolute; top: 10px; right: 12px; }
 .btn-info { display: inline-flex; align-items: center; gap: 4px; }
 .info { padding: 12px 14px; border-radius: var(--r-md); background: var(--fill); color: var(--text); font-size: 13.5px; line-height: 1.55; } .info[hidden] { display: none; }
 .info dl { display: grid; grid-template-columns: 6.5em minmax(0, 1fr); gap: 6px 10px; } .info dt { color: var(--muted); font-weight: 600; } .info dd { margin: 0; }
@@ -1047,8 +1037,6 @@ details.fold .ladders { box-shadow: none; } details.fold .legend { margin: 0 0 8
 .mini .entry { gap: 2px; padding: 10px 12px; border-radius: var(--r-md); }
 .mini .entry strong { font-size: 15px; }
 .mini .entry .btn { justify-self: start; margin-top: 4px; width: fit-content; }
-.mini .way-card { padding: 7px 12px; gap: 0; } .mini .way-card span { font-size: 12px; }
-.mini-form:has(.way-card) { gap: 6px; padding-top: 12px; }
 .mini-steps { margin: 0; }
 
 /* ── 좁은 창 ── */

@@ -2433,7 +2433,9 @@ def aid_note() -> None:
         assert call("/api/submit", id=PID, code=f"{CODE}\n# 0")[1]["ok"] and state() is False  # 통과했다
     server.write_json(server.TOUCHED_FILE, touched)
     js = (HERE / "app.js").read_text(encoding="utf-8")
-    assert js.count("aidNote()") >= 4 and "‘그 밖의 통과’로 남아요" in js and "study.unaided_open" in js  # 고르는 칸, 힌트, 튜터 시작 칸, 결과 칸에서 같은 글, 서버가 준 값으로 거른다
+    assert js.count("aidNote()") >= 3 and "‘그 밖의 통과’로 남아요" in js and "study.unaided_open" in js  # 힌트, 해설 시작 칸, 결과 칸에서 같은 글, 서버가 준 값으로 거른다
+    html = (HERE / "index.html").read_text(encoding="utf-8")
+    assert '<p id="way-note" class="aid-note hint" hidden>튜터를 시작하면 ‘그 밖의 통과’로 남아요.</p>' in html and '$("way-note").hidden = !(aidOpen() && connected())' in js  # 튜터 탭은 누르면 바로 시작해 탭 아래에 미리 알린다
     study = {"reset_at": None, "help_after_reset_at": None, "help_first_at": None, "solution_before_pass": False, "hints_seen": 0}
     assert server.unaided_open(SimpleNamespace(builtin=True), [], study, None, False) and not server.unaided_open(SimpleNamespace(builtin=False), [], study, None, False)  # 등록한 문제는 준비도에 들지 않는다
     assert not server.unaided_open(SimpleNamespace(builtin=True), [], study, "2026-01-01T00:00:00+00:00", False)  # 튜터와 말했다
@@ -2444,12 +2446,13 @@ def ai_marks() -> None:
     import re
     js, css, html = (HERE / "app.js").read_text(encoding="utf-8"), (HERE / "app.css").read_text(encoding="utf-8"), (HERE / "index.html").read_text(encoding="utf-8")
     assert '[data-ai]::after { content: "AI";' in css
-    for name in ("to-feedback", "debug-start", "to-explain", "fb-get"):  # 화면 코드가 그리는 단추. 첫 질문·블록 힌트는 저장 힌트로 답해 모델을 부르지 않는다
+    for name in ("to-feedback", "debug-start", "to-explain", "explain-start", "fb-get"):  # 화면 코드가 그리는 단추. 첫 질문·블록 힌트는 저장 힌트로 답해 모델을 부르지 않는다
         assert re.search(rf'id="{name}" class="[^"]*" data-model data-ai', js), name
     for name in ("send", "fq-send", "debug-send", "fb-again"):
         assert re.search(rf'id="{name}" class="[^"]*" data-model data-ai', html), name
     assert "data-ai" not in re.search(r'<button[^>]*id="submit"[^>]*>', html).group(0) and "data-ai" not in re.search(r'<button[^>]*id="run"[^>]*>', html).group(0)  # 채점·실행은 AI가 아니다
-    assert "data-ai" not in re.search(r'id="start"[^>]*>', js).group(0) and "data-ai" not in re.search(r'id="result-tutor-hint"[^>]*>', js).group(0)
+    assert 'id="start"' not in js and "data-ai" not in re.search(r'id="result-tutor-hint"[^>]*>', js).group(0)  # 튜터 둘은 시작 단추 없이 탭을 누르면 시작한다
+    assert all(re.search(rf'id="way-tab-{way}"[^>]*data-ai>', html) for way in ("chair", "guide")) and "data-ai" not in re.search(r'id="way-tab-solo"[^>]*>', html).group(0)
     assert "보내면 AI가 읽어요" in html
     assert '$("new-submit").toggleAttribute("data-ai", !EDIT && connected())' in js  # 새로 등록하며 AI가 연결됐을 때만
     readme = (HERE.parent.parent / "README.md").read_text(encoding="utf-8")
@@ -2533,20 +2536,21 @@ def case_arg_count() -> None:
 
 
 def way_info() -> None:
-    """푸는 방식 설명: 네 방식이 한 자료에서 나오고, ⓘ는 눌러 펴며(키보드·Esc), 잠긴 방식도 글이 읽히고 ⓘ가 열린다. 브라우저 동작은 화면 확인으로 본다."""
+    """푸는 방식 설명과 탭: 네 방식이 한 자료에서 나오고, ⓘ는 눌러 펴며(키보드·Esc), 세 방식은 늘 보이는 탭이다(도움이 적은 것부터, 잠그지 않는다). 브라우저 동작은 화면 흐름 시험으로 본다."""
     import re
-    js, css = (HERE / "app.js").read_text(encoding="utf-8"), (HERE / "app.css").read_text(encoding="utf-8")
-    table = js[js.index("const WAY_INFO = {"):js.index("const WAYS = ")]
+    js, css, html = (HERE / "app.js").read_text(encoding="utf-8"), (HERE / "app.css").read_text(encoding="utf-8"), (HERE / "index.html").read_text(encoding="utf-8")
+    table = js[js.index("const WAY_INFO = {"):js.index("const START = ")]
     for key in ("solo", "chair", "guide", "explain"):
         row = re.search(rf"\b{key}: \{{(.*?)\}},\n", table, re.S).group(1)
         assert all(f"{field}:" in row for field in ("name", "line", "needsAi", "does", "when", "ai", "ready")), key
-    assert "START = {\n  chair: [WAY_INFO.chair.name, WAY_INFO.chair.does" in js  # 시작 칸의 글도 같은 자료다
-    way = js[js.index("function renderWay()"):js.index("function renderTutor()")]
-    assert 'aria-disabled="true"' in way and "disabled" not in way.replace("aria-disabled", "")  # 잠가도 Tab이 닿는다
-    assert way.index('card("solo")') < way.index('card("chair")') < way.index('card("guide")')  # 도움이 적은 것부터
-    assert 'aria-expanded=' in js and 'S.wayInfo = null' in js and '.way-card[aria-disabled="true"]' in css
+    assert "const w = WAY_INFO.explain;" in js and "<h3>${w.name}</h3><p>${w.does}</p>" in js  # 해설 시작 칸의 글도 같은 자료다
+    tabs = html[html.index('<div role="tablist" aria-label="푸는 방식"'):]
+    tabs = tabs[:tabs.index("</div>")]
+    assert tabs.index('data-way="solo"') < tabs.index('data-way="chair"') < tabs.index('data-way="guide"')  # 도움이 적은 것부터
+    assert "aria-disabled" not in tabs and " disabled" not in tabs  # 연결이 없어도 눌러 그 탭 안에서 연결하는 길을 본다
+    assert 'aria-expanded=' in js and 'S.wayInfo = null' in js and ".panes.railed #way-tabs { flex-direction: column;" in css  # 접힌(150px) 칸에서는 탭을 세로로
     assert ".panes.railed .head-info { position: fixed" in css  # 접힌(150px) 칸에서는 머리의 설명을 칸 밖 겹침 상자로 띄운다
-    assert "way-card:disabled" not in css and not re.search(r"\.way-card\[aria-disabled[^}]*opacity", css)  # 잠긴 카드의 글은 흐리지 않는다
+    assert "way-card" not in js and "way-card" not in css and 'id="way-change"' not in html and 'id="way-box"' not in html and 'id="start-box"' not in html  # 카드 화면, 방식 바꾸기, 시작 칸은 없다
 
 
 def keyboard_gaps() -> None:
@@ -2560,9 +2564,9 @@ def keyboard_gaps() -> None:
     assert 'el.getAttribute("aria-disabled") === "true") return e.preventDefault();' in js and '.btn[aria-disabled="true"]' in css
     focus = js[js.index("function focusAfter(el)"):js.index("document.addEventListener(\"focusin\"")]
     assert 'put(next.slice(0, 1)' in focus and '$("status")' in focus and "now !== placed" in focus and 'placed === $("status") && now === placed' in focus and 'id="status"' in (HERE / "index.html").read_text(encoding="utf-8") and 'role="status" aria-live="polite" tabindex="-1"' in (HERE / "index.html").read_text(encoding="utf-8")  # 기다리는 동안은 다시 그려진 같은 단추나 상태 글에, 끝난 뒤 다시 그리기가 떨어뜨려도 한 번 더
-    assert '[$("start"), $("say"), $("p-title")] : [$("code"), $("p-title")]).find(focusable)' in js  # 방식 카드를 고른 뒤: 보이는 요소로
+    assert "if (el.dataset.way) return void setMode(el.dataset.way, true);" in js  # 방식 탭: 초점은 누른 탭에 남는다(탭은 다시 그리지 않는다)
     assert 'document.querySelector("dialog[open]")' in js and 'e.key === "Tab" && document.querySelector' in js  # 열린 창에서 Tab은 창 안에서만
-    assert '"<span data-ai></span>"' in js[js.index("function renderWay()"):js.index("function renderWay()") + 900]  # 연결돼 있을 때 AI를 쓰는 카드에도 AI 표시
+    assert 'data-way="chair" aria-controls="tutor-body" aria-selected="false" tabindex="-1" data-ai>' in (HERE / "index.html").read_text(encoding="utf-8")  # AI를 쓰는 방식 탭에도 AI 표시
     assert '$("read-files").toggleAttribute("data-ai", connected() && FILES.some((x) => x.image))' in js
     assert 'f.longs.map' in js and "전체 입력 보기" in js and "foldLong(m.text)" in js
     node = shutil.which("node")
@@ -2575,6 +2579,94 @@ def keyboard_gaps() -> None:
     assert len(a["text"]) < 120 and a["longs"] and a["longs"][0].startswith("[[0, 1]") and a["text"].endswith("틀려요")  # 160쌍은 앞만 남기고 전체는 따로
     assert b == {"text": "입력 `[1, 2]`은 작아요", "longs": []}  # 짧으면 그대로
     assert c["longs"] == ["`" + "x" * 100 + "`"] and c["text"].startswith("긴 글 `xxxx") and c["text"].endswith("` 끝")
+
+
+def way_saved() -> None:
+    """푸는 방식은 문제마다 서버에 저장한다(/api/way). 처음은 혼자 풀기, 모르는 방식은 거절한다. 상태 응답의 way로 돌려준다."""
+    first, second = server.register(GOOD)["id"], server.register({**GOOD, "text": GOOD["text"] + " 둘째"})["id"]
+    assert call("/api/state", id=first)[1]["way"] == "solo"
+    for way in ("chair", "guide", "solo"):
+        assert call("/api/way", id=first, way=way)[0] == 200, way
+        assert call("/api/state", id=first)[1]["way"] == way
+    call("/api/way", id=first, way="guide")
+    assert call("/api/state", id=second)[1]["way"] == "solo"  # 문제마다 따로다
+    for bad in ("nope", "", None, 3, "explain"):
+        refuses("/api/way", id=first, way=bad)  # 400
+    assert call("/api/state", id=first)[1]["way"] == "guide"  # 거절한 요청은 값을 바꾸지 않는다
+    try:
+        call("/api/way", id="no_such_problem", way="chair")
+        raise AssertionError("없는 문제는 거절한다")
+    except server.Refuse as exc:
+        assert exc.status in (400, 404), exc.status
+    call("/api/problems/delete", id=first)  # 문제를 지우면 방식 기록도 정리한다
+    call("/api/problems/delete", id=second)
+    assert not [f.name for f in server.DATA.glob("*.json") if first in f.read_text(encoding="utf-8")], "지운 문제의 방식 기록이 남았다"
+
+
+def way_snapshot() -> tuple:
+    """DB(내용 덤프)와 블록 칸 파일(바이트)."""
+    import sqlite3
+    conn = sqlite3.connect(server.DB)
+    try:
+        dump = "\n".join(conn.iterdump())
+    finally:
+        conn.close()
+    return dump, server.BLOCKS_FILE.read_bytes() if server.BLOCKS_FILE.exists() else b""
+
+
+def mode_switch_keeps() -> None:
+    """방식을 바꿔도 대화·블록 진행·블록 코드·판정은 바이트 단위로 그대로고, 모델과 채점은 0회다."""
+    pid = server.register(GOOD)["id"]
+    fake = FakeLlm({})
+    with use_llm(fake), server.tutor() as t:
+        t.adopt(pid, own_ready("def solution(a, b):\n    return a + b"))
+    with use_llm(fake):
+        call("/api/turn", id=pid, mode="chair", event="start")
+        call("/api/turn", id=pid, mode="guide", event="start")
+        server.write_json(server.BLOCKS_FILE, {**server.read_json(server.BLOCKS_FILE, {}), pid: {"b1": {"code": "def solution(a, b):\n    return a + b", "by": "me"}}})
+        before = way_snapshot()
+        with patch.object(server, "judge", side_effect=AssertionError("방식 전환이 채점을 불렀다")):
+            for way in ("chair", "guide", "solo", "chair", "guide", "solo"):
+                assert call("/api/way", id=pid, way=way)[0] == 200
+                call("/api/state", id=pid, mode=None if way == "solo" else way)
+        assert way_snapshot() == before, "방식을 바꾸자 대화·블록 자료가 달라졌다"
+        assert not fake.calls, fake.calls
+    call("/api/problems/delete", id=pid)
+
+
+def way_restart() -> None:
+    """서버를 새로 띄워도(새 프로세스) 고른 방식이 남는다."""
+    pid = server.register(GOOD)["id"]
+    call("/api/way", id=pid, way="guide")
+    script = ("import sys, json; sys.path.insert(0, sys.argv[1]); import server; "
+              "print(json.dumps(server.handle('/api/state', {'id': sys.argv[2]})[1]['way']))")
+    out = subprocess.run([sys.executable, "-B", "-c", script, str(HERE), pid], capture_output=True, text=True, env=dict(os.environ), timeout=120)
+    assert out.returncode == 0 and json.loads(out.stdout.strip().splitlines()[-1]) == "guide", (out.stdout, out.stderr[-400:])
+    call("/api/problems/delete", id=pid)
+
+
+def way_not_in_browser() -> None:
+    """고른 방식은 브라우저 저장소가 아니라 서버가 준 값으로 채운다(화면 코드 확인). 디버그 대화도 열 때 서버가 준 것을 채운다."""
+    import re
+    js = (HERE / "app.js").read_text(encoding="utf-8")
+    assert not re.search(r"wayKey|savedWay|saveWay", js), "방식을 localStorage에 두는 코드가 남았다"
+    assert not [line for line in js.splitlines() if "localStorage" in line and re.search(r"way", line, re.I)]
+    assert "/api/way" in js
+    start = js[js.index("function debugStart()"):js.index("function debugSend()")]
+    assert "S.session.debug" in start, "디버그 대화를 열 때 서버가 준 대화를 채워야 한다"
+
+
+def confirm_allowlist() -> None:
+    """확인 묻기는 되돌릴 수 없는 일에만 남긴다: 처음부터·삭제·키 삭제·코드 덮어쓰기·채우기 덮어쓰기·케이스 바뀜·입력 비우기, 그리고 언어 전환.
+    언어를 바꾸면 그 문제의 튜터 대화와 블록 진행이 지워져 아직 묻는다(#324에서 언어별로 남기면 뺀다). 방식 바꾸기는 묻지 않는다."""
+    import re
+    ids = set()
+    for name in ("index.html", "app.js"):
+        for tag in re.findall(r"<[a-z]+\b[^>]*\bclass=\"[^\"]*\bconfirm\b[^\"]*\"[^>]*>", (HERE / name).read_text(encoding="utf-8")):
+            found = re.search(r"\bid=\"([^\"$]+)\"", tag)
+            ids.add(found.group(1) if found else "block-fill")  # 블록 채우기 확인은 id 없이 그린다
+    allowed = {"new-clear-confirm", "reset-confirm", "del-confirm", "key-delete-confirm", "code-confirm", "case-fill-confirm", "edit-confirm", "block-fill", "lang-confirm"}
+    assert ids == allowed, (sorted(ids - allowed), sorted(allowed - ids))
 
 
 def settings_items() -> None:
@@ -3576,6 +3668,11 @@ def main() -> None:
     newest_models()
     read_check()
     cross_cases()
+    way_saved()
+    mode_switch_keeps()
+    way_restart()
+    way_not_in_browser()
+    confirm_allowlist()
 
     import threading  # 첫 요청 여럿이 함께 와도 색인은 한 번만 연다(둘째가 실패해 검색이 꺼진 채 남지 않게)
     gate = threading.Barrier(4)

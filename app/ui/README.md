@@ -55,7 +55,7 @@ uv run -q --no-project --python 3.12 --with langgraph --with pypdf python -B ui/
 ## 화면
 
 - 쓰는 법은 [Docs/guide/solve.md](../../Docs/guide/solve.md), 문제 등록은 [Docs/guide/add-problem.md](../../Docs/guide/add-problem.md), AI 연결과 과정별 모델은 [Docs/guide/connect-ai.md](../../Docs/guide/connect-ai.md)에 있다.
-- 문제 화면의 오른쪽 칸은 푸는 방식 셋(`app.js`의 `solo`, `guide`, `chair`)이다: '혼자 풀기', '튜터와 차례로', '튜터의 질문으로'. '혼자 풀기' 안에 '힌트'와 '해설' 탭이 있다. AI가 연결되지 않으면 '혼자 풀기'만 쓴다.
+- 문제 화면의 오른쪽 칸은 푸는 방식 셋(`app.js`의 `solo`, `guide`, `chair`)이다: '혼자 풀기', '튜터와 차례로', '튜터의 질문으로'. 세 방식은 튜터 칸 맨 위의 탭(`#way-tabs`)이고, 튜터 탭은 누르면 바로 시작한다. '혼자 풀기' 안에 '힌트'와 '해설' 탭이 있다. AI가 연결되지 않으면 '혼자 풀기'만 쓴다.
 - 처음 안내의 데모 묶음을 다시 빌드하는 법은 [stageshow/README.md](stageshow/README.md)에 있다. 기본 문제를 더하거나 고치는 법은 [problems/README.md](problems/README.md)에 있다.
 
 ## 파일
@@ -114,7 +114,7 @@ POST, 문제와 무관한 것 16개
 | `/api/chatgpt/login` | ChatGPT 로그인 주소 받기 |
 | `/api/update` | 새 버전. `action`: `status`, `check`, `auto`(`on`), `skip`, `download`, `install`, `reveal`. 거절은 409 |
 
-POST, 문제 하나에 대한 것 19개. 본문에 `id`가 필요하다.
+POST, 문제 하나에 대한 것 20개. 본문에 `id`가 필요하다.
 
 | 경로 | 설명 |
 | --- | --- |
@@ -124,6 +124,7 @@ POST, 문제 하나에 대한 것 19개. 본문에 `id`가 필요하다.
 | `/api/hint` | 다음 힌트 하나(`block`: 그 블록의 다음 힌트, 1부터. 없으면 아직 다 보지 않은 첫 블록. `peek: true`면 본 것과 블록 목차만 다시 보여 준다) |
 | `/api/solution` | 해설. 기본 문제는 실린 해설, 등록한 문제는 튜터가 만든 풀이 가이드. 통과 전이면 409, `force: true`면 연다 |
 | `/api/code` | 직접 풀기 코드 저장 |
+| `/api/way` | 푸는 방식 고르기(`way`: `solo`, `chair`, `guide`). 문제마다 남고, `/api/state`가 `way`로 돌려준다 |
 | `/api/blocks` | 블록 칸 코드 저장 |
 | `/api/compose` | 블록 칸 코드를 블록 코드 확인과 같은 방식으로 모은다 |
 | `/api/checkpoint` | 지금 언어의 체크포인트 덮어쓰기 |

@@ -78,6 +78,7 @@ CODES_FILE = DATA / "codes.json"  # 언어마다 쓰던 코드 {문항: {언어:
 ATTEND_FILE = DATA / "attendance.json"  # 출석한 날 ["YYYY-MM-DD", …](기기 현지 날짜)
 CHECKPOINTS_FILE = DATA / "checkpoints.json"  # 언어마다 마지막 체크포인트 {문항: {언어: {code: 직접 풀기 글, blocks: 블록 칸, at: ISO 시각}}}
 HINTS_FILE = DATA / "hints.json"  # 혼자 풀기에서 블록마다 이번 풀이에 본 힌트 수 {문항: {"from": 그때의 hints_at_reset, "seen": {블록 번호: 수}}}. 없거나 맞지 않으면 본 수를 블록 1부터 차례로 나눈다
+WAY_FILE = DATA / "ways.json"  # 문제마다 고른 푸는 방식 {문항: solo·chair·guide}. 웹뷰는 localStorage를 남기지 않아 여기에 둔다. 처음부터·문항 지우기에서 지운다
 TOUCHED_FILE = DATA / "touched.json"  # 문제를 마지막으로 손댄 시각 {문항: ISO 시각}(코드 저장·실행·제출·힌트). '이어서 풀기'가 가장 최근에 쓰던 문제를 고른다
 KINDS = ("example", "accuracy", "efficiency")  # 케이스 종류: 공개 예시, 숨긴 정확성, 숨긴 효율성(큰 입력)
 STATIC = {"/": ("index.html", "text/html"), "/index.html": ("index.html", "text/html"),
@@ -1458,7 +1459,7 @@ def delete(body: dict) -> dict:
             t.store.delete_problem(pid)
             if t.index is not None:  # 비슷한 문항 찾기 색인에서도 뺀다
                 t.index.delete(pid)
-        for path in (BLOCKS_FILE, OWN_FILE, CODES_FILE, CHECKPOINTS_FILE, TOUCHED_FILE, HINTS_FILE):
+        for path in (BLOCKS_FILE, OWN_FILE, CODES_FILE, CHECKPOINTS_FILE, TOUCHED_FILE, HINTS_FILE, WAY_FILE):
             write_json(path, {key: value for key, value in read_json(path, {}).items() if key != pid})
         shutil.rmtree(ASSETS / pid, ignore_errors=True)
         shutil.rmtree(LARGE / pid, ignore_errors=True)
@@ -1789,7 +1790,8 @@ def reset(t, pid: str) -> None:
     if pid in kept:
         write_json(KEPT_FILE, kept)
     REPORTS.pop(pid, None)
-    write_json(BLOCKS_FILE, {key: value for key, value in read_json(BLOCKS_FILE, {}).items() if key != pid})
+    for path in (BLOCKS_FILE, WAY_FILE):  # 방식도 지운다: 처음 연 문제처럼 혼자 풀기로 연다(튜터 방식이 남으면 열자마자 시작해 도움으로 센다)
+        write_json(path, {key: value for key, value in read_json(path, {}).items() if key != pid})
     own_way(pid, False)
 
 
@@ -1878,6 +1880,18 @@ def own_way(pid: str, on: bool) -> None:
     """'끝까지 내 방식으로 쓰기'를 켜거나 끈다. 켠 동안 화면은 블록 코드 확인을 숨기고 '모아서 실행'으로 이끈다(엔진의 판정은 그대로다)."""
     rows = {key: value for key, value in read_json(OWN_FILE, {}).items() if key != pid}
     write_json(OWN_FILE, {**rows, pid: True} if on else rows)
+
+
+WAYS = ("solo", "chair", "guide")  # 탭으로 고르는 푸는 방식(튜터의 해설은 혼자 풀기의 해설 칸에서 간다)
+
+
+def way_of(t, pid: str) -> str:
+    """고른 방식. 고른 적이 없으면 대화가 있는 쪽(마지막 말), 대화도 없으면 혼자 풀기."""
+    saved = read_json(WAY_FILE, {}).get(pid)
+    if saved in WAYS:
+        return saved
+    row = t.store.conn.execute("SELECT mode FROM message WHERE problem_id=? AND thread='main' AND mode IN ('chair', 'guide') ORDER BY id DESC LIMIT 1", (pid,)).fetchone()
+    return row["mode"] if row else "solo"
 
 
 def feedback_language(t, body):
@@ -2054,7 +2068,7 @@ def state_body(t, p, body: dict) -> dict:
                         "code": ctx.direct_code or "", "passed": passed, "submitted": total,
                         "tools": tools(), "preparing": pid in PREPARING, "prepare_failed": pid in PREP_FAILED and ctx.plan is None, "assets": assets(pid), "checkpoint_at": (checkpoint(pid, ctx.language) or {}).get("at"), **mine},
             "session": t.session(pid, body.get("mode")).body, "blocks": read_json(BLOCKS_FILE, {}).get(pid, {}), "own_way": pid in read_json(OWN_FILE, {}),
-            "has_feedback": t.store.get_feedback(pid) is not None}
+            "way": way_of(t, pid), "has_feedback": t.store.get_feedback(pid) is not None}
 
 
 def attend() -> None:
@@ -2620,6 +2634,11 @@ def handle(path: str, body: dict) -> tuple[int, dict]:
         if path == "/api/own_way":  # '튜터 차례로 돌아가기'(on: false). 켜는 것은 넘어가기 요청(/api/turn own_way)이 한다
             own_way(pid, body.get("on") is True and pid in read_json(OWN_FILE, {}))
             return 200, {"own_way": pid in read_json(OWN_FILE, {})}
+        if path == "/api/way":  # 푸는 방식을 고른다(문제마다 남는다. 대화·블록 진행은 건드리지 않는다)
+            if body.get("way") not in WAYS:
+                raise Refuse("푸는 방식은 혼자 풀기, 튜터의 질문으로, 튜터와 차례로 가운데 하나예요.", field="way")
+            write_json(WAY_FILE, {**read_json(WAY_FILE, {}), pid: body["way"]})
+            return 200, {"way": body["way"]}
         if path == "/api/blocks":
             write_json(BLOCKS_FILE, {**read_json(BLOCKS_FILE, {}), pid: blocks_of(body)})
             return 200, {"ok": True}
