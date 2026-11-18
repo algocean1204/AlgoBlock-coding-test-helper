@@ -13,17 +13,19 @@ from dataclasses import replace
 
 from langgraph.graph import END, START, StateGraph
 
-from ..common.progress_view import active_plan, found_check
+from ..common.progress_view import active_plan, base_open_count, found_check
 from ..common.verdict import ASIDE_RULE, TERM_RULE, ask_verdict
 from ..llm import llm, model_name
 from ..state import MainState, MovePlan, Said, Verdict
 from .code_check import check_code
 from .context import prepare
-from ..common.talk_rules import OWN_WAY, WITHDRAWN, rename_note
-from .moves import asks, pick_move, rule_verdict
+from ..common.talk_rules import BACK_LEAD, HARD_LEAD, KIND_LABEL, OWN_WAY, WITHDRAWN, open_lead, rename_note
+from .moves import HINTS_DONE, asks, pick_move, rule_verdict
 from .talk import carries_deferred, checked_reply, clean_text, speak_messages
 
 STEPS = {"N1": "prepare", "N2": "judge", "N3": "check_code", "N4": "pick_move", "N5": "speak", "N6": "check_reply"}
+# 칸에 넣지 않는 앞말: 블록 여는 말(화면이 블록 번호·종류로 머리를 그린다)과 이음말
+BARE_LEADS = {open_lead("chair", kind).strip() for kind in (*KIND_LABEL, "")} | {BACK_LEAD.strip(), HARD_LEAD.strip()}
 
 
 def turn_graph(mode: str, judge_messages, judge_rule: str, system: str, steps: dict):
@@ -52,7 +54,7 @@ def turn_graph(mode: str, judge_messages, judge_rule: str, system: str, steps: d
             return {"move": move, "follow": state["turn"].text, "result": {"replan": True}}  # 메인 그래프가 A4로 보낸다
         request = state["request"]
         if request.own_way and request.skip and verdict is not None and verdict.ok and not verdict.ran:  # 넘어가기 판정 그대로('확인 전'), 다음 블록 말 대신 고정 말
-            return {"move": MovePlan("done", state["turn"].index, True, saved=OWN_WAY)}
+            return {"move": MovePlan("done", state["turn"].index, True, saved=OWN_WAY, fact=True)}
         if move.target != state["turn"].index and move.saved and carries_deferred(state):
             move = replace(move, saved=None)  # 미룬 물음이 있다: 저장 힌트 대신 모델이 새 블록을 연다(드문 경우에만 모델 1회)
         return {"move": move}
@@ -71,15 +73,28 @@ def turn_graph(mode: str, judge_messages, judge_rule: str, system: str, steps: d
         said = verdict.seen if filled and verdict is not None and verdict.ok and verdict.seen else ""
         extra = {"renamed": named, **({"withdrawn": withdrawn} if withdrawn else {}), **({"unsure": True} if unsure else {})} if filled else {}
         note = rename_note(named)  # 이름만 달라 통과했다: 통과 말 뒤에 이름 안내(마침 말이면 뒤에, 아니면 다음 질문 앞에)
+        # 줄마다 칸 하나를 짝짓는다(None은 글에만: 블록 여는 말은 화면의 머리 몫, 이음말은 군말). 길 안내 줄은 모두 '이 블록 채우기'를 가리켜 단추 표시가 된다
+        lead = None if move.lead.strip() in BARE_LEADS else "result"
         if move.saved:  # 저장 힌트(계획 때 검사했다)와 고정 문구는 다시 검사하지 않는다. 4차 실제 모델 확인: 힌트 속 import 줄이 '참고 코드'에 걸려 대체 질문이 나갔다
-            rows = [said, move.lead, move.saved, note] if move.move == "done" else [said, note, move.lead, move.saved]
+            saved = ("way" if move.saved == HINTS_DONE else "result" if move.fact else "question", move.saved)
+            rows = [("result", said), (lead, move.lead), saved, ("result", note)] if move.move == "done" else [("result", said), ("result", note), (lead, move.lead), saved]
         else:
             asked, told, _ = checked_reply(state, move, state.get("reply_draft") or "", state.get("reply_note") or "")
-            rows = [said, note, move.lead, asked, told]
-        rows += [move.way, WITHDRAWN.format(n=len(withdrawn)) if withdrawn else ""]
-        reply = "\n".join(row.strip() for row in rows if row and row.strip())
+            rows = [("result", said), ("result", note), (lead, move.lead), ("question", asked), ("note", told)]
+        rows += [("way", move.way), ("result", WITHDRAWN.format(n=len(withdrawn)) if withdrawn else "")]
+        rows = [(slot, row.strip()) for slot, row in rows if row and row.strip()]
+        reply = "\n".join(row for _, row in rows)
+        parts = {"block_index": move.target}
+        for slot, row in rows:
+            if slot in ("result", "question", "note"):
+                parts[slot] = f"{parts[slot]}\n{row}" if slot in parts else row
+        last = filled and move.advance and move.target == state["turn"].index == len(active_plan(state).blocks) - 1
+        stuck = filled and verdict is not None and not verdict.ok and move.target == base_open_count(state) - 1  # '이대로 넘어가기'는 지금 블록에만 있다
+        buttons = [name for name, on in (("fill", any(slot == "way" for slot, _ in rows)), ("skip", stuck), ("run", last)) if on]
+        if buttons:
+            parts["buttons"] = buttons
         boxed = {"boxed": True} if filled and verdict is not None and "```" in verdict.seen else {}  # 실행에서 본 여러 줄 출력을 엔진이 글상자로 넣었다(모델의 말은 위에서 펜스를 거른다)
-        return {"result": {"reply": reply, "advance": move.advance, "move": move.move, **extra, **boxed}}
+        return {"result": {"reply": reply, "advance": move.advance, "move": move.move, **extra, **boxed}, "reply_parts": parts}
 
     def after_prepare(state: MainState) -> str:
         if state.get("error"):

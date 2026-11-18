@@ -878,7 +878,7 @@ class TutorTest(unittest.TestCase):
                     store.close()
 
             with ThreadPoolExecutor(max_workers=4) as pool:
-                self.assertEqual(list(pool.map(open_one, range(4))), [11] * 4)
+                self.assertEqual(list(pool.map(open_one, range(4))), [12] * 4)
 
     def test_old_database_migrates(self):
         conn = sqlite3.connect(self.path)
@@ -891,7 +891,7 @@ class TutorTest(unittest.TestCase):
         conn.close()
         tutor = Tutor(self.path, client=FakeLlm({}))
         try:
-            self.assertEqual(tutor.store.conn.execute("PRAGMA user_version").fetchone()[0], 11)
+            self.assertEqual(tutor.store.conn.execute("PRAGMA user_version").fetchone()[0], 12)
             # 버전 8: 판정 '?'(확인 전)를 담는다. 옛 블록 상태는 그대로 옮겨진다(짝은 기본값)
             self.assertEqual([tuple(row) for row in tutor.store.conn.execute("SELECT code, verdict, renames_json FROM block_state")], [("x = 1", "Y", "[]")])
             tutor.store.conn.execute("UPDATE block_state SET verdict='?'")

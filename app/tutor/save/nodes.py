@@ -11,9 +11,9 @@ from ..store import now
 from .respond import body_for, feedback_body
 
 
-def _row(mode, thread, role, text, block_index, quote_id, move=None) -> dict:
+def _row(mode, thread, role, text, block_index, quote_id, move=None, parts=None) -> dict:
     return {"mode": mode, "thread": thread, "role": role, "text": text, "block_index": block_index,
-            "quote_id": quote_id, "move": move, "at": now()}
+            "quote_id": quote_id, "move": move, "parts": parts, "at": now()}
 
 
 def _said(role, text, block_index, move) -> tuple:
@@ -34,7 +34,7 @@ def collect(state: MainState) -> dict:
         if user:
             rows.append(_row(mode, "main", "user", user, current_index(state), None, checked))
         move = state.get("move")
-        rows.append(_row(mode, "main", "service", result.get("reply", ""), move.target if move else None, None, result.get("move")))
+        rows.append(_row(mode, "main", "service", result.get("reply", ""), move.target if move else None, None, result.get("move"), state.get("reply_parts")))
         # 같은 블록 코드를 다시 확인해 같은 판정·같은 말이 나왔다: 대화에 같은 짝을 또 쌓지 않는다(바뀌지 않은 코드를 거듭 확인하면 같은 말이 줄줄이 쌓였다)
         chat = ctx.chair if mode == "chair" else ctx.guide
         if request.event == "block_filled" and len(chat) >= len(rows) and [_said(m.role, m.text, m.block_index, m.move) for m in chat[-len(rows):]] == [
@@ -92,7 +92,8 @@ def save(state: MainState, config) -> dict:
 def _merged(state: MainState):
     """다시 읽기에 실패했을 때: 저장할 변경을 문맥에 얹어 같은 모양을 만든다(이미 커밋됐으므로 오류로 만들지 않는다)."""
     ctx, c, request = state["ctx"], state["changes"], state["request"]
-    new = [ChatMessage(id="", role=r["role"], text=r["text"], at=r["at"], block_index=r["block_index"], quote_id=r["quote_id"], move=r["move"]) for r in c["messages"]]
+    new = [ChatMessage(id="", role=r["role"], text=r["text"], at=r["at"], block_index=r["block_index"], quote_id=r["quote_id"], move=r["move"],
+                       parts=r.get("parts")) for r in c["messages"]]
     chair, guide, followups = list(ctx.chair), list(ctx.guide), list(ctx.followups)
     if request.kind == "turn":
         (guide if request.mode == "guide" else chair).extend(new)
