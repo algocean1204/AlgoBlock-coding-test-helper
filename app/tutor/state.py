@@ -94,6 +94,7 @@ class ChatMessage:
     block_index: int | None = None
     quote_id: str | None = None
     move: str | None = None  # 질문 유형(서비스 말). 사용자 말에는 블록 코드 확인의 판정 표시(talk_rules.CHECKED + Y·N·?)만
+    parts: dict | None = None  # 튜터 말의 칸 {block_index, result?, question?, note?, buttons?}. 칸을 남기기 전의 말과 사용자 말은 None
 
 
 @dataclass
@@ -231,6 +232,7 @@ class MovePlan:
     saved: str | None = None
     missing_signal: str = ""
     way: str = ""  # 막혔을 때 갈 길 안내(채우기·넘어가기). 질문과 근거 아래 따로 놓인다
+    fact: bool = False  # saved가 질문이 아니라 결과 줄이다(통과, 넘어감, 실행에서 본 것). 칸에서 결과 칸에 들어간다
 
 
 @dataclass
@@ -263,6 +265,7 @@ class MainState(TypedDict, total=False):
     move: MovePlan
     reply_draft: str  # 말풍선 초안(의자·가이드는 질문 칸)
     reply_note: str  # 의자·가이드 말풍선의 근거 칸 초안
+    reply_parts: dict  # 의자·가이드 말풍선의 칸(저장이 message.parts_json에 남긴다)
     block_check: BlockState | None  # 블록 판정 기록
     block_fixes: list  # 다시 고른 앞 블록의 판정 기록(짝을 새 차례로 고쳐 쓴 것)
     withdrawn: list  # 이 블록의 글이 바뀌어 통과를 물린 뒤 블록 id
