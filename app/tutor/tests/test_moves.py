@@ -118,12 +118,12 @@ class BeginnerMoveTest(unittest.TestCase):
 
     def test_term_question_gets_meaning_then_returns(self):
         for mode in ("chair", "guide"):
-            got = pick_move(mode, PLAN, turn(text="그게 뭐예요?", used=["open"]), Verdict(False, aside="W"))
+            got = pick_move(mode, PLAN, turn(text="그게 뭐예요?", used=["open"]), Verdict(False, aside="Q"))
             self.assertEqual((got.move, got.advance, got.target, got.saved, got.lead), ("term", False, 0, None, ""), mode)  # 모델이 뜻과 예를 짓는다
 
     def test_term_during_verify_keeps_the_way_to_write(self):
         """확인 질문(verify) 중에 낱말의 뜻을 물었다(term). 뜻을 들은 뒤 답하면 처음 생각은 이미 맞았으니 코드로 적게 한다(그 길을 놓쳤다)."""
-        asked = pick_move("guide", PLAN, turn(text="range가 뭐예요?", used=["blank", "verify"]), Verdict(False, aside="W"))
+        asked = pick_move("guide", PLAN, turn(text="range가 뭐예요?", used=["blank", "verify"]), Verdict(False, aside="Q"))
         self.assertEqual(asked.move, "term")
         after = pick_move("guide", PLAN, turn(text="0부터 n-1까지 돌아요", used=["blank", "verify", "term"]), Verdict(False))
         self.assertEqual((after.move, after.saved), ("write", WRITE_TIP))
