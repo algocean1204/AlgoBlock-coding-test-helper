@@ -3157,7 +3157,7 @@ def ai_marks() -> None:
     note = re.search(r'<p id="cost-note"[^>]*>(.*?)</p>', html, re.S).group(1)
     for amount in ("0.01달러", "0.014달러", "2026년 11월 16일"):
         assert amount in note and amount in readme, amount  # README와 같은 실측 값
-    assert "사진은 ‘다음’을 누르면 글로 읽어 와요. AI가 연결돼 있으면 AI가 읽고(사용량이 들어요)" in html and "PDF와 글 파일은 AI를 쓰지 않아요" in html
+    assert "사진은 ‘글 읽어 오기’를 누르면 글로 읽어 와요. AI가 연결돼 있으면 AI가 읽고(사용량이 들어요)" in html and "PDF와 글 파일은 AI를 쓰지 않아요" in html
 
 
 def report_terms() -> None:
@@ -3402,11 +3402,12 @@ def settings_items() -> None:
 
 
 def new_draft() -> None:
-    """내 문제 넣기: 걸음마다 기록을 쌓아 뒤로 가기가 앞 걸음으로 가고, 적던 글은 이 탭의 sessionStorage에만 둔다(서버나 localStorage로 나가지 않는다). 브라우저 동작은 화면 확인으로 본다."""
+    """내 문제 넣기: 적던 글은 이 탭의 sessionStorage에만 둔다(서버나 localStorage로 나가지 않는다). 고친 칸과 감지 결과도 같이 두어 다시 열 때 감지가 고친 칸을 덮지 않는다. 브라우저 동작은 flow/intake.mjs가 본다."""
     js = (HERE / "app.js").read_text(encoding="utf-8")
-    assert "history.pushState({ wstep: n }" in js and 'addEventListener("popstate"' in js
+    assert "wstep" not in js and 'addEventListener("popstate"' not in js  # 걸음이 없어 뒤로 가기 기록을 쌓지 않는다
     keep = js[js.index("function saveDraft()"):js.index("function restoreDraft()")]
     assert "sessionStorage.setItem(DRAFT" in keep and "localStorage" not in keep and "api(" not in keep and "fetch(" not in keep
+    assert "touched: [...TOUCHED], keep: [...KEEP], det: DET" in keep and "step" not in keep  # 고친 칸, 되돌린 줄, 감지 결과
     assert js.count("sessionStorage.removeItem(DRAFT)") >= 2 and "restoreDraft();" in js  # 비우면 지우고, 처음 열 때 되살린다
 
 
@@ -3415,7 +3416,7 @@ def menu_and_title_note() -> None:
     js, css, html = (HERE / "app.js").read_text(encoding="utf-8"), (HERE / "app.css").read_text(encoding="utf-8"), (HERE / "index.html").read_text(encoding="utf-8")
     assert ".more:not([open]) > .more-menu { display: none; }" in css
     assert '$("more").addEventListener("focusout"' in js and "!$(\"more\").contains(e.relatedTarget)" in js
-    assert "function titleNote()" in js and js.count("titleNote();") >= 2 and "제목을 찾지 못했어요. 문제 이름을 직접 적어 주세요." in js
+    assert "function titleNote()" in js and "titleNote();" in js[js.index("function syncForm()"):js.index("function newNote()")] and "제목을 찾지 못했어요. 문제 이름을 직접 적어 주세요." in js  # 칸을 고칠 때마다(syncForm)
     assert '<small id="new-title-note" class="hint">글의 첫 줄에서 채웠어요' not in html  # 처음 글에는 채웠다고 말하지 않는다
 
 
@@ -4693,6 +4694,8 @@ def main() -> None:
     confirm_allowlist()
     made_counts()
     made_marks()
+    # 내 문제 넣기 한 화면(정적 계약과 키 없는 등록). 준비를 켠 서버를 새로 띄워 보므로 따로 돌린다(이 시험은 준비를 끈 채 서버를 가져왔다)
+    subprocess.run([sys.executable, "-B", str(HERE / "test_intake.py")], cwd=HERE.parent, check=True, stdout=subprocess.DEVNULL)
 
     import threading  # 첫 요청 여럿이 함께 와도 색인은 한 번만 연다(둘째가 실패해 검색이 꺼진 채 남지 않게)
     gate = threading.Barrier(4)
