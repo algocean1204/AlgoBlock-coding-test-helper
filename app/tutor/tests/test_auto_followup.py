@@ -246,8 +246,12 @@ class TermLeakTest(unittest.TestCase):
              # 한 글자 이름만 쓴 답 줄(if x > 0:)에 무엇을 덧붙여도 그 줄로 시작하면 막힌다
              ("plus", "`if x>0: print(x)`처럼 쓰면 조건을 걸 수 있어요. 그럼 언제 합에 더해야 할까요?"),
              ("plus", "`if x > 0 and x < 10:`처럼 쓰면 조건을 걸 수 있어요. 그럼 언제 합에 더해야 할까요?"),
-             ("plus", "`if x>0:  # 양수만`처럼 쓰면 조건을 걸 수 있어요. 그럼 언제 합에 더해야 할까요?")]
+             ("plus", "`if x>0:  # 양수만`처럼 쓰면 조건을 걸 수 있어요. 그럼 언제 합에 더해야 할까요?"),
+             ("plus", "`elif x>0:`처럼 쓰면 조건을 하나 더 걸 수 있어요. 그럼 언제 합에 더해야 할까요?")]  # elif는 if 머리로 견준다
     LANG_LEAKS = [("rust", "`for k in 0..total {`"), ("rust", "`for k in 0..items.len() {`")]  # 범위(..) 뒤 이름도 본다
+    # 중괄호 없는 'if (x > 0) total += x;'의 머리만 쓴 꼴, 머리에 몸을 붙인 꼴, else if 꼴
+    LANG_LEAKS += [(language, code) for language in ("java", "javascript", "cpp")
+                   for code in ("`if (x > 0)`", "`if (x > 0) {`", "`if (x > 0) { print(x); }`", "`} else if (x > 0) {`")]
     NAMED = "지금은 양수만 더하기 블록이니 하나씩 보는 문법부터 볼게요. 그럼 items의 값을 어떻게 하나씩 볼까요?"
     STARTERS = {"plus": "def solution(items):\n    answer = 0\n    return answer", "shelf": "def solution(loans, k):\n    answer = []\n    return answer"}
     # 양수만 더하기 장면을 언어마다 옮긴 것: (시작 코드, 지금 블록 참고 코드, 상관없는 문법 예)

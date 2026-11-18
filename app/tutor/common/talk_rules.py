@@ -530,7 +530,9 @@ def problem_names(pieces: list[str], language: str, program: bool = False) -> se
 
 def statements(code: str, language: str) -> list[list[str]]:
     """코드를 문장 조각의 낱말 목록으로 나눈다. 주석을 떼고, 괄호 밖의 ';'와 줄바꿈에서 끊는다.
-    파이썬은 ':'에서도(조건·반복 머리 뒤), 그 밖의 언어는 '{'·'}'에서도 끊는다. 'for (let i = 0; i < n; i++)'의 ';'는 괄호 안이라 끊지 않는다."""
+    파이썬은 ':'에서도(조건·반복 머리 뒤), 그 밖의 언어는 '{'·'}'와 if·while·for 머리 괄호가 닫히는 곳에서도 끊는다
+    ('if (x > 0) total += x;'는 머리와 몸 두 조각). 'for (let i = 0; i < n; i++)'의 ';'는 괄호 안이라 끊지 않는다.
+    조각 맨 앞의 else는 떼고 파이썬 elif는 if로 읽는다('} else if (x > 0) {', 'elif x > 0:'도 'if' 머리로 견준다)."""
     mark, cuts, opens, closes = ("#", ";:", "([{", ")]}") if language == "python" else ("//", ";{}", "([", ")]")
     out = []
     for line in (code or "").splitlines():
@@ -540,8 +542,15 @@ def statements(code: str, language: str) -> list[list[str]]:
                 out.append(part)
                 part = []
                 continue
+            if not part and tok in ("else", "elif"):
+                if tok == "else":
+                    continue
+                tok = "if"
             depth += (tok in opens) - (tok in closes)
             part.append(tok)
+            if language != "python" and depth == 0 and tok == ")" and part[0] in ("if", "while", "for") and part[1:2] == ["("]:
+                out.append(part)  # 머리 괄호가 닫혔다: 중괄호 없는 몸과 나눈다
+                part = []
         out.append(part)
     return [part for part in out if part]
 
