@@ -175,10 +175,10 @@ def write_keys(saved: dict) -> None:
                 out.write(json.dumps(saved, ensure_ascii=False, indent=1).encode("utf-8"))  # 버퍼 쓰기는 끝까지 쓰거나 예외를 낸다
                 out.flush()
                 os.fsync(out.fileno())
+            tmp.replace(KEY_FILE)
         except BaseException:
-            tmp.unlink(missing_ok=True)  # 반쯤 쓴 파일로 키 파일을 바꾸지 않는다(원래 파일은 그대로)
+            tmp.unlink(missing_ok=True)  # 반쯤 쓴 파일로 키 파일을 바꾸지 않고, 바꿔 넣지 못한 임시 파일도 남기지 않는다(원래 파일은 그대로)
             raise
-        tmp.replace(KEY_FILE)
 
 
 CLI = ClaudeCli()

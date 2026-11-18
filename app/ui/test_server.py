@@ -1885,6 +1885,13 @@ def key_flow() -> None:
             except OSError:
                 pass
         assert server.read_json(server.KEY_FILE, {}) == {"ANTHROPIC_API_KEY": claude} and not server.KEY_FILE.with_suffix(".tmp").exists()
+        with patch.object(server.Path, "replace", lambda self, target: (_ for _ in ()).throw(OSError("바꿔 넣지 못했다"))):  # 바꿔 넣기가 실패해도 같다
+            try:
+                server.save_key("OPENAI_API_KEY", openai)
+                raise AssertionError("바꿔 넣기 실패는 알려야 한다")
+            except OSError:
+                pass
+        assert server.read_json(server.KEY_FILE, {}) == {"ANTHROPIC_API_KEY": claude} and not server.KEY_FILE.with_suffix(".tmp").exists()
         try:
             call("/api/key/delete", name="openai")
             raise AssertionError("넣지 않은 키를 지울 수는 없다")
@@ -1993,9 +2000,9 @@ def key_check_flow() -> None:
         assert keycheck.check("claude", secret, opener=to_first) == "offline" and keycheck.check("openai", "sk-proj-" + "r" * 20, opener=to_first) == "offline"
         here = f"http://127.0.0.1:{first.server_port}/"
         assert isinstance(refused(lambda: wire.post_json(here, {"x-api-key": secret}, {"model": "m"}, timeout=5)), LlmFailed)  # 모델 요청(API 키 연결은 모두 이 길)
-        assert refused(lambda: oauth_chat.post_sse(here, {"Authorization": "Bearer " + secret}, {"model": "m"})) is not None  # ChatGPT 요청
+        assert isinstance(refused(lambda: oauth_chat.post_sse(here, {"Authorization": "Bearer " + secret}, {"model": "m"})), LlmFailed)  # ChatGPT 요청
         with patch.object(oauth_token, "TOKEN_URL", here):
-            assert refused(lambda: oauth_token._token({"refresh_token": secret})) is not None  # 토큰 갱신
+            assert isinstance(refused(lambda: oauth_token._token({"refresh_token": secret})), oauth_token.Refused)  # 토큰 갱신
         assert got == [], got  # 두 번째 호스트에는 요청도 헤더도 가지 않았다
     finally:
         for one in (first, second):
