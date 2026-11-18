@@ -26,7 +26,6 @@ def plan_from_json(raw: str | None) -> BlockPlan | None:
         algorithm=data.get("algorithm", ""),
         out_of_scope=data.get("out_of_scope", False),
         link=data.get("link", ""),
-        settled=data.get("settled", False),
     )
 
 

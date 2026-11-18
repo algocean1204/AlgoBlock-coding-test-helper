@@ -23,8 +23,7 @@ FOUND_OK = "통과예요. 이 블록의 코드는 할 일을 해내요."  # 의�
 # 저장 힌트를 1·2·3번까지 다 낸 뒤의 고정 말(3번을 되풀이하지 않는다)
 HINTS_DONE = "이 블록의 힌트는 다 봤어요. 블록 칸에 적어 확인받거나, '이 블록 채우기'로 이 블록만 볼 수 있어요."
 HINTS_DONE_UNFOUND = "이 블록의 힌트는 다 봤어요. '이 블록 채우기'로 이 블록만 볼 수 있어요."  # 의자에서 아직 찾지 못한 블록(코드 칸이 없다)
-FOUND_TIP = "블록 칸에 이 블록의 코드를 적어 보세요. "  # 의자에서 말로 블록을 찾았을 때 앞말(찾은 블록의 칸에 적으라는 말이 없어 생각과 코드가 끊겼다)
-# 가이드에서 빈칸을 말로 맞혔다. 가이드의 다음 블록은 블록 코드 확인(또는 넘어가기·채우기)으로만 열린다(말로 열면 코드 칸이 빈 채 지나갔다)
+# 말로 맞혔다. 다음 블록은 블록 코드 확인(또는 넘어가기·채우기)으로만 열린다(말로 열면 코드 칸이 빈 채 지나갔다). 의자·가이드 같다
 WRITE_TIP = "그 생각을 이 블록의 코드 칸에 코드로 적고 '블록 코드 확인'을 눌러 보세요. 확인을 통과하면 다음 블록이 열려요."
 WRITE_TIP_LAST = "그 생각을 이 블록의 코드 칸에 코드로 적고 '블록 코드 확인'을 눌러 보세요. 마지막 블록이라, 확인을 통과하면 모은 코드로 풀이를 돌려 볼 수 있어요."
 _ASK_ANSWER = re.compile(r"(?<!기대)(?<!예상)(?<!실제)(?<!출력)답.{0,3}(알려|줘|주세요|보여)")  # '기대 답 보여줘'(기대한 값을 묻는 말)는 답 요청이 아니다
@@ -66,15 +65,10 @@ def rule_verdict(text: str) -> Verdict | None:
     return Verdict(False) if empty_answer(text) else None
 
 
-def found_tip(mode: str, turn: TurnContext, move: MovePlan) -> str:
-    """의자에서 말로 지금 블록을 찾았으면 찾은 블록에 남길 안내(FOUND_TIP). 다음 블록의 질문과 다른 말로 남긴다(한 말에 붙어 다음 블록 아래에 보였다)."""
-    return FOUND_TIP.strip() if mode == "chair" and turn.event == "message" and move.advance else ""
-
-
 def pick_move(mode: str, plan: BlockPlan, turn: TurnContext, verdict: Verdict | None, allow_follow: bool = True, found: bool = False, language: str = "python") -> MovePlan:
     """found: 의자에서 이미 찾은 블록의 코드 확인(맞는지만 알리고 진행은 그대로).
     같은 블록에서 내용 없는 답이 두 번 이어지면 그 말 앞에 '이 블록 채우기' 안내를 한 번 붙인다('모르겠어요' 세 번에도 길을 몰랐다).
-    의자에서 말로 블록을 찾아 넘어갈 때 찾은 블록의 칸에 코드를 적어 보라는 말(FOUND_TIP)은 그래프가 찾은 블록의 말로 따로 남긴다(found_tip)."""
+    말로는 다음 블록을 열지 않는다: 말로 맞히면 그 블록의 코드 칸에 적으라는 고정 말(write)이다."""
     move = _pick_move(mode, plan, turn, verdict, allow_follow, found, language)
     if (turn.event == "message" and not move.advance and not turn.tipped and "이 블록 채우기" not in move.lead + (move.saved or "")
             and empty_answer(turn.text) and empty_answer(turn.previous)):
@@ -127,13 +121,13 @@ def _pick_move(mode: str, plan: BlockPlan, turn: TurnContext, verdict: Verdict |
         return hinted(ANSWER_LEAD if verdict.aside == "A" else BACK_LEAD)  # 고정 앞말 뒤에 다음 저장 힌트
     if turn.event == "message" and index == len(blocks) - 1 and (LAST_MOVE[mode] in used or "done" in used):
         return MovePlan("close", index, False, saved=FALLBACK["close"])  # 정리 질문에 답했다: 같은 질문을 되풀이하지 않고 코드로 보낸다
-    if mode == "chair" and turn.event == "message" and used[-1:] == ["basis"]:
-        return advance()  # 이미 찾은 블록의 근거 질문에 답했다. 답을 다시 판정하지 않는다
+    if mode == "chair" and turn.event == "message" and used[-1:] == ["basis"] and not asks(turn.text):
+        return write()  # 근거 질문에 평서로 답했다: 다시 판정하지 않고 코드로 적게 한다. 물음 꼴이면 아래에서 판정으로 가른다
     if turn.event == "message" and empty_answer(turn.text):
         return hinted(HARD_LEAD if hard(turn.text) else "")  # 내용 없는 답: 모델이 짓지 않는다. 다음 저장 힌트가 한 칸 더 작은 질문이다
     # 확인 질문(verify)에 답했다. 처음 생각은 이미 맞았다: 그 답(예시를 따라간 값)을 빈칸 값으로 다시 판정하지 않고 코드로 적게 한다.
     # 그 사이에 낱말의 뜻을 물었으면(term) 그 차례는 건너뛰고 본다(뜻을 물은 뒤 코드로 적는 길을 놓쳤다)
-    if mode == "guide" and turn.event == "message" and [m for m in used if m != "term"][-1:] == ["verify"] and not asks(turn.text):
+    if turn.event == "message" and [m for m in used if m != "term"][-1:] == ["verify"] and not asks(turn.text):
         return write()
     ok = bool(verdict and verdict.ok)
     if turn.event == "block_filled":
@@ -150,20 +144,18 @@ def _pick_move(mode: str, plan: BlockPlan, turn: TurnContext, verdict: Verdict |
             return MovePlan(LADDER[mode][min(turn.hints_seen, 2)], index, False, saved=lead.strip())
         # 저장 힌트가 없으면 못 해낸 첫 신호를 겨눠 짓는다(빠진 것과 다른 것을 물었다)
         return advance() if ok else hinted(lead, signal_text(blocks[index], verdict.miss if verdict else None))
-    if ok and mode == "guide" and turn.event == "message" and asks(turn.text) and "verify" not in used:
+    if ok and turn.event == "message" and asks(turn.text) and "verify" not in used:
         # 맞는 생각을 물음으로 냈다('range로 돌려야 하나요?'). 코드로 적으라는 고정 말은 물음에 답하지 않아 되풀이로 들렸다.
         # 맞다고 말하지 않고(답을 먼저 말하지 않는다) 그 생각을 스스로 확인할 질문을 모델이 짓는다. 말로 맞힌 생각에는 그대로 WRITE_TIP.
         # 확인 질문은 블록에 한 번만: 다시 물으면 코드로 적게 한다(확인 질문이 끝없이 이어졌다)
         return MovePlan("verify", index, False)
-    if ok and mode == "guide":
-        return write()
     if ok:
         # 근거 질문은 문항에 한 번, 생각할 거리가 있는 블록(반복·조건·분기)에서만 한다.
         # '답 담을 리스트' 같은 변수 블록마다 근거를 물으니 초보자가 멈칫했다(같은 질문이 두 블록 연달아 나왔다)
         if (mode == "chair" and (verdict.basis or "g") == "g" and not turn.basis_asked
                 and blocks[index].kind in ("loop", "condition", "branch")):
             return MovePlan("basis", index, False)
-        return advance()
+        return write()
     if mode == "chair" and verdict is not None and not verdict.malformed:  # 형식 오류는 사다리
         miss = verdict.miss
         if miss and miss >= 2:

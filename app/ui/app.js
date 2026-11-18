@@ -58,7 +58,7 @@ const infoBox = (k, where) => `<div class="info" id="wayinfo-${k}-${where}" role
 const GROUP = { hash: "ds", stack_queue: "ds", heap: "ds", brute_force: "search", dfs: "search", bfs: "search", binary_search: "search",
   graph: "graph", dijkstra: "graph", greedy: "design", dp: "design", two_pointer: "design", sort: "impl", simulation: "impl", implementation: "impl" };
 const GROUP_NAME = { ds: "자료구조", search: "탐색", graph: "그래프", design: "설계", impl: "구현" };
-const lvBadge = (n, guess) => (n ? `<span class="lvb l${n}"${guess ? ' title="문제 글을 보고 어림한 단계예요"' : ""}>${n}단계${guess ? " · 어림" : ""}</span>` : "");
+const lvBadge = (n) => (n ? `<span class="lvb l${n}">${n}단계</span>` : "");
 const themeChip = (key, name) => (name ? `<span class="theme-chip g-${GROUP[key] || "none"}"${GROUP[key] ? ` title="${GROUP_NAME[GROUP[key]]} 갈래"` : ""}>${esc(name)}</span>` : "");
 /** 문제 화면의 풀이법 태그: 풀기 전에는 가리고 '풀이법 태그 보기'로 연다. 통과했거나 힌트·해설을 봤으면 이미 보인다.
     연 것은 화면에서만 바뀌고 도움으로 세지 않는다(준비도·기록에 영향 없음). 목록은 통과한 문제의 태그만 보인다. */
@@ -199,16 +199,25 @@ const waitLine = (where) => (S.busy && S.busy.where === where // 문구가 걸�
 const pending = (where) => (S.busy && S.busy.where === where ? `<div class="msg tutor pending"><span class="who">튜터</span><div class="bubble">${waitLine(where)}</div></div>` : "");
 
 /* ── 글 꾸미기: 코드 울타리, 표(| a | b |), 목록(- ), 소제목, `코드`, **굵게**, 표준 입출력 문제의 예제 구역 ── */
+/* rich-pure:start 글 꾸미기 전체(esc 말고는 다른 것에 기대지 않는다). node로도 시험한다 */
+/* inline-pure:start 코드와 수식 구간은 먼저 떼어 두고 나머지만 굵게·위첨자를 바꾼 뒤 되돌린다(코드·수식 속 **나 ^가 바뀌지 않는다). 수식은 $…$, $$…$$, \(…\), \[…\]: 여는 $ 뒤나 닫는 $ 앞이 공백이거나 닫는 $ 뒤가 숫자면 수식이 아니다(금액). 줄 단위라 여러 줄에 걸친 수식은 보지 않는다 */
+function inline(t) {
+  const kept = [], raws = [];
+  const hold = (html, raw) => `\u0000${kept.push(html) && raws.push(raw ?? html) - 1}\u0000`;
+  const back = (x) => x.replace(/\u0000(\d+)\u0000/g, (_, n) => raws[n]); // 수식 안에 든 코드 자리는 쓴 그대로
+  const text = String(t ?? "").replace(/\u0000/g, "").replace(/`([^`\n]+)`/g, (_, code) => hold(`<code>${esc(code)}</code>`, `\`${code}\``))
+    .replace(/\$\$(.+?)\$\$|\\\[((?:(?!\\\[).)+?)\\\]|\\\(((?:(?!\\\().)+?)\\\)|\$(?=[^\s$])([^$\n]*?\S)\$(?![\d$])/g, (all, d1, d2, i1, i2, at, whole) => {
+      const tex = back(d1 ?? d2 ?? i1 ?? i2);
+      // 받은 수식만 코드 자리를 쓴 그대로 되돌린다. 거절한 구간(앞에 \$나 $$가 붙은 $…$)은 코드 자리를 그대로 두어 코드로 보인다
+      return tex.trim() && !(i2 !== undefined && /[\\$]/.test(whole[at - 1] || "")) ? hold(`<span class="math" data-tex="${esc(tex)}"${i1 === undefined && i2 === undefined ? ' data-display="1"' : ""}>${esc(back(all))}</span>`) : all;
+    });
+  return esc(text).replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>").replace(/(^|[^\w.^])(\d+)\^(\d+)(?![\w^])/g, "$1$2<sup>$3</sup>")
+    .replace(/\u0000(\d+)\u0000/g, (_, n) => kept[n]);
+}
+/* inline-pure:end */
 const HEADING = /^(문제 설명|제한 ?사항|입출력 예( 설명)?|입출력 예 ?#\d+|입력|출력|예시)$/;
 // 예제 구역의 머리(서버 sample_cases와 같은 규칙): 머리 다음부터 다음 머리나 빈 줄 둘 전까지가 그 예제의 글이다
 const SAMPLE_HEAD = /^(?:#+\s*)?(예제\s*입력|입력\s*예|sample\s+input|예제\s*출력|출력\s*예|sample\s+output)\s*(\d+)\s*(?:복사)?\s*:?$/i;
-/* inline-pure:start 백틱 안은 코드 그대로 둔다: 먼저 코드를 떼어 두고 굵게를 바꾼 뒤 되돌린다(코드 속 **가 굵게가 되지 않는다). node로도 시험한다 */
-function inline(t) {
-  const codes = [];
-  return esc(t).replace(/\u0000/g, "").replace(/`([^`\n]+)`/g, (_, code) => `\u0000${codes.push(code) - 1}\u0000`)
-    .replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>").replace(/\u0000(\d+)\u0000/g, (_, n) => `<code>${codes[n]}</code>`);
-}
-/* inline-pure:end */
 
 /** program: 표준 입출력 문제. 예제 구역은 글 그대로 <pre>에 담고, 같은 번호의 입력·출력은 두 칸으로 나란히 둔다. */
 // 탭·공백으로 나눈 입출력 예 표(서버 table_cases·flat_table과 같은 규칙의 가장 작은 판정): 머리 줄의 마지막 칸이 결과 낱말이고 뒤 줄들의 칸 수가 맞을 때만 표다
@@ -265,7 +274,7 @@ function rich(text, headings, program) {
   String(text || "").split(/```[a-zA-Z0-9]*\n?/).forEach((part, i) => {
     if (i % 2) return out.push(`<pre class="code"><code>${esc(part.replace(/\s+$/, ""))}</code></pre>`);
     if (headings && !program) part = plainTables(part); // 문제 글(함수 방식)의 탭·공백 표
-    let para = [], list = [], table = [], sample = null;
+    let para = [], list = [], numbered = [], table = [], sample = null;
     const endSample = () => {
       if (!sample) return;
       const rows = sample.rows.join("\n").replace(/^\s*\n|\n\s*$/g, ""); // 앞뒤 빈 줄만 뗀다(줄 앞 공백은 답이다)
@@ -279,6 +288,7 @@ function rich(text, headings, program) {
       const what = (name) => keep.includes(name);
       if (para.length && !what("para")) { out.push(`<p>${para.map(inline).join("<br>")}</p>`); para = []; }
       if (list.length && !what("list")) { out.push(`<ul>${list.map((x) => `<li>${inline(x)}</li>`).join("")}</ul>`); list = []; }
+      if (numbered.length && !what("numbered")) { out.push(`<ol${numbered[0][0] === 1 ? "" : ` start="${numbered[0][0]}"`}>${numbered.map(([, x]) => `<li>${inline(x)}</li>`).join("")}</ol>`); numbered = []; }
       if (table.length && !what("table")) {
         const rows = table.map((row) => row.replace(/^\||\|$/g, "").split("|").map((cell) => cell.trim())).filter((cells) => !cells.every((cell) => /^[-: ]*$/.test(cell)));
         out.push(`<div class="table-wrap"><table>${rows.map((cells, n) => `<tr>${cells.map((cell) => (n ? `<td>${inline(cell)}</td>` : `<th scope="col">${inline(cell)}</th>`)).join("")}</tr>`).join("")}</table></div>`);
@@ -294,9 +304,11 @@ function rich(text, headings, program) {
         endSample();
         continue;
       }
-      if (!t) { flush("table", "list"); continue; } // 빈 줄은 문단만 끊는다. 표와 목록은 다른 글이 올 때까지 잇는다
+      if (!t) { flush("table", "list", "numbered"); continue; } // 빈 줄은 문단만 끊는다. 표와 목록은 다른 글이 올 때까지 잇는다
       if (t.startsWith("|") && t.length > 1) { flush("table"); table.push(t); continue; }
       if (/^[-•]\s+/.test(t)) { flush("list"); list.push(t.replace(/^[-•]\s+/, "")); continue; }
+      const num = /^(\d{1,2})[.)]\s+(\S.*)$/.exec(t);
+      if (num) { flush("numbered"); numbered.push([+num[1], num[2]]); continue; }
       const title = /^#{1,4}\s+(.+)$/.exec(t);
       if (title || (headings && HEADING.test(t))) { flush(); out.push(`<h3>${inline(title ? title[1] : t)}</h3>`); continue; }
       flush("para");
@@ -307,6 +319,33 @@ function rich(text, headings, program) {
   });
   return out.join("");
 }
+/* rich-pure:end */
+
+/* 수식: 글에 수식 구간(.math)이 생길 때만 KaTeX를 이 앱 안에서 불러온다(원격 주소 없음). 실패하면 원문 글이 그대로 남는다 */
+let katexReady = null;
+function loadKatex() {
+  katexReady ??= new Promise((ok, fail) => {
+    const css = document.createElement("link"), js = document.createElement("script");
+    css.rel = "stylesheet"; css.href = "/katex/katex.min.css"; js.src = "/katex/katex.min.js";
+    js.onload = () => ok(window.katex); js.onerror = () => { css.remove(); js.remove(); fail(); };
+    document.head.append(css, js);
+  }).catch(() => { katexReady = null; return null; }); // 받지 못하면 다음 수식에서 다시 받는다
+  return katexReady;
+}
+async function renderMath() {
+  const todo = [...document.querySelectorAll(".math[data-tex]:not([data-done])")];
+  if (!todo.length) return;
+  todo.forEach((el) => el.setAttribute("data-done", "1"));
+  const katex = await loadKatex();
+  if (!katex) return todo.forEach((el) => el.removeAttribute("data-done")); // 받지 못했으면 원문 그대로, 다음 글에서 다시 시도
+  for (const el of todo) {
+    if (!el.isConnected) continue;
+    const original = el.textContent;
+    try { katex.render(el.dataset.tex, el, { throwOnError: false, displayMode: "display" in el.dataset }); } catch { el.textContent = original; }
+    if (el.querySelector(".katex-error")) el.textContent = original; // 깨진 수식은 KaTeX의 빨간 글 대신 쓴 그대로
+  }
+}
+new MutationObserver(() => renderMath()).observe(document.body, { childList: true, subtree: true });
 
 const kindChip = (kind) => (kind ? `<span class="kind kind-${esc(kind)}">${KIND[kind] ? ico("k-" + kind) : ""}${esc((KIND[kind] || [kind])[0])}</span>` : ""); // 종류가 없으면(코드와 맞지 않아 서버가 비웠다) 꼬리표를 그리지 않는다
 const meMsg = (text, sending) => `<div class="msg me${sending ? " sending" : ""}"><span class="who">나</span><div class="bubble">${esc(text)}</div></div>`;
@@ -462,7 +501,7 @@ async function showList() {
   const group = (id, title, list, filter) => (!list.length ? "" : `<div class="list-head"><h2 class="list-label" id="${id}">${title} ${list.length}개</h2>${filter ? chips(list) : ""}</div>
     <ul class="rows" aria-labelledby="${id}">${list.map((p) => `<li${filter ? ` data-lang="${esc(p.language)}"${LIST_LANG && p.language !== LIST_LANG && list.length >= 6 ? " hidden" : ""}` : ""}><a class="row" href="#/p/${esc(p.id)}">
       <span><span class="row-title">${esc(p.title)}</span>
-        <span class="badges">${lvBadge(p.level, p.level_by === "analysis")}${themeChip(p.theme, p.theme_name)}${verifiedBadge(p)}${p.passed > 0 ? tagChips(p.tags) : ""}</span>
+        <span class="badges">${lvBadge(p.level)}${themeChip(p.theme, p.theme_name)}${verifiedBadge(p)}${p.passed > 0 ? tagChips(p.tags) : ""}</span>
         <span class="row-meta">${esc(LANG[p.language] || p.language)} · ${p.submitted ? `통과 ${p.passed} · 제출 ${p.submitted}` : "아직 풀지 않았어요"}</span></span>
       <span></span>${ico("i-caret")}<span class="sr-only">열기</span></a></li>`).join("")}</ul>`);
   let html = group("list-own", "내 문제", all.filter((p) => !p.sample), true);
@@ -1048,7 +1087,7 @@ async function showEdit(pid) {
   $("new-mode").value = p.mode || "function";
   $("new-title").value = p.title;
   $("new-theme").value = p.theme || "";
-  $("new-level").value = p.level_by === "user" ? String(p.level) : ""; // 분석이 어림한 단계는 내가 고른 것이 아니다: 그대로 저장하면 고른 단계로 굳는다
+  $("new-level").value = p.level_by === "user" ? String(p.level) : ""; // 분석이 붙인 단계는 내가 고른 것이 아니다: 그대로 저장하면 고른 단계로 굳는다
   $("new-text").value = p.text;
   resetCases();
   findTable();
@@ -1136,7 +1175,9 @@ function clearProblem(pid) {
     quote: null, sending: null, debug: null, note: {}, codeNote: "", fb: null, solo: null, langWant: null, codeAsk: null, fillAsk: null, prepAt: 0, keptNote: false, keptSeen: false, nextUp: null, pullThenRun: false, tagsOpen: false });
   for (const id of ["code", "say", "fq-text", "debug-say", "run-input"]) $(id).value = "";
   for (const id of ["p-title", "p-text", "blocks", "chat-log", "explain-box", "start-box", "result", "solo-box"]) $(id).innerHTML = "";
-  for (const id of ["result", "debug-sheet", "composer", "fq-composer", "chat-log", "explain-box", "old-feedback", "solo-box", "lang-confirm"]) $(id).hidden = true;
+  for (const id of ["result", "sep-result", "result-big", "debug-sheet", "composer", "fq-composer", "chat-log", "explain-box", "old-feedback", "solo-box", "lang-confirm"]) $(id).hidden = true;
+  splitBig = false; // '결과 크게 보기'는 그 문제의 결과에만
+  splitShow();
   $("code")._seen = "";
   say(""); // 앞 문제의 상태 문구('튜터가 블록 코드를 봤어요')를 남기지 않는다
   $("reset-confirm").hidden = $("del-confirm").hidden = true;
@@ -1203,7 +1244,7 @@ function applyState(data) {
   S.prepAt = S.problem.preparing ? S.prepAt || Date.now() : 0; // 준비 진행 줄에 지난 초를 보여 준다(새 준비는 0초부터)
   render();
   clearTimeout(prepTimer);
-  if (S.problem.preparing && connected()) { // 튜터가 뒤에서 풀이 순서를 준비하는 중: 3초마다 다시 보고, 끝나면 표시를 걷는다(문제 화면을 떠나면 멈춘다)
+  if ((S.problem.preparing || S.problem.checking) && connected()) { // 튜터가 뒤에서 풀이 순서나 숨은 테스트를 준비하는 중: 3초마다 다시 보고, 끝나면 표시를 걷는다(문제 화면을 떠나면 멈춘다)
     const pid = S.pid;
     prepTimer = setTimeout(() => { if (S.view === "code" && S.pid === pid) loadState(); }, 3000);
   }
@@ -1219,7 +1260,7 @@ function renderCode() {
   $("p-title").textContent = p.title;
   if (!connected() && S.mode && S.mode !== "solo") S.mode = "solo"; // 모델이 없으면 혼자 풀기뿐이다(고르기 전이면 고르는 칸에서 까닭을 말한다)
   if (!connected()) S.codeTab = "direct"; // 블록은 튜터와 쌓는 것이라, 모델이 없으면 코드 전체만 보여 준다
-  $("p-badges").innerHTML = lvBadge(p.level, p.level_by === "analysis") + themeChip(p.theme, p.theme_name) + (p.sample ? "" : verifiedBadge(p)) + tagsHtml(p);
+  $("p-badges").innerHTML = lvBadge(p.level) + themeChip(p.theme, p.theme_name) + (p.sample ? "" : verifiedBadge(p)) + tagsHtml(p);
   renderCheckLine(p);
   $("p-own").hidden = p.sample; // 내가 등록한 문제만 고치고 지운다
   const picker = $("p-lang-select"), many = p.languages.length > 1, key = p.languages.join(",") + JSON.stringify(TOOLS);
@@ -1262,12 +1303,29 @@ async function prepAgain() {
   try { S.note.start = null; S.problem.prepare_failed = false; S.prepAt = 0; await loadState(true); say(S.problem.preparing ? "튜터가 풀이 순서를 다시 준비해요." : ""); } finally { prepAsking = false; }
 }
 
-/** 등록한 문제의 준비·검증 한 줄: "풀이 준비 중 · 숨은 테스트 n개 만듦 · 검증: 예시와 대조 모두 통과" */
+/** 숨은 테스트를 만들며 찾은 더 정확한 풀이로 바꾼다(대화를 시작해 저절로 바꾸지 않은 것). 대화·블록 진행은 서버가 지우고 코드 칸은 그대로 둔다. */
+async function swapGuide() {
+  if (prepAsking) return;
+  const pid = S.pid;
+  prepAsking = true;
+  $("swap-guide").disabled = true;
+  clearTimeout(blocksTimer); blocksTimer = null; // 지워질 블록 칸을 다시 보내지 않는다
+  try {
+    const r = await api("/api/swap", { id: pid });
+    if (S.pid !== pid) return;
+    if (r.ok) { Object.assign(S, { blockCode: {}, debug: null, quote: null, prepAt: 0 }); S.note.start = null; }
+    await loadState();
+    say(r.ok && S.problem.preparing ? "튜터가 새 풀이로 풀이 순서를 다시 준비해요." : "");
+  } finally { prepAsking = false; }
+}
+
+/** 등록한 문제의 준비·검증 한 줄: "풀이 준비 중 · 숨은 테스트 n개 만듦 · 검증: 예시와 대조 모두 통과". 준비는 두 걸음이다(풀이 순서 → 숨은 테스트) */
 function renderCheckLine(p) {
-  const c = p.check || {}, made = (Number(c.hidden) || 0) + (Number(c.efficiency) || 0);
-  const parts = p.sample ? [] : [p.preparing ? "풀이 준비 중" : "", made ? `숨은 테스트 ${made}개 만듦` : "", p.verified_name ? `검증: ${p.verified_name}` : "", c.why && p.verified !== "all" ? String(c.why) : "", p.prepare_failed && !p.preparing ? "튜터가 풀이 순서를 준비하지 못했어요." : ""].filter(Boolean).map(esc); // 준비가 실패로 끝났으면 말하고 다시 준비하는 길을 둔다
+  const c = p.check || {}, made = (Number(c.hidden) || 0) + (Number(c.efficiency) || 0), better = p.better && !p.preparing;
+  const parts = p.sample ? [] : [p.preparing ? "풀이 준비 중" : p.checking ? "숨은 테스트 만드는 중" : "", made ? `숨은 테스트 ${made}개 만듦` : "", p.verified_name ? `검증: ${p.verified_name}` : "", c.why && p.verified !== "all" ? String(c.why) : "", p.prepare_failed && !p.preparing ? "튜터가 풀이 순서를 준비하지 못했어요." : "",
+    better ? "튜터의 풀이를 더 정확한 것으로 바꿀 수 있어요" : "", better ? "다시 준비하면 대화·해설·블록 칸은 처음부터예요(코드 칸과 제출 기록은 남아요)" : ""].filter(Boolean).map(esc); // 준비가 실패로 끝났으면 말하고 다시 준비하는 길을 둔다
   if (p.preparing) parts[0] += ` <span class="secs" data-since="${S.prepAt}">${since(S.prepAt)}초</span> · 보통 1분 안팎`; // 다른 기다림 표시처럼 지난 초
-  $("p-check").innerHTML = parts.length ? `${p.preparing ? DOTS : ""}<span>${parts.join(" · ")}</span>${p.prepare_failed && !p.preparing ? ' <button type="button" class="btn small" id="prep-again-top" data-model>다시 준비</button>' : ""}` : "";
+  $("p-check").innerHTML = parts.length ? `${p.preparing || p.checking ? DOTS : ""}<span>${parts.join(" · ")}</span>${p.prepare_failed && !p.preparing ? ' <button type="button" class="btn small" id="prep-again-top" data-model>다시 준비</button>' : ""}${better ? ' <button type="button" class="btn small" id="swap-guide" data-model>다시 준비</button>' : ""}` : "";
   $("p-check").hidden = !parts.length;
 }
 
@@ -1875,7 +1933,8 @@ function passActions(ai, learn) {
 function renderResult() {
   const box = $("result"), r = S.result, judging = S.busy && S.busy.where === "result", mine = judging && S.busy.pid === S.pid;
   const review = !r && !mine && !!S.problem && S.problem.passed > 0; // 통과한 문제를 다시 열었다: 마지막 결과는 없어도 갈 길은 남긴다
-  box.hidden = !r && !mine && !review;
+  box.hidden = $("sep-result").hidden = !r && !mine && !review;
+  $("result-big").hidden = box.hidden;
   if (mine) return void (box.innerHTML = `<div class="note">${waitLine("result").replace(" · 보통 5~25초 걸려요", "")}</div>`);
   if (review) return void (box.innerHTML = `<div class="result-actions">${passActions(connected(), S.problem.study.has_guide && S.problem.study.passed_now)}</div>`); // '처음부터' 뒤에는 해설을 여는 것이 도움이라, 단추 하나로 열지 않는다
   if (!r) return void (box.innerHTML = "");
@@ -2497,10 +2556,12 @@ async function loadTools(refresh) {
 }
 
 /* ── 과정별 모델 ── */
-// 과정 여덟을 언제 불리는지로 묶고, 상대 사용량을 적는다. 과정마다의 금액은 재지 않아 숫자를 쓰지 않는다(전체 흐름의 실측 값은 설정 화면의 글에 있다)
+// 과정 열을 언제 불리는지로 묶고, 상대 사용량을 적는다. 과정마다의 금액은 재지 않아 숫자를 쓰지 않는다(전체 흐름의 실측 값은 설정 화면의 글에 있다)
 const THEME_HELP = {
+  split: ["붙여 넣은 글에서 문제와 입출력 예시가 있는 줄 구간을 짚어요.", "적음"],
   read: ["사진·PDF에서 글을 읽어요. 글로 넣으면 쓰지 않아요.", "많음"],
   guide: ["문제의 뼈대와 정답 풀이를 만들어요. 뒤의 모든 대화가 이 결과를 따라요. 어려운 문제에서 풀이 확인이 자주 실패하면 급을 올려 보세요.", "많음"],
+  verify: ["단순한 풀이를 만들어 정답 풀이와 견줘요. 문제를 넣은 뒤 뒤에서 한 번 써요.", "보통"],
   blocks: ["풀이를 블록으로 나누고 블록마다 힌트 질문을 만들어요.", "많음"],
   talk: ["튜터가 건네는 질문, 꼬리질문 답, 블록 채우기.", "적음 × 횟수"],
   judge: ["내 답과 블록 코드가 맞는지 보는 짧은 판정.", "적음 × 횟수"],
@@ -2508,7 +2569,7 @@ const THEME_HELP = {
   feedback: ["제출 뒤의 피드백.", "보통"],
   debug: ["틀린 곳 같이 찾기에서 원인이 있는 줄을 찾아요.", "보통"],
 };
-const THEME_GROUPS = [["문제를 넣을 때 한 번", ["read", "guide", "blocks"]], ["튜터와 풀 때 매번", ["talk", "judge"]], ["제출한 뒤, 누를 때만", ["explain", "feedback", "debug"]]];
+const THEME_GROUPS = [["문제를 넣을 때 한 번", ["split", "read", "guide", "verify", "blocks"]], ["튜터와 풀 때 매번", ["talk", "judge"]], ["제출한 뒤, 누를 때만", ["explain", "feedback", "debug"]]];
 const EFFORT = { low: "낮음", medium: "보통", high: "높음" };
 
 function renderModels() {
@@ -2544,7 +2605,7 @@ function renderAccounts(a) {
   const ready = a.client === "cli" || !!provider;
   CONN = { ready, name: a.client === "cli" ? "이 PC의 Claude Code" : provider };
   ACCOUNTS = a;
-  if (!paneTimer && !paneDrag) paneSet(a.panes || null, false); // 저장한 칸 너비를 첫 그림 전에(accounts를 기다린 뒤에 route()를 부른다)
+  if (!paneTimer && !paneDrag) { paneSet(a.panes || null, false); if ((a.rows ?? null) !== splitRows) splitSet(a.rows ?? null, false); } // 저장한 칸 너비·결과 높이를 첫 그림 전에(accounts를 기다린 뒤에 route()를 부른다). 같은 높이면 '결과 크게 보기'를 끄지 않는다
   if (S.view === "settings") renderModels();
   $("conn-now").textContent = keyBad ? "키 확인 필요" : a.client === "cli" ? "이 PC의 Claude Code" : provider || "AI 연결 안 됨";
   $("conn-dot").classList.toggle("off", !ready);
@@ -2933,7 +2994,7 @@ let paneShares = null; // 문제·코드·튜터 칸의 몫. null이면 CSS 기�
 let paneTimer = null, paneDrag = null;
 const paneWidth = (i) => $(`pane-${PANE[i]}`).getBoundingClientRect().width;
 const paneMin = (i) => parseFloat(getComputedStyle($("panes")).getPropertyValue(`--min-${PANE[i]}`)); // 최소 너비는 CSS의 한 곳(--min-*)에서 읽는다
-const narrowPanes = () => matchMedia("(max-width: 1179px)").matches; // 문제 칸이 위 띠가 되어 코드·튜터 둘만 나뉜다
+const narrowPanes = () => matchMedia("(max-width: 1079px)").matches; // 문제 칸이 위 띠가 되어 코드·튜터 둘만 나뉜다
 
 /** 경계 하나가 가르는 두 칸의 지금 모습: 왼쪽 칸 번호, 오른쪽 몫(혼자 풀기에서는 코드와 튜터가 한 몫), 몫, 두 칸 너비의 합(px), 최소 너비 */
 function paneBase(sep) {
@@ -2999,8 +3060,9 @@ function paneSet(shares, save) {
 async function paneSave() {
   clearTimeout(paneTimer);
   paneTimer = null;
-  const r = await api("/api/prefs", { panes: paneShares });
-  if (!r.ok) say(errorNote(r.error).text);
+  const r = await api("/api/prefs", { panes: paneShares, rows: splitRows });
+  if (!r.ok) return say(errorNote(r.error).text);
+  if (ACCOUNTS) Object.assign(ACCOUNTS, { panes: r.data.panes, rows: r.data.rows }); // 연결 상태가 바뀌어 다시 그려도 저장한 값으로 그린다
 }
 
 function paneReset() {
@@ -3030,43 +3092,117 @@ function paneKey(e) {
   return true;
 }
 
-/** 끌기를 마친다. cancel이면 끌기 전 너비로 되돌린다(Esc·포인터를 빼앗길 때) */
+/* ── 결과 높이: 코드 칸 안에서 위(블록·편집기)와 결과 사이 손잡이(#sep-result)를 끌거나 글쇠로 옮긴다. 결과 칸의 몫(15~85)을 서버에 적어 다시 켜도 남는다 ── */
+let splitRows = null, splitBig = false; // 결과 칸의 몫(null이면 CSS 기본), '결과 크게 보기'를 켰는가(저장하지 않는다)
+/** 위와 결과의 지금 모습: 두 칸이 몫으로 나누는 높이(px), 결과 높이, 최소 높이(CSS의 min-height). 결과 칸의 안쪽 여백은 몫 밖이라 뺀다(빼지 않으면 끄는 손잡이가 포인터에서 밀린다) */
+function splitBase() {
+  const top = $("code-main"), box = $("result"), h = (el) => el.getBoundingClientRect().height, css = getComputedStyle(box);
+  const pad = parseFloat(css.paddingTop) + parseFloat(css.paddingBottom) + parseFloat(css.borderTopWidth) + parseFloat(css.borderBottomWidth);
+  return { span: h(top) + h(box) - pad, from: h(box) - pad, min: [parseFloat(getComputedStyle(top).minHeight) || 0, 0] };
+}
+
+/* split-pure:start 결과 높이 계산(DOM을 읽지 않는다. test_server.py가 이 둘레를 떼어 서버가 받는 범위와 맞는지 본다) */
+/** 결과를 want(px)로 키운 몫(%)을 돌려준다. 두 칸의 최소 높이 밖으로는 가지 않고, 서버가 받는 15~85 안에 둔다 */
+function splitNext(b, want) {
+  const px = Math.min(Math.max(Number(want) || 0, b.min[1]), Math.max(b.min[1], b.span - b.min[0]));
+  return b.span > 0 ? Math.min(85, Math.max(15, Math.round(10000 * px / b.span) / 100)) : 40;
+}
+/* split-pure:end */
+
+/** 몫을 화면에 적는다(null이면 기본). save가 참이면 잠깐 뒤 칸 너비와 함께 서버에 한 번 적는다 */
+function splitSet(rows, save) {
+  splitRows = rows;
+  splitBig = false;
+  splitShow();
+  if (!save) return;
+  clearTimeout(paneTimer);
+  paneTimer = setTimeout(paneSave, 400);
+}
+
+function splitShow() {
+  const rows = splitBig ? 85 : splitRows;
+  $("result").style.flexGrow = rows ?? "";
+  $("code-main").style.flexGrow = rows == null ? "" : 100 - rows;
+  $("result-big").textContent = splitBig ? "결과 원래 크기로" : "결과 크게 보기";
+  splitAria();
+}
+
+function splitReset() {
+  splitSet(null, true);
+  say("결과 칸 높이를 기본으로 돌렸어요.");
+}
+
+/** 손잡이의 값(위 칸이 두 칸의 합에서 차지하는 %)을 읽어 주는 도구에 알린다. Home은 위로(결과가 가장 크게), End는 아래로 */
+function splitAria() {
+  const sep = $("sep-result");
+  if (!sep.getClientRects().length) return;
+  const b = splitBase(), now = Math.round(100 * b.from / b.span);
+  sep.setAttribute("aria-valuenow", 100 - now);
+  sep.setAttribute("aria-valuemin", Math.round(100 - splitNext(b, Infinity)));
+  sep.setAttribute("aria-valuemax", Math.round(100 - splitNext(b, 0)));
+  sep.setAttribute("aria-valuetext", `결과 칸 ${now}%`);
+}
+
+function splitKey(e) {
+  if (e.ctrlKey || e.metaKey || e.altKey) return false;
+  const b = splitBase(), step = e.shiftKey ? 96 : 24;
+  const want = { ArrowUp: b.from + step, ArrowDown: b.from - step, Home: Infinity, End: 0 }[e.key];
+  if (want === undefined) return false; // 다루지 않는 키(Esc 등)는 다른 곳으로 넘긴다
+  e.preventDefault();
+  splitSet(splitNext(b, want), true);
+  return true;
+}
+
+/** 끌기를 마친다. cancel이면 끌기 전으로 되돌린다(Esc·포인터를 빼앗길 때) */
 function paneEnd(e, cancel) {
   const d = paneDrag;
   if (!d || (e.pointerId !== undefined && e.pointerId !== d.id)) return;
   paneDrag = null;
   cancelAnimationFrame(d.frame);
   d.sep.classList.remove("dragging");
-  document.body.classList.remove("resizing");
+  document.body.classList.remove("resizing", "rows");
   try { d.sep.releasePointerCapture(d.id); } catch { /* 이미 놓았다 */ }
-  if (cancel) return paneSet(d.before, false);
+  if (cancel) return d.undo();
   if (!d.moved) return; // 누르기만 했다(두 번 누르기의 첫 번째 같은)
-  if (e.clientX === d.x) return paneSet(d.before, false); // 처음 자리로 돌아와 놓았다. 프레임에 적힌 너비를 걷는다
-  paneMove(d.base, d.base.from + e.clientX - d.x, true);
+  if (e[d.axis] === d.x) return d.undo(); // 처음 자리로 돌아와 놓았다. 프레임에 적힌 값을 걷는다
+  d.move(e[d.axis] - d.x, true);
 }
 
 document.addEventListener("pointerdown", (e) => {
-  const sep = e.target.closest && e.target.closest(".sep");
+  const sep = e.target.closest && e.target.closest(".sep, .sep-row");
   if (!sep || e.button !== 0 || paneDrag) return;
   e.preventDefault(); // 글자 선택이 시작되지 않게
   sep.focus();
   sep.setPointerCapture(e.pointerId);
-  paneDrag = { sep, id: e.pointerId, x: e.clientX, base: paneBase(sep), before: paneShares && paneShares.slice(), frame: 0 };
+  const rows = sep.id === "sep-result", axis = rows ? "clientY" : "clientX";
+  let move, undo;
+  if (rows) { // 위로 끌면 결과가 커진다
+    const base = splitBase(), before = splitRows, big = splitBig;
+    move = (delta, save) => splitSet(splitNext(base, base.from - delta), save);
+    undo = () => { splitSet(before, false); splitBig = big; splitShow(); };
+  } else {
+    const base = paneBase(sep), before = paneShares && paneShares.slice();
+    move = (delta, save) => paneMove(base, base.from + delta, save);
+    undo = () => paneSet(before, false);
+  }
+  paneDrag = { sep, id: e.pointerId, axis, x: e[axis], move, undo, frame: 0 };
   sep.classList.add("dragging");
   document.body.classList.add("resizing");
+  if (rows) document.body.classList.add("rows");
 });
 document.addEventListener("pointermove", (e) => {
   const d = paneDrag;
   if (!d || e.pointerId !== d.id) return;
-  d.at = e.clientX;
+  d.at = e[d.axis];
   d.moved = true;
-  if (!d.frame) d.frame = requestAnimationFrame(() => { d.frame = 0; paneMove(d.base, d.base.from + d.at - d.x, false); }); // 한 프레임에 한 번
+  if (!d.frame) d.frame = requestAnimationFrame(() => { d.frame = 0; d.move(d.at - d.x, false); }); // 한 프레임에 한 번
 });
 document.addEventListener("pointerup", (e) => paneEnd(e, false));
 document.addEventListener("pointercancel", (e) => paneEnd(e, true));
-document.addEventListener("dblclick", (e) => { if (e.target.closest && e.target.closest(".sep")) paneReset(); });
+document.addEventListener("dblclick", (e) => { const sep = e.target.closest && e.target.closest(".sep, .sep-row"); if (sep) sep.id === "sep-result" ? splitReset() : paneReset(); });
 new ResizeObserver(paneAria).observe($("panes")); // 창이 바뀌거나 칸이 접히고 펴져도 값이 맞게
 for (const name of PANE) new ResizeObserver(paneAria).observe($(`pane-${name}`));
+new ResizeObserver(splitAria).observe($("code-main")); // 결과가 열리고 닫히거나 창 높이가 바뀌어도
 
 /* ── 이벤트 ── */
 document.addEventListener("click", (e) => {
@@ -3138,11 +3274,12 @@ document.addEventListener("click", (e) => {
     "to-explain": () => setMode("explain"),
     "compose-run": composeRun,
     "panes-reset": paneReset,
+    "result-big": () => { splitBig = !splitBig; splitShow(); },
     "problem-peek": () => { const open = $("panes").classList.toggle("peek"); el.setAttribute("aria-expanded", String(open)); el.textContent = open ? "문제 접기" : "문제 펼치기"; },
     "lang-yes": () => changeLanguage(S.langWant), "lang-no": () => { S.langWant = null; render(); $("p-lang-select").focus(); }, "debug-start": debugStart, "to-feedback": askFeedback, "fb-again": askFeedback, "fb-get": askFeedback,
     "old-feedback": () => { location.hash = `#/p/${S.pid}/feedback`; },
     "goto-line": gotoLine,
-    "prep-again": prepAgain, "prep-again-top": prepAgain,
+    "prep-again": prepAgain, "prep-again-top": prepAgain, "swap-guide": swapGuide,
     "cp-save": saveCheckpoint, "cp-restore": () => askCode("restore"), "code-clear": () => askCode("clear"),
     "code-yes": async () => {
       const run = S.codeAsk === "pull" && S.pullThenRun;
@@ -3278,6 +3415,7 @@ document.addEventListener("keydown", (e) => {
   }
   if (e.key === "Escape" && paneDrag) return paneEnd(e, true); // 끌던 것은 처음 너비로
   if (el.classList && el.classList.contains("sep") && paneKey(e)) return;
+  if (el.id === "sep-result" && splitKey(e)) return;
   if (e.key === "Escape" && $("more").open) { $("more").open = false; return $("more").querySelector("summary").focus(); }
   if (e.key === "Escape" && S.wayInfo && el.closest && el.closest("#view-code")) { // 펴진 방식 설명을 접고 그 ⓘ로 돌아온다
     const key = S.wayInfo; S.wayInfo = null; render();

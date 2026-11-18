@@ -47,7 +47,8 @@ def speak_messages(state: MainState, turn: TurnContext, move: MovePlan, system: 
     if aside:  # 그 말에는 답하지 않는다. 안내 문장은 엔진이 앞에 붙인다
         lines.append(f"사용자가 방금 {'답을 달라고 했다' if aside == 'A' else '문제와 무관한 말을 했다'}. 안내 문장은 앞에 따로 붙는다. "
                      "이 말이나 앞 대화의 부탁에 대해서는 아무 말도 하지 않고, 지금 블록을 겨눈 질문 한 문장만 쓴다.")
-    if turn.event == "block_filled" and move.target == turn.index:  # 코드 확인 턴은 말 턴과 다르다(코드를 질문으로 읽었다)
+    # 코드 확인 턴은 말 턴과 다르다(코드를 질문으로 읽었다). 통과한 마지막 블록의 정리 질문(advance)은 거절이 아니다
+    if turn.event == "block_filled" and move.target == turn.index and not move.advance:
         lines += [f"사용자가 방금 이 블록의 코드를 확인받았다. 질문을 한 것이 아니다. 적은 코드:\n{state['request'].code or ''}",
                   f"판정: 아직 넘어가지 않는다. 이 코드가 해내지 못한 것: {move.missing_signal}. 다음 질문은 이것 하나만 겨눈다. 다른 것을 묻지 않는다."]
     replying = turn.event == "message" and bool(turn.text) and not aside and move.move != "term"

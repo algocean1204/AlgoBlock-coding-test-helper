@@ -8,7 +8,7 @@ from ..common.talk_rules import RETRY_LEAD, open_lead
 
 OPEN_LEAD = open_lead("chair", "loop")  # 시험 계획의 둘째 블록은 반복이다
 from ..state import TurnContext, Verdict
-from ..turn.moves import FOUND_OK, FOUND_TIP, HINTS_DONE_UNFOUND, WRITE_TIP, WRITE_TIP_LAST, pick_move
+from ..turn.moves import FOUND_OK, HINTS_DONE_UNFOUND, WRITE_TIP, WRITE_TIP_LAST, pick_move
 
 PLAN = fakes.planned(fakes.hinted())
 
@@ -38,15 +38,29 @@ class ChairMoveTest(unittest.TestCase):
         got = pick_move("chair", plan, at(), Verdict(True, basis="g"))
         self.assertEqual((got.move, got.advance, got.saved), ("basis", False, None))
         asked = pick_move("chair", plan, at(basis_asked=True), Verdict(True, basis="g"))  # 문항에 한 번만
-        self.assertEqual((asked.move, asked.advance), ("open", True))
+        self.assertEqual((asked.move, asked.advance, asked.saved), ("write", False, WRITE_TIP))
         variable = self.pick(Verdict(True, basis="g"), text="이름을 세면 돼요", used=["open"])  # 변수 블록에서는 묻지 않는다
-        self.assertEqual((variable.move, variable.advance, variable.target, variable.lead, variable.saved), ("open", True, 1, OPEN_LEAD, fakes.HINTS2[0]))  # 찾은 블록의 안내(FOUND_TIP)는 이 말에 붙이지 않는다
+        self.assertEqual((variable.move, variable.advance, variable.target, variable.saved), ("write", False, 0, WRITE_TIP))
 
-    def test_found_with_basis_advances(self):
+    def test_found_by_words_writes_not_advances(self):
+        """의자에서 말로 맞혀도 다음 블록을 열지 않는다: 그 블록의 코드 칸에 적으라는 고정 말(모델 0회). 마지막 블록은 마지막 블록의 말."""
         got = self.pick(Verdict(True, basis="t"), text="문제에 제목이 같으면 같은 책이라고 있어서요")
-        self.assertEqual((got.move, got.target, got.advance), ("open", 1, True))
+        self.assertEqual((got.move, got.target, got.advance, got.saved), ("write", 0, False, WRITE_TIP))
         last = pick_move("chair", PLAN, turn(index=1), Verdict(True, basis="e"))
-        self.assertEqual((last.move, last.advance, last.saved), ("recap", True, None))
+        self.assertEqual((last.move, last.target, last.advance, last.saved), ("write", 1, False, WRITE_TIP_LAST))
+        asked = self.pick(Verdict(True, basis="t"), text="이름마다 세면 되나요?")  # 물음 꼴: 가이드처럼 스스로 확인하게 묻는다
+        self.assertEqual((asked.move, asked.advance, asked.saved), ("verify", False, None))
+        answered = self.pick(Verdict(False), text="3이 나와요", used=["open", "verify"])  # 확인 질문에 평서로 답했다
+        self.assertEqual((answered.move, answered.advance, answered.saved), ("write", False, WRITE_TIP))
+
+    def test_basis_answer_writes_or_is_judged(self):
+        """근거 질문의 답: 평서면 코드로 적으라는 고정 말, 물음 꼴이면 판정대로(넘기지 않는다)."""
+        plain = self.pick(None, text="문제에 제목이 같으면 같은 책이라고 해서요", used=["open", "basis"])
+        self.assertEqual((plain.move, plain.advance, plain.saved), ("write", False, WRITE_TIP))
+        asked = self.pick(Verdict(True, basis="t"), text="문제에 그렇게 적혀 있지 않나요?", used=["open", "basis"])
+        self.assertEqual((asked.move, asked.advance), ("verify", False))
+        wrong = self.pick(Verdict(False, miss=1), text="그냥 짐작인데 맞나요?", used=["open", "basis"])
+        self.assertFalse(wrong.advance)
 
     def test_missing_minor_signal_is_edge(self):
         got = self.pick(Verdict(False, miss=2), text="이름별로 세요")

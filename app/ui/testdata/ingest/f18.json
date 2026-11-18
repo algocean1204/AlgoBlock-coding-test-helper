@@ -1,0 +1,42 @@
+{
+ "id": "F18",
+ "note": "예시 없는 문제: 예시를 지어내지 않는다",
+ "raw": [
+  "가장 긴 오르막",
+  "",
+  "문제 설명",
+  "산길의 높이를 차례로 적은 배열 heights가 주어집니다.",
+  "바로 앞 칸보다 높은 칸이 이어지는 가장 긴 오르막의 칸 수를 return 하세요. 오르막은 한 칸부터 셉니다.",
+  "",
+  "제한사항",
+  "1 ≤ heights의 길이 ≤ 100,000",
+  "0 ≤ heights의 원소 ≤ 10^9"
+ ],
+ "expect": {
+  "verdict": "problem",
+  "mode": "function",
+  "title": "가장 긴 오르막",
+  "names": [],
+  "cases": [],
+  "sections": {
+   "title": [
+    "가장 긴 오르막"
+   ],
+   "body": [
+    "산길의 높이를"
+   ],
+   "limits": [
+    "1 ≤ heights의 길이"
+   ]
+  },
+  "absent": [],
+  "bounds": [
+   "1 ≤ heights의 길이 ≤ 100,000",
+   "0 ≤ heights의 원소 ≤ 10^9"
+  ],
+  "flags": {
+   "many_answers": false,
+   "float_output": false
+  }
+ }
+}

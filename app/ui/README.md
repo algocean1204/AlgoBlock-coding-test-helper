@@ -47,6 +47,7 @@ uv run -q --no-project --python 3.12 --with langgraph --with pypdf python -B ui/
 python3 -B ui/test_structure.py   # 저장소 구조
 python3 -B ui/test_publish.py     # 공개 전 검사(키, 개인 경로, 내부 이름, 큰 파일, 링크)
 node ui/test_highlight.js         # 코드 칸 문법 색
+uv run -q --no-project --python 3.12 --with langgraph --with pypdf python -B ui/test_flow.py   # 화면 흐름(처음 한 번 stageshow에서 npm ci --ignore-scripts)
 ```
 
 `test_server.py`는 unittest가 아니다. `main()`이 확인 함수를 차례로 부르고, 끝에 `ok`를 찍는다.
@@ -78,6 +79,7 @@ node ui/test_highlight.js         # 코드 칸 문법 색
 | `PretendardVariable.woff2`, `PretendardVariable-LICENSE.txt` | 맥 밖에서 쓰는 글꼴과 그 라이선스(SIL OFL 1.1). 맥은 시스템 글꼴을 쓴다 |
 | `icon.svg`, `favicon.svg` | 앱 아이콘과 파비콘 |
 | `test_server.py`, `test_update.py`, `test_structure.py`, `test_publish.py`, `test_highlight.js` | 화면 서버 시험, 업데이트 시험(`test_server.py`가 부른다), 저장소 구조 시험, 공개 전 검사, 문법 색 시험(Node) |
+| `test_flow.py`, `flow/` | 화면 흐름 시험. 서버를 가짜 모델로 띄우고 `flow/*.mjs`를 브라우저로 돌린다. 브라우저는 `stageshow/scripts/browser.mjs`의 `launch()`로 연다 |
 | `data/` | 사용자 데이터 폴더. git에서 빠진다. 들어 있는 파일은 [Docs/architecture/data.md](../../Docs/architecture/data.md)에 있다 |
 
 ## 서버 API
@@ -102,6 +104,8 @@ POST, 문제와 무관한 것 16개
 | `/api/problems/delete` | 등록한 문제와 그 기록 지우기 |
 | `/api/problems/read` | 올린 파일에서 글 읽기(저장하지 않는다) |
 | `/api/problems/cases` | 입출력 예 표나 예제 구역에서 케이스 찾기(모델 0회) |
+| `/api/problems/detect` | 붙여 넣은 글에서 방식·예시·제목·수 범위·줄마다의 구역 찾기(저장하지 않는다). `fast: true`면 규칙만(모델 0회), 아니면 연결돼 있을 때 문제 나누기 모델로 보탠다(1~2회. 공급자 연결은 모양이 깨진 답을 한 번 더 요청한다). `touched`로 보낸 칸은 덮지 않고 `suggest`에 싣는다 |
+| `/api/problems/prepare` | 문제 글로 보이지 않아 미뤄 둔 등록 문제의 준비를 시작한다 |
 | `/api/tools` | 언어 도구 있음·없음. `refresh: true`면 다시 센다 |
 | `/api/accounts` | 연결 상태, 키 있음, 과정별 급과 모델 이름, 주제 목록, 마지막 언어, `tour_seen`, `scheme`, 칸 너비 `panes` |
 | `/api/tour` | 처음 안내를 봤다고 적는다 |
