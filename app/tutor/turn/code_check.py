@@ -32,6 +32,7 @@ from .pairs import pair_block
 from ..debug.rules import batchim, call_text
 from ..llm import cached_user
 from ..common.progress_view import active_plan, current_index, found_check
+from ..save.respond import shown_count
 from ..common.verdict import FOUND_RULE, ask_verdict
 from ..state import BlockState, MainState, Verdict
 
@@ -100,6 +101,11 @@ WHILE_NOTE = "반복을 끝내는 줄(값을 늘리거나 줄이는 줄)을 뒤 
 HOLD_PARAMS = ("튜터가 채운 다음 블록 코드는 이 블록의 함수를 {names} 차례로 넘겨 불러요. 내 함수의 매개변수가 그 차례의 어느 값인지 찾지 못해 이어 돌리지 못했어요. "
                "내 매개변수를 그 차례와 이름으로 바꾸거나, 맞다고 생각하면 '이대로 넘어가기'를 눌러요.")
 # 반복 안에서 시작해 밖에서 끝나는 블록을 평평하게 적으면 바깥 줄도 반복 안에 놓였다(Python만)
+# 의자에서 이름이 아직 가려진 블록(찾기 전): 튜터 코드의 이름은 곧 찾을 답이라 위 세 말 대신 이름 없이 말한다
+HOLD_HIDDEN = ("튜터가 채운 다음 블록 코드가 이 블록에서 받아 쓰는 값을 내 코드에서 찾지 못해 이어 돌리지 못했어요. "
+               "이 블록을 찾으면 튜터가 쓰는 이름이 보여요. 맞다고 생각하면 '이대로 넘어가기'를 눌러요.")
+GUESSED_CUT_HIDDEN = ("튜터의 코드와 이을 이름의 짝을 시간 안에 다 돌려 보지 못해서 이어지지 않는 건지 확인하지 못했어요. "
+                      "맞다고 생각하면 '이대로 넘어가기'를 눌러요.")
 INDENT_NOTE = "이 블록은 앞 블록에서 연 반복이나 조건 안에서 시작해요. 그 밖에서 할 일이 있으면 그 줄을 첫 줄보다 덜 들여 써 주세요."
 KIND_WORD = {"compile_error": "컴파일 오류", "runtime_error": "실행 오류"}
 
@@ -113,14 +119,19 @@ def code_hash(code: str) -> str:
     return hashlib.sha256(kept_code(code).encode("utf-8")).hexdigest()
 
 
-def hold_name(names: list[str], params: bool = False) -> str:
+def hold_name(names: list[str], params: bool = False, hide: bool = False) -> str:
+    """hide: 의자에서 이름이 아직 가려진 블록이다(이름을 싣지 않는다)."""
+    if hide:
+        return HOLD_HIDDEN
     names = list(dict.fromkeys(names))
     return (HOLD_PARAMS if params else HOLD_NAME).format(names=", ".join(f"`{name}`" for name in names), josa="이라는" if names and batchim(names[-1]) else "라는")
 
 
-def assumed(pairs: list[list[str]], cut: bool = False) -> str:
+def assumed(pairs: list[list[str]], cut: bool = False, hide: bool = False) -> str:
     """어림 짝 문장. pairs: [[내 이름, 계획 이름], …]. 같은 이름끼리의 짝은 말하지 않는다. cut: 다른 짝을 다 시도하지 못했다(짝 말이 비어도 그 사실은 말한다).
-    둘 다 없으면 빈 글."""
+    둘 다 없으면 빈 글. hide: 의자에서 이름이 아직 가려진 블록이다(짝을 말하지 않고, 다 시도하지 못했으면 그 사실만)."""
+    if hide:
+        return GUESSED_CUT_HIDDEN if cut else ""
     shown = [f"`{m}` → `{p}`" for m, p in pairs if m != p]
     return ((GUESSED.format(pairs=", ".join(shown)) if shown else "") + (GUESSED_CUT if cut else "")).strip()
 
@@ -407,6 +418,11 @@ def _recreated(name: str, later: list[str], language: str, program: bool) -> boo
     return False
 
 
+def name_hidden(state: MainState, index: int) -> bool:
+    """의자에서 이름이 아직 가려진 블록(말로 찾거나 끝내기 전)을 확인한다: 확인 말에 튜터 코드의 이름을 싣지 않는다. 가이드는 언제나 False."""
+    return state["request"].mode == "chair" and index >= shown_count(state["ctx"], "chair")
+
+
 def run_verdict(state: MainState, plan, index: int, code: str, check) -> dict | None:
     """실행 판정. 모델에 넘길 때는 None. 돌려주는 것: verdict, stored(저장할 짝 [[내 이름, 계획 이름], …]), told(알릴 굳은 짝), fixes(다시 고른 앞 블록 상태).
     이어 붙이는 것은 지금 화면의 글 그대로다 — 저장된 블록(적었거나 채운 블록, 앞이든 뒤든)은 저장된 글, 지금 블록은 넣은 글, 나머지는 계획 코드(표로 이름을 바꿈).
@@ -537,18 +553,19 @@ def run_verdict(state: MainState, plan, index: int, code: str, check) -> dict | 
     loop = lambda text, word: re.search(rf"(^|\s){word}\b", "\n".join(body_lines(text, language, program)))  # noqa: E731
     status, timeout = told.get("status"), told.get("status") == "timeout"
     unchecked = [i for i in sorted(mine) if states[plan.blocks[i].id].verdict == "?"]  # 이 실행에 글이 들어간 확인 전 블록(이대로 넘어가기 등)
+    hide = name_hidden(state, index)
     if not timeout and info.params:
-        got = Verdict(False, seen=hold_name(info.params, params=True), hint=False, unsure=True)
+        got = Verdict(False, seen=hold_name(info.params, params=True, hide=hide), hint=False, unsure=True)
     elif not timeout and (no_pair or lost):
         # 짝이 없는 이름 하나만 말해 같은 블록을 세 번 확인했다. 어림으로만 이은 이름(굳은 짝·그대로 쓴 이름·앞 블록의 짝은 빼고)도 한 번에 말한다
         unsure = [n for n in info.candidates if n not in no_pair and n in later_words and not any(n in base[i] for i in later) and n not in info.own
                   and n not in fn and not _recreated(n, [refs[i] for i in later], language, program)]
         names = [n for n in info.open if n in no_pair or n in unsure]
-        got = Verdict(False, seen=hold_name(names + ([missing] if lost else [])), hint=False, unsure=True)
+        got = Verdict(False, seen=hold_name(names + ([missing] if lost else []), hide=hide), hint=False, unsure=True)
     elif ctx.many_answers and status == "failed":  # 답이 여럿일 수 있는 문제: 예시의 답과 다르다는 것만으로는 맞는지 모른다
         got = Verdict(False, seen=MANY_ANSWERS, hint=False, unsure=True)
     else:
-        note = assumed([[m, p] for p, m in guessed.items()], cut)  # 어림 짝으로 이었다면 그 가정을 사실로 말한다. 다 시도하지 못했으면 그 사실도
+        note = assumed([[m, p] for p, m in guessed.items()], cut, hide)  # 어림 짝으로 이었다면 그 가정을 사실로 말한다. 다 시도하지 못했으면 그 사실도
         got = failure_verdict(told, spans, program, lead, not plan_blocks, note, cut, unchecked)
         # while을 열었다: 시간 초과면 언제나, 그 밖의 실패도 계획이 이 자리를 for로 열고 뒤 블록을 계획 코드로 이었으면(증가가 뒤 블록에 없다)
         if loop(code, "while") and (timeout or (later and loop(refs[index], "for") and not loop(refs[index], "while"))):

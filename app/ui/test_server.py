@@ -1089,6 +1089,22 @@ def same_check_once() -> None:
     assert "r.data.repeated) S.note.blocks = { type: \"warn\", text: REPEATED }" in js
 
 
+def chair_check_hides_names() -> None:
+    """의자에서 이름이 아직 가려진 블록의 코드 확인은 튜터 코드의 이름을 말하지 않는다(모델 0회). 첫 질문이 그 그릇을 묻는데,
+    이어 돌리지 못한 까닭으로 튜터 코드의 변수 이름을 알려 주면 그것이 곧 답이었다. 블록 칸의 결과 줄은 이 말의 첫 문장이다. 가이드는 이름을 말한다(same_check_once)."""
+    import re
+    pid = "hash_2_steady_climbers"
+    names = {m for b in next(r for r in ROWS if r["id"] == pid)["ready"]["plan"]["blocks"] for m in re.findall(r"^\s*([A-Za-z_]\w*)\s*=", b["reference"], re.M)}
+    assert names, pid
+    call("/api/reset", id=pid)
+    call("/api/turn", id=pid, mode="chair", event="start")
+    body = call("/api/turn", id=pid, mode="chair", event="block_filled", block_id="b1", code="x = 1")[1]
+    said = body["messages"][-1]["text"]
+    assert body["unsure"] and body["blocks"][0]["name"] is None and said, body
+    assert not [n for n in names if re.search(rf"\b{n}\b", said)], said
+    call("/api/reset", id=pid)
+
+
 def result_guides() -> None:
     """채점 결과와 방식 화면의 안내(화면 코드 확인): 큰 입력의 실행 오류는 시간 부족이라 하지 않고, 효율성만 실패하면 ‘틀린 곳 같이 찾기’가 없는 까닭을 말하며,
     튜터 방식 전환 단추는 무엇이 바뀌는지 말한다. 브라우저 동작은 화면 확인으로 본다."""
@@ -3507,6 +3523,7 @@ def main() -> None:
         chair_found()
         guide_spoken()
         same_check_once()
+        chair_check_hides_names()
         result_guides()
         block_cell_both_ways()
         language_memory()

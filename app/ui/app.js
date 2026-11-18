@@ -108,6 +108,7 @@ const S = {
   langWant: null, // 바꾸려는 언어(확인을 기다리는 중)
   codeAsk: null, // 코드 칸 확인을 기다리는 일: restore(체크포인트로 되돌리기), clear(초기화), pull(블록 코드 가져오기로 바꾸기)
   fillAsk: null, // '이 블록 채우기'로 적은 코드를 바꿀지 묻는 블록 id
+  ownAsk: null, // 의자에서 '끝까지 내 방식으로 쓰기'를 묻는 블록 id(찾지 않은 뒤 블록의 이름이 보인다)
   casesOpen: null, // 케이스 목록을 사용자가 펼쳤는지(null이면 기본값)
   quote: null, // 꼬리질문을 열어 둔 튜터 말 id
   sending: null, // 보내는 중인 내 말 {where, text}
@@ -369,7 +370,7 @@ function showSettings(part, from) {
 function route() {
   flushSaves();
   // 화면을 옮기면(뒤로 가기 포함) 코드 칸·블록·문제의 확인 줄과 원본 보기 창을 닫는다(돌아왔을 때 남은 확인 줄을 눌러 코드를 잃지 않게)
-  S.codeAsk = S.fillAsk = null;
+  S.codeAsk = S.fillAsk = S.ownAsk = null;
   $("reset-confirm").hidden = $("del-confirm").hidden = true;
   $("reset").hidden = $("p-edit").hidden = $("p-delete").hidden = false;
   if ($("asset").open) closeAsset();
@@ -1133,7 +1134,7 @@ const closeAsset = () => { const box = $("asset"); box.close ? box.close() : box
 /* ── 05–08 코드 화면 ── */
 function clearProblem(pid) {
   Object.assign(S, { pid, problem: null, session: null, hasFeedback: false, mode: null, choosing: false, soloOpen: null, talk: "chair", codeTab: "direct", blockCode: {}, result: null,
-    quote: null, sending: null, debug: null, note: {}, codeNote: "", fb: null, solo: null, langWant: null, codeAsk: null, fillAsk: null, prepAt: 0, keptNote: false, keptSeen: false, nextUp: null, pullThenRun: false, tagsOpen: false });
+    quote: null, sending: null, debug: null, note: {}, codeNote: "", fb: null, solo: null, langWant: null, codeAsk: null, fillAsk: null, ownAsk: null, prepAt: 0, keptNote: false, keptSeen: false, nextUp: null, pullThenRun: false, tagsOpen: false });
   for (const id of ["code", "say", "fq-text", "debug-say", "run-input"]) $(id).value = "";
   for (const id of ["p-title", "p-text", "blocks", "chat-log", "explain-box", "start-box", "result", "solo-box"]) $(id).innerHTML = "";
   for (const id of ["result", "sep-result", "result-big", "debug-sheet", "composer", "fq-composer", "chat-log", "explain-box", "old-feedback", "solo-box", "lang-confirm"]) $(id).hidden = true;
@@ -1402,7 +1403,8 @@ function renderBlocks() {
         <div class="block-actions">
           ${check ? `<button type="button" class="btn small" data-check="${esc(b.id)}" data-model${current ? "" : ` aria-label="블록 ${n} 코드 확인"`}>블록 코드 확인</button>` : ""}
           ${skip ? `<button type="button" class="btn quiet small" data-skip="${esc(b.id)}">이대로 넘어가기</button>` : ""}
-          ${skip && !S.ownWay ? `<button type="button" class="btn quiet small" data-own="${esc(b.id)}" title="이 블록은 넘어가고 남은 블록을 모두 열어요. 블록마다 확인하지 않고, 다 쓴 뒤 ‘모아서 실행’으로 확인해요">끝까지 내 방식으로 쓰기</button>` : ""}
+          ${skip && !S.ownWay ? (S.ownAsk === b.id ? `<span class="confirm"><span>아직 찾지 않은 뒤 블록이 모두 열려요. 마지막 블록을 뺀 블록은 이름도 보여요.</span><button type="button" class="btn danger small" data-own-yes="${esc(b.id)}">그래도 열기</button><button type="button" class="btn quiet small" data-own-no="${esc(b.id)}">더 생각해 보기</button></span>`
+            : `<button type="button" class="btn quiet small" data-own="${esc(b.id)}" title="이 블록은 넘어가고 남은 블록을 모두 열어요. 블록마다 확인하지 않고, 다 쓴 뒤 ‘모아서 실행’으로 확인해요">끝까지 내 방식으로 쓰기</button>`) : ""}
           ${S.fillAsk === b.id ? (unfound ? `<span class="confirm"><span>아직 찾지 못한 블록이에요. 채우면 이 블록의 이름과 튜터의 코드가 보여요.</span><button type="button" class="btn danger small" data-fill-yes="${esc(b.id)}" data-model>그래도 채우기</button><button type="button" class="btn quiet small" data-fill-no="${esc(b.id)}">더 생각해 보기</button></span>`
       : `<span class="confirm"><span>적은 코드를 튜터의 코드로 바꿀까요?</span><button type="button" class="btn danger small" data-fill-yes="${esc(b.id)}" data-model>바꾸기</button><button type="button" class="btn quiet small" data-fill-no="${esc(b.id)}">그대로 두기</button></span>`)
     : `<button type="button" class="btn quiet small" data-fill="${esc(b.id)}" data-model${current ? "" : ` aria-label="블록 ${n} 채우기"`}>이 블록 채우기</button>`}
@@ -3174,7 +3176,14 @@ document.addEventListener("click", (e) => {
   if (el.dataset.fillNo) { S.fillAsk = null; render(); return void document.querySelector(`[data-fill="${CSS.escape(el.dataset.fillNo)}"]`).focus(); }
   if (el.dataset.check) return void checkBlock(el.dataset.check);
   if (el.dataset.skip) return void skipBlock(el.dataset.skip);
-  if (el.dataset.own) return void ownWayBlock(el.dataset.own);
+  if (el.dataset.own) { // 의자는 찾지 않은 뒤 블록의 이름이 보이니 먼저 묻는다('이 블록 채우기'와 같다)
+    if (S.talk !== "chair" || S.session.open_count >= S.session.blocks.length) return void ownWayBlock(el.dataset.own);
+    S.ownAsk = el.dataset.own;
+    render();
+    return void document.querySelector(`[data-own-no="${CSS.escape(S.ownAsk)}"]`).focus();
+  }
+  if (el.dataset.ownYes) { S.ownAsk = null; return void ownWayBlock(el.dataset.ownYes); }
+  if (el.dataset.ownNo) { S.ownAsk = null; render(); return void document.querySelector(`[data-own="${CSS.escape(el.dataset.ownNo)}"]`).focus(); }
   if (el.hasAttribute("data-own-off")) return void ownWayOff();
   if (el.dataset.theme) return void setTheme(el.dataset.theme, el.dataset.pick, el.dataset.effort);
   if (el.closest("#more .more-menu") && el.id !== "reset") $("more").open = false; // 더 보기에서 고르면 닫는다. 처음부터의 물음만 그 단추 자리에서 묻는다

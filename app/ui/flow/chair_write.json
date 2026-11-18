@@ -1,8 +1,7 @@
 {
   "env": {"ANTHROPIC_API_KEY": "flow-test-key"},
   "scripts": {
-    "chair.judge": ["[check]Y g", "[check]Y t", "[check]Y g", "[check]Y t"],
-    "chair.ask": ["그렇게 생각한 근거는 문제 글에 있나요, 짐작인가요?", "그렇게 생각한 근거는 문제 글에 있나요, 짐작인가요?"],
-    "guide.judge": ["[check]Y g", "[check]Y g"]
+    "chair.judge": ["[check]Y g", "[check]Y g"],
+    "chair.ask": ["그렇게 생각한 근거는 문제 글에 있나요, 짐작인가요?", "그렇게 생각한 근거는 문제 글에 있나요, 짐작인가요?"]
   }
 }

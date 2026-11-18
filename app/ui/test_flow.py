@@ -65,7 +65,8 @@ class Quiet(SimpleHTTPRequestHandler):
 @contextmanager
 def scripted(script: Path):
     """같은 이름의 .json이 있으면 그 흐름 동안만 가짜 모델에 응답 대본({"scripts": {task: [응답…]}})을 걸고 환경 변수({"env": {…}})를 둔다.
-    대본이 있는 흐름의 모델 호출은 허용하고(끝나면 기록을 비운다), 대본이 없는 흐름은 모델을 부르면 실패한다. 환경은 끝나면 되돌린다."""
+    대본이 답한 호출은 허용하고(그 흐름 동안 쌓인 기록에서 그만큼 지운다), 대본 밖의 호출과 대본이 없는 흐름의 호출은 남아 실패가 된다.
+    쓰지 않고 남은 대본은 main이 실패로 센다. 환경은 끝나면 되돌린다."""
     plan = script.with_suffix(".json")
     if not plan.exists():
         yield
@@ -74,10 +75,18 @@ def scripted(script: Path):
     saved = {name: os.environ.get(name) for name in data.get("env", {})}
     os.environ.update(data.get("env", {}))
     FAKE.scripts = {task: list(items) for task, items in data.get("scripts", {}).items()}
+    budget, start = {task: len(items) for task, items in FAKE.scripts.items()}, len(FAKE.calls)
     try:
         yield
     finally:
-        FAKE.scripts, FAKE.calls[:] = {}, []
+        mine = FAKE.calls[start:]
+        del FAKE.calls[start:]
+        for call in mine:
+            if budget.get(call["task"], 0) > 0:
+                budget[call["task"]] -= 1
+            else:
+                FAKE.calls.append(call)
+        FAKE.scripts = {}
         for name, value in saved.items():
             os.environ.pop(name, None) if value is None else os.environ.__setitem__(name, value)
 
@@ -113,9 +122,12 @@ def main() -> bool:
             for script in scripts:
                 with scripted(script):
                     out = run(script, base, shots)
+                    left = {task: len(items) for task, items in FAKE.scripts.items() if items}
                 print(f"== {script.name}\n{out.stdout}{out.stderr}", end="", flush=True)
                 if out.returncode:
                     failed.append(script.name)
+                if left:
+                    failed.append(f"{script.name}: 쓰지 않은 대본 {left}")
         finally:
             httpd.shutdown()
             httpd.server_close()
