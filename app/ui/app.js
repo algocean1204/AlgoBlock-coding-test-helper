@@ -1147,6 +1147,7 @@ async function registerProblem(sure) {
   EDIT = null;
   emptyForm(); // 등록하면 초안은 비운다
   WSTEP = 1;
+  delete KEPT[r.data.id]; // 고치기 전에 담아 둔 보내지 않은 글과 결과도 버린다(예전 케이스로 받은 결과다)
   S.pid = null; // 고친 문항을 다시 열 때 예전 글을 쓰지 않게 새로 받는다
   location.hash = `#/p/${r.data.id}`;
 }
@@ -1314,7 +1315,7 @@ async function swapGuide() {
   try {
     const r = await api("/api/swap", { id: pid });
     if (S.pid !== pid) return;
-    if (r.ok) { Object.assign(S, { blockCode: {}, debug: null, quote: null, prepAt: 0 }); S.note.start = null; }
+    if (r.ok) { Object.assign(S, { blockCode: {}, debug: null, quote: null, prepAt: 0, tried: null }); S.note.start = null; } // 대화가 지워졌으니 준비가 끝나면 다시 시작한다
     await loadState();
     say(r.ok && S.problem.preparing ? "튜터가 새 풀이로 풀이 순서를 다시 준비해요." : "");
   } finally { prepAsking = false; }
@@ -2068,7 +2069,8 @@ function tutorNote(mode) {
   if (S.problem.preparing) return `${about}<div class="note" role="status">${DOTS}<span>튜터가 이 문제의 풀이 순서를 준비하고 있어요. 끝나면 바로 시작해요. <span class="secs" data-since="${S.prepAt}">${since(S.prepAt)}초</span> · <span data-late="30초쯤 걸려요">${late(since(S.prepAt), "30초쯤 걸려요")}</span></span></div>`;
   if (S.problem.prepare_failed && !S.note.start) return about + noteHtml(PREP_FAILED); // 뒤에서 준비하다 실패했다: 다시 준비(미리 만들기를 다시 탄다)
   if (S.note.start) return about + noteHtml(S.note.start);
-  return S.startAfter ? `${about}<p class="hint">지금 하는 일이 끝나면 바로 시작해요.</p>` : "";
+  if (S.startAfter) return `${about}<p class="hint">지금 하는 일이 끝나면 바로 시작해요.</p>`;
+  return S.tried === mode ? `${about}<button type="button" class="btn small" id="start-again" data-model>다시 시작</button>` : ""; // 시작한 뒤 대화가 지워졌다: 스스로 다시 시작하지 않으니 단추를 둔다
 }
 
 function renderTutor() {
@@ -3308,6 +3310,7 @@ document.addEventListener("click", (e) => {
       if (S.pid !== pid) return;
       if (!r.ok) { $("code-error").textContent = errorNote(r.error).text; return void ($("code-error").hidden = false); }
       clearProblem(pid);
+      delete KEPT[pid]; // 담아 둔 보내지 않은 글과 결과도 버린다
       say("처음 상태로 돌렸어요.");
       await loadState();
     },

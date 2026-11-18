@@ -16,6 +16,7 @@ const PID = 'hash_1_popular_shelf' // 미리 만든 풀이 순서(계획)가 실
 const builtin = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'builtin.json'), 'utf8'))
 const FRESH = builtin.filter((p) => p.id !== PID && p.ready && p.solutions && p.solutions.python)
 const within = (promise, ms, what) => Promise.race([promise, new Promise((_, no) => setTimeout(() => no(new Error(`${what}: ${ms}ms 넘음`)), ms))])
+const DRAFT_IDS = ['say', 'fq-text', 'debug-say', 'run-input'] // 문제마다 담아 두는 보내지 않은 글 칸
 const chatShown = (p) => p.waitForFunction(() => { const el = document.getElementById('chat-log'); return el && !el.hidden && el.innerText.trim().length > 0 }, null, { timeout: 8000 })
 const VIEWPORTS = [{ width: 1366, height: 689 }, { width: 1093, height: 551 }]
 const TAB = (way) => `#way-tabs [role="tab"][data-way="${way}"]`
@@ -222,7 +223,73 @@ for (const viewport of VIEWPORTS) {
     if (!(await race.locator('#chat-log').isVisible()) || (await race.locator('#chat-log').innerText()) !== first) throw new Error('늦은 상태 응답이 대화를 옛 상태로 덮었다')
   })
 
-  // 9. 연결이 없으면 튜터 탭 안에 연결 안내 카드(탭은 그대로 보이고, 모델은 부르지 않는다). 그 탭은 방식으로 남지 않는다
+  // 9. 더 정확한 풀이로 바꿔 끼우면(대화가 지워진다) 튜터가 한 번 더 시작한다. 시작한 뒤 대화만 지워지면 '다시 시작' 단추가 남는다
+  const swapper = FRESH.shift()
+  const swap = await open(context, viewport, true, problems, swapper.id)
+  let swapStarts = 0, better = true
+  swap.on('request', (r) => { if (r.url().endsWith('/api/turn') && r.postDataJSON()?.event === 'start') swapStarts++ })
+  const wipe = () => swap.request.post(`${base}/api/reset`, { data: { id: swapper.id } }) // 서버의 대화를 지운다(계획은 남는다)
+  await swap.route('**/api/state', async (route) => { // 바꿔 끼울 풀이가 있는 등록 문제처럼 보이게 한다(기본 문제에는 그 단추가 없다)
+    const res = await route.fetch(), body = await res.json()
+    return route.fulfill({ response: res, json: { ...body, problem: { ...body.problem, sample: false, better } } })
+  })
+  await swap.route('**/api/swap', async (route) => { await wipe(); better = false; return route.fulfill({ json: { ok: true } }) })
+  await need('의자를 시작한 뒤 바꿔 끼우면 한 번 더 시작한다', async () => {
+    await tabReady(swap, 'solo')
+    await swap.locator(TAB('chair')).click()
+    await chatShown(swap)
+    if (swapStarts !== 1) throw new Error(`처음 시작 요청 ${swapStarts}회`)
+    const again = swap.waitForResponse((r) => r.url().endsWith('/api/turn'), { timeout: 5000 })
+    await swap.locator('#swap-guide').click()
+    await again
+    await chatShown(swap)
+    if (swapStarts !== 2) throw new Error(`시작 요청 ${swapStarts}회`)
+  })
+  await need('시작한 뒤 대화가 지워지면 스스로 다시 시작하지 않고 다시 시작 단추를 둔다', async () => {
+    await wipe()
+    await swap.evaluate(() => loadState())
+    await swap.locator('#start-again').waitFor({ state: 'visible', timeout: 3000 })
+    if (swapStarts !== 2) throw new Error(`스스로 다시 시작했다(${swapStarts}회)`)
+    await swap.locator('#start-again').click()
+    await chatShown(swap)
+    if (swapStarts !== 3) throw new Error(`다시 시작 단추가 시작하지 않았다(${swapStarts}회)`)
+  })
+
+  // 10. 문제를 고쳐 저장하고 돌아오면, 고치기 전에 담아 둔 보내지 않은 글과 결과 줄을 되살리지 않는다
+  let ed = null, ownId = null
+  const edGo = (h) => ed.evaluate((x) => { location.hash = x }, h)
+  const edAt = (pid, title) => ed.waitForFunction(([id, t]) => location.hash === `#/p/${id}` && (t ? document.getElementById('p-title')?.textContent.trim() === t : document.getElementById('p-title')?.textContent.trim().length > 0), [pid, title], { timeout: 5000 })
+  await need('등록한 문제에서 넣을 값을 적어 두고 예시를 실행한다', async () => {
+    const res = await page.request.post(`${base}/api/problems/new`, { data: { title: '두 수의 합', text: `두 정수 a, b의 합을 return 하도록 solution 함수를 완성하세요. (${tag})`, language: 'python', mode: 'function',
+      cases: [{ input: '[1, 2]', expected: '3' }, { input: '[5, 5]', expected: '10' }] } })
+    if (!res.ok()) throw new Error(`등록 ${res.status()}`)
+    ownId = (await res.json()).id
+    ed = await open(context, viewport, true, problems, ownId)
+    await tabReady(ed, 'solo')
+    await ed.locator('#code').fill('def solution(a, b):\n    return a + b\n')
+    await ed.locator('#run-own summary').click()
+    await ed.locator('#run-input').fill('[7, 8]')
+    await ed.locator('#run').click()
+    await ed.locator('#result .verdict').waitFor({ state: 'visible', timeout: 15000 })
+  })
+  await need('다른 문제를 열었다 돌아오면 그 글과 결과 줄이 남아 있다', async () => {
+    await edGo(`#/p/${other.id}`); await edAt(other.id)
+    await edGo(`#/p/${ownId}`); await edAt(ownId)
+    if ((await ed.locator('#run-input').inputValue()) !== '[7, 8]') throw new Error('넣을 값이 사라졌다')
+    await ed.locator('#result .verdict').waitFor({ state: 'visible', timeout: 2000 })
+  })
+  await need('고쳐 저장한 뒤에는 글 칸이 비고 결과 줄이 없다', async () => {
+    await edGo(`#/edit/${ownId}`)
+    await ed.waitForFunction(() => document.getElementById('new-title')?.value.trim().length > 0, null, { timeout: 5000 })
+    await ed.locator('#new-title').fill('두 수의 합 고침')
+    await ed.locator('#new-next').click()
+    await ed.locator('#new-submit').click()
+    await edAt(ownId, '두 수의 합 고침')
+    for (const id of DRAFT_IDS) if ((await ed.locator(`#${id}`).inputValue()) !== '') throw new Error(`#${id}에 고치기 전 글이 돌아왔다`)
+    if (await ed.locator('#result .verdict').count()) throw new Error('고치기 전 케이스로 받은 결과 줄이 돌아왔다')
+  })
+
+  // 11. 연결이 없으면 튜터 탭 안에 연결 안내 카드(탭은 그대로 보이고, 모델은 부르지 않는다). 그 탭은 방식으로 남지 않는다
   const off = await open(await browser.newContext(), viewport, false, problems)
   const kept = [] // 연결이 없을 때 보낸 방식 저장 요청
   off.on('request', (r) => { if (r.url().endsWith('/api/way')) kept.push(r.postDataJSON()?.way) })
