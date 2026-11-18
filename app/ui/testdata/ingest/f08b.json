@@ -1,0 +1,26 @@
+{
+ "id": "F08b",
+ "note": "문제가 아닌 글: 조리법",
+ "raw": [
+  "감자 볶음",
+  "재료: 감자 2개, 양파 반 개, 소금 약간, 식용유 2큰술",
+  "1. 감자는 껍질을 벗기고 얇게 채 썬다.",
+  "2. 찬물에 10분 담가 전분을 뺀다.",
+  "3. 달군 팬에 기름을 두르고 감자와 양파를 넣어 중불에서 5분 볶는다.",
+  "4. 소금으로 간을 맞춘다."
+ ],
+ "expect": {
+  "verdict": "not_problem",
+  "mode": null,
+  "title": null,
+  "names": [],
+  "cases": [],
+  "sections": {},
+  "absent": [],
+  "bounds": [],
+  "flags": {
+   "many_answers": false,
+   "float_output": false
+  }
+ }
+}

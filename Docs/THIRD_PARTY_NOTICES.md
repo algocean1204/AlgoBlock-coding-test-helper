@@ -11,6 +11,7 @@
 | Stageshow 키트 (Benji Taylor) | 처음 안내의 움직이는 데모와 README 그림. 사본은 `app/ui/stageshow/kit/`와 `scripts/`(다른 회사 로고 그림은 뺐다), 빌드한 묶음 `app/ui/tour-demos.js`·`tour-demos.css`에도 들어 있다 | MIT — 전문은 `app/ui/stageshow/LICENSE-stageshow.txt`, 고지는 `NOTICE-stageshow.md` |
 | React, React DOM 18.3.1 (scheduler 0.23.2 포함) | `app/ui/tour-demos.js`에 묶여 있다(안내 데모만 쓴다) | MIT |
 | lucide-react 0.468.0 (아이콘) | `app/ui/tour-demos.js`에 묶여 있다(안내 데모의 자물쇠·체크 기호) | ISC (일부는 Feather에서 온 MIT) |
+| KaTeX 0.19.1 (수식 표시. Khan Academy와 기여자) | `app/ui/katex/`의 `katex.min.js`, `katex.min.css`(글꼴 주소는 woff2만 가리키게 고쳤다), `fonts/*.woff2`. 문제 글에 수식이 있을 때만 불러온다 | MIT — 전문은 `app/ui/katex/LICENSE-katex.txt`와 아래 'KaTeX 라이선스' |
 
 안내 데모를 다시 빌드할 때만 쓰는 도구(Vite, TypeScript, @vitejs/plugin-react, playwright-core)는 저장소와 설치 파일에 들어가지 않는다(`app/ui/stageshow/package.json`).
 
@@ -124,6 +125,32 @@
 MIT License
 
 Copyright (c) 2023 Phosphor Icons
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+## KaTeX 라이선스
+
+```text
+The MIT License (MIT)
+
+Copyright (c) 2013-2020 Khan Academy and other contributors
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

@@ -73,7 +73,7 @@ for (const lang of LANGS) {
 
 // 4. 화면 스크립트에 macOS 12 웹뷰가 모르는 문법이 없다(주석은 뺀다). 뒤돌아보기 정규식은 문법 오류라 파일 전체가 죽는다
 const UNSUPPORTED = [[/\(\?<[=!]/, "정규식 뒤돌아보기"], [/\.at\(/, "Array.prototype.at"], [/\bObject\.hasOwn\b/, "Object.hasOwn"], [/\.findLast(Index)?\(/, "findLast"], [/\bstructuredClone\(/, "structuredClone"]];
-for (const name of ["highlight.js", "app.js"]) {
+for (const name of ["highlight.js", "app.js", "katex/katex.min.js"]) {
   const src = tokens(fs.readFileSync(path.join(__dirname, name), "utf8"), "javascript").filter((t) => t[0] !== "c").map((t) => t[1]).join("");
   for (const [re, what] of UNSUPPORTED) assert.ok(!re.test(src), `${name}: ${what}를 쓴다`);
 }
