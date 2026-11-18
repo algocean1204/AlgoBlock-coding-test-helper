@@ -1089,15 +1089,75 @@ def same_check_once() -> None:
     assert "r.data.repeated) S.note.blocks = { type: \"warn\", text: REPEATED }" in js
 
 
+def chair_check_hides_names() -> None:
+    """의자에서 이름이 아직 가려진 블록의 코드 확인은 튜터 코드의 이름을 말하지 않는다(모델 0회). 첫 질문이 그 그릇을 묻는데,
+    이어 돌리지 못한 까닭으로 튜터 코드의 변수 이름을 알려 주면 그것이 곧 답이었다. 블록 칸의 결과 줄은 이 말의 첫 문장이다. 가이드는 이름을 말한다(same_check_once)."""
+    import re
+    pid = "hash_2_steady_climbers"
+    names = {m for b in next(r for r in ROWS if r["id"] == pid)["ready"]["plan"]["blocks"] for m in re.findall(r"^\s*([A-Za-z_]\w*)\s*=", b["reference"], re.M)}
+    assert names, pid
+    call("/api/reset", id=pid)
+    call("/api/turn", id=pid, mode="chair", event="start")
+    body = call("/api/turn", id=pid, mode="chair", event="block_filled", block_id="b1", code="x = 1")[1]
+    said = body["messages"][-1]["text"]
+    assert body["unsure"] and body["blocks"][0]["name"] is None and said, body
+    assert not [n for n in names if re.search(rf"\b{n}\b", said)], said
+    call("/api/reset", id=pid)
+
+
+def chair_brace_hides_line() -> None:
+    """의자에서 이름이 가려진 블록의 괄호 경계 안내는 튜터 코드의 줄을 인용하지 않는다(모델 0회). 틀 줄이 없는 JavaScript 표준 입출력에서
+    닫은 반복을 적으면 '튜터의 풀이는 이 블록에서 연 괄호(`for …`)를…'로 가려진 블록의 참고 코드 한 줄이 나갔다. 가이드는 그 줄을 인용한다.
+    블록 칸의 결과 줄은 이 말의 첫 문장이다."""
+    if not server.tools()["javascript"]:
+        return
+    code = ('const rows = require("fs").readFileSync(0, "utf8").trim().split("\\n");\nconst n = Number(rows[0]);\nlet total = 0;\n'
+            'for (let i = 1; i <= n; i++) {\n    total += Number(rows[i]);\n}\nconsole.log(total);')
+    lines, hints = code.splitlines(), ["무엇을 하나씩 볼까요?", "몇 줄을 읽어야 할까요?", "입력이 2, 3, 4라면 무엇을 더하나요?"]
+    blocks = [{"id": "b1", "kind": "loop", "name": "줄마다 보기", "goal": "N줄을 하나씩 본다", "reference": "\n".join(lines[:4]), "lines": [1, 4], "checks": ["N줄을 본다"], "hints": hints},
+              {"id": "b2", "kind": "var_during", "name": "합 출력", "goal": "합을 더해 출력한다", "reference": "\n".join(lines[4:]), "lines": [5, 7], "checks": ["합을 출력한다"], "hints": hints}]
+    ready = {"fact": {"spec": "N개의 수를 더한다", "patterns": [], "skills": [], "size": 100},
+             "solution": {"approach": "더한다", "steps": ["읽는다", "더한다"], "code": code, "verified": True, "clues": []},
+             "plan": {"strategy": "fresh", "score": None, "algorithm": "hash", "out_of_scope": False, "link": "", "blocks": blocks}}
+    problem = {"title": "N개의 합", "text": "첫째 줄에 N, 다음 N줄에 정수가 하나씩 주어진다. 합을 출력한다.", "mode": "program", "language": "javascript",
+               "cases": [{"input": "2\n3\n4\n", "expected": "7\n"}, {"input": "3\n1\n1\n1\n", "expected": "3\n", "hidden": True}]}
+    said = {}
+    for mode in ("chair", "guide"):
+        pid = server.register(problem)["id"]
+        with server.tutor() as t:
+            t.adopt(pid, ready)
+        call("/api/turn", id=pid, mode=mode, event="start")
+        body = call("/api/turn", id=pid, mode=mode, event="block_filled", block_id="b1", code="for (const r of rows.slice(1)) {\n}")[1]
+        said[mode] = body["messages"][-1]["text"]
+        assert (body["blocks"][0]["name"] is None) == (mode == "chair"), (mode, body["blocks"])
+    assert "이 블록에서 연 괄호를 이 블록이 끝날 때도 열어 두고" in said["chair"], said["chair"]
+    assert not [row for row in lines[:4] if row.strip() in said["chair"]] and "`total`" not in said["chair"], said["chair"]
+    assert "이 블록에서 연 괄호(`for (let i = 1; i <= n; i++) {`)를" in said["guide"], said["guide"]
+
+
 def result_guides() -> None:
     """채점 결과와 방식 화면의 안내(화면 코드 확인): 큰 입력의 실행 오류는 시간 부족이라 하지 않고, 효율성만 실패하면 ‘틀린 곳 같이 찾기’가 없는 까닭을 말하며,
-    튜터 방식 전환 단추는 무엇이 바뀌는지 말하고, 튜터의 질문으로에서 코드 칸으로 가는 길이 보인다. 브라우저 동작은 화면 확인으로 본다."""
+    튜터 방식 전환 단추는 무엇이 바뀌는지 말한다. 브라우저 동작은 화면 확인으로 본다."""
     js = (HERE / "app.js").read_text(encoding="utf-8")
     assert 'c.kind === "efficiency" && (c.status === "timeout" || c.status === "skipped")' in js and "const slowOnly = slowOnlyOf(r);" in js  # 시간 초과만 '느려요'
     assert "아주 큰 입력에서 실행 중 오류가 났어요: " in js and "아주 큰 입력에서 답이 달라요" in js and "답이 맞아서 ‘틀린 곳 같이 찾기’는 열지 않아요." in js
     assert "혼자 풀기로 바뀌어요" not in js and "오른쪽 칸이 해설로 바뀌어요" in js and "오른쪽 칸이 힌트로 바뀌어요" in js
-    assert 'S.talk === "chair" && !s.blocks.some((b, i) => blockState(b, i) === "found")' in js and 'data-tab="direct">코드 전체 칸 열기' in js
     assert '"message": SLOW_MESSAGE' in (HERE / "server.py").read_text(encoding="utf-8")
+
+
+def block_cell_both_ways() -> None:
+    """지금 블록의 코드 칸과 '블록 코드 확인'은 가이드만의 것이 아니다(화면 코드 확인): 의자도 찾기 전 블록에 칸이 있고 확인이 보이며,
+    '블록은 찾는 대로 열려요' 안내와 '칸이 없다'는 전제의 안내 글이 없다. 넘어가기·끝까지 내 방식은 두 방식 모두에 보인다. 브라우저 동작은 화면 흐름 시험(flow/chair_write.mjs)이 본다."""
+    js = (HERE / "app.js").read_text(encoding="utf-8")
+    start = js.index("function renderBlocks") if "function renderBlocks" in js else js.index("blockState(b, i);")
+    area = js[start:js.index("function syncCheck(ta)")]
+    assert "찾는 대로" not in js and "코드 전체 칸 열기" not in js, "찾기 전 칸 안내가 남아 있다"
+    assert "const cell = !current || !empty || S.talk === \"guide\"" not in area, "칸이 가이드 한정이다"
+    check = js[js.index("function showCheck("):js.index("function syncCheck(ta)")]
+    assert "current && S.mode === \"guide\"" not in check, "지금 블록의 확인 단추가 가이드 한정이다"
+    skip = next(line for line in area.splitlines() if "const skip =" in line)
+    assert "S.talk === \"guide\"" not in skip, "넘어가기가 가이드 한정이다"
+    assert 'S.mode === "guide" && (s.guide.filter' not in js[js.index("function nextAction()"):js.index("const allFound")], "코드로 적으라는 말 뒤 주 단추가 가이드 한정이다"
 
 
 def language_memory() -> None:
@@ -4175,7 +4235,10 @@ def main() -> None:
         chair_found()
         guide_spoken()
         same_check_once()
+        chair_check_hides_names()
+        chair_brace_hides_line()
         result_guides()
+        block_cell_both_ways()
         language_memory()
         no_tool()
         results()
