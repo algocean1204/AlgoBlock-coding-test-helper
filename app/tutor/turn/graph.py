@@ -20,7 +20,7 @@ from ..state import MainState, MovePlan, Verdict
 from .code_check import check_code
 from .context import prepare
 from ..common.talk_rules import OWN_WAY, WITHDRAWN, rename_note
-from .moves import found_tip, pick_move, rule_verdict
+from .moves import asks, pick_move, rule_verdict
 from .talk import carries_deferred, checked_reply, clean_text, speak_messages
 
 STEPS = {"N1": "prepare", "N2": "judge", "N3": "check_code", "N4": "pick_move", "N5": "speak", "N6": "check_reply"}
@@ -80,9 +80,7 @@ def turn_graph(mode: str, judge_messages, judge_rule: str, system: str, steps: d
         if withdrawn:
             reply = f"{reply} {WITHDRAWN.format(n=len(withdrawn))}"
         boxed = {"boxed": True} if filled and verdict is not None and "```" in verdict.seen else {}  # 실행에서 본 여러 줄 출력을 엔진이 글상자로 넣었다(모델의 말은 위에서 펜스를 거른다)
-        tip = found_tip(mode, state["turn"], move)
-        found = {"found": tip} if tip else {}  # 저장이 찾은 블록의 말로 따로 남긴다
-        return {"result": {"reply": said + reply, "advance": move.advance, "move": move.move, **extra, **boxed, **found}}
+        return {"result": {"reply": said + reply, "advance": move.advance, "move": move.move, **extra, **boxed}}
 
     def after_prepare(state: MainState) -> str:
         if state.get("error"):
@@ -91,10 +89,10 @@ def turn_graph(mode: str, judge_messages, judge_rule: str, system: str, steps: d
         if state.get("replanned"):
             return "pick_move"  # 다시 짜기를 거쳐 돌아왔다. 판정은 이미 했다
         if state["request"].event == "message" and (
-            (mode == "chair" and turn.moves_used[-1:] == ["basis"])
+            (mode == "chair" and turn.moves_used[-1:] == ["basis"] and not asks(turn.text))
             or (turn.index == len(active_plan(state).blocks) - 1 and any(m in turn.moves_used for m in ("recap", "run", "done")))
         ):
-            return "pick_move"  # 근거 질문·정리 질문의 답은 판정하지 않는다(모델 0회)
+            return "pick_move"  # 근거 질문에 평서로 한 답과 정리 질문의 답은 판정하지 않는다(모델 0회). 근거 질문에 물음으로 답하면 판정한다
         return {"message": "judge", "block_filled": "check_code"}.get(state["request"].event or "", "pick_move")
 
     def after_pick(state: MainState) -> str:
