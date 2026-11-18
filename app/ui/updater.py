@@ -268,6 +268,11 @@ def asset_name() -> str | None:
     return None
 
 
+def dev() -> bool:
+    """개발용 빌드인가(실행기가 정한다). 개발용 앱은 업데이트를 확인하지도 받지도 않는다(배포판이 개발용 앱을 덮어쓰지 않게)."""
+    return os.environ.get("ALGOBLOCK_FLAVOR") == "dev"
+
+
 def frozen() -> bool:
     return bool(getattr(sys, "frozen", False))
 
@@ -487,6 +492,8 @@ def download() -> None:
         latest = NOW["latest"]
         if NOW["state"] not in ("available", "failed") or not latest:
             raise Refused("받을 새 버전이 없어요.")
+        if dev():
+            raise Refused("개발용 앱은 여기서 업데이트하지 않아요. 개발용 빌드를 다시 만들어 주세요.")
         if not frozen():
             raise Refused("소스에서 실행 중이라 여기서 업데이트하지 않아요. git으로 새 버전을 받아 주세요(git pull).")
         if not latest["asset"]:
@@ -835,7 +842,7 @@ def last_swap_note() -> str:
 def start() -> None:
     """뒤에서 확인 일정을 돌린다(설정에서 끄면 건너뛴다). 한 프로세스에 한 번만.
     켤 때: 마지막 확인에서 24시간이 지났으면 바로, 아니면 그때까지 기다린다(그동안은 지난번에 찾은 새 버전을 다시 알린다)."""
-    if STARTED:
+    if STARTED or dev():
         return
     STARTED.append(True)
     tidy()

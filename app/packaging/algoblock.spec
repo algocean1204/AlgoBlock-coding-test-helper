@@ -1,7 +1,9 @@
 # PyInstaller 설정. 화면(app/ui) + 튜터(app/tutor) + 모델 연결(app/llm) + 채점기(app/judge)를 하나로 묶는다.
 # macOS: dist/AlgoBlock.app (build_mac.sh가 .dmg로 싼다). Windows: dist/AlgoBlock.exe 하나(onefile).
+import os
 import re
 import sys
+import tempfile
 from pathlib import Path
 
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules
@@ -9,7 +11,9 @@ from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 APP = Path(SPECPATH).parent
 ROOT = APP.parent  # 저장소 루트. 모델 연결 코드를 app.llm이라는 이름으로 부른다
 UI = APP / "ui"
-NAME = "AlgoBlock"
+FLAVOR = os.environ.get("ALGOBLOCK_FLAVOR", "")  # dev면 개발용 앱(이름·번들 id·자료 폴더·포트가 배포용과 다르고 업데이트하지 않는다). 릴리스에는 올리지 않는다
+assert FLAVOR in ("", "dev"), f"ALGOBLOCK_FLAVOR는 비우거나 dev다(지금 {FLAVOR!r})"
+NAME = "AlgoBlock Dev" if FLAVOR == "dev" else "AlgoBlock"
 VERSION = re.search(r'^VERSION = "([^"]+)"', (UI / "updater.py").read_text(encoding="utf-8"), re.M)[1]  # 앱의 버전은 updater.py 한 곳(업데이트가 이 값과 견준다)
 
 
@@ -36,6 +40,10 @@ datas += collect_data_files("langgraph")
 MODELS = Path(SPECPATH) / "models"
 assert all((MODELS / name).is_file() for name in ("model.onnx", "tokenizer.json")), "app/packaging/models가 비었습니다. 빌드 스크립트로 빌드하세요."
 datas += [(str(MODELS / name), "models") for name in ("model.onnx", "tokenizer.json")]
+if FLAVOR:  # 실행기가 묶음 안의 이 파일로 빌드 종류를 안다(환경 변수는 Finder로 연 앱에 전해지지 않는다)
+    marker = Path(tempfile.mkdtemp()) / "flavor"
+    marker.write_text(FLAVOR, encoding="utf-8")
+    datas += [(str(marker), ".")]
 
 a = Analysis(
     [str(Path(SPECPATH) / "launcher.py")],
@@ -53,8 +61,8 @@ if sys.platform == "darwin":
     exe = EXE(pyz, a.scripts, UTF8, exclude_binaries=True, name=NAME, console=False, target_arch=None)
     coll = COLLECT(exe, a.binaries, a.datas, name=NAME)
     app = BUNDLE(
-        coll, name=f"{NAME}.app", bundle_identifier="io.github.algocean1204.algoblock", icon=str(Path(SPECPATH) / "icon" / "icon.icns"),
-        info_plist={"CFBundleDisplayName": "AlgoBlock", "CFBundleName": "AlgoBlock", "CFBundleShortVersionString": VERSION,
+        coll, name=f"{NAME}.app", bundle_identifier="io.github.algocean1204.algoblock" + (".dev" if FLAVOR == "dev" else ""), icon=str(Path(SPECPATH) / "icon" / "icon.icns"),
+        info_plist={"CFBundleDisplayName": NAME, "CFBundleName": NAME, "CFBundleShortVersionString": VERSION,
                     "NSHighResolutionCapable": True, "LSMinimumSystemVersion": "12.0"},
     )
 else:

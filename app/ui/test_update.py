@@ -116,6 +116,33 @@ def checking(folder: Path) -> None:
         pass
 
 
+def dev_build(folder: Path) -> None:
+    """개발용 앱은 업데이트를 확인하지도 받지도 않는다(배포판이 덮어쓰지 않게). 실행기는 묶음 안의 flavor 파일로 개발용 빌드를 안다."""
+    reset(folder)
+    updater.NOW.update(state="available", latest=updater.pick(release(), "0.1.0", DMG))
+    started = list(updater.STARTED)
+    updater.STARTED.clear()
+    try:
+        with patch.dict(os.environ, {"ALGOBLOCK_FLAVOR": "dev"}), patch.object(updater, "frozen", lambda: True):
+            updater.start()
+            assert updater.STARTED == []  # 뒤에서 도는 확인을 띄우지 않았다
+            try:
+                updater.download()
+                raise AssertionError("개발용 앱은 받지 않는다")
+            except updater.Refused as exc:
+                assert "개발용" in str(exc)
+        assert updater.NOW["state"] == "available"
+    finally:
+        updater.STARTED[:] = started
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "packaging"))
+    import launcher
+
+    folder.mkdir(parents=True, exist_ok=True)
+    assert launcher.flavor(folder) == ""
+    (folder / "flavor").write_text("dev\n", encoding="utf-8")
+    assert launcher.flavor(folder) == "dev"
+
+
 def downloading(folder: Path) -> None:
     reset(folder)
     updater.NOW.update(state="available", latest=updater.pick(release(), "0.1.0", DMG))
@@ -698,6 +725,7 @@ def run() -> None:
         picking()
         hashes()
         checking(root / "check")
+        dev_build(root / "dev")
         downloading(root / "download")
         installing(root / "install")
         if os.name != "nt":  # 바꿔 끼우기(swap.sh)는 macOS의 .app에만 있는 기능이고 /bin/sh로 돈다. Windows에는 /bin/sh가 없고 이 길을 타지 않는다
