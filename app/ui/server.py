@@ -102,7 +102,7 @@ PREPARE = os.environ.get("ALGOBLOCK_UI_PREPARE", "1") != "0"  # 0이면 문항�
 
 KEY_CHECK_FILE = DATA / "keychecks.json"  # 공급자마다 마지막 키 확인 {공급자: {"at": ISO 시각, "result": ok·invalid·denied·offline}}. 키 값은 싣지 않는다
 KEY_FILE = DATA / "keys.json"  # 화면에서 넣은 API 키. 이 기기에만, 소유자만 읽게(0600) 둔다
-PREFS_FILE = DATA / "prefs.json"  # 화면 설정: 처음 안내를 봤는지(tour_seen), 과정별 급과 추론 정도(stages. 예전에는 테마별 모델 themes), 마지막으로 고른 풀이 언어(language), 화면 색(scheme: light·dark. 없으면 운영체제 설정을 따른다), 문제·코드·튜터 세 칸의 너비 몫(panes. 합 100. 없으면 기본 배치)
+PREFS_FILE = DATA / "prefs.json"  # 화면 설정: 처음 안내를 봤는지(tour_seen), 과정별 급과 추론 정도(stages. 예전에는 테마별 모델 themes), 마지막으로 고른 풀이 언어(language), 화면 색(scheme: light·dark. 없으면 운영체제 설정을 따른다), 문제·코드·튜터 세 칸의 너비 몫(panes. 합 100. 없으면 기본 배치), 코드 칸 안 결과 칸의 높이 몫(rows. 15~85. 없으면 기본)
 MODELS_FILE = DATA / "models.json"  # 공급자 목록에서 고른 시리즈마다 최신 이름 {연결: {"at": ISO 시각, "names": {시리즈: 이름}}}. 하루에 한 번까지만 다시 받는다
 KEPT_FILE = DATA / "kept.json"  # 언어를 바꿀 때 보관한 준비 결과 {문항: {언어: {"solution": 줄, "session": 줄}}}. 그 언어로 돌아오면 되살린다(모델 0회)
 
@@ -596,7 +596,7 @@ def accounts() -> dict:
             "keys": {name: bool(os.environ.get(env)) for name, env in KEYS.items()},
             "key_rows": key_rows(), "using": themes.provider(),  # using: 튜터가 쓰는 공급자(claude·chatgpt·openai)
             "keys_saved": {name: env in read_json(KEY_FILE, {}) for name, env in KEYS.items()},  # 화면에서 넣은 키(keys.json에 있는 것. 지울 수 있는 것)
-            "tour_seen": bool(read_json(PREFS_FILE, {}).get("tour_seen")), "language": last_language(), "scheme": scheme_pref(), "panes": panes_pref(),
+            "tour_seen": bool(read_json(PREFS_FILE, {}).get("tour_seen")), "language": last_language(), "scheme": scheme_pref(), "panes": panes_pref(), "rows": rows_pref(),
             "themes": rows, "tiers": [{"key": tier, "label": themes.label(themes.model_of(tier))} for tier in themes.TIERS],
             "topics": [{"key": key, "name": theme_name(key)} for key in ALGORITHMS]}  # 등록 화면의 주제 고르기
 
@@ -651,6 +651,17 @@ def panes_pref() -> list | None:
     """저장한 칸 너비 몫. 없거나 손으로 고쳐 꼴이 어긋났으면 None(기본 배치)."""
     panes = read_json(PREFS_FILE, {}).get("panes")
     return panes if panes_ok(panes) else None
+
+
+def rows_ok(rows: object) -> bool:
+    """결과 칸의 높이 몫: 수 하나, 15~85(NaN·무한은 범위 비교에서 걸린다)."""
+    return isinstance(rows, (int, float)) and not isinstance(rows, bool) and 15 <= rows <= 85
+
+
+def rows_pref() -> float | None:
+    """저장한 결과 칸 높이 몫. 없거나 손으로 고쳐 어긋났으면 None(기본)."""
+    rows = read_json(PREFS_FILE, {}).get("rows")
+    return rows if rows_ok(rows) else None
 
 
 def last_language() -> str:
@@ -2425,23 +2436,27 @@ def handle(path: str, body: dict) -> tuple[int, dict]:
     if path == "/api/tour":  # 처음 안내를 봤다고 적는다(창을 다시 켜도 또 뜨지 않게. 웹뷰는 localStorage를 남기지 않는다)
         write_json(PREFS_FILE, {**read_json(PREFS_FILE, {}), "tour_seen": True})
         return 200, accounts()
-    if path == "/api/prefs":  # 화면 설정: 화면 색(scheme. system이면 키를 지워 운영체제 설정을 따른다), 세 칸의 너비 몫(panes. null이면 기본 배치), 기본 언어(language). 보낸 것만 바꾼다
-        if not {"scheme", "panes", "language"} & body.keys():
-            raise Refuse("화면 색, 칸 너비, 기본 언어 가운데 하나는 보내 주세요.")
+    if path == "/api/prefs":  # 화면 설정: 화면 색(scheme. system이면 키를 지워 운영체제 설정을 따른다), 세 칸의 너비 몫(panes. null이면 기본 배치), 결과 칸 높이 몫(rows. null이면 기본), 기본 언어(language). 보낸 것만 바꾼다
+        if not {"scheme", "panes", "rows", "language"} & body.keys():
+            raise Refuse("화면 색, 칸 너비, 결과 칸 높이, 기본 언어 가운데 하나는 보내 주세요.")
         if "language" in body and body["language"] not in check_judge().LANGUAGES:
             raise Refuse("고를 수 없는 언어예요.", field="language")
         if "scheme" in body and body["scheme"] not in ("system", "light", "dark"):
             raise Refuse("화면 색은 시스템 설정대로, 라이트, 다크 가운데 하나예요.", field="scheme")
         if body.get("panes") is not None and "panes" in body and not panes_ok(body["panes"]):
             raise Refuse("칸 너비는 문제·코드·튜터 세 몫이고, 각각 5에서 90 사이, 합은 100이에요.", field="panes")
+        if body.get("rows") is not None and not rows_ok(body["rows"]):
+            raise Refuse("결과 칸 높이는 15에서 85 사이의 수예요.", field="rows")
         prefs = read_json(PREFS_FILE, {})
-        for key in ("scheme", "panes"):
+        for key in ("scheme", "panes", "rows"):
             if key in body:
                 prefs.pop(key, None)
         if body.get("scheme") in ("light", "dark"):
             prefs["scheme"] = body["scheme"]
         if body.get("panes") is not None:
             prefs["panes"] = [round(float(x), 2) for x in body["panes"]]
+        if body.get("rows") is not None:
+            prefs["rows"] = round(float(body["rows"]), 2)
         if "language" in body:
             prefs["language"] = body["language"]  # 다음에 처음 여는 문제의 언어(코드 화면에서 언어를 바꿔도 이 값이 바뀐다)
         write_json(PREFS_FILE, prefs)
