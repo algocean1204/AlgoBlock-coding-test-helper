@@ -99,7 +99,7 @@ def check_reply(state: MainState) -> dict:
     text = state.get("reply_draft") or ""
     first = opening(state)
     said = "\n".join([req.code or "", req.text or "", *draft["recent"]])
-    text = repair(tidy(text), state["ctx"].problem_text, said, user=req.text or "")
+    text = repair(tidy(text), state["ctx"].problem_text, said, user=req.text or "", first=True)  # 넘치면 결론과 물음은 두고 가운데 근거를 줄인다
     bad = (not text or "```" in text or not text.rstrip().endswith(("?", "？"))
            or banned_in(text, state["ctx"].problem_text + "\n" + said) or agree_opening(text, state["ctx"].problem_text)
            or rules.leaks_fix(text, draft["fixed_line"], req.code or "")

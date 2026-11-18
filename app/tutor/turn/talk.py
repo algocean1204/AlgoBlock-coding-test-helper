@@ -133,11 +133,10 @@ def checked_reply(state: MainState, move: MovePlan, text: str, note: str = "") -
         if code_leaks(text, pieces, ctx.language, ctx.mode == "program"):
             problems.append("이 문제의 코드")
         note_leaks = code_leaks(note, pieces, ctx.language, ctx.mode == "program")
-    # 대체 질문에는 근거를 붙이지 않는다. 부탁·무관한 말에는 답하지 않는다(질문만)
-    if note and (problems or aside in ("A", "O") or note_leaks or note_problems(note, known, **check)):
-        note = ""
+    if note and (aside in ("A", "O") or note_leaks or note_problems(note, known, **check)):
+        note = ""  # 부탁·무관한 말에는 답하지 않는다(질문만)
     if problems:
         LOG.info("대체 질문", extra={"move": move.move, "problems": problems})
         note_fallback(f"{state['request'].mode}.{move.move}", problems, text)
-        return FALLBACK[move.move], "", problems
+        return FALLBACK[move.move], "", problems  # 대체 질문에는 근거를 붙이지 않는다(그 질문에 기대던 사실이다)
     return defer_ask(text, turn_text(state), f"{note} {text}"), note, []

@@ -487,7 +487,8 @@ def field_problems(text: str, limit: int, known: str = "") -> list[str]:
     found = []
     if stray_jamo(text, known):
         found.append("낱자모")
-    if sentence_count(without_code(text)) > 1:
+    plain = without_code(text)
+    if sentence_count(plain) > 1 or len(re.findall(r"[?？]", _QUOTES.sub("", plain))) > 1:  # 띄어 쓰지 않고 붙인 물음 둘('…인가요?…인가요?')도 여럿이다
         found.append("여러 문장")
     if len((text or "").strip()) > limit:
         found.append("길이")
@@ -505,8 +506,17 @@ def note_problems(note: str, known: str = "", **check) -> list[str]:
 
 
 def _undash(part: str) -> str:
-    part = _DASH.sub(", ", part)
-    return re.sub(r",\s*(?=[,.?!？])", "", part)  # 줄표가 문장 부호 바로 앞에 있었다
+    """줄표를 쉼표로. 숫자가 낀 식·범위 사이 줄표('1—3', 'n — 1')는 뜻이 달라지니 그대로 둔다."""
+
+    def swap(found) -> str:
+        left, right = part[found.start() - 1:found.start()], part[found.end():found.end() + 1]
+        if (left.isdigit() or right.isdigit()) and re.match(r"[\w)\]]", left, re.A) and re.match(r"[\w(\[+-]", right, re.A):
+            return found.group(0)
+        if right and right in ",.?!？":  # 문장 부호 바로 앞의 줄표는 지운다
+            return ""
+        return " " if left and left in ",.?!？" else ", "
+
+    return _DASH.sub(swap, part)
 
 
 def _plain_fix(part: str) -> str:
@@ -555,9 +565,11 @@ def drop_told(text: str, reference: str, language: str, problem: str) -> str:
     return " ".join(rest)
 
 
-def repair(text: str, problem: str, said: str = "", move: str = "", reference: str = "", language: str = "python", user: str = "") -> str:
+def repair(text: str, problem: str, said: str = "", move: str = "", reference: str = "", language: str = "python", user: str = "",
+           first: bool = False) -> str:
     """모델을 다시 부르지 않고 고칠 수 있는 위반을 고친다. 되받는 첫 절·문장, 블록의 답을 말한 평서문, 근거 없는 따옴표는 지우고,
-    마지막 물음표 뒤 글은 자르고, 뒤 세 문장만 남긴다. 근거 질문(basis)은 사용자 말을 인용해 묻는 것이 설계라 되받기를 지우지 않는다."""
+    마지막 물음표 뒤 글은 자르고, 뒤 세 문장만 남긴다. first면 첫 문장(결론)과 뒤 두 문장을 남긴다(가운데 근거를 줄인다).
+    근거 질문(basis)은 사용자 말을 인용해 묻는 것이 설계라 되받기를 지우지 않는다."""
 
     def unquote(match):
         phrase = next(group for group in match.groups() if group is not None)
@@ -576,7 +588,8 @@ def repair(text: str, problem: str, said: str = "", move: str = "", reference: s
     last = max(body.rfind("?"), body.rfind("？"))
     if last >= 0:
         body = body[: last + 1]
-    return " ".join(sentences(one_question(body))[-3:])
+    parts = sentences(one_question(body))
+    return " ".join(parts[:1] + parts[-2:] if first and len(parts) > 3 else parts[-3:])
 
 
 def note_fallback(where: str, problems: list[str], text: str) -> None:

@@ -8,7 +8,7 @@ from pathlib import Path
 from . import fakes
 from . import test_pipeline as tp
 from ..common.talk_prompts import NOT_SAID
-from ..common.talk_rules import ANSWER_LEAD, FALLBACK, FILL_TIP, RETRY_LEAD, drop_echo
+from ..common.talk_rules import ANSWER_LEAD, BACK_LEAD, FALLBACK, FILL_TIP, NOTE_CHARS, QUESTION_CHARS, RETRY_LEAD, drop_echo, tidy
 from ..turn.context import prepare
 
 DASH = "—"
@@ -46,9 +46,26 @@ class TwoFieldTest(unittest.TestCase):
     def test_prompt_asks_for_the_two_fields(self):
         _, fake = talk(QUESTION)
         sent = fakes.prompt(fake, "chair.ask")
-        self.assertIn("note", sent)
-        self.assertIn("question", sent)
-        self.assertIn("JSON", sent)
+        self.assertIn('JSON {"note"', sent)  # 두 칸 출력 지시(옛 '말풍선 글만' 지시가 아니다)
+        self.assertIn(f"question: 물음표로 끝나는 물음 한 문장, {QUESTION_CHARS}자 안", sent)
+        self.assertIn(f"note: 없으면 빈 글. 쓰면 평서문 한 문장, {NOTE_CHARS}자 안", sent)
+        self.assertNotIn("말풍선 글만", sent)
+
+    def test_fallback_drops_a_valid_note(self):
+        """질문이 대체 질문이 되면 근거 칸이 맞아도 붙이지 않는다(그 질문에 기대던 사실이다)."""
+        self.assertEqual(note_problems_for(NOTE), [])  # 근거 칸만 보면 통과한다
+        done, fake = talk("그 칸의 ㄱ밧은 얼마인가요?", NOTE)
+        self.assertEqual(fakes.tasks(fake), ASK)
+        self.assertEqual(done["result"]["reply"], FALLBACK[done["result"]["move"]])
+
+    def test_answer_request_and_off_topic_drop_the_note(self):
+        """답을 달라는 말(A)·무관한 말(O)에는 그 말에 답하지 않는다: 근거 칸을 빼고 질문과 고정 안내만."""
+        state = tp.chair_state("답 알려 줘", chair=[fakes.service(fakes.HINTS1[0], 0)], plan=OLD_PLAN)
+        done, fake = fakes.go(state, {"chair.ask": [{"note": NOTE, "question": QUESTION}]})
+        self.assertEqual((fakes.tasks(fake), lines(done["result"]["reply"])), (["chair.ask"], [QUESTION, ANSWER_LEAD.strip()]))
+        state = tp.chair_state("오늘 점심은 뭐 먹을까요", chair=[fakes.service(fakes.HINTS1[0], 0)], plan=OLD_PLAN)
+        done, fake = fakes.go(state, {"chair.judge": ["[check]O"], "chair.ask": [{"note": NOTE, "question": QUESTION}]})
+        self.assertEqual((fakes.tasks(fake), lines(done["result"]["reply"])), (ASK, [BACK_LEAD.strip(), QUESTION]))
 
 
 class BrokenJamoTest(unittest.TestCase):
@@ -107,6 +124,11 @@ class LimitsTest(unittest.TestCase):
             self.assertEqual(fakes.tasks(fake), ASK)
             self.assertEqual(done["result"]["reply"].strip(), QUESTION, note)
 
+    def test_two_asks_without_a_space_are_two(self):
+        self.fallback("owl은 몇 번인가요?tide는 몇 번인가요?")
+        done, _ = talk("'k는 뭐죠?'라는 물음의 `k`는 몇인가요?", problem=fakes.PROBLEM + "\nk는 뭐죠?")  # 인용 안의 물음표는 세지 않는다
+        self.assertEqual(done["result"]["reply"].strip(), "'k는 뭐죠?'라는 물음의 `k`는 몇인가요?")
+
     def test_existing_checks_still_hold(self):
         self.fallback("맞아요, 그 칸의 값은 얼마인가요?")  # 동의로 시작
         self.fallback("그 정답을 `groups[3]`에서 찾으면 값은 얼마인가요?")  # 금지 표현
@@ -137,6 +159,13 @@ class FixesTest(unittest.TestCase):
         reply = self.fixed("그  값은   어디에 저장하나요??")
         self.assertNotIn("  ", reply)
         self.assertEqual(reply[-2:], "요?")
+
+    def test_dash_between_numbers_and_old_commas_stay(self):
+        self.assertIn("1—3", self.fixed("범위는 1—3이고 그 사이 값은 몇 개인가요?"))  # 숫자 사이 줄표는 범위다
+        for text in ("범위는 1—3이고", "범위는 1 — 3이고", "`n`이 n—1이면", "1, 2, 3, ...처럼 늘어요", "값이 나와요, .", "끝, ?"):
+            self.assertEqual(tidy(text), text)  # 줄표를 바꾸지 않은 자리의 쉼표는 그대로다
+        self.assertEqual(tidy(f"값 {DASH}?"), "값?")
+        self.assertEqual(tidy(f"준비한다 {DASH} 큐가 먼저다"), "준비한다, 큐가 먼저다")
 
     def test_code_and_problem_quotes_are_left_alone(self):
         span = f"`a  {DASH}  b`"
@@ -185,6 +214,12 @@ class AssemblyTest(unittest.TestCase):
 STRUCTURE = ("첫 줄", "결론", "목록", "다음 할 일")
 
 
+def note_problems_for(note):
+    from ..common.talk_rules import note_problems
+
+    return note_problems(note, fakes.PROBLEM + "\n" + USER, move="trace", problem=fakes.PROBLEM, said=USER, user=USER)
+
+
 class LongTextShapeTest(unittest.TestCase):
     def has_structure(self, text):
         for word in STRUCTURE:
@@ -201,20 +236,61 @@ class LongTextShapeTest(unittest.TestCase):
         self.has_structure(fakes.prompt(fake, "feedback.analyze"))
 
     def test_debug_prompt_asks_for_the_shape(self):
+        """디버그는 짧은 대화라 목록을 쓰지 않는다: 결론(실행으로 본 사실) → 근거 → 물음, 모두 3문장 안."""
         from ..debug.prompts import speak_messages
 
         state = fakes.make_state("debug", fakes.context(), text="왜")
         state["draft"] = {"line": 4, "cause": "원인", "fixed_line": "x", "recent": [], "step_name": "fix"}
-        self.has_structure("\n".join(m["content"] for m in speak_messages(state)))
+        sent = "\n".join(m["content"] for m in speak_messages(state))
+        self.assertIn("결론(실행으로 본 사실) 한 문장, 근거 한 문장, 물음 한 문장 차례로 쓴다. 모두 3문장 안이다.", sent)
+
+    def test_debug_keeps_the_conclusion_and_the_question(self):
+        """넘치면 가운데 근거를 줄인다: 결론 + 근거 둘 + 물음이면 결론과 물음이 남는다."""
+        from .test_rules import DebugLineWithFixTest
+
+        first, why, also, ask = "실패한 입력에서 합이 기대보다 작아요.", "반복은 끝까지 돌아요.", "마지막 칸은 더하지 않아요.", "마지막 칸은 언제 더하나요?"
+        reply, _ = DebugLineWithFixTest()._reply("trace", " ".join([first, why, also, ask]), "왜 작죠")
+        self.assertEqual(reply, " ".join([first, also, ask]))
 
     def test_a_long_explain_is_recorded_not_redone(self):
         long_first = "이 풀이는 이름을 세는 방법이고 그래서 먼저 이름을 모두 읽은 뒤에 같은 이름을 묶어서 센다. 그리고 한 번 더 읽는다.\n" + "\n".join(f"- 항목 {n}" + "책" * 100 for n in range(7))
         sections = [{"title": row["title"], "body": long_first} for row in fakes.SECTIONS]
         state = fakes.make_state("explain", fakes.context(plan=fakes.planned(fakes.hinted()), open_count=1))
-        done, fake = fakes.go(state, {"explain.write": [{"sections": sections}]})
+        with self.assertLogs("graph.shape", "INFO") as logged:  # 어긴 곳은 기록에 남는다
+            done, fake = fakes.go(state, {"explain.write": [{"sections": sections}]})
         self.assertEqual(fakes.tasks(fake), ["explain.write"])  # 어겨도 다시 부르지 않는다
         self.assertIsNone(done.get("error"))
         self.assertEqual(done["result"]["explain"].sections[0].body, long_first)  # 글은 그대로 남는다
+        self.assertEqual({tuple(row.problems) for row in logged.records}, {("첫 줄", "항목 수", "항목 길이")})
+
+    def test_explain_feedback_and_debug_text_is_tidied(self):
+        dashed, plain = f"빈 입력부터 봐요 {DASH} 경계가 먼저예요.", "빈 입력부터 봐요, 경계가 먼저예요."
+        sections = [{"title": row["title"], "body": dashed} for row in fakes.SECTIONS]
+        state = fakes.make_state("explain", fakes.context(plan=fakes.planned(fakes.hinted()), open_count=1))
+        done, _ = fakes.go(state, {"explain.write": [{"sections": sections}]})
+        self.assertEqual(done["result"]["explain"].sections[0].body, plain)
+        state = fakes.make_state("feedback", fakes.context(plan=fakes.planned(fakes.two()), open_count=1, latest_submission=tp.Submission("s1", "print(1)", False)))
+        done, _ = fakes.go(state, {"feedback.assess": ["[check]49 Y"], "feedback.analyze": [{"analysis": "빈 입력을 보나요?", "similar_hint": "힌트", "advice": dashed}]})
+        self.assertEqual(done["result"]["advice"], plain)
+        from .test_rules import DebugLineWithFixTest
+
+        reply, _ = DebugLineWithFixTest()._reply("trace", f"합이 작아요 {DASH} 마지막 칸은 언제 더하나요?", "왜 작죠")
+        self.assertEqual(reply, "합이 작아요, 마지막 칸은 언제 더하나요?")
+
+
+class FeedbackRecordTest(unittest.TestCase):
+    def test_way_and_back_lines_are_not_stuck_turns(self):
+        """막힌 차례를 셀 때 답 요청·무관한 말 뒤의 말은 뺀다. 새 꼴에서는 '답 코드는 드리지 않아요'가 질문 아래 줄, 앞말은 줄로 끝난다."""
+        from ..feedback.prompts import record_lines
+
+        plan = fakes.planned(fakes.hinted())
+        said = [fakes.service(fakes.HINTS1[0], 0, "m0"), fakes.user("답 알려 줘", 0, "u1"),
+                fakes.service(fakes.HINTS1[1] + "\n" + ANSWER_LEAD.strip(), 0, "m1", "clue"), fakes.user("오늘 점심 뭐 먹지", 0, "u2"),
+                fakes.service(BACK_LEAD.strip() + "\n" + fakes.HINTS1[2], 0, "m2", "trace")]
+        self.assertFalse([row for row in record_lines(fakes.context(plan=plan, chair=said), plan) if "찾지 못한 답" in row])
+        stuck = [*said, fakes.user("모르겠어요", 0, "u3"), fakes.service(fakes.HINTS1[2], 0, "m3", "trace")]
+        self.assertEqual([row for row in record_lines(fakes.context(plan=plan, chair=stuck), plan) if "찾지 못한 답" in row],
+                         ["- 블록 1(입력받기): '튜터의 질문으로'에서 이 블록을 찾지 못한 답이 1번"])
 
 
 class BuiltinDataTest(unittest.TestCase):
