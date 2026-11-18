@@ -3,7 +3,7 @@ from collections import Counter
 from ..common.progress_view import active_plan
 from ..common.solution import same_code, solution_lines
 from ..common.scope import OUTSIDE_PROBLEMS, algorithm_line, algorithm_name, system_prompt
-from ..common.talk_prompts import weak_pitfalls
+from ..common.talk_prompts import PLAIN_TALK, weak_pitfalls
 from ..common.talk_rules import ANSWER_LEAD, BACK_LEAD, BANNED, CHECKED, RETRY_LEAD, SKIPPED, kind_word
 from ..knowledge.ontology import PITFALLS, PREREQUISITE, pitfall_text
 from ..state import MainState
@@ -29,6 +29,9 @@ PASSED_RULE = ("제출이 통과했다. 통과했어도 틀릴 입력(빈 입력
 PASSED_ADVICE = ("통과: 통과했어도 틀릴 입력(빈 입력·경계·큰 값·시간)이 보이면 그것 하나를 먼저, 없으면 더 짧게 쓸 곳 하나, 그것도 없으면 다음 비슷한 문제에서 먼저 떠올릴 흐름 하나. "
                  "그 밖의 풀이 가이드와의 차이는 '다른 방식'으로만 말하고 바꾸라고 하지 않는다")
 
+# 결론 먼저. 화면이 analysis의 문장 하나를 목록 한 항목으로 그린다. 어겨도 다시 부르지 않는다(nodes.check_feedback이 기록만 한다)
+SHAPE = ("글의 꼴: analysis의 첫 문장이 첫 줄의 결론이다(위 1번의 질문, 70자 안). 그 뒤에 근거 문장 2~4개를 쓴다. "
+         "문장 하나가 화면에서 목록 한 항목이 되니 '- '를 붙이지 않는다(문장마다 90자 안). advice는 다음 할 일 하나를 쓴다.")
 BLOCK_WORD = "풀이 순서의 한 조각은 '블록 n'(예: 블록 3)으로 부른다. '단계', 'n단계', '가이드 블록'이라 하지 않는다('단계'는 문제 난이도를 뜻한다)."
 SOLO_WORD = "이 사용자는 블록 방식을 쓰지 않고 혼자 풀었다. '블록'이라는 말과 블록 번호를 쓰지 않는다. 풀이 흐름은 '먼저', '그다음'처럼 말한다."
 
@@ -50,6 +53,7 @@ def system(blocks: bool) -> str:
         "analysis와 advice는 원인과 어디를 볼지까지만 말한다. 고치는 순서, 지울 줄, 어떤 줄부터 새로 짜라는 말은 하지 않는다.",
         "제출 코드에 실제로 있는 것만 말한다. 코드에 없는 변수·구조를 있다고 하거나, 코드에 있는 것을 '하지 않고'처럼 없다고 하지 않는다. 확인할 수 없으면 말하지 않는다.",
         BLOCK_WORD if blocks else SOLO_WORD,
+        PLAIN_TALK,
     )
 
 
@@ -106,7 +110,7 @@ def record_lines(ctx, plan) -> list[str]:
         stuck = Counter(user.block_index for user, reply in zip(said, said[1:])
                         if user.role == "user" and not (user.move or "").startswith(CHECKED)
                         and reply.role == "service" and reply.block_index == user.block_index and reply.move in MISSED
-                        and not reply.text.startswith((ANSWER_LEAD, BACK_LEAD, RETRY_LEAD)))
+                        and not any(lead.strip() in reply.text for lead in (ANSWER_LEAD, BACK_LEAD, RETRY_LEAD)))  # 답을 주지 않는다는 말은 질문 아래 줄에 있다
         lines += [f"- {name(i)}: {MISSED_TEXT[mode]}이 {n}번{settled(mode, i)}" for i, n in sorted(stuck.items(), key=lambda kv: kv[0] or 0)]
     for i, block in enumerate(blocks):
         state = ctx.block_states.get(block.id)
@@ -114,7 +118,7 @@ def record_lines(ctx, plan) -> list[str]:
         if state is not None and state.verdict == "Y":
             # 모델 판정이 틀렸다가 같은 코드(이름만 다른 것 포함)가 뒤에 통과했으면 튜터의 오판이라 세지 않는다.
             # 거부 말(RETRY_LEAD)을 받은 것만 뺀다: 통과한 코드를 다시 확인한 것은 tries에 들지 않는다
-            same = sum(user.role == "user" and user.block_index == i and reply.role == "service" and reply.text.startswith(RETRY_LEAD)
+            same = sum(user.role == "user" and user.block_index == i and reply.role == "service" and reply.text.startswith(RETRY_LEAD.strip())
                        and same_code(user.text, state.code, ctx.language) for chat in (ctx.chair, ctx.guide) for user, reply in zip(chat, chat[1:]))
             wrong = max(0, wrong - same)
         if wrong > 0:
@@ -180,6 +184,7 @@ def analyze_messages(state: MainState) -> list[dict]:
         + (f" {PASSED_RULE}" if passed else ""),
         f'similar_hint: "{algorithm_name(key) or "유형 이름"}: …"으로 시작하는, 다음 비슷한 문제에 쓸 흐름 한 줄. {OUTSIDE_PROBLEMS}',
         f"advice: {PASSED_ADVICE if passed else (ADVICE if 'guide' in ways(ctx) else SOLO_ADVICE)[strategy]}",  # 블록 순서를 바꾸라는 말은 블록을 짠 방식에만
+        SHAPE,
         '출력: JSON {"analysis", "similar_hint", "advice"}',
     ]
     # 캐시 표시를 하지 않는다: 제출마다 한 번 부르는 호출이라 앞부분이 다시 읽히지 않고, 표시하면 쓰기 할증(1.25배)만 붙는다

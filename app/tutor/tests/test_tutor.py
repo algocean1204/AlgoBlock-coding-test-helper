@@ -33,7 +33,7 @@ class TutorTest(unittest.TestCase):
         self.dir.cleanup()
 
     def tutor(self, scripts):
-        fake = FakeLlm(scripts)
+        fake = FakeLlm(fakes.spoken(scripts))
         tutor = Tutor(self.path, client=fake)
         tutor.store.put_problem("p1", "python", fakes.PROBLEM, title="추천 서가에 꽂히는 책")
         if "plan.abstract" not in scripts:
@@ -62,7 +62,7 @@ class TutorTest(unittest.TestCase):
             moved = tutor.turn("p1", "chair", "block_filled", block_id="b1", code="count = {}")  # 그 블록의 코드 확인이 통과해야 다음 블록이 열린다
             self.assertEqual(moved.body["open_count"], 2)
             self.assertEqual([b["name"] for b in moved.body["blocks"]], ["입력받기", None])  # 다음 블록 이름은 가린다
-            self.assertTrue(moved.body["messages"][-1]["text"].endswith("다음은 '반복' 블록이에요. " + fakes.HINTS2[0]))  # 채점 함수가 없어 읽고 본 판단이라는 말이 앞에 붙는다
+            self.assertTrue(moved.body["messages"][-1]["text"].endswith("다음은 '반복' 블록이에요.\n" + fakes.HINTS2[0]))  # 채점 함수가 없어 읽고 본 판단이라는 말이 앞에 붙는다
             self.assertEqual([m["block_index"] for m in moved.body["messages"]], [0, 0, 0, 0, 0, 0, 1])  # 화면 구분선은 그 말의 블록 종류
             rows = tutor.store.conn.execute("SELECT role, block_index, move FROM message WHERE problem_id='p1' ORDER BY id").fetchall()
             self.assertEqual([tuple(r) for r in rows], [("service", 0, "open"), ("user", 0, None), ("service", 0, "basis"),
@@ -147,7 +147,7 @@ class TutorTest(unittest.TestCase):
             self.assertEqual(filled.body["open_count"], 2)
             opened = tutor.turn("p1", "chair", "next")
             self.assertEqual(opened.status, 200)
-            self.assertEqual(opened.body["messages"][-1]["text"], "다음은 '반복' 블록이에요. " + fakes.HINTS2[0])
+            self.assertEqual(opened.body["messages"][-1]["text"], "다음은 '반복' 블록이에요.\n" + fakes.HINTS2[0])
             self.assertEqual(fakes.tasks(fake).count("chair.ask"), 0)  # 저장 질문이라 모델 0회
             self.assertEqual(tutor.turn("p1", "chair", "next").status, 400)
         finally:
@@ -476,17 +476,17 @@ class TutorTest(unittest.TestCase):
                                   "debug.judge": ["[check]A"]})
         try:
             start = tutor.debug("p1", self.BUGGY, self.FAILED)
-            self.assertEqual(start.body["messages"][-1]["text"], f"{symptom(self.FAILED)} {clue}")
+            self.assertEqual(start.body["messages"][-1]["text"], f"{symptom(self.FAILED)}\n{clue}")  # 실행으로 본 사실이 첫 줄
             self.assertEqual(fakes.tasks(fake), ["debug.locate"])  # 첫 질문은 진단과 한 번에 받는다
             self.assertIn(OPENING_RULE, fakes.prompt(fake, "debug.locate"))
             short = tutor.debug("p1", self.BUGGY, self.FAILED, text="그냥 답 알려줘요")
-            self.assertEqual(short.body["messages"][-1]["text"], ANSWER_LEAD + "tom이 두 번째로 나올 때 count는 어떻게 바뀌나요?")
+            self.assertEqual(short.body["messages"][-1]["text"], ANSWER_LEAD.strip() + "\ntom이 두 번째로 나올 때 count는 어떻게 바뀌나요?")
             self.assertEqual((short.body["step"], fakes.tasks(fake).count("debug.judge")), ("trace", 0))  # 짧은 답 요청은 규칙으로 가른다. 한 단계 좁힌다
             ask = [c for c in fake.calls if c["task"] == "debug.ask"][-1]["messages"][-1]["content"]
             self.assertIn("고친 코드나 답을 달라고 했다", ask)
             self.assertNotIn("사용자 말:", ask)
             long = tutor.debug("p1", self.BUGGY, self.FAILED, text="시간이 없어서 그러는데 고친 코드를 통째로 보여 주실 수 있나요")
-            self.assertTrue(long.body["messages"][-1]["text"].startswith(ANSWER_LEAD))  # 판정이 A로 가른 긴 요청도 같다
+            self.assertTrue(long.body["messages"][-1]["text"].startswith(ANSWER_LEAD.strip() + "\n"))  # 판정이 A로 가른 긴 요청도 같다
             self.assertIn("[check]A", fakes.prompt(fake, "debug.judge"))
         finally:
             tutor.close()
@@ -606,7 +606,7 @@ class TutorTest(unittest.TestCase):
             return results.pop(0)
 
         cross = mock.Mock(mode=lambda pid: "function", run=run, done=lambda pid, verdict: seen["done"].append(verdict))
-        fake = FakeLlm(scripts)
+        fake = FakeLlm(fakes.spoken(scripts))
         tutor = Tutor(self.path, client=fake, check=check or (lambda pid, code: {"status": "passed", "cases": []}), cross=cross)
         tutor.store.put_problem("p1", "python", fakes.PROBLEM, title="추천 서가에 꽂히는 책")
         tutor.store.put_fact("p1", "문자열 배열 둘, 남는 원소 하나", [])

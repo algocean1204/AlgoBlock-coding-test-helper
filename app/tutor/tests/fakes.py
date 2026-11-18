@@ -97,8 +97,16 @@ def pipeline():
     return build({**default_agents(), "context": _keep_context, "save": _no_save})
 
 
+SPEAK = ("chair.ask", "guide.lead")  # 의자·가이드 말은 두 칸(question, note)으로 받는다
+
+
+def spoken(scripts: dict) -> dict:
+    """의자·가이드 말 대본의 글 하나는 질문 칸만 쓴 답이다({"question": 글}). 두 칸을 다 쓰는 대본은 dict로 준다."""
+    return {task: [{"question": item} if task in SPEAK and isinstance(item, str) else item for item in items] for task, items in scripts.items()}
+
+
 def go(state: MainState, scripts: dict, check=None):
-    fake = FakeLlm(scripts)
+    fake = FakeLlm(spoken(scripts))
     with use_llm(fake):
         return run(state, store=None, compiled=pipeline(), check=check), fake
 

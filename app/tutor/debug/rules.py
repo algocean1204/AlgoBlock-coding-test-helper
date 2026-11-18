@@ -114,7 +114,7 @@ def batchim(text: str) -> bool:
 
 
 def symptom_question(report: dict) -> str:
-    return symptom(report) + " 이 입력을 코드 첫 줄부터 손으로 따라가 보면, 어느 줄에서 값이 기대와 달라지기 시작할까요?"
+    return symptom(report) + "\n이 입력을 코드 첫 줄부터 손으로 따라가 보면, 어느 줄에서 값이 기대와 달라지기 시작할까요?"
 
 
 def ladder(kind: str) -> tuple[str, ...]:

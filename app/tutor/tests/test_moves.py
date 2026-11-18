@@ -82,7 +82,7 @@ class ChairMoveTest(unittest.TestCase):
         done = self.pick(Verdict(False), text="몰라요", used=["open", "clue", "trace"])
         self.assertEqual((done.saved, done.lead), (HINTS_DONE, ""))  # 아직 찾지 못한 블록에도 코드 칸이 있다
         asked = self.pick(Verdict(False, aside="A"), text="답 알려 주세요", used=["open", "clue", "trace"])
-        self.assertEqual((asked.lead, asked.saved), ("답 코드는 드리지 않아요. ", HINTS_DONE))  # 같은 '이 블록 채우기' 안내는 한 번만
+        self.assertEqual((asked.lead, asked.way, asked.saved), ("", "답 코드는 드리지 않아요.", HINTS_DONE))  # 같은 '이 블록 채우기' 안내는 한 번만. 답을 주지 않는다는 말은 길 안내 줄
 
     def test_confused_long_answer_gets_help_not_assume(self):
         got = self.pick(Verdict(False, miss=1), text="모르겠어요, 반복문으로 하나씩 보면 될지 감이 안 와요", used=["open"])
@@ -110,7 +110,7 @@ class ChairMoveTest(unittest.TestCase):
         found = pick_move("chair", PLAN, turn(event="block_filled"), Verdict(True), found=True)  # 의자에서 이미 찾은 블록: 맞는지만, 진행은 그대로
         self.assertEqual((found.move, found.advance, found.saved, found.target), ("done", False, FOUND_OK, 0))
         missed = pick_move("chair", PLAN, turn(event="block_filled", used=["open"]), Verdict(False, miss=2), found=True)
-        self.assertEqual((missed.move, missed.advance, missed.saved), ("done", False, RETRY_LEAD + fakes.HINTS1[1]))  # 확인 항목(답)을 인용하지 않는다
+        self.assertEqual((missed.move, missed.advance, missed.lead, missed.saved), ("done", False, RETRY_LEAD, fakes.HINTS1[1]))  # 확인 항목(답)을 인용하지 않는다. 결과 줄과 질문은 따로
 
 
 class BeginnerMoveTest(unittest.TestCase):

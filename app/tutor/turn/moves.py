@@ -66,12 +66,12 @@ def rule_verdict(text: str) -> Verdict | None:
 
 def pick_move(mode: str, plan: BlockPlan, turn: TurnContext, verdict: Verdict | None, allow_follow: bool = True, found: bool = False, language: str = "python") -> MovePlan:
     """found: 의자에서 이미 찾은 블록의 코드 확인(맞는지만 알리고 진행은 그대로).
-    같은 블록에서 내용 없는 답이 두 번 이어지면 그 말 앞에 '이 블록 채우기' 안내를 한 번 붙인다('모르겠어요' 세 번에도 길을 몰랐다).
+    같은 블록에서 내용 없는 답이 두 번 이어지면 '이 블록 채우기' 안내를 길 안내 줄로 한 번 붙인다('모르겠어요' 세 번에도 길을 몰랐다).
     말로는 다음 블록을 열지 않는다: 말로 맞히면 그 블록의 코드 칸에 적으라는 고정 말(write)이다."""
     move = _pick_move(mode, plan, turn, verdict, allow_follow, found, language)
-    if (turn.event == "message" and not move.advance and not turn.tipped and "이 블록 채우기" not in move.lead + (move.saved or "")
+    if (turn.event == "message" and not move.advance and not turn.tipped and "이 블록 채우기" not in move.lead + move.way + (move.saved or "")
             and empty_answer(turn.text) and empty_answer(turn.previous)):
-        move.lead = FILL_TIP + move.lead
+        move.way = FILL_TIP
     return move
 
 
@@ -79,25 +79,25 @@ def _pick_move(mode: str, plan: BlockPlan, turn: TurnContext, verdict: Verdict |
     blocks, index = plan.blocks, turn.index
     used = turn.moves_used
 
-    def ladder(lead: str = "", signal: str = "") -> MovePlan:
+    def ladder(lead: str = "", signal: str = "", way: str = "") -> MovePlan:
         """모델이 짓는 사다리 질문: 사용자가 내용 있는 말을 했거나, 저장 힌트가 없는 옛 계획."""
         level = min(sum(move in LADDER[mode] or move in RUNG0 for move in used), 2)
-        if not lead and used.count(LADDER[mode][-1]) >= 2:
-            lead = STUCK_LEAD  # 꼭대기 질문을 두 번 받고도 막혔다: 빠져나갈 길을 알려 준다
+        if not lead and not way and used.count(LADDER[mode][-1]) >= 2:
+            way = STUCK_LEAD  # 꼭대기 질문을 두 번 받고도 막혔다: 빠져나갈 길을 알려 준다
         name = "replan" if turn.event == "replan" else LADDER[mode][level]  # replan은 저장 기록에서 새 계획의 시작 표시다
-        return MovePlan(name, index, False, lead, None, signal)
+        return MovePlan(name, index, False, lead, None, signal, way)
 
-    def hinted(lead: str = "", signal: str = "") -> MovePlan:
+    def hinted(lead: str = "", signal: str = "", way: str = "") -> MovePlan:
         """저장 힌트의 다음 번호(모델 0회): 블록을 여는 말, 내용 없는 답('모르겠어요', 답 요청, 무관한 말) 뒤. 다 냈으면 고정 말.
         모델이 지은 안내 말은 원칙을 어기곤 했다(답을 말함). 저장 힌트가 없는 옛 계획은 모델이 짓는다.
         블록 코드 확인이 N일 때도 이 자리를 쓴다: 확인 항목(checks)은 답을 말한 문장이라 인용하지 않는다."""
         hints, seen = blocks[index].hints, turn.hints_seen
         if not hints:
-            return ladder(lead, signal)
-        if seen >= len(hints):  # 고정 말이 '이 블록 채우기'를 알리니 같은 안내를 앞말에서 뺀다
-            kept = " ".join(part for part in sentences(lead) if "이 블록 채우기" not in part)
-            return MovePlan(LADDER[mode][-1], index, False, kept + " " if kept else "", HINTS_DONE)
-        return MovePlan("replan" if turn.event == "replan" else LADDER[mode][min(seen, 2)], index, False, lead, hints[seen])
+            return ladder(lead, signal, way)
+        if seen >= len(hints):  # 고정 말이 '이 블록 채우기'를 알리니 같은 안내를 앞말·길 안내에서 뺀다
+            kept = [" ".join(part for part in sentences(text) if "이 블록 채우기" not in part) for text in (lead, way)]
+            return MovePlan(LADDER[mode][-1], index, False, kept[0] + " " if kept[0] else "", HINTS_DONE, way=kept[1])
+        return MovePlan("replan" if turn.event == "replan" else LADDER[mode][min(seen, 2)], index, False, lead, hints[seen], way=way)
 
     def advance() -> MovePlan:
         if index + 1 >= len(blocks) and mode == "guide" and turn.event == "block_filled":
@@ -117,7 +117,7 @@ def _pick_move(mode: str, plan: BlockPlan, turn: TurnContext, verdict: Verdict |
     if turn.event == "message" and verdict is not None and verdict.aside == "Q":
         return MovePlan("term", index, False)  # 되물었다(낱말 뜻, 문법, 문제 글): 모델이 먼저 답한 뒤 원래 질문으로 돌아간다. 사다리 칸·힌트 번호를 쓰지 않는다
     if turn.event == "message" and verdict is not None and verdict.aside:
-        return hinted(ANSWER_LEAD if verdict.aside == "A" else BACK_LEAD)  # 고정 앞말 뒤에 다음 저장 힌트
+        return hinted(way=ANSWER_LEAD) if verdict.aside == "A" else hinted(BACK_LEAD)  # 다음 저장 힌트. 답을 주지 않는다는 말은 길 안내 줄로
     if turn.event == "message" and index == len(blocks) - 1 and (LAST_MOVE[mode] in used or "done" in used):
         return MovePlan("close", index, False, saved=FALLBACK["close"])  # 정리 질문에 답했다: 같은 질문을 되풀이하지 않고 코드로 보낸다
     if mode == "chair" and turn.event == "message" and used[-1:] == ["basis"] and not asks(turn.text):
@@ -138,7 +138,9 @@ def _pick_move(mode: str, plan: BlockPlan, turn: TurnContext, verdict: Verdict |
         plain = not ok and verdict is not None and not verdict.hint
         if found:  # 의자에서 이미 찾은 블록: 맞는지만 알리고 진행은 그대로
             retry = hinted(lead)
-            return MovePlan("done", index, False, saved=FOUND_OK if ok else (retry.lead + retry.saved if retry.saved and not plain else lead.strip()))
+            if not ok and retry.saved and not plain:
+                return MovePlan("done", index, False, retry.lead, retry.saved, way=retry.way)
+            return MovePlan("done", index, False, saved=FOUND_OK if ok else lead.strip())
         if plain:
             return MovePlan(LADDER[mode][min(turn.hints_seen, 2)], index, False, saved=lead.strip())
         # 저장 힌트가 없으면 못 해낸 첫 신호를 겨눠 짓는다(빠진 것과 다른 것을 물었다)

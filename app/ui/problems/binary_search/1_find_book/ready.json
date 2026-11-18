@@ -15,12 +15,12 @@
   "solution": {
    "approach": "책 번호가 오름차순으로 꽂혀 있으니, 가운데 책을 한 권 보면 찾는 번호가 왼쪽 절반에 있는지 오른쪽 절반에 있는지 바로 알 수 있습니다. 그래서 질문마다 가운데를 보고 답이 없는 절반을 버리는 이분 탐색을 합니다. 이렇게 하면 질문 하나에 약 17번만 비교하면 되어 10만 개의 질문도 금방 끝납니다. 끝까지 못 찾으면 처음에 넣어 둔 -1을 그대로 답으로 씁니다.",
    "steps": [
-    "답을 담을 빈 배열 answer를 만든다 — queries의 순서대로 결과를 쌓아 두기 위해",
-    "queries의 번호를 하나씩 꺼내 찾는 범위를 books 전체(left는 0, right는 마지막 자리)로 정하고 position을 -1로 둔다 — 못 찾으면 -1이 그대로 답이 되도록",
-    "left가 right 이하인 동안 가운데 자리 mid를 구한다 — 남은 범위의 한가운데 책을 확인하기 위해",
-    "books[mid]가 찾는 번호와 같으면 position에 mid를 적고 반복을 멈춘다 — 자리를 찾았으니 더 볼 필요가 없다",
-    "books[mid]가 찾는 번호보다 작으면 left를 mid+1로, 크면 right를 mid-1로 옮긴다 — 정렬되어 있으니 반대쪽 절반에는 찾는 번호가 없다",
-    "구한 position을 answer에 넣고, 모든 질문을 마치면 answer를 돌려준다 — 질문 순서대로 결과를 내기 위해"
+    "답을 담을 빈 배열 answer를 만든다, queries의 순서대로 결과를 쌓아 두기 위해",
+    "queries의 번호를 하나씩 꺼내 찾는 범위를 books 전체(left는 0, right는 마지막 자리)로 정하고 position을 -1로 둔다, 못 찾으면 -1이 그대로 답이 되도록",
+    "left가 right 이하인 동안 가운데 자리 mid를 구한다, 남은 범위의 한가운데 책을 확인하기 위해",
+    "books[mid]가 찾는 번호와 같으면 position에 mid를 적고 반복을 멈춘다, 자리를 찾았으니 더 볼 필요가 없다",
+    "books[mid]가 찾는 번호보다 작으면 left를 mid+1로, 크면 right를 mid-1로 옮긴다, 정렬되어 있으니 반대쪽 절반에는 찾는 번호가 없다",
+    "구한 position을 answer에 넣고, 모든 질문을 마치면 answer를 돌려준다, 질문 순서대로 결과를 내기 위해"
    ],
    "code": "def solution(books, queries):\n    answer = []\n    for target in queries:\n        left = 0\n        right = len(books) - 1\n        position = -1\n        while left <= right:\n            mid = (left + right) // 2\n            if books[mid] == target:\n                position = mid\n                break\n            elif books[mid] < target:\n                left = mid + 1\n            else:\n                right = mid - 1\n        answer.append(position)\n    return answer",
    "verified": true,
