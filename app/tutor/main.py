@@ -43,16 +43,6 @@ def after_context(state: MainState) -> str:
     return "request_check"
 
 
-def stale_plan(ctx) -> bool:
-    """미리 짜 둔 계획(코드가 없을 때의 '새로 짜기')이 낡았는가.
-
-    그 뒤 사용자가 코드를 썼고 아직 대화·해설을 시작하지 않았다면, 원 설계대로 그 코드를 채점해 다시 짠다(순서 유지 또는 정석).
-    """
-    plan = ctx.plan
-    return (plan is not None and not plan.settled and plan.strategy in ("fresh", "rule_cut") and bool((ctx.direct_code or "").strip())
-            and not ctx.chair and not ctx.guide and ctx.explain is None)
-
-
 def after_check(state: MainState) -> str:
     if state.get("error"):
         return "end"
@@ -61,8 +51,7 @@ def after_check(state: MainState) -> str:
         return "plan" if ctx.plan is None else "end"  # 이미 계획이 있으면 할 일이 없다
     if kind in NO_PLAN:
         return pick(state)
-    # 피드백은 제출 코드를 자기 채점(feedback.assess)으로 따로 본다. 낡은 계획을 코드로 다시 짜지 않는다(모델 서넛이 더 들고, 블록 이야기가 따라온다)
-    return "plan" if ctx.plan is None or (stale_plan(ctx) and kind != "feedback") else pick(state)
+    return "plan" if ctx.plan is None else pick(state)
 
 
 def after_plan(state: MainState) -> str:
@@ -160,7 +149,8 @@ class Tutor:
         # given(problem_id, language) → {"code"[, "clues", "approach", "steps"]} 또는 None. 정답 코드가 정해진 문제(기본 문제)는 새로 풀지 않고 그 코드로 가이드를 삼는다
         self.given = given
         # cross: 정답 풀이를 실행으로 대조하는 실행기(plan.nodes.cross_check). mode(problem_id) → "function"·"program"(대조하지 않을 문제면 None),
-        # run(problem_id, code, brute, maker, bounds) → {status: same|differ|error, …}(채점기 프로세스로만 돌린다), done(problem_id, verdict)(결과를 남긴다)
+        # run(problem_id, code, brute, maker, bounds) → {status: same|differ|error, …}(채점기 프로세스로만 돌린다), done(problem_id, verdict)(결과를 남긴다).
+        # run이 None이면 준비가 대조하지 않고 later(problem_id, report, tiers)에 정석 가이드의 채점 결과와 쓴 급을 맡긴다(대조는 나중에 recheck가 한다)
         self.cross = cross
         # shape(problem_id, language) → {"mode": "function"|"program", "starter": 시작 코드}. 블록 코드 확인이 방식을 코드 모양으로 짐작하지 않고,
         # 풀이 가이드가 시작 코드와 같은 진입 함수 머리를 쓰게 한다. 없으면 함수 방식·시작 코드 없음
@@ -208,7 +198,7 @@ class Tutor:
         """문항을 등록하거나 열었을 때 미리 불러 둔다: 뼈대(명세·패턴)와 블록 계획을 만들어 저장한다.
 
         사용자가 문제를 읽는 동안 끝나면 첫 질문은 저장해 둔 질문이라 바로 나온다(모델 0회). 이미 계획이 있으면 아무것도 하지 않는다.
-        계획을 만든 뒤 사용자가 코드를 먼저 썼다면 첫 요청에서 그 코드로 다시 짠다(stale_plan).
+        계획을 만든 뒤 사용자가 코드를 먼저 썼어도 다시 짜지 않고 준비해 둔 순서로 시작한다.
         """
         return self.handle(TutorRequest(kind="prepare", problem_id=problem_id))
 
@@ -225,8 +215,9 @@ class Tutor:
                                 fact=ready["fact"], solution=Solution(**ready["solution"]))
         return True
 
-    def recheck(self, problem_id) -> Solution | None:
-        """대조 없이 준비해 둔 정석 가이드(대조 기능이 생기기 전에 등록한 문제)를 한 번 대조한다(계획은 그대로). 결과는 cross.done이 남긴다.
+    def recheck(self, problem_id, report: dict | None = None, tiers: list | None = None) -> Solution | None:
+        """대조 없이 준비해 둔 정석 가이드(서버 준비의 1걸음이 만든 것, 대조 기능이 생기기 전에 등록한 문제)를 한 번 대조한다(계획은 그대로). 결과는 cross.done이 남긴다.
+        report·tiers: 그 가이드를 만들 때 맡겨 둔 채점 결과와 쓴 급(cross.later). 없으면 채점하지 못한 까닭을 모르고, 급은 과정의 급 하나로 적는다.
         다시 푼 코드가 대조를 통과해 가이드가 바뀌었으면 새 가이드를 돌려준다(부르는 쪽이 계획을 지우고 새 코드로 다시 짠다). 아니면 None."""
         from .plan.nodes import cross_check
 
@@ -236,7 +227,7 @@ class Tutor:
         ctx = replace(ctx, **self.shape(problem_id, ctx.language)) if self.shape is not None else ctx  # 다시 푼 코드도 시작 코드의 머리를 따른다
         old = ctx.canonical
         with use_llm(self.client) if self.client is not None else nullcontext():
-            got, _ = cross_check({"ctx": ctx, "strategy": "fresh"}, Solved(old.approach, old.steps, old.code, old.clues), old.verified, None, self.check, self.cross)
+            got, _ = cross_check({"ctx": ctx, "strategy": "fresh"}, Solved(old.approach, old.steps, old.code, old.clues), old.verified, report, self.check, self.cross, tiers)
         if got.code == old.code:
             return None
         return Solution(got.approach.strip(), [step.strip() for step in got.steps if step.strip()], got.code, True, [clue.strip() for clue in got.clues if clue.strip()])

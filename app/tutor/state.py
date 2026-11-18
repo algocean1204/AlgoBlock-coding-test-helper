@@ -58,7 +58,6 @@ class BlockPlan:
     algorithm: str = ""
     out_of_scope: bool = False
     link: str = ""  # 사용자가 전에 풀어 본 같은 구조 문항 한 줄(제목: 흐름). 떠올리게 하는 말에만 쓴다. 풀이를 정하지 않는다
-    settled: bool = False  # 언어를 갔다 와서 되살린 계획. 그 언어에서 쓰던 코드가 있어도 낡았다고 다시 짜지 않는다(stale_plan)
 
 
 @dataclass

@@ -1,0 +1,22 @@
+{
+ "id": "F08a",
+ "note": "문제가 아닌 글: 뉴스 단락",
+ "raw": [
+  "시립 도서관이 다음 달부터 야간 개관을 시작한다. 평일에는 밤 10시까지 문을 열고, 주말에는 지금처럼 오후 6시에 닫는다.",
+  "도서관 측은 퇴근 뒤 찾는 이용자가 늘어 운영 시간을 늘리기로 했다고 밝혔다. 늘어난 시간에는 열람실과 자료실만 쓸 수 있다."
+ ],
+ "expect": {
+  "verdict": "not_problem",
+  "mode": null,
+  "title": null,
+  "names": [],
+  "cases": [],
+  "sections": {},
+  "absent": [],
+  "bounds": [],
+  "flags": {
+   "many_answers": false,
+   "float_output": false
+  }
+ }
+}
