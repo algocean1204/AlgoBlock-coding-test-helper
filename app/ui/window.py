@@ -58,7 +58,7 @@ def main() -> None:
         return notify(httpd)
     url = f"http://127.0.0.1:{httpd.server_address[1]}/"
     threading.Thread(target=server.serve, args=(httpd,), daemon=True).start()
-    webview.create_window("AlgoBlock Dev" if os.environ.get("ALGOBLOCK_FLAVOR") == "dev" else "AlgoBlock", url, width=1440, height=900, min_size=(1024, 680), background_color=background())
+    webview.create_window("AlgoBlock Dev" if os.environ.get("ALGOBLOCK_FLAVOR") == "dev" else "AlgoBlock", url, width=1440, height=900, min_size=(960, 540), background_color=background())
     webview.start()  # 창을 닫으면 돌아온다(메뉴의 '끝내기'는 돌아오지 않고 끝나 채점기의 CPU 시간 상한만 남는다)
     server.stop_grading()
 
