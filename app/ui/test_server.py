@@ -49,9 +49,7 @@ import server  # noqa: E402
 server.ROOT = TMP  # 저장소의 .env를 읽지 않는다(키 지우기 흐름이 load_keys를 다시 불러도 진짜 키가 환경에 올라오지 않게)
 from tutor.common.scope import ALGORITHMS  # noqa: E402
 from tutor.common.talk_rules import MANY_ANSWERS  # noqa: E402
-from dataclasses import replace  # noqa: E402
 from tutor.llm import FakeLlm, use_llm  # noqa: E402
-from tutor.main import stale_plan  # noqa: E402
 
 GOOD = {"title": "두 수의 합", "text": "두 수 a, b의 합을 return 하도록 solution 함수를 완성하세요.",
         "cases": [{"input": "[1, 2]", "expected": "3"}, {"input": "", "expected": ""}, {"input": "[5, 5]", "expected": "10"}],
@@ -305,10 +303,9 @@ def builtin(fake) -> None:
     else:
         assert call("/api/submit", id=PID, code=JS)[1]["status"] == "toolchain_missing"
     assert len(call("/api/language", id=PID, language="python")[1]["session"]["blocks"]) == 2
-    with server.tutor() as t:  # 돌아온 계획은 그 언어로 쓰던 코드가 있고 대화가 지워졌어도 낡았다고 다시 짜지 않는다
+    with server.tutor() as t:  # 돌아온 계획은 그 언어로 쓰던 코드가 있어도 다시 짜지 않고 그대로 시작한다
         t.store.update_code(PID, CODE)
-        back = t.store.load(PID)
-        assert back.plan.settled and not stale_plan(back) and stale_plan(replace(back, plan=replace(back.plan, settled=False)))
+        assert call("/api/turn", id=PID, mode="chair", event="start")[1]["messages"][0]["text"]
         t.store.update_code(PID, "")
     assert not fake.calls, fake.calls  # 여기까지 모델을 한 번도 부르지 않았다
 
