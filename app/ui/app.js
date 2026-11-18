@@ -1461,7 +1461,7 @@ function renderBlocks() {
           ${skip ? `<button type="button" class="btn quiet small" data-skip="${esc(b.id)}">이대로 넘어가기</button>` : ""}
           ${skip && !S.ownWay ? (S.ownAsk === b.id ? `<span class="confirm"><span>아직 찾지 않은 뒤 블록이 모두 열려요. 마지막 블록을 뺀 블록은 이름도 보여요.</span><button type="button" class="btn danger small" data-own-yes="${esc(b.id)}">그래도 열기</button><button type="button" class="btn quiet small" data-own-no="${esc(b.id)}">더 생각해 보기</button></span>`
             : `<button type="button" class="btn quiet small" data-own="${esc(b.id)}" title="이 블록은 넘어가고 남은 블록을 모두 열어요. 블록마다 확인하지 않고, 다 쓴 뒤 ‘모아서 실행’으로 확인해요">끝까지 내 방식으로 쓰기</button>`) : ""}
-          ${S.fillAsk === b.id ? (unfound ? `<span class="confirm"><span>아직 찾지 못한 블록이에요. 채우면 이 블록의 이름과 튜터의 코드가 보여요.</span><button type="button" class="btn danger small" data-fill-yes="${esc(b.id)}" data-model>그래도 채우기</button><button type="button" class="btn quiet small" data-fill-no="${esc(b.id)}">더 생각해 보기</button></span>`
+          ${S.fillAsk === b.id ? (unfound ? `<span class="confirm"><span>아직 찾지 못한 블록이에요. 채우면 ${i < s.blocks.length - 1 ? "이 블록의 이름과 " : ""}튜터의 코드가 보여요.</span><button type="button" class="btn danger small" data-fill-yes="${esc(b.id)}" data-model>그래도 채우기</button><button type="button" class="btn quiet small" data-fill-no="${esc(b.id)}">더 생각해 보기</button></span>`
       : `<span class="confirm"><span>적은 코드를 튜터의 코드로 바꿀까요?</span><button type="button" class="btn danger small" data-fill-yes="${esc(b.id)}" data-model>바꾸기</button><button type="button" class="btn quiet small" data-fill-no="${esc(b.id)}">그대로 두기</button></span>`)
     : `<button type="button" class="btn quiet small" data-fill="${esc(b.id)}" data-model${current ? "" : ` aria-label="블록 ${n} 채우기"`}>이 블록 채우기</button>`}
         </div>

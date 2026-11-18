@@ -1105,6 +1105,36 @@ def chair_check_hides_names() -> None:
     call("/api/reset", id=pid)
 
 
+def chair_brace_hides_line() -> None:
+    """의자에서 이름이 가려진 블록의 괄호 경계 안내는 튜터 코드의 줄을 인용하지 않는다(모델 0회). 틀 줄이 없는 JavaScript 표준 입출력에서
+    닫은 반복을 적으면 '튜터의 풀이는 이 블록에서 연 괄호(`for …`)를…'로 가려진 블록의 참고 코드 한 줄이 나갔다. 가이드는 그 줄을 인용한다.
+    블록 칸의 결과 줄은 이 말의 첫 문장이다."""
+    if not server.tools()["javascript"]:
+        return
+    code = ('const rows = require("fs").readFileSync(0, "utf8").trim().split("\\n");\nconst n = Number(rows[0]);\nlet total = 0;\n'
+            'for (let i = 1; i <= n; i++) {\n    total += Number(rows[i]);\n}\nconsole.log(total);')
+    lines, hints = code.splitlines(), ["무엇을 하나씩 볼까요?", "몇 줄을 읽어야 할까요?", "입력이 2, 3, 4라면 무엇을 더하나요?"]
+    blocks = [{"id": "b1", "kind": "loop", "name": "줄마다 보기", "goal": "N줄을 하나씩 본다", "reference": "\n".join(lines[:4]), "lines": [1, 4], "checks": ["N줄을 본다"], "hints": hints},
+              {"id": "b2", "kind": "var_during", "name": "합 출력", "goal": "합을 더해 출력한다", "reference": "\n".join(lines[4:]), "lines": [5, 7], "checks": ["합을 출력한다"], "hints": hints}]
+    ready = {"fact": {"spec": "N개의 수를 더한다", "patterns": [], "skills": [], "size": 100},
+             "solution": {"approach": "더한다", "steps": ["읽는다", "더한다"], "code": code, "verified": True, "clues": []},
+             "plan": {"strategy": "fresh", "score": None, "algorithm": "hash", "out_of_scope": False, "link": "", "blocks": blocks}}
+    problem = {"title": "N개의 합", "text": "첫째 줄에 N, 다음 N줄에 정수가 하나씩 주어진다. 합을 출력한다.", "mode": "program", "language": "javascript",
+               "cases": [{"input": "2\n3\n4\n", "expected": "7\n"}, {"input": "3\n1\n1\n1\n", "expected": "3\n", "hidden": True}]}
+    said = {}
+    for mode in ("chair", "guide"):
+        pid = server.register(problem)["id"]
+        with server.tutor() as t:
+            t.adopt(pid, ready)
+        call("/api/turn", id=pid, mode=mode, event="start")
+        body = call("/api/turn", id=pid, mode=mode, event="block_filled", block_id="b1", code="for (const r of rows.slice(1)) {\n}")[1]
+        said[mode] = body["messages"][-1]["text"]
+        assert (body["blocks"][0]["name"] is None) == (mode == "chair"), (mode, body["blocks"])
+    assert "이 블록에서 연 괄호를 이 블록이 끝날 때도 열어 두고" in said["chair"], said["chair"]
+    assert not [row for row in lines[:4] if row.strip() in said["chair"]] and "`total`" not in said["chair"], said["chair"]
+    assert "이 블록에서 연 괄호(`for (let i = 1; i <= n; i++) {`)를" in said["guide"], said["guide"]
+
+
 def result_guides() -> None:
     """채점 결과와 방식 화면의 안내(화면 코드 확인): 큰 입력의 실행 오류는 시간 부족이라 하지 않고, 효율성만 실패하면 ‘틀린 곳 같이 찾기’가 없는 까닭을 말하며,
     튜터 방식 전환 단추는 무엇이 바뀌는지 말한다. 브라우저 동작은 화면 확인으로 본다."""
@@ -4206,6 +4236,7 @@ def main() -> None:
         guide_spoken()
         same_check_once()
         chair_check_hides_names()
+        chair_brace_hides_line()
         result_guides()
         block_cell_both_ways()
         language_memory()

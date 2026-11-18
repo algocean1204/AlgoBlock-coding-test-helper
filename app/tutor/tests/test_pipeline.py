@@ -2236,6 +2236,15 @@ class BlockCheckTextTest(unittest.TestCase):
         said = failure_verdict(report, [span], False, "", False).seen
         self.assertTrue(said.startswith("다른 블록의 코드에서 실행 오류가 났어요.\n`dfs`라는 이름을 찾지 못했어요. 만들기 전에 썼거나 철자가 다른지 확인해 보세요.") and "번째 줄" not in said, said)
 
+    def test_hidden_block_keeps_only_my_error_rows(self):
+        """의자에서 이름이 가려진 블록: 내 줄이 아닌 곳에서 난 오류의 원문(튜터 코드의 줄과 이름이 든다)은 싣지 않는다. 내 줄의 오류는 그대로."""
+        from ..turn.code_check import failure_verdict
+
+        report = {"status": "runtime_error", "compile": "", "cases": [{"status": "runtime_error", "line": 2, "error": "NameError: name 'dfs' is not defined"}]}
+        other = {"first": 1, "last": 2, "block": 0, "whose": "this", "cut": 0, "code": "a = 1\nb = 2", "rows": ["x", "y"]}
+        self.assertNotIn("dfs", failure_verdict(report, [other], False, "", False, hide=True).seen)
+        self.assertIn("dfs", failure_verdict(report, [{**other, "rows": ["a = 1", "b = 2"]}], False, "", False, hide=True).seen)
+
     def test_missing_member_and_name_are_said_in_easy_words(self):
         """같은 실수는 다섯 언어가 같은 쉬운 말을 받는다(이 맥의 python3·javac·clang++·rustc·node가 낸 글)."""
         from ..turn.code_check import NO_CLASS, NO_MEMBER, NO_NAME, _error_row, failure_verdict
