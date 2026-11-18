@@ -33,6 +33,15 @@ from tutor.llm import FakeLlm, use_llm  # noqa: E402
 server.ROOT = TMP  # 저장소의 .env를 읽지 않는다
 FAKE = FakeLlm()  # 응답이 없어 부르면 실패한다. 부른 기록은 FAKE.calls에 남는다
 server.model = lambda: use_llm(FAKE)  # 요청을 받는 스레드마다 가짜 모델을 건다(문맥 변수는 새 스레드로 넘어가지 않는다)
+ASKED: list[str] = []  # 업데이트 확인이 부르려 한 주소(네트워크로 나가지 않고 실패로 센다)
+
+
+def no_network(url, *args, **kwargs):
+    ASKED.append(str(url))
+    raise OSError("흐름 시험은 네트워크를 쓰지 않는다")
+
+
+server.updater.fetch = no_network
 VIEWPORTS = ("1366x689", "1093x551")
 
 
@@ -70,25 +79,35 @@ def self_check(script: Path) -> None:
 
 
 def main() -> bool:
-    shots = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else TMP / "shots"
+    keep = len(sys.argv) > 1  # 사진 폴더를 받았으면 그대로 둔다. 없으면 실패할 때만 남는 새 폴더에 찍는다
+    shots = Path(sys.argv[1]).resolve() if keep else Path(tempfile.mkdtemp(prefix="algoblock-flow-shots-"))
     scripts = sorted((HERE / "flow").glob("*.mjs"))
-    assert scripts, "flow/*.mjs가 없다"
-    for script in scripts:
-        self_check(script)
-    httpd, base = serve(server.Handler)
     failed = []
-    for script in scripts:
-        out = run(script, base, shots)
-        print(f"== {script.name}\n{out.stdout}{out.stderr}", end="", flush=True)
-        if out.returncode:
-            failed.append(script.name)
-    httpd.shutdown()
-    if FAKE.calls:
-        failed.append(f"모델 {len(FAKE.calls)}회: {[call['task'] for call in FAKE.calls]}")
+    try:
+        assert scripts, "flow/*.mjs가 없다"
+        for script in scripts:
+            self_check(script)
+        httpd, base = serve(server.Handler)
+        try:
+            for script in scripts:
+                out = run(script, base, shots)
+                print(f"== {script.name}\n{out.stdout}{out.stderr}", end="", flush=True)
+                if out.returncode:
+                    failed.append(script.name)
+        finally:
+            httpd.shutdown()
+            httpd.server_close()
+        if FAKE.calls:
+            failed.append(f"모델 {len(FAKE.calls)}회: {[call['task'] for call in FAKE.calls]}")
+        if ASKED:
+            failed.append(f"네트워크 {len(ASKED)}회: {ASKED}")
+    finally:
+        shutil.rmtree(TMP, ignore_errors=True)  # 실패하거나 예외가 나도 임시 자료 폴더는 지운다
     if failed:
         print(f"실패: {failed}. 화면 사진: {shots}", file=sys.stderr)
         return False
-    shutil.rmtree(TMP, ignore_errors=True)
+    if not keep:
+        shutil.rmtree(shots, ignore_errors=True)
     print("ok")
     return True
 
