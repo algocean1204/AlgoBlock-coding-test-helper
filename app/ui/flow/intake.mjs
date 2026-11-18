@@ -70,10 +70,12 @@ const connect = (page) => page.route('**/api/accounts', async (route) => {
 // 감지 응답을 고쳐 끼운다: patch(data, body, calls) → 모델이 끼었을 때의 응답. fast 요청은 그대로 둘 수도 있다
 const patchDetect = (page, calls, patch) => page.route('**/api/problems/detect', async (route) => {
   const body = JSON.parse(route.request().postData() || '{}')
-  calls.push(body)
-  const res = await route.fetch(), data = await res.json()
-  await patch(data, body)
-  await route.fulfill({ response: res, json: data })
+  calls.push({ ...body })
+  try {
+    const res = await route.fetch(), data = await res.json()
+    await patch(data, body)
+    await route.fulfill({ response: res, json: data })
+  } catch { await route.abort().catch(() => {}) } // 화면이 닫히는 중이면 응답을 못 줄 수 있다
 })
 
 /** 한 상황을 새 화면에서 돌린다. setup(page, rec)은 화면을 열기 전, fn(page, rec, need, seed)는 연 뒤. rec.posts는 서버로 간 POST 요청({path, body}) */
@@ -82,7 +84,8 @@ async function scenario(viewport, name, fn, setup) {
   const page = await browser.newPage({ viewport })
   const problems = [], posts = []
   page.on('pageerror', (e) => problems.push(`pageerror: ${e.message}`))
-  page.on('console', (m) => { if (m.type() === 'error') problems.push(`console: ${m.text()}`) })
+  const rec = { posts }
+  page.on('console', (m) => { if (m.type() === 'error' && !(rec.allow && rec.allow.test(m.text()))) problems.push(`console: ${m.text()}`) })
   page.on('request', (r) => { if (r.method() === 'POST' && r.url().includes('/api/')) { let body = null; try { body = JSON.parse(r.postData() || 'null') } catch {} posts.push({ path: new URL(r.url()).pathname, body }) } })
   await page.route('**/*', (route) => {
     const url = route.request().url()
@@ -93,7 +96,6 @@ async function scenario(viewport, name, fn, setup) {
   let stuck = false
   const need = async (what, step) => { if (stuck) return; try { await step() } catch (e) { stuck = true; problems.push(`${what}: ${String(e.message).split('\n')[0]}`) } }
   const seed = `${name}-${tag}`
-  const rec = { posts }
   if (setup) await setup(page, rec) // 연결 흉내와 감지 응답 고치기는 화면을 열기 전에 건다(화면이 처음부터 그 상태를 본다)
   await need('내 문제 넣기 화면이 열린다', async () => {
     await page.goto(`${base}/#/new`)
@@ -131,7 +133,7 @@ for (const viewport of VIEWPORTS) {
       await waitLine(page, /예시 3개/)
       await waitCards(page, 3)
       must((await page.locator('#new-title').inputValue()) === '조명 켜기 횟수', `제목이 ${await page.locator('#new-title').inputValue()}`)
-      must(!(await page.locator('#case-fill').isVisible()), '‘입출력 예에서 채우기’ 단추를 눌러야 하면 안 된다')
+      must((await count(page, '#case-fill')) === 0, '‘입출력 예에서 채우기’ 단추(#case-fill)가 남아 있다')
     })
     await need('두 칸(문제부 / 입출력부)이 보이고 나뉘어 있다', async () => {
       for (const sel of ['#intake-problem', '#intake-io', '#preview']) await page.locator(sel).waitFor({ state: 'visible', timeout: 2000 })
@@ -180,14 +182,13 @@ for (const viewport of VIEWPORTS) {
       must(post.body.cases[0].input === '[[1, 1, 0, 1, 1, 1], 2]' && post.body.cases[0].expected === '2', `첫 케이스 ${JSON.stringify(post.body.cases[0])}`)
       must(post.body.text.includes('복도에 일렬로') && post.body.text.includes('입출력 예 설명'), '저장하는 글이 원문과 다르다')
     })
-    await need('키 없이도 예시 채점이 되고 준비 중에서 멈추지 않는다', async () => {
+    await need('키 없이도 예시 채점이 되고 서버가 준비를 돌리지 않는다(준비를 켠 상태의 같은 시험은 test_intake.py)', async () => {
       await page.locator('#code').waitFor({ state: 'visible', timeout: 4000 })
       await page.locator('#code').fill(SOLUTION)
       await page.locator('#run').click()
       await page.waitForFunction(() => /예시 통과/.test(document.querySelector('#result .verdict.pass')?.textContent || ''), null, { timeout: 15000 })
-      await sleep(1200)
-      const check = await page.evaluate(() => document.getElementById('p-check')?.textContent || '')
-      must(!/준비 중|만드는 중/.test(check), `준비 중에서 멈췄다: ${check}`)
+      const state = await page.evaluate(async (pid) => (await (await fetch('/api/state', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: pid }) })).json()).problem, page.url().split('#/p/')[1])
+      must(state.preparing === false && state.checking === false, `키가 없는데 준비·숨은 테스트 만들기가 돈다: ${JSON.stringify([state.preparing, state.checking])}`)
     })
     await need('수정 화면이 같은 꼴(걸음 없음, 두 칸, 카드)이다', async () => {
       const id = page.url().split('#/p/')[1]
@@ -282,6 +283,15 @@ for (const viewport of VIEWPORTS) {
       const state = await page.evaluate(async (pid) => (await (await fetch('/api/state', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: pid }) })).json()).problem.hold, id)
       must(state === true, '서버가 준비를 미루지 않았다(hold)')
     })
+    await need('[준비 시작](#prep-hold)을 누르기 전에는 준비가 안 가고, 누르면 간다', async () => {
+      await page.locator('#prep-hold').waitFor({ state: 'visible', timeout: 4000 })
+      await sleep(500)
+      must(!rec.posts.some((x) => x.path === '/api/problems/prepare'), '누르기 전에 준비를 불렀다')
+      await page.locator('#prep-hold').click()
+      for (let i = 0; i < 40 && !rec.posts.some((x) => x.path === '/api/problems/prepare'); i++) await sleep(50)
+      const post = rec.posts.find((x) => x.path === '/api/problems/prepare')
+      must(post && post.body.id === page.url().split('#/p/')[1], `[준비 시작]이 준비 요청을 보내지 않았다: ${JSON.stringify(post)}`)
+    })
   }, async (page, rec) => {
     await connect(page)
     await patchDetect(page, [], (data) => { data.problem = false; data.notice = '문제 글로 보이지 않아요. 그래도 등록할 수 있어요.' })
@@ -363,6 +373,99 @@ for (const viewport of VIEWPORTS) {
       data.title = '모델이 지은 제목'
       data.mode = 'program'
       data.suggest = {}
+    })
+  })
+
+  // 6-2. 순서가 뒤바뀐 응답: 앞 글의 fast·모델 응답이 지금 글의 것보다 늦게 와도 지금 글의 제목·예시만 남는다
+  const variant = (title, rows, seed) => seeded([title, ...LINES.slice(1, rows === 3 ? undefined : 16), ...(rows === 3 ? [] : LINES.slice(17))], seed).join('\n')
+  await scenario(viewport, 'order', async (page, rec, need, seed) => {
+    const sent = (marker) => rec.calls.some((c) => !c.fast && c.text.startsWith(marker))
+    await need('앞 글의 fast 응답이 지금 글보다 늦게 와도 덮지 못한다', async () => {
+      await page.locator('#new-text').fill(variant('앞 글 하나', 2, seed))
+      await sleep(450) // 앞 글의 fast 요청이 나간 뒤(응답은 1.8초 늦다)
+      await page.locator('#new-text').fill(variant('지금 글 하나', 3, seed))
+      await waitCards(page, 3)
+      await page.waitForFunction(() => document.getElementById('new-title').value === '지금 글 하나', null, { timeout: 3000 })
+      await sleep(2300)
+      must((await page.locator('#new-title').inputValue()) === '지금 글 하나', `늦게 온 앞 글이 제목을 덮었다: ${await page.locator('#new-title').inputValue()}`)
+      must((await cards(page)) === 3, `늦게 온 앞 글이 예시를 덮었다: ${await cards(page)}개`)
+    })
+    await need('앞 글의 모델 응답이 지금 글보다 늦게 와도 덮지 못한다', async () => {
+      await page.locator('#new-text').fill(variant('앞 글 둘', 2, seed))
+      await waitCards(page, 2)
+      for (let i = 0; i < 60 && !sent('앞 글 둘'); i++) await sleep(50)
+      must(sent('앞 글 둘'), '앞 글의 모델 감지 요청이 나가지 않았다')
+      await page.locator('#new-text').fill(variant('지금 글 둘', 3, seed))
+      await waitCards(page, 3)
+      await sleep(3000) // 앞 글의 모델 응답(2.5초 늦음)이 온 뒤
+      must((await page.locator('#new-title').inputValue()) === '지금 글 둘', `늦게 온 모델 응답이 제목을 덮었다: ${await page.locator('#new-title').inputValue()}`)
+      must((await cards(page)) === 3, `늦게 온 모델 응답이 예시를 덮었다: ${await cards(page)}개`)
+      await waitLine(page, /예시 3개/)
+    })
+  }, async (page, rec) => {
+    rec.calls = []
+    await connect(page)
+    await patchDetect(page, rec.calls, async (data, body) => {
+      if (body.text.startsWith('앞 글 하나') && body.fast) await sleep(1800)
+      if (body.text.startsWith('앞 글 둘') && !body.fast) { data.title = '앞 글 둘(모델)'; await sleep(2500) }
+    })
+  })
+
+  // 6-3. 모델 감지 호출 수: 한 자씩 치는 동안 말고 멈춘 뒤 한 번, 같은 글은 방식을 바꿔도 다시 보내지 않고, 붙여 넣고 0.8초 안에 바꿔도 한 번 이하
+  const SHORT = (seed) => ['두 수 더하기', '', '문제 설명', '정수 a, b를 입력받아 합을 출력합니다.', '', '제한사항', '1 ≤ a, b ≤ 100', '', '예제 입력 1', '1 2', '', '예제 출력 1', `3 (${seed})`].join('\n')
+  await scenario(viewport, 'calls', async (page, rec, need, seed) => {
+    const model = (t) => rec.calls.filter((c) => !c.fast && c.text === t).length
+    const first = SHORT(seed), second = SHORT(`${seed}-둘`)
+    await need('한 자씩 치는 동안은 감지를 흩뿌리지 않고 멈춘 뒤 모델은 한 번만 본다', async () => {
+      await page.locator('#new-text').pressSequentially(first, { delay: 10 })
+      await sleep(2000)
+      const fast = rec.calls.filter((c) => c.fast).length, slow = rec.calls.filter((c) => !c.fast).length
+      must(fast >= 1 && fast <= 12, `규칙 감지(fast)가 ${fast}번이다(글자마다 부르면 안 된다)`)
+      must(slow === 1, `모델 감지(fast 아님)가 ${slow}번이다(1번이어야 한다)`)
+    })
+    await need('같은 글에서 방식을 바꿔도 모델 감지가 늘지 않는다', async () => {
+      await page.locator('#new-more').evaluate((el) => { el.open = true })
+      const now = await page.locator('#new-mode').inputValue()
+      await page.locator('#new-mode').selectOption(now === 'program' ? 'function' : 'program')
+      await sleep(2200)
+      must(model(first) === 1, `방식을 바꾸자 같은 글을 모델에 다시 보냈다(${model(first)}번)`)
+    })
+    await need('붙여 넣고 0.8초 안에 방식을 바꿔도 모델 감지는 한 번 이하다', async () => {
+      await page.locator('#new-text').fill(second)
+      await sleep(300)
+      const now = await page.locator('#new-mode').inputValue()
+      await page.locator('#new-mode').selectOption(now === 'program' ? 'function' : 'program')
+      await sleep(2500)
+      must(model(second) <= 1, `붙여 넣은 글을 모델에 ${model(second)}번 보냈다`)
+    })
+  }, async (page, rec) => {
+    rec.calls = []
+    await connect(page)
+    await patchDetect(page, rec.calls, () => {})
+  })
+
+  // 6-4. 모델 감지가 실패한 글은 방식을 바꿔도 같은 글로 다시 보내지 않는다(성공한 글은 서버 쪽 응답으로 막히지만 실패한 글은 보낸 글 기록으로만 막힌다)
+  await scenario(viewport, 'calls-fail', async (page, rec, need, seed) => {
+    const text = SHORT(seed)
+    await need('모델 감지가 실패해도 한 번만 보내고 방식을 바꿔도 다시 보내지 않는다', async () => {
+      await page.locator('#new-text').fill(text)
+      await sleep(2200)
+      must(rec.calls.filter((c) => !c.fast).length === 1, `모델 감지가 ${rec.calls.filter((c) => !c.fast).length}번이다`)
+      await page.locator('#new-more').evaluate((el) => { el.open = true })
+      const now = await page.locator('#new-mode').inputValue()
+      await page.locator('#new-mode').selectOption(now === 'program' ? 'function' : 'program')
+      await sleep(2200)
+      must(rec.calls.filter((c) => !c.fast).length === 1, `실패한 글을 방식을 바꾸자 다시 보냈다(${rec.calls.filter((c) => !c.fast).length}번)`)
+    })
+  }, async (page, rec) => {
+    rec.calls = []
+    rec.allow = /status of 500/ // 일부러 낸 실패 응답의 브라우저 로그
+    await connect(page)
+    await page.route('**/api/problems/detect', async (route) => {
+      const body = JSON.parse(route.request().postData() || '{}')
+      rec.calls.push({ ...body })
+      if (!body.fast) return route.fulfill({ status: 500, json: { detail: { code: 'llm_failed', message: '모델이 답하지 못했어요.' } } })
+      return route.fallback()
     })
   })
 

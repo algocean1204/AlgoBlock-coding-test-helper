@@ -731,6 +731,7 @@ function syncForm() {
   $("new-clear").hidden = !!EDIT || !draft || !$("new-clear-confirm").hidden;
   if (!draft) $("new-clear-confirm").hidden = true;
   newNote();
+  renderLine();
   saveDraft();
 }
 
@@ -804,18 +805,26 @@ function keptText() {
   return lines.filter((_, i) => kindAt(d, lines, i) !== "noise").join("\n");
 }
 const detectSoon = () => { clearTimeout(detectTimer); clearTimeout(modelTimer); detectTimer = setTimeout(() => detect(true), 250); };
-async function detect(fast) {
+/** 감지 한 번. fast: 규칙만. remode: 방식을 바꿔 예시만 그 방식으로 다시 읽는다(모델이 이미 본 글이면 모델이 본 구역·제목은 둔다). */
+async function detect(fast, remode) {
   const text = $("new-text").value;
   clearTimeout(detectTimer);
   if (!text.trim()) { DET = null; SUGGEST = {}; return void renderDetect(); }
-  if (!fast) { modelText = text; modelBusy = true; renderDetect(); }
+  if (!fast && text === modelText) return; // 같은 글은 모델에게 다시 보내지 않는다(모델 감지는 방식과 상관없다)
+  if (!fast) { modelText = text; modelBusy = true; renderLine(); }
   const r = await api("/api/problems/detect", { text, mode: $("new-mode").value, touched: EDIT ? TOUCH_KEYS : [...TOUCHED], ...(fast ? { fast: true } : {}) });
   if (!fast) modelBusy = false;
-  if (S.view !== "new" || text !== $("new-text").value) return void renderDetect(); // 그사이 글이 바뀌었다(새 감지가 뒤따른다)
-  if (fast && DET && DET.text === text && DET.model) return; // 같은 글을 모델이 이미 봤다
-  if (!r.ok) { DET = { text, kinds: [], problem: true, failed: true }; return void renderDetect(); } // 감지를 못 해도 글은 그대로 미리 본다
-  applyDetect(r.data, text, !fast);
-  if (fast && connected() && !EDIT && text !== modelText) modelTimer = setTimeout(() => detect(false), 800);
+  if (S.view !== "new" || text !== $("new-text").value) return void renderLine(); // 그사이 글이 바뀌었다(새 감지가 뒤따른다)
+  const seen = DET && DET.text === text && DET.model; // 같은 글을 모델이 이미 봤다
+  if (!r.ok) { // 감지를 못 해도 글은 그대로 미리 본다. 모델 요청만 실패했으면 규칙 결과를 그대로 둔다
+    if (fast ? !seen : !(DET && DET.text === text)) DET = { text, kinds: [], problem: true, failed: true };
+    return void renderDetect();
+  }
+  if (fast && seen && !remode) return;
+  const { cases: oldCases, names: oldNames, mode: oldMode, ...rest } = (seen && DET.suggest) || {}; // 예전 방식으로 읽은 예시 제안은 버린다
+  const d = fast && seen ? { ...DET, suggest: rest, mode: r.data.mode, names: r.data.names, cases: r.data.cases, skipped: r.data.skipped, missed: r.data.missed, spill: r.data.spill } : r.data;
+  applyDetect(d, text, !fast || seen);
+  if (fast && connected() && !EDIT && text !== modelText) { clearTimeout(modelTimer); modelTimer = setTimeout(() => detect(false), 800); }
 }
 function applyDetect(d, text, model) {
   const got = { ...d, ...(d.suggest || {}) }, offer = {}; // got: 감지가 본 값(고친 칸은 서버가 suggest에 싣는다)
@@ -836,7 +845,7 @@ function applyDetect(d, text, model) {
   } else if (got.cases.length && (got.mode !== $("new-mode").value || caseKey(got.cases) !== now.cases)) Object.assign(offer, { cases: got.cases, names: got.names, mode: got.mode });
   if (!held("many")) $("new-many").checked = !!got.many;
   else if (!!got.many !== $("new-many").checked) offer.many = !!got.many;
-  SUGGEST = model && !EDIT ? offer : SUGGEST; // 규칙 결과는 제안하지 않는다(내가 고친 칸이 규칙보다 앞선다)
+  SUGGEST = model && !EDIT ? offer : {}; // 규칙 결과는 제안하지 않는다(내가 고친 칸이 규칙보다 앞선다)
   DET = { ...d, text, model };
   caseHelp();
   syncForm();
@@ -860,11 +869,16 @@ function useSuggest() {
 }
 /** 감지 줄과 두 칸 미리보기. 감지가 아직이면(글이 막 바뀌었으면) 앞 미리보기를 둔다. */
 function renderDetect() {
+  renderPreview(DET && DET.text === $("new-text").value ? DET : null);
+  renderLine();
+}
+/** 감지 줄: 채운 것, 문제 밖 줄(빈 줄은 세지 않는다), 제안. 칸을 고칠 때마다(syncForm) 맞춘다. 감지가 아직이면 앞 줄을 둔다. */
+function renderLine() {
   const text = $("new-text").value, d = DET && DET.text === text ? DET : null, line = $("detect-line");
-  renderPreview(d);
-  line.hidden = !d || !!d.failed;
+  if (!d) return void (line.hidden = line.hidden || !text.trim() || !DET);
+  line.hidden = !!d.failed;
   if (line.hidden) return;
-  const lines = text.split(LINE_BREAK), noise = lines.filter((_, i) => d.kinds[i] === "noise"), cut = noise.filter((x) => !KEEP.has(x)).length;
+  const lines = text.split(LINE_BREAK), noise = lines.filter((x, i) => d.kinds[i] === "noise" && x.trim()), cut = noise.filter((x) => !KEEP.has(x)).length;
   const n = formCases().filter((x) => x.expected.trim()).length, warn = !d.problem && !EDIT; // 수정은 이미 등록한 문제라 문제 아님 경고를 띄우지 않는다
   const said = [warn ? d.notice : "", EDIT || TOUCHED.has("cases") ? `예시 ${n}개` : n ? `예시 ${n}개를 채웠어요` : "입출력 예를 찾지 못했어요. ‘입출력 예’ 칸에 직접 넣어 주세요",
     cut ? `문제 밖 글 ${cut}줄을 뺐어요` : noise.length ? "문제 밖으로 본 줄을 모두 남겼어요" : ""].filter(Boolean).join(" · ");
@@ -3488,7 +3502,7 @@ document.addEventListener("change", (e) => {
   if (e.target.id === "new-mode") { // 고른 방식으로 예시를 다시 찾는다(고친 케이스는 그대로)
     TOUCHED.add("mode");
     setCaseMode();
-    if (!TOUCHED.has("cases")) { DET = null; modelText = ""; detect(true); }
+    if (!TOUCHED.has("cases")) { clearTimeout(modelTimer); detect(true, true); } // 걸려 있던 모델 감지는 이 감지 뒤에 한 번만 다시 건다
     return;
   }
   if (e.target.id === "new-theme") return syncForm();

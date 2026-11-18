@@ -982,6 +982,7 @@ a.lv.done:hover { background: var(--lvc); color: var(--on-lv); filter: brightnes
 .mini-steps li + li::before { content: ""; width: 24px; height: 1px; margin-right: 4px; background: var(--line-strong); opacity: 0.5; }
 .mini-steps .step-no { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--fill-2); color: var(--text); font-size: 12px; font-weight: 700; }
 .mini-steps li.now { color: var(--text); } .mini-steps li.now .step-no { background: var(--accent); color: var(--on-accent); }
+.mini-split { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 8px; } .mini-cards { display: grid; gap: 6px; align-content: start; } .mini-cards .fake-input { letter-spacing: 0; font-size: 12.5px; } /* 처음 안내의 등록 그림: 문제 | 입출력 예 두 칸 */
 
 /* ── 문제 화면: 이름표, 더 보기, 준비 줄, 고르는 칸, 접힌 혼자 풀기 ── */
 .more { position: relative; }

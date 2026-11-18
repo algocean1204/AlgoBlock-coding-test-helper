@@ -4269,8 +4269,8 @@ def main() -> None:
     newest_models()
     read_check()
     cross_cases()
-    import test_intake  # 내 문제 넣기 한 화면의 정적 계약(걸음 없음, 감지 줄·두 칸 자리)
-    test_intake.main()
+    # 내 문제 넣기 한 화면(정적 계약과 키 없는 등록). 준비를 켠 서버를 새로 띄워 보므로 따로 돌린다(이 시험은 준비를 끈 채 서버를 가져왔다)
+    subprocess.run([sys.executable, "-B", str(HERE / "test_intake.py")], cwd=HERE.parent, check=True, stdout=subprocess.DEVNULL)
 
     import threading  # 첫 요청 여럿이 함께 와도 색인은 한 번만 연다(둘째가 실패해 검색이 꺼진 채 남지 않게)
     gate = threading.Barrier(4)
