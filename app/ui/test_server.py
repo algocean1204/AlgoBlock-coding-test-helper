@@ -1878,6 +1878,13 @@ def key_flow() -> None:
         for n in range(8):
             server.drop_key(f"K{n}")
         assert server.read_json(server.KEY_FILE, {}) == {"ANTHROPIC_API_KEY": claude}
+        with patch.object(server.os, "fsync", lambda fd: (_ for _ in ()).throw(OSError("디스크가 찼다"))):  # 쓰다가 실패하면 원래 키 파일이 그대로다
+            try:
+                server.save_key("OPENAI_API_KEY", openai)
+                raise AssertionError("쓰기 실패는 알려야 한다")
+            except OSError:
+                pass
+        assert server.read_json(server.KEY_FILE, {}) == {"ANTHROPIC_API_KEY": claude} and not server.KEY_FILE.with_suffix(".tmp").exists()
         try:
             call("/api/key/delete", name="openai")
             raise AssertionError("넣지 않은 키를 지울 수는 없다")

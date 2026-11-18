@@ -168,13 +168,16 @@ def write_keys(saved: dict) -> None:
     Windows는 이 권한 비트를 쓰지 않는다(사용자 폴더 권한이 지킨다)."""
     with FILE_LOCK:
         tmp = KEY_FILE.with_suffix(".tmp")
-        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         try:
-            if hasattr(os, "fchmod"):
-                os.fchmod(fd, 0o600)  # 이미 있던 임시 파일이면 만들 때의 권한이 적용되지 않는다
-            os.write(fd, json.dumps(saved, ensure_ascii=False, indent=1).encode("utf-8"))
-        finally:
-            os.close(fd)
+            with os.fdopen(os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), "wb") as out:
+                if hasattr(os, "fchmod"):
+                    os.fchmod(out.fileno(), 0o600)  # 이미 있던 임시 파일이면 만들 때의 권한이 적용되지 않는다
+                out.write(json.dumps(saved, ensure_ascii=False, indent=1).encode("utf-8"))  # 버퍼 쓰기는 끝까지 쓰거나 예외를 낸다
+                out.flush()
+                os.fsync(out.fileno())
+        except BaseException:
+            tmp.unlink(missing_ok=True)  # 반쯤 쓴 파일로 키 파일을 바꾸지 않는다(원래 파일은 그대로)
+            raise
         tmp.replace(KEY_FILE)
 
 
