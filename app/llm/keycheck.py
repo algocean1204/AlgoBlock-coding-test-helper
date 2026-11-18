@@ -14,6 +14,7 @@
 import urllib.error
 import urllib.request
 
+from app.llm import wire
 from app.llm.claude.api_key.messages import MODELS_URL as CLAUDE_URL
 from app.llm.openai.api_key.chat import MODELS_URL as OPENAI_URL
 
@@ -21,12 +22,7 @@ TIMEOUT = 10.0  # 초
 OK, INVALID, DENIED, LIMITED, SERVER, OFFLINE = "ok", "invalid", "denied", "limited", "server", "offline"
 
 
-class _NoRedirect(urllib.request.HTTPRedirectHandler):
-    def redirect_request(self, *args, **kwargs):
-        return None  # 따라가지 않으면 urllib가 3xx를 HTTPError로 낸다
-
-
-OPENER = urllib.request.build_opener(_NoRedirect)
+OPENER = wire.OPENER  # 리다이렉트를 따르지 않는 요청기(모델 요청과 같은 것)
 
 
 def request_for(provider: str, key: str) -> urllib.request.Request:
