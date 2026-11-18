@@ -202,11 +202,13 @@ const pending = (where) => (S.busy && S.busy.where === where ? `<div class="msg 
 /* rich-pure:start 글 꾸미기 전체(esc 말고는 다른 것에 기대지 않는다). node로도 시험한다 */
 /* inline-pure:start 코드와 수식 구간은 먼저 떼어 두고 나머지만 굵게·위첨자를 바꾼 뒤 되돌린다(코드·수식 속 **나 ^가 바뀌지 않는다). 수식은 $…$, $$…$$, \(…\), \[…\]: 여는 $ 뒤나 닫는 $ 앞이 공백이거나 닫는 $ 뒤가 숫자면 수식이 아니다(금액). 줄 단위라 여러 줄에 걸친 수식은 보지 않는다 */
 function inline(t) {
-  const kept = [];
-  const hold = (html) => `\u0000${kept.push(html) - 1}\u0000`;
-  const text = String(t ?? "").replace(/\u0000/g, "").replace(/`([^`\n]+)`/g, (_, code) => hold(`<code>${esc(code)}</code>`))
-    .replace(/\$\$(.+?)\$\$|\\\[(.+?)\\\]|\\\((.+?)\\\)|\$(?=[^\s$])([^$\n]*?\S)\$(?![\d$])/g, (all, d1, d2, i1, i2, at, whole) => {
-      const tex = d1 ?? d2 ?? i1 ?? i2;
+  const kept = [], raws = [];
+  const hold = (html, raw) => `\u0000${kept.push(html) && raws.push(raw ?? html) - 1}\u0000`;
+  const back = (x) => x.replace(/\u0000(\d+)\u0000/g, (_, n) => raws[n]); // 수식 안에 든 코드 자리는 쓴 그대로
+  const text = String(t ?? "").replace(/\u0000/g, "").replace(/`([^`\n]+)`/g, (_, code) => hold(`<code>${esc(code)}</code>`, `\`${code}\``))
+    .replace(/\$\$(.+?)\$\$|\\\[((?:(?!\\\[).)+?)\\\]|\\\(((?:(?!\\\().)+?)\\\)|\$(?=[^\s$])([^$\n]*?\S)\$(?![\d$])/g, (all, d1, d2, i1, i2, at, whole) => {
+      const tex = back(d1 ?? d2 ?? i1 ?? i2);
+      all = back(all);
       return tex.trim() && !(i2 !== undefined && /[\\$]/.test(whole[at - 1] || "")) ? hold(`<span class="math" data-tex="${esc(tex)}"${i1 === undefined && i2 === undefined ? ' data-display="1"' : ""}>${esc(all)}</span>`) : all;
     });
   return esc(text).replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>").replace(/(^|[^\w.^])(\d+)\^(\d+)(?![\w^])/g, "$1$2<sup>$3</sup>")
@@ -325,9 +327,9 @@ function loadKatex() {
   katexReady ??= new Promise((ok, fail) => {
     const css = document.createElement("link"), js = document.createElement("script");
     css.rel = "stylesheet"; css.href = "/katex/katex.min.css"; js.src = "/katex/katex.min.js";
-    js.onload = () => ok(window.katex); js.onerror = fail;
+    js.onload = () => ok(window.katex); js.onerror = () => { css.remove(); js.remove(); fail(); };
     document.head.append(css, js);
-  }).catch(() => null);
+  }).catch(() => { katexReady = null; return null; }); // 받지 못하면 다음 수식에서 다시 받는다
   return katexReady;
 }
 async function renderMath() {

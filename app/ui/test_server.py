@@ -2768,7 +2768,7 @@ def math_render() -> None:
         "snake": "max_count 와 A_i와 B_i 를 쓴다", "ol": "1. 첫째\n2. 둘째\n3. 셋째",
         "broken": "깨진 $\\frac{1$ 식", "href": "$\\href{javascript:alert(1)}{x}$", "img": "<img src=x onerror=alert(1)> 글", "script": "<script>alert(1)</script> 글",
         "link": "[x](javascript:alert(1)) 와 [y](JaVaScRiPt:alert(2))", "plain": "그냥 글입니다. 수식 없음.",
-        "big": "가나다 $ " * 8000, "dollars": "$" * 1000 + "\n" + "$a$ " * 300, "long": "x_i " * 12000,
+        "big": "가나다 $ " * 8000, "dollars": "$" * 1000 + "\n" + "$a$ " * 300, "long": "x_i " * 12000, "open_br": "\\[ a " * 12000, "open_par": "\\( a " * 12000, "tickmath": "값 $a `b` c$ 끝",
     }
     script = "const esc = (t) => String(t ?? '').replace(/[&<>\"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '\"': '&quot;', \"'\": '&#39;' }[c]));\n" + source + """
 globalThis.window = globalThis;
@@ -2807,7 +2807,8 @@ console.log(JSON.stringify(out));
         assert not re.search(r"<[^>]*\son\w+\s*=", every, re.I), (k, every[:200])
         assert not re.search(r"(href|src)\s*=\s*[\"']?\s*javascript:", every, re.I), (k, every[:200])
     assert "<a " not in got["link"]["html"] or "javascript:" not in got["link"]["html"].lower().split("<a ", 1)[1]
-    for k in ("big", "dollars", "long"):  # 병적 입력(50KB, $ 1000개)
+    assert "b" in got["tickmath"]["tex"][0] and "\u0000" not in got["tickmath"]["html"] and "`b`" in got["tickmath"]["tex"][0], got["tickmath"]  # 수식 안의 백틱은 쓴 그대로
+    for k in ("big", "dollars", "long", "open_br", "open_par"):  # 병적 입력(50KB, $ 1000개, 닫히지 않은 \\[·\\( 수천 번)
         assert got[k]["ms"] < 200, (k, got[k]["ms"])
 
     # 정적 파일 세 목록: 화면이 부르는 것, 서버 표, 묶음 명세가 같다. 수식 파일은 수식이 있을 때만 받는다(처음 화면은 부르지 않는다)
