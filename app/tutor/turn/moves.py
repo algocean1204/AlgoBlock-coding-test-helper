@@ -101,7 +101,7 @@ def _pick_move(mode: str, plan: BlockPlan, turn: TurnContext, verdict: Verdict |
 
     def advance() -> MovePlan:
         if index + 1 >= len(blocks) and mode == "guide" and turn.event == "block_filled":
-            return MovePlan("done", index, True, saved=ALL_FILLED)  # 가이드 마지막 블록 코드가 통과했다: 진행 안내만, 묻지 않는다
+            return MovePlan("done", index, True, saved=ALL_FILLED, fact=True)  # 가이드 마지막 블록 코드가 통과했다: 진행 안내만, 묻지 않는다
         if index + 1 >= len(blocks):
             return MovePlan(LAST_MOVE[mode], index, True)
         return MovePlan(LADDER[mode][0], index + 1, True, open_lead(mode, shown_kind(blocks[index + 1], language)), (blocks[index + 1].hints or [None])[0])
@@ -140,9 +140,9 @@ def _pick_move(mode: str, plan: BlockPlan, turn: TurnContext, verdict: Verdict |
             retry = hinted(lead)
             if not ok and retry.saved and not plain:
                 return MovePlan("done", index, False, retry.lead, retry.saved, way=retry.way)
-            return MovePlan("done", index, False, saved=FOUND_OK if ok else lead.strip())
+            return MovePlan("done", index, False, saved=FOUND_OK if ok else lead.strip(), fact=True)
         if plain:
-            return MovePlan(LADDER[mode][min(turn.hints_seen, 2)], index, False, saved=lead.strip())
+            return MovePlan(LADDER[mode][min(turn.hints_seen, 2)], index, False, saved=lead.strip(), fact=True)
         # 저장 힌트가 없으면 못 해낸 첫 신호를 겨눠 짓는다(빠진 것과 다른 것을 물었다)
         return advance() if ok else hinted(lead, signal_text(blocks[index], verdict.miss if verdict else None))
     if ok and turn.event == "message" and asks(turn.text) and "verify" not in used:
