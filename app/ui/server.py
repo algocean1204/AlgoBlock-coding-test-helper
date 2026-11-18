@@ -123,8 +123,12 @@ def load_keys() -> None:
             os.environ.setdefault(name, value)
 
 
+KEY_LOCK = threading.Lock()  # 키 파일을 읽고 고쳐 쓰는 동안(넣기와 지우기가 겹쳐도 한쪽 변경이 사라지지 않게)
+
+
 def save_key(env_name: str, value: str) -> None:
-    write_keys({**read_json(KEY_FILE, {}), env_name: value})
+    with KEY_LOCK:
+        write_keys({**read_json(KEY_FILE, {}), env_name: value})
 
 
 KEY_CHECK_LOCK = threading.Lock()  # 확인 기록을 읽고 고쳐 쓰는 동안(키 넣기와 다시 확인이 겹쳐도 서로 덮어쓰지 않게)
@@ -155,15 +159,23 @@ def key_rows() -> dict:
 
 def drop_key(env_name: str) -> None:
     """화면에서 넣은 키 가운데 그 공급자의 것만 파일에서 지운다(다른 공급자의 키와 .env는 건드리지 않는다)."""
-    write_keys({name: value for name, value in read_json(KEY_FILE, {}).items() if name != env_name})
+    with KEY_LOCK:
+        write_keys({name: value for name, value in read_json(KEY_FILE, {}).items() if name != env_name})
 
 
 def write_keys(saved: dict) -> None:
-    write_json(KEY_FILE, saved)
-    try:
-        KEY_FILE.chmod(0o600)
-    except OSError:  # Windows는 이 권한 비트를 쓰지 않는다(사용자 폴더 권한이 지킨다)
-        pass
+    """임시 파일을 처음부터 소유자만 읽게(0600) 만들어 쓴 뒤 바꿔 넣는다(쓰는 동안에도 다른 사용자가 읽을 틈이 없게).
+    Windows는 이 권한 비트를 쓰지 않는다(사용자 폴더 권한이 지킨다)."""
+    with FILE_LOCK:
+        tmp = KEY_FILE.with_suffix(".tmp")
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        try:
+            if hasattr(os, "fchmod"):
+                os.fchmod(fd, 0o600)  # 이미 있던 임시 파일이면 만들 때의 권한이 적용되지 않는다
+            os.write(fd, json.dumps(saved, ensure_ascii=False, indent=1).encode("utf-8"))
+        finally:
+            os.close(fd)
+        tmp.replace(KEY_FILE)
 
 
 CLI = ClaudeCli()
