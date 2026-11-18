@@ -146,7 +146,7 @@ def whole_level(value) -> int:
     return int(number) if number.is_integer() and 1 <= number <= 5 else 0
 
 
-EXTRA_CALLS = 5  # 대조가 문제 하나의 준비에 더 쓰는 모델 호출 상한(단순 풀이, 생성기, 다시 풀기: 가운데 급 1회 + 큰 급 1회)
+EXTRA_CALLS = 5  # 대조가 문제 하나의 준비에 더 쓰는 모델 호출 상한(단순 풀이, 생성기, 생성기 다시 받기 가운데 급 1회, 다시 풀기: 가운데 급 1회 + 큰 급 1회)
 VERIFIED = {"same": "all", "differ": "none"}  # 대조 결과 → 문제의 검증: 예시와 대조 모두 통과, 검증하지 못함. 그 밖(대조하지 못함)은 예시만 통과(examples)
 
 
@@ -159,12 +159,14 @@ def cross_check(state: MainState, got: Solved, passed: bool | None, report: dict
     """모델의 풀이는 실행으로 확인한 것만 믿는다. 공개 예시를 통과한 정답 풀이를, 정의 그대로 옮긴 단순 풀이와
     생성기가 만든 작은·경계 입력에서 대조한다. 실행은 모두 cross.run(채점기 프로세스)이 하고, 맞으면 그 입력이 숨은 케이스가 된다.
     다르면 그 입력을 보여 주며 가운데 급으로 한 번, 그래도 다르면 큰 급으로 한 번 다시 푼다(다시 푼 코드도 공개 예시를 통과해야 쓴다).
+    생성기가 입력을 못 만들었거나 큰 입력을 단순 풀이도 끝내 효율성으로 가리지 못하면(indistinct) 생성기를 가운데 급으로 한 번만 다시 받아 다시 대조한다
+    (다시 받지 못했거나 그 대조가 입력을 못 만들었으면 앞 결과를 쓴다). 결과의 counts(종류별 숨은 케이스 수)와 indistinct도 남긴다.
     풀이 가이드 과정을 가운데 급 이상으로 골랐으면 첫 다시 풀기는 그 급 그대로다. 결과의 tiers는 처음 풀이부터 실제로 쓴 급의 차례다
     (tiers: 풀이 가이드가 예시를 맞히려고 쓴 급들. 없으면 과정의 급 하나로 적는다).
     결과(검증, 쓴 호출 수와 급, 확인이 필요한 곳)는 cross.done으로 남긴다. 고른 풀이와 검증(all·examples·none)을 돌려준다."""
     pid = state["ctx"].problem_id
     first = themes.chosen("guide")[0]  # 처음 풀이를 쓴 급(풀이 가이드 과정)
-    verdict = {"verified": "none", "calls": 0, "tiers": list(tiers or [first]), "doubts": [], "why": "", "hidden": 0, "efficiency": 0}
+    verdict = {"verified": "none", "calls": 0, "tiers": list(tiers or [first]), "doubts": [], "why": "", "hidden": 0, "efficiency": 0, "counts": {}, "indistinct": False}
     if passed is None:  # 채점하지 못했다: 풀이가 틀렸다고 말하지 않는다
         status = (report or {}).get("status") or "no_cases"
         verdict.update(why=f"튜터의 풀이를 확인하지 못했어요. {unrun_why(status)}.{UNRUN_FIX.get(status, '')}")
@@ -187,9 +189,21 @@ def cross_check(state: MainState, got: Solved, passed: bool | None, report: dict
         verdict.update(verified="examples", why="검증용 풀이를 받지 못해 예시로만 확인했어요.")
         cross.done(pid, verdict)
         return got, verdict["verified"]
-    brute_code, maker_code = strip_fence(brute.code or ""), strip_fence(maker.code or "")
+    brute_code, maker_code, remade = strip_fence(brute.code or ""), strip_fence(maker.code or ""), False
     for tier in ("middle", "large", ""):
         found = cross.run(pid, got.code, brute_code, maker_code, maker.bounds)
+        if not remade and verdict["calls"] < EXTRA_CALLS and (found["status"] == "error" or found.get("indistinct")):
+            remade = True
+            try:
+                again_maker: CaseMaker = llm(climb("middle", first)[1]).use(maker_messages(text, mode), CaseMaker, task="plan.cases")
+            except LlmError:
+                again_maker = None
+            if again_maker is not None:
+                verdict["calls"] += 1
+                again_code = strip_fence(again_maker.code or "")
+                again = cross.run(pid, got.code, brute_code, again_code, again_maker.bounds)
+                if again["status"] != "error":
+                    found, maker, maker_code = again, again_maker, again_code
         if found["status"] != "differ" or not tier or verdict["calls"] >= EXTRA_CALLS:
             break
         retry = "\n".join([f"코드:\n{got.code}", "문제 정의를 그대로 옮긴 느린 풀이와 결과가 다른 입력이 있다(느린 풀이가 틀렸을 수도 있으니 문제 글로 다시 따진다).",
@@ -205,7 +219,7 @@ def cross_check(state: MainState, got: Solved, passed: bool | None, report: dict
         if code.strip() and again.approach.strip() and not head_differs(state, code) and (check(pid, code) or {}).get("status") == "passed":
             got = replace(again, code=code)
     verdict.update(verified=VERIFIED.get(found["status"], "examples"), why=found.get("why") or "",
-                   hidden=found.get("hidden") or 0, efficiency=found.get("efficiency") or 0)
+                   hidden=found.get("hidden") or 0, efficiency=found.get("efficiency") or 0, counts=found.get("counts") or {}, indistinct=bool(found.get("indistinct")))
     if found["status"] == "differ":
         verdict["why"] = verdict["why"] or ("가장 큰 입력에서 제한 시간 안에 끝나지 않았어요." if found.get("slow")
                                             else f"다른 방법으로 푼 결과와 다른 입력이 있어요: {str(found.get('input'))[:200]}")

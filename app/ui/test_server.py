@@ -3757,6 +3757,65 @@ def cross_cases() -> None:
     call("/api/problems/delete", id=pid)
 
 
+def made_counts() -> None:
+    """문제 머리의 숨은 테스트 수는 문제에 붙어 채점에 쓰이는 케이스와 같다. 드문 길: 첫 대조는 맞았지만 단순 풀이도 큰 입력을 끝내(indistinct) 생성기를 다시 받았고,
+    다시 받은 입력(함정 입력)에서 두 풀이가 달랐고, 다시 풀기도 받지 못했다(검증하지 못함). 첫 대조가 붙인 케이스는 남아 채점에 쓰인다(실제 채점기 + 가짜 모델)."""
+    text = ("정수 배열 numbers의 모든 원소의 합을 return 하도록 solution 함수를 완성하세요.\n\n제한사항\n"
+            "- numbers의 길이는 1 이상 100,000 이하입니다.\n- 원소는 -1,000 이상 1,000 이하입니다.")
+    pid = server.register({"title": "배열의 합 다시", "text": text, "cases": [{"input": "[[1, 2, 3]]", "expected": "6"}]})["id"]
+    code = "def solution(a):\n    return sum(a) if any(a) else 1"  # 0만 있는 입력에서만 틀린다(첫 생성기의 입력에는 없다)
+    first = ("import random\ndef small():\n    return [[[random.randint(10, 99) for _ in range(random.randint(1, 8))]] for _ in range(21)]\n"
+             "def edge():\n    return [[[-1000]], [[1000, 1000, 1000]], [[7]]]\n"
+             "def large():\n    return [[[random.randint(1, 1000) for _ in range(20000)]]]\n")
+    bounds = [{"arg": 0, "low": -1000, "high": 1000, "shortest": 1, "longest": 100000}]
+    draft = {"algorithm": "implementation", "out_of_scope": False, "blocks": [{"id": "b1", "kind": "var_during", "name": "더하기", "goal": "모두 더한다", "lines": [1, 2], "checks": ["더한다"],
+                                                                          "hints": ["무엇을 돌려줘야 할까요?", "'모든 원소의 합'은 무엇을 더하라는 걸까요?", "[1, 2, 3]이라면 무엇을 돌려주나요?"]}]}
+    fake = FakeLlm({"plan.solve": [{"clues": [], "approach": "모두 더한다.", "steps": ["더한다"], "code": code}], "plan.brute": [{"code": "def solution(numbers):\n    return sum(numbers)"}],
+                    "plan.cases": [{"code": first, "bounds": bounds}, {"code": first + "def tricky():\n    return [[[0, 0, 0]]]\n", "bounds": bounds}], "plan.draft_blocks": [draft]})
+    with use_llm(fake), server.tutor() as t:
+        t.store.put_fact(pid, "정수 배열의 합", [])
+        assert t.prepare(pid).status == 200
+    assert [call["task"] for call in fake.calls].count("plan.cases") == 2  # 가리지 못해 한 번 다시 받았다
+    made = [case for case in server.PROBLEMS[pid].cases if case.get("made")]
+    hidden = [case for case in made if case["kind"] == "accuracy"]
+    row = next(row for row in call("/api/problems")[1]["problems"] if row["id"] == pid)
+    shown = row["check"]
+    assert row["verified"] == "none" and hidden, (row["verified"], made)  # 뒤 대조는 달랐다. 그래도 앞서 붙인 케이스는 채점에 쓰인다
+    assert (shown["hidden"], shown["efficiency"], sum(shown["counts"][tag] for tag in ("edge", "tricky", "random")), shown["indistinct"]) == (
+        len(hidden), len(made) - len(hidden), len(hidden), True), shown
+    assert {tag: shown["counts"][tag] for tag in ("edge", "tricky", "random")} == {tag: [case["tag"] for case in hidden].count(tag) for tag in ("edge", "tricky", "random")}, shown
+    call("/api/problems/delete", id=pid)
+
+
+def made_marks() -> None:
+    """자동으로 만든 테스트의 머리 요약과 '자동' 표시(app.js의 made-pure를 node로): 종류별 수, 예전 결과(종류 수 없음), 효율성으로 가리지 못함, 자동 테스트에서만 틀림."""
+    import re
+    import shutil
+    node = shutil.which("node")
+    if not node:
+        return print("node가 없어 자동 테스트 표시 시험은 건너뜀")
+    js = (HERE / "app.js").read_text(encoding="utf-8")
+    source = re.search(r"/\* made-pure:start.*?\*/(.*?)/\* made-pure:end \*/", js, re.S).group(1)
+    script = source + """
+const full = { hidden: 20, efficiency: 3, counts: { edge: 6, tricky: 5, random: 9, efficiency: 3 } };
+const passed = { kind: "example", status: "passed" }, wrong = { kind: "accuracy", status: "failed", made: true };
+console.log(JSON.stringify([madeLine(full), madeLine({ hidden: 12, efficiency: 1 }), madeLine({ ...full, indistinct: true }), madeLine({}),
+  autoMark({ made: true }), autoMark({ kind: "accuracy" }), madeOnly([passed, wrong]), madeOnly([passed, wrong, { kind: "accuracy", status: "failed" }]),
+  madeOnly([passed, { ...wrong, status: "timeout" }])]));
+"""
+    got = json.loads(subprocess.run([node, "-e", script], capture_output=True, text=True, check=True).stdout)
+    assert got == ["숨은 테스트 20개(경계 6 · 함정 5 · 무작위 9) · 효율성 3개", "숨은 테스트 12개 · 효율성 1개", "숨은 테스트 20개(경계 6 · 함정 5 · 무작위 9) · 효율성 3개(느린 풀이를 가리지 못함)", "",
+                   " <em>자동</em>", "", True, False, False], got  # 내가 넣은 숨은 케이스가 틀렸거나 시간만 넘었으면 '답이 여럿' 안내를 붙이지 않는다
+    assert "madeLine(c)" in js[js.index("function renderCheckLine"):] and "autoMark(c)" in js[js.index("function testsHtml"):] and "madeOnly(r.cases)" in js[js.index("function failGuide"):]
+
+
+def tricky_tests() -> None:
+    """함정 입력·느린 풀이 확인의 시험 두 파일(실제 채점기, 모델 0회)을 따로 돌린다. 저마다 자료 폴더를 따로 쓴다. 하나라도 실패하면 이 시험도 실패한다."""
+    for name in ("test_tricky_cases.py", "test_tricky_server.py"):
+        done = subprocess.run([sys.executable, "-B", str(HERE / name)], cwd=HERE.parent, capture_output=True, text=True)
+        assert done.returncode == 0, (name, done.stdout[-2000:], done.stderr[-4000:])
+
+
 def build_only() -> None:
     """묶기 도구: --only는 고른 문제만 새로 만들고 다른 행은 지금 묶음 그대로 두며, 없는 폴더는 2로 끝난다. 기본은 다른 언어 풀이도 싣는다(--no-langs로만 뺀다)."""
     out = TMP / "only.json"
@@ -4182,6 +4241,8 @@ def main() -> None:
     newest_models()
     read_check()
     cross_cases()
+    made_counts()
+    made_marks()
 
     import threading  # 첫 요청 여럿이 함께 와도 색인은 한 번만 연다(둘째가 실패해 검색이 꺼진 채 남지 않게)
     gate = threading.Barrier(4)
@@ -4191,6 +4252,7 @@ def main() -> None:
     assert len(server.INDEX) == 1, server.INDEX
     if server.INDEX[0] is not None:
         server.INDEX[0].close()
+    tricky_tests()
     print("ok")
 
 

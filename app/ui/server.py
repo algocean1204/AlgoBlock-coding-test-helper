@@ -342,14 +342,15 @@ def large_case(pid: str, index: int) -> dict:
 
 
 def materialize(p, language: str) -> list[dict]:
-    """채점기에 넣을 케이스 [{id, kind, input, expected[, timeout]}]. 종류가 없는 케이스(사용자가 등록한 공개 예시, 예전 문항)는 공개 예시다."""
+    """채점기에 넣을 케이스 [{id, kind, input, expected[, timeout, made]}]. 종류가 없는 케이스(사용자가 등록한 공개 예시, 예전 문항)는 공개 예시다."""
     # 기본 문제는 정답 풀이가 걸린 시간에서 정한 문제·언어별 제한(limits.json), 등록한 문제는 대조할 때 정답 풀이가 걸린 시간에서 정한 그 언어의 제한
     rows, limits = [], (BUILTIN.get(p.id) or {}).get("limits") or getattr(p, "limits", None) or {}
     for case in p.cases:
         kind = case.get("kind", "example")
         big = large_case(p.id, case["gen"]) if "input" not in case else {}
         rows.append({"id": case["id"], "kind": kind, "input": case["input"] if "input" in case else big["input"], "expected": case["expected"] if "expected" in case else big["expected"],
-                     **({"timeout": limits.get(language) or casegen.LIMIT.get(language, 10)} if kind == "efficiency" else {})})  # 효율성 케이스는 언어마다 제한 시간이 다르다
+                     **({"timeout": limits.get(language) or casegen.LIMIT.get(language, 10)} if kind == "efficiency" else {}),  # 효율성 케이스는 언어마다 제한 시간이 다르다
+                     **({"made": True} if case.get("made") else {})})  # 대조로 자동으로 만든 케이스(결과 칸이 '자동'으로 보인다)
     return rows
 
 
@@ -367,7 +368,8 @@ def grade(p, language: str, code: str, kinds: tuple = KINDS, stop_after: int | N
     rows = [{"id": c["id"], "kind": by[c["id"]]["kind"], "input": by[c["id"]]["input"], "expected": c["expected"],
              "got": (c.get("stdout") or "") if p.mode == "program" else (c.get("stdout") or "").strip(),  # 프로그램 방식은 출력 전체(앞 공백도 답이다)
              "error": c.get("stderr") or "", "status": c["status"], "ms": c.get("time_ms", 0), "line": c.get("line"), "near": c.get("near") is True,
-             "limit": by[c["id"]].get("timeout"), **({"note": MANY_ANSWERS} if many and c["status"] == "failed" else {})} for c in raw.get("cases", [])]
+             "limit": by[c["id"]].get("timeout"), **({"note": MANY_ANSWERS} if many and c["status"] == "failed" else {}), **({"made": True} if by[c["id"]].get("made") else {})}
+            for c in raw.get("cases", [])]
     return {"status": raw["status"], "reason": raw.get("reason") or "", "cases": rows, "compile": (raw.get("compile") or {}).get("stderr", ""),
             "compile_line": raw.get("compile_line"), "language": language, "notice": notice_of(raw)}
 
@@ -447,6 +449,7 @@ def cross_mode(pid: str) -> str | None:
 
 def cross_run(pid: str, code: str, brute: str, maker: str, bounds: list, gen: int | None = None) -> dict:
     """정답 풀이와 단순 풀이를 생성기의 입력에서 채점기로 대조한다(casemake). 맞으면 숨은·효율성 케이스를 문제에 붙인다(사용자가 넣은 케이스와 따로, made).
+    숨은 케이스에는 종류 꼬리표(tag: edge·tricky·random)를 단다. 결과에 종류별 수(counts)와 효율성으로 가리지 못함(indistinct)을 싣는다.
     gen: 잠금 없이 대조를 시작할 때의 GEN. 그사이 가이드가 지워졌으면 케이스를 붙이지 않는다."""
     p = PROBLEMS[pid]
     language = LANG.get(pid, p.language)
@@ -457,11 +460,12 @@ def cross_run(pid: str, code: str, brute: str, maker: str, bounds: list, gen: in
         if found["status"] == "same" and (gen is None or GEN[pid] == gen):
             folder = LARGE / pid
             shutil.rmtree(folder, ignore_errors=True)
-            made = [{"id": f"m{n}", "kind": "accuracy", "input": given, "expected": expected, "made": True} for n, (given, expected) in enumerate(found["hidden"], 1)]
+            made = [{"id": f"m{n}", "kind": "accuracy", "tag": tag, "input": given, "expected": expected, "made": True}
+                    for n, ((given, expected), tag) in enumerate(zip(found["hidden"], found["tags"]), 1)]
             for n, (given, expected) in enumerate(found["large"]):
                 folder.mkdir(parents=True, exist_ok=True)
                 write_json(folder / f"{n}.json", {"input": given, "expected": expected})
-                made.append({"id": f"e{n + 1}", "kind": "efficiency", "gen": n, "made": True})
+                made.append({"id": f"e{n + 1}", "kind": "efficiency", "gen": n, "made": True, **({"indistinct": True} if found["indistinct"] else {})})  # 단순 풀이도 끝낸 큰 입력
             large_case.cache_clear()
             rows = read_json(PROBLEMS_FILE, [])
             for row in rows:
@@ -473,7 +477,8 @@ def cross_run(pid: str, code: str, brute: str, maker: str, bounds: list, gen: in
             write_json(PROBLEMS_FILE, rows)
             reload_problems()
     return {"status": found["status"], "why": found.get("why") or "", "input": found.get("input"), "got": found.get("got"), "want": found.get("want"), "slow": bool(found.get("slow")),
-            "hidden": len(found.get("hidden") or []), "efficiency": len(found.get("large") or []), "dropped": found.get("dropped", 0)}
+            "hidden": len(found.get("hidden") or []), "efficiency": len(found.get("large") or []), "dropped": found.get("dropped", 0),
+            "counts": found.get("counts") or {}, "indistinct": bool(found.get("indistinct"))}
 
 
 def cross_done(pid: str, verdict: dict, gen: int | None = None) -> None:
@@ -803,7 +808,7 @@ def report_themes(t) -> tuple[dict, dict]:
 
 def labels_of(t, p, language: str, marks: dict | None = None) -> dict:
     """문제의 라벨: 단계(사용자가 고친 것 > 분석이 붙인 것), 태그(쓰는 방법. 온톨로지 기법 이름), 검증(verified: all·examples·none, 아직 대조 전이면 빈 글)과 그 말.
-    등록한 문제는 대조 결과(check)의 숨은·효율성 케이스 수와 확인이 필요한 곳(doubts), 까닭(why)도. marks: 미리 읽은 store.labels()(목록은 한 번만 읽는다). language: 사용자가 그 문제에 고른 언어(태그의 그릇 낱말이 이 언어를 따른다)."""
+    등록한 문제는 대조 결과(check)의 숨은·효율성 케이스 수, 종류별 수(counts), 효율성으로 가리지 못함(indistinct), 확인이 필요한 곳(doubts), 까닭(why)도. marks: 미리 읽은 store.labels()(목록은 한 번만 읽는다). language: 사용자가 그 문제에 고른 언어(태그의 그릇 낱말이 이 언어를 따른다)."""
     if p.builtin:
         tags = techniques_of(((BUILTIN[p.id].get("ready") or {}).get("fact") or {}).get("patterns") or [])
         return {"level": p.level, "tags": [technique_name(tid, language) for tid in tags], "verified": "all", "verified_name": VERIFIED_WORDS["all"]}
@@ -811,10 +816,15 @@ def labels_of(t, p, language: str, marks: dict | None = None) -> dict:
         return {"tags": [], "verified": "", "verified_name": ""}
     fact = (marks if marks is not None else t.store.labels()).get(p.id) or {}
     check = getattr(p, "check", None) or {}
+    made = [case for case in p.cases if case.get("made")]
+    if made:  # 수는 문제에 붙어 채점에 쓰이는 케이스에서 센다(뒤 대조가 끝내 달라도 앞서 맞은 대조가 붙인 케이스는 남는다)
+        tags = [case.get("tag") for case in made if case["kind"] == "accuracy"]
+        check = {**check, "hidden": len(tags), "efficiency": len(made) - len(tags), "indistinct": any(case.get("indistinct") for case in made),
+                 "counts": {**{tag: tags.count(tag) for _, tag in casemake.ORDER}, "efficiency": len(made) - len(tags)}}
     verified = check.get("verified") or ""
     return {"level": p.level or fact.get("level") or 0, "level_by": "user" if p.level else "analysis" if fact.get("level") else "",
             "tags": [technique_name(tid, language) for tid in fact.get("tags") or [] if tid in TECHNIQUES], "verified": verified, "verified_name": VERIFIED_WORDS.get(verified, ""),
-            "check": {key: check[key] for key in ("hidden", "efficiency", "tiers", "calls", "why", "doubts") if key in check}}
+            "check": {key: check[key] for key in ("hidden", "efficiency", "counts", "indistinct", "tiers", "calls", "why", "doubts") if key in check}}
 
 
 def unaided_ids(t, passed: set) -> set:
@@ -1795,7 +1805,7 @@ def result_body(report: dict) -> dict:
     language = report.get("language", "")
     cases = []
     for case in report["cases"]:
-        row = {"id": case["id"], "kind": case["kind"], "status": case["status"], "ms": case["ms"]}
+        row = {"id": case["id"], "kind": case["kind"], "status": case["status"], "ms": case["ms"], **({"made": True} if case.get("made") else {})}  # made: 자동으로 만든 테스트
         hidden = case["kind"] != "example"
         if not hidden:
             row |= {"input": case["input"], "expected": case["expected"], "got": case["got"][:2000], "error": error_line(case["error"], case["status"])}
