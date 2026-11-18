@@ -1320,10 +1320,23 @@ async function swapGuide() {
   } finally { prepAsking = false; }
 }
 
-/** 등록한 문제의 준비·검증 한 줄: "풀이 준비 중 · 숨은 테스트 n개 만듦 · 검증: 예시와 대조 모두 통과". 준비는 두 걸음이다(풀이 순서 → 숨은 테스트) */
+/* made-pure:start 자동으로 만든 테스트의 머리 요약, 결과 칸의 '자동' 표시, 자동 테스트에서만 틀렸는지(node로도 시험한다) */
+const MADE_KINDS = [["edge", "경계"], ["tricky", "함정"], ["random", "무작위"]];
+/** 대조 결과(check)의 요약 "숨은 테스트 20개(경계 6 · 함정 5 · 무작위 9) · 효율성 3개". 종류별 수가 없는 예전 결과는 수만. 단순 풀이도 큰 입력을 끝냈으면(indistinct) 그렇다고 붙인다 */
+function madeLine(c) {
+  const hidden = Number(c.hidden) || 0, eff = Number(c.efficiency) || 0, n = c.counts || {};
+  const kinds = MADE_KINDS.filter(([k]) => n[k]).map(([k, word]) => `${word} ${n[k]}`).join(" · ");
+  return [hidden ? `숨은 테스트 ${hidden}개${kinds ? `(${kinds})` : ""}` : "", eff ? `효율성 ${eff}개${c.indistinct ? "(느린 풀이를 가리지 못함)" : ""}` : ""].filter(Boolean).join(" · ");
+}
+const autoMark = (c) => (c.made ? " <em>자동</em>" : "");
+/** 공개 예시는 다 맞고, 답이 다른 테스트가 있으며, 통과하지 못한 것이 모두 자동으로 만든 테스트다 */
+const madeOnly = (cases) => cases.some((c) => c.made && c.status === "failed") && cases.every((c) => c.status === "passed" || c.made);
+/* made-pure:end */
+
+/** 등록한 문제의 준비·검증 한 줄: "풀이 준비 중 · 숨은 테스트 n개(경계 · 함정 · 무작위) · 효율성 n개 · 검증: 예시와 대조 모두 통과". 준비는 두 걸음이다(풀이 순서 → 숨은 테스트) */
 function renderCheckLine(p) {
-  const c = p.check || {}, made = (Number(c.hidden) || 0) + (Number(c.efficiency) || 0), better = p.better && !p.preparing;
-  const parts = p.sample ? [] : [p.preparing ? "풀이 준비 중" : p.checking ? "숨은 테스트 만드는 중" : "", made ? `숨은 테스트 ${made}개 만듦` : "", p.verified_name ? `검증: ${p.verified_name}` : "", c.why && p.verified !== "all" ? String(c.why) : "", p.prepare_failed && !p.preparing ? "튜터가 풀이 순서를 준비하지 못했어요." : "",
+  const c = p.check || {}, better = p.better && !p.preparing;
+  const parts = p.sample ? [] : [p.preparing ? "풀이 준비 중" : p.checking ? "숨은 테스트 만드는 중" : "", madeLine(c), p.verified_name ? `검증: ${p.verified_name}` : "", c.why && p.verified !== "all" ? String(c.why) : "", p.prepare_failed && !p.preparing ? "튜터가 풀이 순서를 준비하지 못했어요." : "",
     better ? "튜터의 풀이를 더 정확한 것으로 바꿀 수 있어요" : "", better ? "다시 준비하면 대화·해설·블록 칸은 처음부터예요(코드 칸과 제출 기록은 남아요)" : ""].filter(Boolean).map(esc); // 준비가 실패로 끝났으면 말하고 다시 준비하는 길을 둔다
   if (p.preparing) parts[0] += ` <span class="secs" data-since="${S.prepAt}">${since(S.prepAt)}초</span> · 보통 1분 안팎`; // 다른 기다림 표시처럼 지난 초
   $("p-check").innerHTML = parts.length ? `${p.preparing || p.checking ? DOTS : ""}<span>${parts.join(" · ")}</span>${p.prepare_failed && !p.preparing ? ' <button type="button" class="btn small" id="prep-again-top" data-model>다시 준비</button>' : ""}${better ? ' <button type="button" class="btn small" id="swap-guide" data-model>다시 준비</button>' : ""}` : "";
@@ -1846,7 +1859,7 @@ function testsHtml(r) {
   const chip = (c, label) => {
     const cls = c.status === "passed" ? "pass" : c.status === "skipped" ? "skip" : "fail";
     const time = c.status === "skipped" ? "" : `<span class="ms">${took(c.ms || 0)}${c.status === "timeout" ? " 넘음" : ""}</span>`; // 시간 초과는 제한을 넘은 것
-    return `<span class="test ${cls}">${label}${c.kind === "example" ? " <em>예시</em>" : ""} <b>${esc(CASE_STATE[c.status] || c.status)}</b> ${time}</span>`;
+    return `<span class="test ${cls}">${label}${c.kind === "example" ? " <em>예시</em>" : autoMark(c)} <b>${esc(CASE_STATE[c.status] || c.status)}</b> ${time}</span>`;
   };
   const acc = r.cases.filter((c) => c.kind !== "efficiency"), eff = r.cases.filter((c) => c.kind === "efficiency");
   const rank = (c) => (c.status === "passed" ? 2 : c.status === "skipped" ? 1 : 0);
@@ -1919,7 +1932,8 @@ function failGuide(r, slowOnly) {
   if (r.cases.length && r.cases.every(stuck)) return "코드가 끝나지 않았어요. 반복이 끝나는 조건을 확인해 보세요.";
   if (r.run) return "";
   if (examplesOk && hidden.some(stuck)) return "숨은 테스트에서 시간 초과가 났어요. 어떤 입력에서 반복이 끝나지 않거나 아주 오래 도는지 확인해 보세요.";
-  if (examplesOk && hidden.some((c) => c.status !== "passed")) return "예시는 통과했지만 숨은 테스트에서 틀렸어요. 가장 작은 입력, 같은 값이 여러 개인 입력, 가장 큰 입력을 직접 만들어 확인해 보세요.";
+  if (examplesOk && hidden.some((c) => c.status !== "passed")) return "예시는 통과했지만 숨은 테스트에서 틀렸어요. 가장 작은 입력, 같은 값이 여러 개인 입력, 가장 큰 입력을 직접 만들어 확인해 보세요."
+    + (program() && madeOnly(r.cases) ? ` 답이 여럿인 문제라면 <a class="link" href="#/edit/${esc(S.pid)}">문제 고치기</a>에서 ‘답이 여럿일 수 있음’을 켜 주세요.` : ""); // 자동 테스트만 틀렸다: 정답 풀이의 답 하나와 달랐을 수 있다
   if (slowOnly) // 답은 맞고 큰 입력에서 시간만 모자랐다. 틀린 곳이 아니라 방법의 문제라 ‘틀린 곳 같이 찾기’는 없다
     return `답은 모두 맞아요. 입력이 아주 클 때 시간이 모자라요. 제한사항의 입력 크기를 보고, 같은 것을 되풀이해 세거나 찾는 곳이 없는지 살펴보세요.${connected() ? " 답이 맞아서 ‘틀린 곳 같이 찾기’는 열지 않아요." : ""}`;
   const crash = effCrash(r); // 작은 입력은 다 맞고 큰 입력에서 틀렸다: 시간 이야기가 아니다

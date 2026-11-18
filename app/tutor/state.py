@@ -320,7 +320,7 @@ class Bound:
 
 @dataclass
 class CaseMaker:
-    """케이스 생성기(모델 출력): small·edge·large 함수를 담은 파이썬 코드와 제한사항"""
+    """케이스 생성기(모델 출력): small·edge·tricky·large 함수를 담은 파이썬 코드와 제한사항(tricky는 없어도 된다)"""
 
     code: str
     bounds: list[Bound] = field(default_factory=list)
