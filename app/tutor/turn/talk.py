@@ -36,7 +36,7 @@ def speak_messages(state: MainState, turn: TurnContext, move: MovePlan, system: 
     recent = turn.recent if move.target == turn.index else []
     lines += [f"물을 블록:{block.name} ({kind_word(block.kind)})", f"이 블록에서 정할 것:{block.goal}", "이 블록의 최근 대화:", *(recent or ["없음"])]
     aside = getattr(state.get("verdict"), "aside", "")
-    aside = "" if aside == "W" else aside  # 뜻을 묻는 말은 그 말을 받아 답한다(term)
+    aside = "" if aside == "Q" else aside  # 되묻는 말은 그 말을 받아 답한다(term)
     if turn.text and not aside:
         lines.append(f"사용자 말:{turn.text}")
     # 블록이 바뀌면 이 블록의 대화는 비어 있다. 미룬 물음은 직전 학습자 말에서 한 번만 이어 준다

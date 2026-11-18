@@ -14,7 +14,7 @@ CONFUSED = ("모르", "몰라", "감이 안", "헷갈", "막혔")  # 막힌 말�
 # 어렵다는 말: 같은 질문을 되풀이하지 않고 더 작게 나눈다. '어려' 부분 일치는 '어려운 건 없고…'에도 걸렸다: 어렵다고 말한 꼴만 보고, 아니라는 말은 뺀다
 HARD = re.compile(r"어려워|어렵(?:네|다|습|고|어|더|기)|이해가?\s*안\s*(?:돼|되|가)")
 NOT_HARD = re.compile(r"어려운\s*(?:건|게|것은?|점은?)\s*없|안\s*어려|어렵지\s*않|어렵진\s*않")
-# 뜻을 묻는 말의 표지. '그게 뭔지 몰라요'가 '모르겠어요'로 끊겨 판정(W)에 가지 못했다
+# 뜻을 묻는 말의 표지. '그게 뭔지 몰라요'가 '모르겠어요'로 끊겨 판정(Q)에 가지 못했다
 TERM_ASK = re.compile(r"뭔지|뭐예요|뭐에요|뭐야|뭔가요|무슨\s*뜻|무슨\s*말")
 OPENING = ("start", "next", "replan")  # 사용자 말 없이 블록의 첫 질문을 내는 사건
 FOLLOW_UNTIL = 1  # 둘째 블록까지만 사용자 방법으로 다시 짠다. 뒤에서는 지금 계획으로 이어 간다
@@ -115,8 +115,8 @@ def _pick_move(mode: str, plan: BlockPlan, turn: TurnContext, verdict: Verdict |
     if (mode == "chair" and turn.event == "message" and verdict is not None and verdict.other
             and allow_follow and index <= FOLLOW_UNTIL and not turn.followed_before):
         return MovePlan("replan", index, False)  # 말이 아니라 '사용자 방법으로 다시 짜기' 요청이다
-    if turn.event == "message" and verdict is not None and verdict.aside == "W":
-        return MovePlan("term", index, False)  # 낱말의 뜻을 물었다: 모델이 짧은 뜻과 예를 준 뒤 원래 질문으로 돌아간다. 사다리 칸을 쓰지 않는다
+    if turn.event == "message" and verdict is not None and verdict.aside == "Q":
+        return MovePlan("term", index, False)  # 되물었다(낱말 뜻, 문법, 문제 글): 모델이 먼저 답한 뒤 원래 질문으로 돌아간다. 사다리 칸·힌트 번호를 쓰지 않는다
     if turn.event == "message" and verdict is not None and verdict.aside:
         return hinted(ANSWER_LEAD if verdict.aside == "A" else BACK_LEAD)  # 고정 앞말 뒤에 다음 저장 힌트
     if turn.event == "message" and index == len(blocks) - 1 and (LAST_MOVE[mode] in used or "done" in used):

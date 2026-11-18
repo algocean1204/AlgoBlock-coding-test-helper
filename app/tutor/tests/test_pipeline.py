@@ -265,9 +265,9 @@ class ChairTest(unittest.TestCase):
         from ..common.talk_prompts import HARD_STEP, TERM_STEP
 
         asked = "변수는 값을 담아 두는 이름표예요. 예를 들어 나이를 age라는 이름에 담아 둘 수 있어요. 그럼 책마다 무엇을 담아 둬야 할까요?"
-        done, fake = fakes.go(chair_state("변수가 뭐예요?"), {"chair.judge": ["[check]W"], "chair.ask": [asked]})
+        done, fake = fakes.go(chair_state("변수가 뭐예요?"), {"chair.judge": ["[check]Q"], "chair.ask": [asked]})
         self.assertEqual((done["result"]["move"], done["result"]["advance"], done["result"]["reply"]), ("term", False, asked))
-        self.assertIn("[check]W", fakes.prompt(fake, "chair.judge"))
+        self.assertIn("[check]Q", fakes.prompt(fake, "chair.judge"))
         prompt = fakes.prompt(fake, "chair.ask")
         self.assertIn(TERM_STEP, prompt)
         self.assertIn("사용자 말:변수가 뭐예요?", prompt)  # 무엇을 물었는지 본다(답 요청·무관한 말처럼 가리지 않는다)
@@ -310,6 +310,23 @@ class GuideTest(unittest.TestCase):
         lead = fakes.prompt(fake, "guide.lead")
         self.assertIn(TERM_STEP, lead)
         self.assertNotIn("맞는 부분과 빠진 부분", lead)  # 생각을 낸 말에 답하는 지시가 아니다
+
+    def test_guide_asked_back_keeps_progress_and_hint_number(self):
+        """되묻는 말(Q)은 판정 1 + 생성 1로 답하고 진행(열린 블록 수, 힌트 번호)을 바꾸지 않는다. 문법은 이 문제와 상관없는 예로 답하게 한다."""
+        from ..common.talk_prompts import TERM_STEP
+
+        talk = [fakes.service(fakes.HINTS1[0], 0, "m1", "blank")]
+        said = "`fruits = {}`처럼 쓰면 빈 상자가 생겨요. 그럼 책마다 무엇을 기록해 둘까요?"
+        done, fake = fakes.go(self.guide("딕셔너리는 어떻게 만들어요?", guide=talk), {"guide.judge": ["[check]Q"], "guide.lead": [said]})
+        self.assertEqual((done["result"]["move"], done["result"]["advance"], done["open_count"], fakes.tasks(fake)),
+                         ("term", False, 1, ["guide.judge", "guide.lead"]))
+        self.assertIn("[check]Q", fakes.prompt(fake, "guide.judge"))
+        self.assertIn("Q가 아니라", fakes.prompt(fake, "guide.judge"))  # 자기 생각을 물음 꼴로 낸 말은 되묻기가 아니다
+        self.assertIn(TERM_STEP, fakes.prompt(fake, "guide.lead"))
+        self.assertIn("이 문제와 상관없는 작은 예", TERM_STEP)
+        talk = talk + [fakes.user("딕셔너리는 어떻게 만들어요?", 0, "u1"), fakes.service(done["result"]["reply"], 0, "s1", "term")]
+        done, fake = fakes.go(self.guide("모르겠어요", guide=talk), {})
+        self.assertEqual((done["result"]["reply"], fake.calls), (fakes.HINTS1[1], []))  # 되묻기 뒤에도 다음 저장 힌트는 2번이다
 
     def test_guide_opens_with_saved_hints_and_never_asks_basis(self):
         """모델이 지은 블록 안내 말은 블록의 답을 문장으로 말하곤 했다. 여는 말과 내용 없는 답 뒤는 저장 힌트(모델 0회)."""
