@@ -17,9 +17,15 @@ const builtin = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.u
 const FRESH = builtin.filter((p) => p.id !== PID && p.ready && p.solutions && p.solutions.python)
 const within = (promise, ms, what) => Promise.race([promise, new Promise((_, no) => setTimeout(() => no(new Error(`${what}: ${ms}ms 넘음`)), ms))])
 const DRAFT_IDS = ['say', 'fq-text', 'debug-say', 'run-input'] // 문제마다 담아 두는 보내지 않은 글 칸
-const chatShown = (p) => p.waitForFunction(() => { const el = document.getElementById('chat-log'); return el && !el.hidden && el.innerText.trim().length > 0 }, null, { timeout: 8000 })
-const VIEWPORTS = [{ width: 1366, height: 689 }, { width: 1093, height: 551 }]
+const chatShown = (p) => p.waitForFunction(() => { const el = document.getElementById('chat-log'); return el && !el.hidden && el.innerText.trim().length > 0 }, null, { timeout: 15000 })
 const TAB = (way) => `#way-tabs [role="tab"][data-way="${way}"]`
+// 문제 상태를 받아 그린 뒤(제목이 보인다)에야 누른다. 혼자 풀기 탭은 상태를 받기 전에도 골라져 보여, 그것으로 기다리면 처음 상태 요청과 엇갈린다
+const opened = async (p) => {
+  await p.waitForFunction(() => document.getElementById('p-title')?.textContent.trim().length > 0, null, { timeout: 15000 })
+  if ((await p.locator(TAB('solo')).getAttribute('aria-selected')) !== 'true') throw new Error('처음 연 문제가 혼자 풀기가 아니다')
+}
+const startsOf = (p) => p.evaluate(() => window.__flow.starts) // 화면이 보낸 튜터 시작 요청 수(화면 안에서 센다)
+const VIEWPORTS = [{ width: 1366, height: 689 }, { width: 1093, height: 551 }]
 const browser = await launch()
 let failed = 0
 
@@ -40,6 +46,13 @@ async function open(context, viewport, connected, problems, pid = PID) {
     if (/^(data|blob|about):/.test(url)) return route.continue()
     problems.push(`external: ${url}`)
     return route.abort()
+  })
+  await page.addInitScript(() => { // 시간 대신 기다릴 사건: 튜터 시작 요청 수, 붙잡았다 놓은 상태 응답(x-held)을 화면이 읽었는가
+    window.__flow = { starts: 0, heldRead: false }
+    const send = window.fetch
+    window.fetch = (url, init) => { if (String(url).endsWith('/api/turn') && /"event":"start"/.test(init?.body || '')) window.__flow.starts++; return send(url, init) }
+    const json = Response.prototype.json
+    Response.prototype.json = function () { const read = json.call(this); if (this.headers.get('x-held')) read.then(() => { window.__flow.heldRead = true }); return read }
   })
   await page.goto(`${base}/#/p/${pid}`)
   return page
@@ -63,8 +76,7 @@ for (const viewport of VIEWPORTS) {
     await page.locator(TAB(way)).click()
     await page.waitForFunction((t) => document.querySelector(t)?.getAttribute('aria-selected') === 'true', TAB(way), { timeout: 2000 })
   }
-  const tabReady = (p, way) => p.waitForFunction((t) => document.querySelector(t)?.getAttribute('aria-selected') === 'true', TAB(way), { timeout: 5000 })
-  const chatReady = () => page.waitForFunction(() => { const el = document.getElementById('chat-log'); return el && !el.hidden && el.innerText.trim().length > 0 }, null, { timeout: 5000 })
+  const chatReady = () => chatShown(page)
 
   // 1. 세 방식이 늘 보이는 탭 묶음. 처음 연 문제는 혼자 풀기. 옛 단추·카드·시작 단추가 없다
   await need('제목이 보인다', () => page.waitForFunction((t) => document.getElementById('p-title')?.textContent.trim().length > 0, null, { timeout: 5000 }))
@@ -150,7 +162,7 @@ for (const viewport of VIEWPORTS) {
   const titleOf = (pid) => drafts.waitForFunction((id) => location.hash.endsWith(id) && document.getElementById('p-title')?.textContent.trim().length > 0, pid, { timeout: 5000 })
   let verdict = ''
   await need('의자 대화에 보내지 않은 글을 쓰고 예시를 실행한다', async () => {
-    await tabReady(drafts, 'solo')
+    await opened(drafts)
     await drafts.locator('#code').fill(mine.solutions.python)
     await drafts.locator(TAB('chair')).click()
     await chatShown(drafts)
@@ -177,24 +189,24 @@ for (const viewport of VIEWPORTS) {
   // 7. 실행이 끝나기 전에 튜터 탭을 누르면 실행이 끝난 뒤 한 번만 시작한다(실행 요청을 붙잡아 둔다)
   const runner = await take()
   const late = await open(await browser.newContext(), viewport, true, problems, runner.id)
-  let starts = 0, held, letRun
+  let held, letRun
   const runHeld = new Promise((r) => { held = r })
   const runGate = new Promise((r) => { letRun = r })
-  late.on('request', (r) => { if (r.url().endsWith('/api/turn') && r.postDataJSON()?.event === 'start') starts++ })
   await late.route('**/api/run', async (route) => { held(); await runGate; return route.fallback() })
   await need('실행 중 의자 탭을 누르면 시작하지 않고 기다린다', async () => {
-    await tabReady(late, 'solo')
+    await opened(late)
     await late.locator('#code').fill(runner.solutions.python)
     await late.locator('#run').click()
     await within(runHeld, 5000, '예시 실행 요청')
     await late.locator(TAB('chair')).click()
-    await late.waitForTimeout(400)
+    await late.locator('#tutor-note').getByText('지금 하는 일이 끝나면 바로 시작해요').waitFor({ state: 'visible', timeout: 5000 }) // 시작을 미뤘다고 그렸다
+    const starts = await startsOf(late)
     if (starts !== 0) throw new Error(`실행 중에 시작했다(${starts}회)`)
   })
   letRun()
   await need('실행이 끝나면 한 번 시작한다', async () => {
     await chatShown(late)
-    await late.waitForTimeout(400)
+    const starts = await startsOf(late)
     if (starts !== 1) throw new Error(`시작 요청 ${starts}회`)
   })
 
@@ -203,23 +215,21 @@ for (const viewport of VIEWPORTS) {
   // 8. 탭을 누를 때 보낸 상태 요청이 시작 뒤의 상태보다 늦게 와도 첫 질문을 덮지 않는다
   const racer = await take()
   const race = await open(await browser.newContext(), viewport, true, problems, racer.id)
-  let armed = false, fetched, letOld, sent
+  let armed = false, fetched, letOld
   const oldFetched = new Promise((r) => { fetched = r })
   const oldGate = new Promise((r) => { letOld = r })
-  const oldSent = new Promise((r) => { sent = r })
   await race.route('**/api/state', async (route) => {
     if (!armed) return route.fallback()
     armed = false // 탭을 누른 뒤 첫 상태 요청: 시작 전의 상태를 받아 두고, 시작 뒤의 상태가 그려진 다음에 건넨다
     const res = await route.fetch()
     fetched()
     await oldGate
-    await route.fulfill({ response: res })
-    sent()
+    await route.fulfill({ response: res, headers: { ...res.headers(), 'x-held': '1' } })
   })
   await race.route('**/api/turn', async (route) => { await within(oldFetched, 5000, '앞 상태 요청').catch(() => {}); return route.fallback() }) // 시작은 앞 상태를 받은 뒤에
   let first = ''
   await need('의자 탭을 누르면 첫 질문이 나온다(앞 상태 응답은 붙잡아 둔다)', async () => {
-    await tabReady(race, 'solo')
+    await opened(race)
     armed = true
     await race.locator(TAB('chair')).click()
     await chatShown(race)
@@ -227,8 +237,7 @@ for (const viewport of VIEWPORTS) {
   })
   letOld()
   await need('늦게 온 앞 상태 응답이 첫 질문을 지우지 않는다', async () => {
-    await within(oldSent, 3000, '붙잡은 상태 응답')
-    await race.waitForTimeout(400)
+    await race.waitForFunction(() => window.__flow.heldRead, null, { timeout: 5000 }) // 화면이 늦은 응답을 받아 읽었다(그 뒤의 처리는 같은 차례에 끝난다)
     if (!(await race.locator('#chat-log').isVisible()) || (await race.locator('#chat-log').innerText()) !== first) throw new Error('늦은 상태 응답이 대화를 옛 상태로 덮었다')
   })
 
@@ -238,7 +247,6 @@ for (const viewport of VIEWPORTS) {
   const swapper = await take()
   const swap = await open(await browser.newContext(), viewport, true, problems, swapper.id)
   let swapStarts = 0, better = true
-  swap.on('request', (r) => { if (r.url().endsWith('/api/turn') && r.postDataJSON()?.event === 'start') swapStarts++ })
   const wipe = () => swap.request.post(`${base}/api/reset`, { data: { id: swapper.id } }) // 서버의 대화를 지운다(계획은 남는다)
   await swap.route('**/api/state', async (route) => { // 바꿔 끼울 풀이가 있는 등록 문제처럼 보이게 한다(기본 문제에는 그 단추가 없다)
     const res = await route.fetch(), body = await res.json()
@@ -246,23 +254,27 @@ for (const viewport of VIEWPORTS) {
   })
   await swap.route('**/api/swap', async (route) => { await wipe(); better = false; return route.fulfill({ json: { ok: true } }) })
   await need('의자를 시작한 뒤 바꿔 끼우면 한 번 더 시작한다', async () => {
-    await tabReady(swap, 'solo')
+    await opened(swap)
     await swap.locator(TAB('chair')).click()
     await chatShown(swap)
+    swapStarts = await startsOf(swap)
     if (swapStarts !== 1) throw new Error(`처음 시작 요청 ${swapStarts}회`)
-    const again = swap.waitForResponse((r) => r.url().endsWith('/api/turn'), { timeout: 5000 })
+    const again = swap.waitForResponse((r) => r.url().endsWith('/api/turn'), { timeout: 15000 })
     await swap.locator('#swap-guide').click()
     await again
     await chatShown(swap)
+    swapStarts = await startsOf(swap)
     if (swapStarts !== 2) throw new Error(`시작 요청 ${swapStarts}회`)
   })
   await need('시작한 뒤 대화가 지워지면 스스로 다시 시작하지 않고 다시 시작 단추를 둔다', async () => {
     await wipe()
     await swap.evaluate(() => loadState())
     await swap.locator('#start-again').waitFor({ state: 'visible', timeout: 3000 })
+    swapStarts = await startsOf(swap)
     if (swapStarts !== 2) throw new Error(`스스로 다시 시작했다(${swapStarts}회)`)
     await swap.locator('#start-again').click()
     await chatShown(swap)
+    swapStarts = await startsOf(swap)
     if (swapStarts !== 3) throw new Error(`다시 시작 단추가 시작하지 않았다(${swapStarts}회)`)
   })
 
@@ -278,7 +290,7 @@ for (const viewport of VIEWPORTS) {
     if (!res.ok()) throw new Error(`등록 ${res.status()}`)
     ownId = (await res.json()).id
     ed = await open(await browser.newContext(), viewport, true, problems, ownId)
-    await tabReady(ed, 'solo')
+    await opened(ed)
     await ed.locator('#code').fill('def solution(a, b):\n    return a + b\n')
     await ed.locator('#run-own summary').click()
     await ed.locator('#run-input').fill('[7, 8]')
@@ -307,14 +319,17 @@ for (const viewport of VIEWPORTS) {
   const off = await open(await browser.newContext(), viewport, false, problems)
   const kept = [] // 연결이 없을 때 보낸 방식 저장 요청
   off.on('request', (r) => { if (r.url().endsWith('/api/way')) kept.push(r.postDataJSON()?.way) })
-  await need('연결이 없어도 세 탭이 보인다', async () => { for (const way of ['solo', 'chair', 'guide']) await off.locator(TAB(way)).waitFor({ state: 'visible', timeout: 4000 }) })
+  await need('연결이 없어도 세 탭이 보이고 혼자 풀기로 열린다', async () => {
+    for (const way of ['solo', 'chair', 'guide']) await off.locator(TAB(way)).waitFor({ state: 'visible', timeout: 4000 })
+    await opened(off) // 고른 방식(가이드)이 남아 있어도 연결이 없으면 혼자 풀기. 상태를 받은 뒤에 누른다
+  })
   await need('연결이 없을 때 튜터 탭 안에 연결 안내 카드가 있다', async () => {
     await off.locator(TAB('chair')).click()
     await off.locator('#pane-tutor a[href^="#/settings"]').first().waitFor({ state: 'visible', timeout: 3000 })
     if (await off.locator('#chat-log').isVisible()) throw new Error('연결이 없는데 대화 칸이 보인다')
   })
   await need('연결 카드에서 혼자 풀기 탭으로 돌아올 수 있다', async () => {
-    const saved = off.waitForResponse((r) => r.url().endsWith('/api/way') && r.request().postDataJSON()?.way === 'solo', { timeout: 3000 })
+    const saved = off.waitForResponse((r) => r.url().endsWith('/api/way') && r.request().postDataJSON()?.way === 'solo', { timeout: 10000 })
     await off.locator(TAB('solo')).click()
     await off.waitForFunction((t) => document.querySelector(t)?.getAttribute('aria-selected') === 'true', TAB('solo'), { timeout: 2000 })
     await saved
