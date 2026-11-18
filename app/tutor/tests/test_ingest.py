@@ -144,3 +144,48 @@ class OcrTest(unittest.TestCase):
             with self.assertRaises(IngestError) as caught:
                 run_note("", [("a.png", b"one"), ("b.png", b"two")], {"ingest.transcribe": [{"readable": True, "text": "첫 장"}, reply, reply]}, [""])
             self.assertIn("2번째", str(caught.exception))
+
+
+class OutlineTest(unittest.TestCase):
+    """구획 나누기: 모델은 줄 구간만 짚고, 검사와 읽기는 모델 없이 한다. 읽기 파서는 부르는 쪽이 준다(여기서는 받은 조각을 남기는 가짜)."""
+
+    LINES = ["메뉴", "합 구하기", "배열 numbers의 합을 반환한다.", "예를 들어 numbers가 [1, 2]이면 3을 반환한다.", "numbers | result", "[4] | 4", "댓글"]
+
+    def setUp(self):
+        import json
+        from types import SimpleNamespace
+
+        self.seen = []
+        self.read = SimpleNamespace(table=lambda part: self.seen.append(("table", part)) or {"names": [], "cases": [], "skipped": 0},
+                                    samples=lambda part: self.seen.append(("samples", part)) or {"names": [], "cases": [], "skipped": 0}, value=json.loads)
+
+    def ask(self, *replies):
+        from ..ingest import outline
+
+        fake = FakeLlm({"ingest.outline": list(replies)})
+        with use_llm(fake):
+            return outline.ask(self.LINES, self.read), [call["params"]["model"] for call in fake.calls]
+
+    def test_spans_cases_and_noise_are_checked_without_model(self):
+        said = [{"line": 4, "args": ["[1, 2]"], "expected": "3"}, {"line": 4, "args": ["[9]"], "expected": "3"}, {"line": 4, "args": ["[1,"], "expected": "3"}]
+        got, models = self.ask({"problem": True, "title": 2, "body": [[3, 4]], "table": [5, 6], "samples": [{"in": None, "out": [7, 7]}], "cases": said,
+                                "noise": [[1, 1]], "mode": "function", "names": ["numbers", 3], "many": False})
+        self.assertEqual(models, ["claude/claude-haiku-5-5"])
+        self.assertEqual((got["title"], got["noise"]), (2, [[1, 1]]))
+        self.assertEqual(got["function"], {"names": ["numbers"], "cases": [{"input": "[[1, 2]]", "expected": "3"}], "skipped": 0})  # 줄에 없는 값·못 읽는 값은 버린다
+        self.assertEqual(self.seen, [("table", "numbers | result\n[4] | 4"), ("samples", "예제 출력 1\n댓글")])  # 표·예제 구간은 규칙 파서가 읽는다
+
+    def test_bad_reply_tries_middle_once_then_rules_only(self):
+        for bad in ({"problem": True, "body": [[0, 2]], "mode": "function"}, {"problem": True, "body": [[2, 4]], "noise": [[4, 5]], "mode": "function"},
+                    {"problem": True, "body": [[2, 9]], "mode": "function"}, {"problem": True, "mode": "both"}, {"problem": True, "title": 1, "noise": [[1, 1]], "mode": "function"},
+                    {"problem": True, "samples": [{"in": [2, 3]}], "mode": "program"}, {"mode": "function"},
+                    {"problem": True, "noise": [[1, 5]], "mode": "program"}):  # 잡음이 60%를 넘으면 답을 버린다
+            self.assertEqual(self.ask(bad, bad), (None, ["claude/claude-haiku-5-5", "claude/claude-sonnet-5-5"]), bad)
+        got, models = self.ask(LlmTimeout("늦음"), {"problem": False, "mode": "function"})
+        self.assertEqual((got["problem"], models), (False, ["claude/claude-haiku-5-5", "claude/claude-sonnet-5-5"]))
+        self.assertEqual(self.ask(LlmNotConfigured("없음")), (None, ["claude/claude-haiku-5-5"]))
+
+    def test_normalize_keeps_superscripts(self):
+        from ..ingest.outline import normalize
+
+        self.assertEqual(normalize("１ ≤ N ≤ 10⁵\r\na b​\rc　d −3"), "1 ≤ N ≤ 10⁵\na b\nc d -3")
