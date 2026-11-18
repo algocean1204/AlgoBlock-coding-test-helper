@@ -10,9 +10,9 @@ from unittest import mock
 
 from . import fakes
 from ..llm import FakeLlm, LlmTimeout
-from ..common.talk_rules import FALLBACK
+from ..common.talk_rules import CHECKED, FALLBACK
 from ..main import Tutor
-from ..turn.moves import HINTS_DONE_UNFOUND
+from ..turn.moves import HINTS_DONE_UNFOUND, WRITE_TIP
 from ..store.codec import plan_to_json
 from ..store.schema import SCHEMA
 
@@ -42,7 +42,8 @@ class TutorTest(unittest.TestCase):
 
     def test_chair_conversation_is_saved_with_moves(self):
         draft = {"plan.draft_blocks": [fakes.drafted([fakes.as_dict(b) for b in fakes.thinking()])]}
-        tutor, fake = self.tutor({**draft, "chair.judge": ["[check]Y g", "[check]Y t"], "chair.ask": ["'이름을 센다'는 생각의 근거는 문제 글에 있나요, 짐작인가요?"]})
+        tutor, fake = self.tutor({**draft, "chair.judge": ["[check]Y g", "[check]Y t"], "chair.ask": ["'이름을 센다'는 생각의 근거는 문제 글에 있나요, 짐작인가요?"],
+                                    "chair.check_code": ["[check]Y"]})
         try:
             start = tutor.turn("p1", "chair", "start")
             self.assertEqual(start.status, 200)
@@ -53,20 +54,24 @@ class TutorTest(unittest.TestCase):
             self.assertIsNotNone(tutor.session("p1").body["blocks"][0]["name"])  # 가이드·기본 보기는 지금 블록까지
             basis = tutor.turn("p1", "chair", "message", text="이름을 세면 돼요")
             self.assertEqual((basis.body["open_count"], len(basis.body["messages"])), (1, 3))
-            moved = tutor.turn("p1", "chair", "message", text="문제에 제목이 같으면 같은 책이라고 해서요")
+            wrote = tutor.turn("p1", "chair", "message", text="문제에 제목이 같으면 같은 책이라고 해서요")
+            # 말로 찾았다: 넘기지 않고 그 블록의 코드로 적으라는 고정 말. 지금 블록의 이름은 열린다(그 칸에 코드를 적는다)
+            self.assertEqual((wrote.body["open_count"], wrote.body["messages"][-1]["text"], wrote.body["messages"][-1]["move"]), (1, WRITE_TIP, "write"))
+            self.assertEqual([b["name"] for b in wrote.body["blocks"]], ["입력받기", None])
+            self.assertEqual([b["name"] for b in tutor.session("p1", "chair").body["blocks"]], ["입력받기", None])
+            moved = tutor.turn("p1", "chair", "block_filled", block_id="b1", code="count = {}")  # 그 블록의 코드 확인이 통과해야 다음 블록이 열린다
             self.assertEqual(moved.body["open_count"], 2)
-            self.assertEqual([b["name"] for b in moved.body["blocks"]], ["입력받기", None])  # 찾은 블록은 이름이 열린다
-            # 찾은 블록의 안내는 찾은 블록(0)의 말로, 다음 블록의 첫 질문은 다음 블록(1)의 말로 따로 남는다
-            self.assertEqual([m["text"] for m in moved.body["messages"][-2:]], ["블록 칸에 이 블록의 코드를 적어 보세요.", "다음은 '반복' 블록이에요. " + fakes.HINTS2[0]])
-            self.assertEqual([m["block_index"] for m in moved.body["messages"]], [0, 0, 0, 0, 0, 1])  # 화면 구분선은 그 말의 블록 종류
+            self.assertEqual([b["name"] for b in moved.body["blocks"]], ["입력받기", None])  # 다음 블록 이름은 가린다
+            self.assertTrue(moved.body["messages"][-1]["text"].endswith("다음은 '반복' 블록이에요. " + fakes.HINTS2[0]))  # 채점 함수가 없어 읽고 본 판단이라는 말이 앞에 붙는다
+            self.assertEqual([m["block_index"] for m in moved.body["messages"]], [0, 0, 0, 0, 0, 0, 1])  # 화면 구분선은 그 말의 블록 종류
             rows = tutor.store.conn.execute("SELECT role, block_index, move FROM message WHERE problem_id='p1' ORDER BY id").fetchall()
             self.assertEqual([tuple(r) for r in rows], [("service", 0, "open"), ("user", 0, None), ("service", 0, "basis"),
-                                                        ("user", 0, None), ("service", 0, "found"), ("service", 1, "open")])
+                                                        ("user", 0, None), ("service", 0, "write"), ("user", 0, CHECKED + "?"), ("service", 1, "open")])
             raw = tutor.store.conn.execute("SELECT plan_json FROM tutor_session WHERE problem_id='p1'").fetchone()[0]
             self.assertIn('"algorithm": "hash"', raw)
             self.assertNotIn("reference", json.dumps(moved.body))
             self.assertNotIn("REF_ONE", json.dumps(tutor.session("p1").body))
-            self.assertEqual(fakes.tasks(fake), ["plan.solve", "plan.draft_blocks", "chair.judge", "chair.ask"])  # 근거 질문의 답은 판정 0회
+            self.assertEqual(fakes.tasks(fake), ["plan.solve", "plan.draft_blocks", "chair.judge", "chair.ask", "chair.check_code"])  # 근거 질문의 평서 답은 판정 0회
         finally:
             tutor.close()
 

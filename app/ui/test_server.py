@@ -3092,6 +3092,112 @@ console.log(JSON.stringify({ out, repro }));
     assert server.panes_ok(got["repro"]) and got["repro"][0] == 80.5 and got["repro"][2] >= 5, got["repro"]
 
 
+def split_fit() -> None:
+    """세로 나누기: 계산(app.js의 splitNext, 'split-pure' 구역)이 어떤 높이·글쇠에서도 서버가 받는 몫(15~85)을 내고 두 칸의 최소 높이를 지키는지,
+    /api/prefs의 rows 저장·검증, 손잡이 마크업, 단추 이동, 창·낮은 화면 설정을 본다. splitNext({ span, min: [편집기 최소, 결과 최소] }, 결과 높이 px) → 결과 몫(%)."""
+    import re
+    import shutil
+    node = shutil.which("node")
+    js, css, html = (HERE / "app.js").read_text(encoding="utf-8"), (HERE / "app.css").read_text(encoding="utf-8"), (HERE / "index.html").read_text(encoding="utf-8")
+    found = re.search(r"/\* split-pure:start.*?\*/(.*?)/\* split-pure:end \*/", js, re.S)
+    assert found, "app.js에 split-pure 구역이 있어야 한다"
+    if node:
+        script = found.group(1) + """
+let seed = 11;
+const rnd = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
+const out = [];
+for (let n = 0; n < 4000; n++) {
+  const span = 200 + rnd() * 2400, min = [60 + rnd() * 200, 40 + rnd() * 160];
+  for (const want of [0, 1e12, -1e9, NaN, rnd() * span, min[1], span - min[0]]) out.push([span, min, want, splitNext({ span, min }, want)]);
+}
+console.log(JSON.stringify(out));
+"""
+        got = json.loads(subprocess.run([node, "-e", script], capture_output=True, text=True, check=True).stdout)
+        assert len(got) == 4000 * 7
+        for span, (top, bottom), want, rows in got:
+            assert isinstance(rows, (int, float)) and 15 <= rows <= 85, (span, want, rows)
+            if top / span <= 0.85 and bottom / span >= 0.15 and top + bottom <= span:  # 두 최소가 15~85 안에서 함께 지켜질 수 있을 때
+                assert (100 - rows) * span / 100 >= top - 0.005 * span - 1e-6 or rows >= 85, (span, top, rows)
+                assert rows * span / 100 >= bottom - 0.005 * span - 1e-6 or rows <= 15, (span, bottom, rows)
+        for span in (300, 534 - 100, 900, 2000):  # 같은 몫이 창 높이가 바뀌어도 범위 안
+            for rows in (15, 50, 85):
+                assert 15 <= json.loads(subprocess.run([node, "-e", found.group(1) + f"console.log(JSON.stringify(splitNext({{ span: {span}, min: [80, 60] }}, {span} * {rows} / 100)))"], capture_output=True, text=True, check=True).stdout) <= 85
+    else:
+        print("node가 없어 세로 계산 시험은 건너뜀")
+
+    # /api/prefs의 rows: 15~85 밖·글자·NaN은 거절하고, 다시 읽으면 같은 값이다. 다른 설정은 그대로
+    saved = server.read_json(server.PREFS_FILE, {})
+    server.write_json(server.PREFS_FILE, {**saved, "language": "javascript", "stages": {"keep": "me"}})
+    try:
+        for bad in ({"rows": 14.9}, {"rows": 85.1}, {"rows": 0}, {"rows": -30}, {"rows": 100}, {"rows": "40"}, {"rows": "abc"}, {"rows": True}, {"rows": []}, {"rows": [40]}, {"rows": {"a": 1}}, {"rows": float("nan")}, {"rows": float("inf")}):
+            assert "높이" in refuses("/api/prefs", **bad), bad
+        assert "rows" not in server.read_json(server.PREFS_FILE, {})  # 거절한 값은 적히지 않는다
+        for ok in (15, 85, 40, 33.33):
+            assert call("/api/prefs", rows=ok)[1]["rows"] == float(ok) and call("/api/accounts")[1]["rows"] == float(ok) and server.read_json(server.PREFS_FILE, {})["rows"] == float(ok)
+        assert call("/api/prefs", rows=40.126)[1]["rows"] == 40.13  # 소수 둘째 자리로 적는다
+        server.write_json(server.PREFS_FILE, {**server.read_json(server.PREFS_FILE, {}), "rows": 5})  # 손으로 고친 이상한 값은 기본으로 본다
+        assert call("/api/accounts")[1]["rows"] is None
+        call("/api/prefs", rows=40)
+        assert call("/api/prefs", rows=None)[1]["rows"] is None and "rows" not in server.read_json(server.PREFS_FILE, {})  # null은 기본으로 돌린다
+        call("/api/prefs", rows=40)
+        assert call("/api/prefs", scheme="dark")[1]["rows"] == 40.0  # 다른 값을 바꿔도 rows는 남는다
+        call("/api/prefs", scheme="system", rows=None)
+        kept = server.read_json(server.PREFS_FILE, {})
+        assert kept["language"] == "javascript" and kept["stages"] == {"keep": "me"}
+    finally:
+        server.write_json(server.PREFS_FILE, saved)
+
+    # 마크업: 편집기와 결과 사이의 세로 손잡이
+    assert re.search(r'id="editor".*?id="sep-result"[^>]*>.*?id="result"', html, re.S)
+    tag = re.search(r'<div[^>]*id="sep-result"[^>]*>', html).group(0)
+    assert 'role="separator"' in tag and 'aria-orientation="horizontal"' in tag and 'tabindex="0"' in tag and "aria-label=" in tag
+    assert not re.search(r"\.result\s*\{[^}]*max-height:\s*40%", css)  # 결과 칸의 높이 상한을 없앤다
+    mins = re.search(r"\.editor-panel\s*\{[^}]*min-height:\s*calc\((\d+) \* var\(--code-line\)", css)
+    assert mins and int(mins.group(1)) == 4, "편집기 최소는 4줄 기준"
+    for key in ("ArrowUp", "ArrowDown", "Home", "End", "Escape", "dblclick", "setPointerCapture"):
+        assert key in js, key
+
+    # 실행·제출은 오른쪽(튜터) 칸 머리 바로 아래 같은 묶음이고 Tab 차례가 이어진다. id는 그대로
+    tutor = html[html.index('id="pane-tutor"'):]
+    head_end = tutor.index("</header>")
+    run, submit = tutor.index('id="run"'), tutor.index('id="submit"')
+    assert head_end < run < submit and "tabindex" not in tutor[run - 60:submit + 60]
+    assert not re.search(r"<(button|input|textarea|select|a)\b", tutor[run + 10:submit].rsplit("<", 1)[0]), "둘 사이에 다른 조작이 끼지 않는다"
+    assert tutor.count('id="run"') == 1 and tutor.count('id="submit"') == 1
+    group = re.search(r"<(div|span)[^>]*>(?:(?!</\1>).)*?id=\"run\"(?:(?!</\1>).)*?id=\"submit\"", tutor, re.S)
+    assert group, "실행·제출은 같은 묶음 안"
+    code_pane = html[html.index('id="pane-code"'):html.index('id="sep-tutor"')]
+    assert 'id="run"' not in code_pane and 'id="submit"' not in code_pane
+
+    # Windows: 창 최소 크기, 세 칸 분기, 낮은 화면
+    window = (HERE / "window.py").read_text(encoding="utf-8")
+    width, height = map(int, re.search(r"min_size=\((\d+),\s*(\d+)\)", window).groups())
+    assert width <= 1092 and height <= 566, (width, height)
+    assert "@media (max-width: 1179px)" not in css and "@media (max-width: 1079px)" in css
+    assert "@media (min-width: 1180px)" not in css and "@media (min-width: 1080px)" in css
+    assert "@media (max-height: 760px)" in css
+
+    # Tab 안내 줄은 늘 자리를 차지하지 않는다(겹침 표시)
+    rule = re.search(r"\.tab-hint\s*\{[^}]*\}", css).group(0)
+    assert "position: absolute" in rule
+
+
+def split_kept() -> None:
+    """세로 나누기의 화면 상태(화면 코드 확인): 다른 문제로 넘어가면 결과 칸과 함께 손잡이·'결과 크게 보기'도 숨기고 크게 보기를 끄며,
+    저장한 몫을 받아 둔 설정(ACCOUNTS)에 넣어 연결 상태가 바뀌어 다시 그려도 끌어 둔 높이로 남는다. 코드 칸 물음의 자리 설명이 사실과 같다."""
+    import re
+    js, css = (HERE / "app.js").read_text(encoding="utf-8"), (HERE / "app.css").read_text(encoding="utf-8")
+    body = lambda head: js[js.index(head):js.index("\n}\n", js.index(head))]  # noqa: E731
+    clear = body("function clearProblem(")
+    hidden = re.search(r"for \(const id of \[([^\]]*)\]\) \$\(id\)\.hidden = true", clear).group(1)
+    assert all(f'"{name}"' in hidden for name in ("result", "sep-result", "result-big")), hidden
+    assert "splitBig = false" in clear
+    save = body("async function paneSave(")
+    assert re.search(r"ACCOUNTS.*panes.*rows", save), save
+    assert "if ((a.rows ?? null) !== splitRows) splitSet(" in body("function renderAccounts(")  # 같은 높이면 다시 적지 않아 크게 보기가 꺼지지 않는다
+    assert "눌렀던 단추 바로 옆" not in css
+
+
 def stages_split_verify() -> None:
     """과정 표의 문제 나누기·검증 풀이: 화면 목록에 있고, 급을 바꾸면 그 task의 모델이 바뀐다. 예전 ingest 저장은 다섯 과정으로 옮겨진다."""
     from tutor.llm import themes
@@ -3804,6 +3910,8 @@ def main() -> None:
     window_background()
     pane_widths()
     pane_fit()
+    split_fit()
+    split_kept()
     stages()
     stages_split_verify()
     newest_models()
