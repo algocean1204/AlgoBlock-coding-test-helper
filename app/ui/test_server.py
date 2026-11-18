@@ -1713,6 +1713,190 @@ def prep_unverified() -> None:
         assert prepare_and_wait()["verified"] == "all"  # 앞의 대조 결과를 '검증하지 못함'으로 덮지 않는다
 
 
+def two_step_helpers():
+    """두 걸음 준비 시험의 바탕: 뒤에서 도는 대조(Tutor.recheck)를 가짜로 바꿔 끼우고, 끝난 뒤 조용해질 때까지 기다린다."""
+    import threading
+    import time
+
+    def quiet(pid, entered):
+        assert entered.wait(10), "대조가 시작되지 않았다"
+        calm = 0
+        for _ in range(400):
+            body = call("/api/state", id=pid)[1]["problem"]
+            calm = calm + 1 if pid not in server.PREPARING and not body.get("preparing") and not body.get("checking") else 0
+            if calm >= 4:
+                return
+            time.sleep(0.05)
+        raise AssertionError("준비가 끝나지 않았다")
+
+    def forget():
+        for held in (server.PREPARED, server.RECHECKED, server.PREPARING, server.PREP_FAILED, server.CHECKING):
+            held.clear()
+
+    return threading, quiet, forget
+
+
+def two_step_start_is_free() -> None:
+    """등록 문제의 준비는 두 걸음이다. 1걸음(가이드·블록)이 끝나면 2걸음(대조·숨은 테스트)이 길게 도는 동안에도 튜터 시작은 기다리지 않고 모델도 부르지 않는다."""
+    from tutor.main import Outcome
+
+    threading, quiet, forget = two_step_helpers()
+    pid = server.register(GOOD)["id"]
+    entered, release = threading.Event(), threading.Event()
+
+    def prepare(self, problem_id):
+        assert self.adopt(problem_id, own_ready("def solution(a, b):\n    return a + b"))  # 1걸음: 가이드·블록을 저장한다
+        return Outcome(200, {"blocks": 1, "patterns": []})
+
+    def recheck(self, problem_id):
+        entered.set()  # 2걸음의 긴 구간(모델 호출·실행)을 흉내 낸다
+        assert release.wait(30)
+        return None
+
+    fake, answered = FakeLlm({}), []
+
+    def start():
+        with use_llm(fake):
+            answered.append(call("/api/turn", id=pid, mode="chair", event="start"))
+
+    try:
+        with patch.object(server, "PREPARE", True), patch.object(server, "connected", lambda: True), patch.object(server.Tutor, "prepare", prepare), patch.object(server.Tutor, "recheck", recheck):
+            call("/api/state", id=pid, open=True)
+            assert entered.wait(10), "1걸음 뒤에 2걸음이 이어지지 않았다"
+            assert call("/api/state", id=pid)[1]["problem"].get("checking") is True  # 숨은 테스트를 만드는 중
+            worker = threading.Thread(target=start, daemon=True)
+            worker.start()
+            worker.join(5)
+            assert not worker.is_alive(), "튜터 시작이 2걸음을 기다린다"
+            assert answered[0][0] == 200 and not fake.calls, (answered, fake.calls)
+            release.set()
+            quiet(pid, entered)
+    finally:
+        release.set()
+        forget()
+        call("/api/problems/delete", id=pid)
+
+
+def two_step_checking_state() -> None:
+    """2걸음은 preparing이 아니라 checking(숨은 테스트 만드는 중)으로 보이고, 1걸음(가이드·블록 준비)은 preparing으로 보인다."""
+    from tutor.main import Outcome
+
+    threading, quiet, forget = two_step_helpers()
+    pid = server.register(GOOD)["id"]
+    in_prepare, in_recheck, release, release_check = threading.Event(), threading.Event(), threading.Event(), threading.Event()
+
+    def prepare(self, problem_id):
+        in_prepare.set()
+        assert release.wait(30)
+        assert self.adopt(problem_id, own_ready("def solution(a, b):\n    return a + b"))
+        return Outcome(200, {"blocks": 1, "patterns": []})
+
+    def recheck(self, problem_id):
+        in_recheck.set()
+        assert release_check.wait(30)  # 1걸음을 놓아준 뒤에도 2걸음은 따로 붙잡아 둔다
+        return None
+
+    try:
+        with patch.object(server, "PREPARE", True), patch.object(server, "connected", lambda: True), patch.object(server.Tutor, "prepare", prepare), patch.object(server.Tutor, "recheck", recheck):
+            call("/api/state", id=pid, open=True)
+            assert in_prepare.wait(10)
+            body = call("/api/state", id=pid)[1]["problem"]
+            assert body["preparing"] and not body.get("checking"), body
+            release.set()
+            assert in_recheck.wait(10)
+            body = call("/api/state", id=pid)[1]["problem"]
+            assert body.get("checking") is True and not body["preparing"], body
+            release_check.set()
+            quiet(pid, in_recheck)
+            body = call("/api/state", id=pid)[1]["problem"]
+            assert not body.get("checking") and not body["preparing"], body
+    finally:
+        release.set()
+        release_check.set()
+        forget()
+        call("/api/problems/delete", id=pid)
+
+
+def two_step_keeps_talk() -> None:
+    """2걸음이 풀이를 바꿨을 때: 대화가 이미 시작됐으면 대화·블록 진행을 지우지 않고 풀이도 그대로 두며 '다시 준비' 표시만 남긴다. 대화가 없으면 새 풀이로 바꿔 끼운다."""
+    from tutor.main import Outcome
+    from tutor.state import Solution
+
+    threading, quiet, forget = two_step_helpers()
+    old = "def solution(a, b):\n    return a + b"
+    new = Solution("더한다.", ["더한다"], "def solution(a, b):\n    return b + a", True, [])
+    entered = threading.Event()
+
+    def recheck(self, problem_id):
+        entered.set()
+        return new
+
+    def prepare(self, problem_id):
+        return Outcome(200, {"blocks": 1, "patterns": []})
+
+    def counts(pid):
+        with server.tutor() as t:
+            return [t.store.conn.execute(f"SELECT COUNT(*) FROM {table} WHERE problem_id=?", (pid,)).fetchone()[0] for table in ("message", "block_state")], t.store.load(pid).solution.code
+
+    talked, fresh = server.register(GOOD)["id"], server.register({**GOOD, "title": "두 수의 합 둘"})["id"]
+    try:
+        for pid in (talked, fresh):
+            with server.tutor() as t:
+                t.adopt(pid, own_ready(old))
+        with use_llm(FakeLlm({})):
+            call("/api/turn", id=talked, mode="chair", event="start")  # 대화가 시작됐다
+        server.write_json(server.BLOCKS_FILE, {**server.read_json(server.BLOCKS_FILE, {}), talked: {"b1": {"code": "x", "by": "me"}}})
+        before = counts(talked)
+        assert before[0][0] > 0
+        with patch.object(server, "PREPARE", True), patch.object(server, "connected", lambda: True), patch.object(server.Tutor, "recheck", recheck), patch.object(server.Tutor, "prepare", prepare):
+            call("/api/state", id=talked, open=True)
+            quiet(talked, entered)
+            assert counts(talked) == before, (counts(talked), before)  # 대화·블록 진행·풀이 모두 그대로
+            assert server.read_json(server.BLOCKS_FILE, {}).get(talked) == {"b1": {"code": "x", "by": "me"}}
+            assert call("/api/state", id=talked)[1]["problem"]["better"] is True  # 문제 머리에 '다시 준비'가 뜬다
+            assert call("/api/swap", id=talked) == (200, {"ok": True})  # 누르면 그때 바꿔 끼운다(대화는 처음부터)
+            quiet(talked, entered)
+            assert counts(talked) == ([0, 0], new.code) and not call("/api/state", id=talked)[1]["problem"]["better"], counts(talked)
+            entered.clear()
+            call("/api/state", id=fresh, open=True)
+            quiet(fresh, entered)
+            assert counts(fresh)[1] == new.code  # 대화가 없으면 바꿔 끼운다
+    finally:
+        forget()
+        for pid in (talked, fresh):
+            call("/api/problems/delete", id=pid)
+
+
+def two_step_restart() -> None:
+    """앱을 1·2걸음 사이에 끄면(2걸음이 끝나기 전에 서버를 새로 만든 꼴) 다시 열 때 대조가 돈다. 대조 결과는 저장소에 남지 않았다."""
+    threading, quiet, forget = two_step_helpers()
+    pid = server.register(GOOD)["id"]
+    entered, runs = threading.Event(), []
+
+    def recheck(self, problem_id):
+        runs.append(problem_id)
+        entered.set()
+        raise RuntimeError("앱이 꺼졌다")  # 2걸음이 끝나지 못했다
+
+    import contextlib
+    import io
+    try:
+        with server.tutor() as t:
+            t.adopt(pid, own_ready("def solution(a, b):\n    return a + b"))  # 1걸음이 끝난 상태
+        with patch.object(server, "PREPARE", True), patch.object(server, "connected", lambda: True), patch.object(server.Tutor, "recheck", recheck), contextlib.redirect_stderr(io.StringIO()):
+            call("/api/state", id=pid, open=True)
+            quiet(pid, entered)
+            assert runs == [pid] and call("/api/state", id=pid)[1]["problem"]["verified"] == ""
+            forget()  # 서버를 새로 만든 꼴: 메모리의 상태가 없고 저장소만 남는다
+            entered.clear()
+            call("/api/state", id=pid, open=True)
+            quiet(pid, entered)
+            assert runs == [pid, pid], runs  # 다시 열 때 대조가 돈다
+    finally:
+        forget()
+        call("/api/problems/delete", id=pid)
+
+
 def stale_save() -> None:
     """언어를 바꾸는 사이에 온 옛 언어의 코드·블록은 저장하지 않는다(어느 언어의 코드인지 같이 온다)."""
     pid = server.register(GOOD)["id"]  # 언어는 python
@@ -3400,6 +3584,10 @@ def main() -> None:
         key_check_flow()
         key_rows_flow()
         prep_unverified()
+        two_step_start_is_free()
+        two_step_checking_state()
+        two_step_keeps_talk()
+        two_step_restart()
         stale_save()
         builtin_prepare()
         own_guide()

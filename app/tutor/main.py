@@ -226,7 +226,7 @@ class Tutor:
         return True
 
     def recheck(self, problem_id) -> Solution | None:
-        """대조 없이 준비해 둔 정석 가이드(대조 기능이 생기기 전에 등록한 문제)를 한 번 대조한다(계획은 그대로). 결과는 cross.done이 남긴다.
+        """대조 없이 준비해 둔 정석 가이드(서버 준비의 1걸음이 만든 것, 대조 기능이 생기기 전에 등록한 문제)를 한 번 대조한다(계획은 그대로). 결과는 cross.done이 남긴다.
         다시 푼 코드가 대조를 통과해 가이드가 바뀌었으면 새 가이드를 돌려준다(부르는 쪽이 계획을 지우고 새 코드로 다시 짠다). 아니면 None."""
         from .plan.nodes import cross_check
 
