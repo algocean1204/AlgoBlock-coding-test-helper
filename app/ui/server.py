@@ -53,7 +53,7 @@ from tutor.common.talk_rules import MANY_ANSWERS  # noqa: E402
 from tutor.debug.rules import out_key  # noqa: E402
 from tutor.turn.code_check import compile_easy  # noqa: E402
 from tutor.save.respond import blocks_body, shown_count  # noqa: E402
-from tutor.ingest import IngestError, ocr_doubts, read_pages, reread  # noqa: E402
+from tutor.ingest import IngestError, ocr_doubts, outline, read_pages, reread  # noqa: E402
 from tutor.ingest.files import split_files  # noqa: E402
 from tutor.eval.scenarios import all_scenarios  # noqa: E402
 from tutor.knowledge.ontology import PITFALL_GROUPS, PITFALLS, TECHNIQUES, pitfall_text, technique_name, techniques_of  # noqa: E402
@@ -514,6 +514,8 @@ def problem(body: dict):
 def prepare_later(pid: str) -> None:
     """뼈대(명세·패턴)와 블록 계획을 뒤에서 미리 만든다. 화면은 기다리지 않는다. 실패해도 첫 질문 때 다시 만든다."""
     if not PREPARE or pid in PREPARED or not connected():  # 모델이 연결되지 않았으면 만들 수 없다(AI 없이 풀 때)
+        return
+    if getattr(PROBLEMS.get(pid), "hold", False) is True:  # 문제 글로 보이지 않아 미뤄 둔 문제(/api/problems/prepare가 푼다)
         return
     PREPARED.add(pid)
     PREPARING.add(pid)
@@ -1263,7 +1265,8 @@ def assets(pid: str) -> list[dict]:
     return read_json(ASSETS / pid / "index.json", []) if OWN_ID.fullmatch(pid) else []
 
 
-RANGE = re.compile(r"\d[^\n]{0,40}?(?:≤|<=|<|≥|>=|이상|이하|미만|초과)|(?:≤|<=|<|≥|>=|이상|이하|미만|초과)[^\n]{0,40}?\d")  # 제한사항의 수 범위 한 자리
+_CMP = r"(?:≤|<=|<|≥|>=|이상|이하|미만|초과|\\[lg](?:eq?|t)(?![A-Za-z]))"  # 비교 낱말. TeX의 \le·\leq·\ge·\geq·\lt·\gt도(\left·\gets는 아니다)
+RANGE = re.compile(rf"\d[^\n]{{0,40}}?{_CMP}|{_CMP}[^\n]{{0,40}}?\d")  # 제한사항의 수 범위 한 자리
 
 
 def read_doubts(text: str, mode: str) -> list[dict]:
@@ -1321,6 +1324,92 @@ def read_files(body: dict) -> dict:
         raise Refuse("이미지에서 글을 읽으려면 AI를 연결해야 해요. 연결하거나, 글을 직접 붙여 넣어 주세요.", 503, "llm_not_configured") from None
 
 
+READERS = SimpleNamespace(table=table_cases, samples=sample_cases, value=cell_value)  # 모델이 짚은 구간을 읽는 규칙 파서
+NOT_PROBLEM = "문제 글로 보이지 않아요. 그래도 등록할 수 있어요."
+SECTIONS = [(kind, re.compile(words, re.IGNORECASE)) for kind, words in (  # 구역 머리 낱말(사이트를 가리지 않는 일반 낱말)
+    ("body", r"문제(?:\s*설명)?|설명|참고|힌트|노트|problem(?:\s+description)?|description|statement|notes?|hints?"),
+    ("limits", r"제한\s*사항|제한|제약(?:\s*조건|\s*사항)?|constraints?|limits?"),
+    ("input", r"입력|input"), ("output", r"출력|output"),
+    ("sample", r"입출력\s*예(?:\s*설명|\s*#?\s*\d+)?|예제(?:\s*설명)?|예시|examples?|samples?"))]
+TOUCHED = {"title": ("title",), "mode": ("mode",), "cases": ("cases", "names"), "many": ("many",)}  # 사용자가 고친 칸 → 감지가 덮지 않고 제안(suggest)으로만 주는 칸
+
+
+def section_of(line: str) -> str:
+    """구역 머리 줄이면 그 구역(body·limits·input·output·sample), 아니면 빈 글. 마크다운 #·굵게·끝의 쌍점은 뗀다. 예제 머리는 SAMPLE_HEAD로 본다."""
+    if SAMPLE_HEAD.fullmatch(line):
+        return "sample"
+    head = line.strip().strip("#*:： ")
+    return next((kind for kind, words in SECTIONS if words.fullmatch(head)), "")
+
+
+def title_at(lines: list[str]) -> int | None:
+    """제목 줄(0부터): 구역 머리를 건너뛴 첫 줄이 마크다운 제목(#)이거나 40자 이하이고 문장이 아니면 그 줄, 아니면 None."""
+    for n, line in enumerate(lines):
+        text = line.strip()
+        if text and not section_of(text):
+            return n if re.match(r"#{1,6}\s", text) or (len(text) <= 40 and not re.search(r"[.?]$|(입니다|합니다|주어집니다)$", text)) else None
+    return None
+
+
+def detected(raw: list[str], lines: list[str], rule: dict, kinds: list[str], title: int | None, mode: str | None, told: dict | None) -> dict:
+    """감지 응답 하나. 방식: 정한 방식 → 규칙이 예시를 찾은 방식 → 모델의 방식 → 함수. 규칙이 예시를 깨끗이 읽었으면(읽지 못한 줄·넘친 글이 없으면) 규칙의 예시,
+    아니고 모델이 짚은 구간에서 읽은 예시가 있으면 그것. bounds: 제한·입력 구역에서 수 범위가 있는 줄(원래 글 그대로)."""
+    mode = mode or next((kind for kind in rule if rule[kind]["cases"] or rule[kind]["skipped"]), None) or (told["mode"] if told else "function")
+    found = rule[mode]
+    if told and not (found["cases"] and not found["skipped"] and not found.get("missed") and not found.get("spill")) and told[mode]["cases"]:
+        found = told[mode]
+    seen = any(part["cases"] or part["skipped"] for part in [*rule.values(), *([told["function"], told["program"]] if told else [])])
+    problem = (told is None or told["problem"]) and (seen or any(RANGE.search(line) for line, kind in zip(lines, kinds) if kind != "noise"))
+    name = re.sub(r"^#{1,6}\s*", "", lines[title]).strip() if title is not None else ""
+    return {"problem": problem, "notice": "" if problem else NOT_PROBLEM, "title": name if len(name) <= 80 else "", "mode": mode, **found, "kinds": kinds,
+            "bounds": [raw[n] for n, (line, kind) in enumerate(zip(lines, kinds)) if kind in ("limits", "input") and RANGE.search(line)],
+            "many": bool(told and told["many"] and mode == "program"), "suggest": {}}
+
+
+def detect(body: dict) -> dict:
+    """붙여 넣은 글에서 방식·예시·제목·수 범위와 줄마다의 구역(kinds: title·body·limits·input·output·sample·noise·빈 글)을 찾는다. 저장하지 않는다.
+    먼저 규칙(구역 머리 낱말, table_cases·sample_cases. 모델 0회). fast가 아니고 AI가 연결돼 있으면 문제 나누기 모델이 줄 구간을 짚어 보탠다
+    (outline.ask: 그 과정의 급으로 1회, 호출이 실패하거나 검사에 걸리면 가운데 급으로 1회. 공급자 연결은 모양이 깨진 답을 한 번 더 받는다. 둘 다 안 되면 규칙 결과 그대로).
+    모델은 제목 줄·방식·잡음 줄·빈 예시와 그 인자 이름·답이 여럿만 채운다. 글에 없는 글은 싣지 않는다: 제목은 그 줄 그대로, 예시 값과 인자 이름은 글에 글자 그대로 있는 것만.
+    줄은 str.splitlines로 나눈다(kinds의 길이가 그 줄 수다). touched(사용자가 고친 칸 이름)는 규칙 결과 그대로 두고 모델이 다르게 본 값은 suggest에 싣는다.
+    touched에 mode가 있으면 보낸 mode로 읽는다. problem이 거짓이면(모델이 문제 글이 아니라고 했거나, 예시도 잡음이 아닌 줄의 수 범위도 없음) notice를 싣는다.
+    등록할 때 problem: false를 그대로 보내면 뒤 준비를 미룬다."""
+    text, touched = body.get("text"), body.get("touched") or []
+    if not isinstance(text, str):
+        raise Refuse("문제 글은 글이어야 해요.", field="text")
+    if not isinstance(touched, list) or not all(isinstance(key, str) for key in touched):
+        raise Refuse("고친 칸 모양이 맞지 않아요.")
+    raw = text.splitlines()
+    lines = [outline.normalize(line) for line in raw]  # 줄 끝·빈칸·전각을 고른 줄. 줄 번호는 원래 글과 같다
+    joined = "\n".join(lines)
+    mode = body.get("mode") if "mode" in touched and body.get("mode") in ("function", "program") else None
+    rule, title = {"function": table_cases(joined), "program": sample_cases(joined)}, title_at(lines)
+    kinds, now = [], ""
+    for line in lines:
+        now = section_of(line) or now
+        kinds.append(now)
+    if title is not None:
+        kinds[title] = "title"
+    fast = detected(raw, lines, rule, kinds, title, mode, None)
+    told = None if body.get("fast") is True or not connected() or len(joined) > outline.MAX_CHARS else outline.ask(lines, READERS)
+    if told is None:
+        return fast
+    if told["title"] is not None:
+        title = told["title"] - 1
+        kinds = ["" if kind == "title" else kind for kind in kinds]
+        kinds[title] = "title"
+    for a, b in told["noise"]:
+        kinds[a - 1:b] = ["noise"] * (b - a + 1)
+    out = detected(raw, lines, rule, kinds, title, mode, told)
+    for key in TOUCHED.keys() & set(touched):
+        for field in TOUCHED[key]:
+            if out[field] != fast[field]:
+                out["suggest"][field], out[field] = out[field], fast[field]
+        if key == "cases":  # 읽지 못한 줄 수와 알림도 규칙 결과 그대로
+            out = {**{k: v for k, v in out.items() if k not in ("skipped", "missed", "spill")}, **{k: fast[k] for k in ("skipped", "missed", "spill") if k in fast}}
+    return out
+
+
 def chosen_theme(body: dict) -> str:
     """등록·수정 요청의 주제(theme): 빈 글(정하지 않음)이거나 주제 15개 가운데 하나."""
     theme = body.get("theme") or ""
@@ -1367,7 +1456,8 @@ def register(body: dict, once: bool = False) -> dict:
     pid = "u" + uuid.uuid4().hex[:8]
     names = arg_names(body, cases) if mode == "function" else None
     row = {"id": pid, "title": title, "language": language, "mode": mode, "text": text, "cases": cases, **({"names": names} if names else {}),
-           **({"theme": theme} if theme else {}), **({"level": level} if level else {}), **answer_flags(body, mode)}
+           **({"theme": theme} if theme else {}), **({"level": level} if level else {}), **answer_flags(body, mode),
+           **({"hold": True} if body.get("problem") is False else {})}  # 감지(detect)가 문제 글로 보지 않았다: 사용자가 한 번 더 누를 때까지 뒤 준비를 미룬다
     with tutor() as t:
         t.store.put_problem(pid, language, text, title=title)
     with FILE_LOCK_ROWS:
@@ -1446,6 +1536,20 @@ def edit(body: dict) -> dict:
     if text_changed or redo:
         prepare_later(pid)
     return {"id": pid}
+
+
+def unhold(body: dict) -> dict:
+    """문제 글로 보이지 않아 미뤄 둔 뒤 준비를 사용자가 한 번 더 눌러 시작한다(연결이 없으면 미룸만 푼다)."""
+    pid = own(body).id
+    with FILE_LOCK_ROWS:
+        rows = read_json(PROBLEMS_FILE, [])
+        for raw in rows:
+            if isinstance(raw, dict) and raw.get("id") == pid:
+                raw.pop("hold", None)
+        write_json(PROBLEMS_FILE, rows)
+        reload_problems()
+    prepare_later(pid)
+    return {"id": pid, "preparing": pid in PREPARING}
 
 
 def delete(body: dict) -> dict:
@@ -2040,7 +2144,7 @@ def state_body(t, p, body: dict) -> dict:
     examples = row["examples"] if row else [{"input": case["input"], "expected": case["expected"], "note": ""} for case in p.cases if case.get("kind", "example") == "example"]
     # 내가 등록한 문제는 수정 화면이 숨긴 케이스까지 값을 보여 준다(내가 넣은 것이다). 문제 화면은 examples만 쓴다
     mine = {} if p.sample else {"own_cases": [{"input": case["input"], "expected": case["expected"], "hidden": case.get("kind", "example") != "example"} for case in p.cases if not case.get("made")],
-                                **{key: getattr(p, key, False) is True for key in ANSWER_FLAGS}}
+                                **{key: getattr(p, key, False) is True for key in (*ANSWER_FLAGS, "hold")}}  # hold: 문제 글로 보이지 않아 뒤 준비를 미뤘다
     return {"problem": {"id": pid, "title": p.title, "language": ctx.language, "text": p.text, "sample": p.sample, "builtin": p.builtin, "mode": p.mode,
                         "theme": p.theme, "theme_name": p.theme_name or (theme_name(planned) if planned else ""), "level": p.level, **labels_of(t, p, ctx.language),
                         "languages": row["languages"] if row else list(check_judge().LANGUAGES), "starter": row["starters"].get(ctx.language, "") if row else own_starter(p, ctx.language),
@@ -2429,6 +2533,10 @@ def handle(path: str, body: dict) -> tuple[int, dict]:
             raise Refuse("문제 글은 글이어야 해요.", field="text")
         found, other = (sample_cases, table_cases) if body.get("mode") == "program" else (table_cases, sample_cases)
         return 200, {**found(body["text"]), "other": len(other(body["text"])["cases"])}  # other: 다른 방식으로 찾은 케이스 수(방식을 바꾸자고 한다)
+    if path == "/api/problems/detect":  # 붙여 넣은 글에서 방식·예시·제목·잡음 줄 찾기(fast면 규칙만)
+        return 200, detect(body)
+    if path == "/api/problems/prepare":  # 문제 글로 보이지 않아 미뤄 둔 준비를 시작한다
+        return 200, unhold(body)
     if path == "/api/tools":  # 언어 도구 있음·없음. refresh가 참이면 다시 센다(도구를 설치한 뒤)
         return 200, {"tools": tools(body.get("refresh") is True)}
     if path == "/api/accounts":

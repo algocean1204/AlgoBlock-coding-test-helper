@@ -1,0 +1,22 @@
+{
+ "id": "F08d",
+ "note": "문제가 아닌 글: 아무렇게나 친 자판",
+ "raw": [
+  "ㅁㄴㅇㄹ",
+  "ㅁㄴㅇㄹㅁㄴㅇㄹ ㅋㅋ"
+ ],
+ "expect": {
+  "verdict": "not_problem",
+  "mode": null,
+  "title": null,
+  "names": [],
+  "cases": [],
+  "sections": {},
+  "absent": [],
+  "bounds": [],
+  "flags": {
+   "many_answers": false,
+   "float_output": false
+  }
+ }
+}
