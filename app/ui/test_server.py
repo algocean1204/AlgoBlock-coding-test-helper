@@ -1948,8 +1948,26 @@ def key_check_flow() -> None:
     def to_first(request, timeout):  # 공식 주소 대신 첫 루프백 서버로 보내되, 헤더와 기본 opener(리다이렉트를 따르지 않는 것)는 그대로 쓴다
         return keycheck.OPENER.open(urllib.request.Request(f"http://127.0.0.1:{first.server_port}/", headers=dict(request.header_items())), timeout=timeout)
 
+    Second.do_POST = Second.do_GET
+    First.do_POST = First.do_GET
+    from app.llm import wire
+    from app.llm.errors import LlmFailed
+    from app.llm.openai.oauth import chat as oauth_chat, token as oauth_token
+
+    def refused(send) -> Exception | None:
+        try:
+            send()
+        except Exception as exc:  # 리다이렉트는 실패로 끝난다(따라가지 않는다)
+            return exc
+        return None
+
     try:
         assert keycheck.check("claude", secret, opener=to_first) == "offline" and keycheck.check("openai", "sk-proj-" + "r" * 20, opener=to_first) == "offline"
+        here = f"http://127.0.0.1:{first.server_port}/"
+        assert isinstance(refused(lambda: wire.post_json(here, {"x-api-key": secret}, {"model": "m"}, timeout=5)), LlmFailed)  # 모델 요청(API 키 연결은 모두 이 길)
+        assert refused(lambda: oauth_chat.post_sse(here, {"Authorization": "Bearer " + secret}, {"model": "m"})) is not None  # ChatGPT 요청
+        with patch.object(oauth_token, "TOKEN_URL", here):
+            assert refused(lambda: oauth_token._token({"refresh_token": secret})) is not None  # 토큰 갱신
         assert got == [], got  # 두 번째 호스트에는 요청도 헤더도 가지 않았다
     finally:
         for one in (first, second):

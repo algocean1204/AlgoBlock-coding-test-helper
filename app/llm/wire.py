@@ -11,6 +11,14 @@ from app.llm.errors import LlmFailed, LlmNotConfigured, LlmTimeout
 _transport = None
 
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, *args, **kwargs):
+        return None  # 따라가지 않으면 urllib가 3xx를 HTTPError로 낸다
+
+
+OPENER = urllib.request.build_opener(_NoRedirect)  # 키·토큰을 싣는 요청은 모두 이것으로 보낸다(리다이렉트로 키 헤더가 다른 주소에 넘어가지 않게)
+
+
 def timeout_seconds() -> float:
     raw = os.environ.get("ALGOBLOCK_LLM_TIMEOUT", "60")
     try:
@@ -41,7 +49,7 @@ def post_json(url: str, headers: dict, body: dict, timeout: float | None = None)
             raise LlmTimeout("60초를 넘겼습니다.")
         request = urllib.request.Request(url, data=data, headers=headers, method="GET" if body is None else "POST")
         try:
-            with urllib.request.urlopen(request, timeout=left) as response:
+            with OPENER.open(request, timeout=left) as response:
                 return json.loads(response.read().decode("utf-8"))
         except TimeoutError as exc:
             raise LlmTimeout("60초를 넘겼습니다.") from exc
