@@ -131,7 +131,7 @@ class ThemeTest(unittest.TestCase):
 
         moved = themes.from_old({"ingest": {"model": "claude/claude-opus-5-5", "effort": "medium"}, "explain": {"model": "grok/grok-5", "effort": "high"},
                                  "talk": {"model": "openrouter/x-ai/grok-4", "effort": ""}, "judge": {"model": "chatgpt/gpt-6-luna"}, "debug": "망가짐", "없는 테마": {}})
-        self.assertEqual(moved, {**{key: {"tier": "large", "effort": "medium"} for key in ("read", "guide", "blocks")},
+        self.assertEqual(moved, {**{key: {"tier": "large", "effort": "medium"} for key in ("split", "read", "guide", "verify", "blocks")},
                                  **{key: {"tier": "", "effort": "high"} for key in ("explain", "feedback")},
                                  "talk": {"tier": "", "effort": ""}, "judge": {"tier": "small", "effort": ""}})
         self.assertEqual(themes.from_old(None), {})
