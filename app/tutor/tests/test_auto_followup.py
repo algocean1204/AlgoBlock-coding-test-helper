@@ -242,7 +242,12 @@ class TermLeakTest(unittest.TestCase):
              ("plus", "`for n in items:`처럼 쓰면 값을 하나씩 꺼내요. 그럼 무엇을 하나씩 볼까요?"),
              ("plus", "`items[0]`처럼 쓰면 첫 값을 꺼내요. 그럼 무엇을 하나씩 볼까요?"),
              ("shelf", "`count[t] = count.get(t, 0) + 1`처럼 쓰면 개수를 셀 수 있어요. 그럼 제목마다 무엇을 기록해 둘까요?"),
-             ("shelf", "seen[t] = count.get(t, 0) + 1 처럼 쓰면 개수를 셀 수 있어요. 그럼 제목마다 무엇을 기록해 둘까요?")]  # 백틱 없는 대입 줄
+             ("shelf", "seen[t] = count.get(t, 0) + 1 처럼 쓰면 개수를 셀 수 있어요. 그럼 제목마다 무엇을 기록해 둘까요?"),  # 백틱 없는 대입 줄
+             # 한 글자 이름만 쓴 답 줄(if x > 0:)에 무엇을 덧붙여도 그 줄로 시작하면 막힌다
+             ("plus", "`if x>0: print(x)`처럼 쓰면 조건을 걸 수 있어요. 그럼 언제 합에 더해야 할까요?"),
+             ("plus", "`if x > 0 and x < 10:`처럼 쓰면 조건을 걸 수 있어요. 그럼 언제 합에 더해야 할까요?"),
+             ("plus", "`if x>0:  # 양수만`처럼 쓰면 조건을 걸 수 있어요. 그럼 언제 합에 더해야 할까요?")]
+    LANG_LEAKS = [("rust", "`for k in 0..total {`"), ("rust", "`for k in 0..items.len() {`")]  # 범위(..) 뒤 이름도 본다
     NAMED = "지금은 양수만 더하기 블록이니 하나씩 보는 문법부터 볼게요. 그럼 items의 값을 어떻게 하나씩 볼까요?"
     STARTERS = {"plus": "def solution(items):\n    answer = 0\n    return answer", "shelf": "def solution(loans, k):\n    answer = []\n    return answer"}
     # 양수만 더하기 장면을 언어마다 옮긴 것: (시작 코드, 지금 블록 참고 코드, 상관없는 문법 예)
@@ -289,9 +294,9 @@ class TermLeakTest(unittest.TestCase):
             for scene, reply in self.LEAKS:
                 with self.subTest(mode=mode, reply=reply):
                     self.assertEqual(self.turn(mode, self.scene(mode, scene), reply, scene), FALLBACK["term"])
-            for language in self.LANGS:  # 진입 함수의 인자를 쓴 코드는 언어마다 막힌다
-                with self.subTest(mode=mode, language=language):
-                    self.assertEqual(self.turn(mode, self.scene(mode, "plus", language), "`items[0]`" + self.TAIL), FALLBACK["term"])
+            for language, code in [(language, "`items[0]`") for language in self.LANGS] + self.LANG_LEAKS:  # 진입 함수의 인자를 쓴 코드는 언어마다 막힌다
+                with self.subTest(mode=mode, language=language, code=code):
+                    self.assertEqual(self.turn(mode, self.scene(mode, "plus", language), code + self.TAIL), FALLBACK["term"])
 
     def test_unfound_block_name_falls_back_only_in_chair(self):
         from ..common.talk_rules import FALLBACK

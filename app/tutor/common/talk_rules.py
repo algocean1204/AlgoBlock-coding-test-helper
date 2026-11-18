@@ -11,7 +11,7 @@ import re
 import sys
 from difflib import SequenceMatcher
 
-from .solution import body_lines, bound_names, created_names, entry_params, frame_flags
+from .solution import _TOKEN, body_lines, bound_names, created_names, entry_params, frame_flags
 
 BANNED = (
     "정답", "맞아요", "맞습니다", "틀렸어요", "완벽", "훌륭", "잘했어요", "좋아요", "좋은 질문", "좋은 생각",
@@ -519,7 +519,7 @@ def code_names(text: str, code: str, problem: str) -> list[str]:
     return sorted(set(_NAME.findall(without_code(text or ""))) & names)
 
 
-_OWN_NAME = re.compile(r"(?<![\w.])[A-Za-z_]\w*")  # 점 뒤(메서드·속성)는 아닌 이름
+_OWN_NAME = re.compile(r"(?:(?<=\.\.)|(?<![\w.]))[A-Za-z_]\w*")  # 점 하나 뒤(메서드·속성)는 아닌 이름. 범위(0..n) 뒤는 이름이다
 
 
 def problem_names(pieces: list[str], language: str, program: bool = False) -> set[str]:
@@ -528,16 +528,36 @@ def problem_names(pieces: list[str], language: str, program: bool = False) -> se
     return {name for code in pieces for name in [*(item[0] for item in created_names(code, language, program)), *(entry_params(code, language) or [])]}
 
 
+def statements(code: str, language: str) -> list[list[str]]:
+    """코드를 문장 조각의 낱말 목록으로 나눈다. 주석을 떼고, 괄호 밖의 ';'와 줄바꿈에서 끊는다.
+    파이썬은 ':'에서도(조건·반복 머리 뒤), 그 밖의 언어는 '{'·'}'에서도 끊는다. 'for (let i = 0; i < n; i++)'의 ';'는 괄호 안이라 끊지 않는다."""
+    mark, cuts, opens, closes = ("#", ";:", "([{", ")]}") if language == "python" else ("//", ";{}", "([", ")]")
+    out = []
+    for line in (code or "").splitlines():
+        part, depth = [], 0
+        for tok in _TOKEN.findall(re.sub(rf"(^|\s){re.escape(mark)}.*", "", line)):
+            if depth == 0 and tok in cuts:
+                out.append(part)
+                part = []
+                continue
+            depth += (tok in opens) - (tok in closes)
+            part.append(tok)
+        out.append(part)
+    return [part for part in out if part]
+
+
 def code_leaks(text: str, pieces: list[str], language: str, program: bool = False) -> bool:
     """말의 코드 구간·코드 모양 줄이 이 문제의 코드를 옮겼는가. 되묻기 답(term)의 문법 예가 이 문제의 변수와 답 줄을 썼다.
-    이 문제 코드가 만든 두 글자 이상의 이름(problem_names)을 쓰거나, 공백과 끝의 ':', ';', '{'를 빼고 견줘 그 코드의 줄과 같으면 참.
-    견주는 줄은 주석·틀 줄을 뺀 줄 가운데 만든 이름이 있는 줄이다. 한 글자 이름만 같은 예('for x in fruits:')는 거짓이다."""
+    이 문제 코드가 만든 두 글자 이상의 이름(problem_names)을 쓰거나, 문장 조각(statements)이 이 문제 코드의 문장 조각과 같거나 그것으로 시작하면 참.
+    견주는 조각은 주석·틀 줄을 뺀 줄에서 나온, 만든 이름이 있고 공백을 빼고 5자 이상인 조각이다. 낱말 단위로 견주므로 'if xs > 0'은 'if x > 0'으로 시작하지 않는다.
+    한 글자 이름만 같은 예('for x in fruits:')는 거짓이다."""
     parts = []
-    outside_code(text or "", lambda line: line, lambda span: parts.append(span) or span)
+    outside_code(text or "", lambda line: line, lambda span: parts.append(span.strip("`")) or span)
     made = problem_names(pieces, language, program)
     names = {name for name in made if len(name) >= 2}
-    rows = {_squash(line).rstrip(":;{") for code in pieces for line in body_lines(code, language, program) if made & set(_OWN_NAME.findall(line))}
-    return any(names & set(_OWN_NAME.findall(part)) or _squash(part).strip("`").rstrip(":;{") in rows for part in parts)
+    rows = [row for code in pieces for row in statements("\n".join(body_lines(code, language, program)), language)
+            if made & set(row) and len("".join(row)) >= 5]
+    return any(names & set(_OWN_NAME.findall(part)) or any(said[:len(row)] == row for said in statements(part, language) for row in rows) for part in parts)
 
 
 SAME_HINT = 0.8  # 공백을 뺀 두 질문이 이만큼 같으면 같은 질문을 되풀이한 것이다
