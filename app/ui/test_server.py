@@ -2750,6 +2750,88 @@ console.log(JSON.stringify({ out, repro }));
     assert server.panes_ok(got["repro"]) and got["repro"][0] == 80.5 and got["repro"][2] >= 5, got["repro"]
 
 
+def math_render() -> None:
+    """문제 글의 수식·위첨자(app.js의 rich-pure를 node로): 수식 구간만 수식이 되고, 금액·코드·`a^b`·`max_count`는 그대로이며,
+    붙여 넣은 글의 스크립트·이벤트 속성·javascript: 링크는 무력하다. 병적 입력도 200ms 안에 끝난다. 정적 파일 세 목록(화면이 부르는 것, 서버 표, 묶음 명세)도 맞춘다."""
+    import re
+    import shutil
+    node = shutil.which("node")
+    if not node:
+        return print("node가 없어 수식 렌더 시험은 건너뜀")
+    js = (HERE / "app.js").read_text(encoding="utf-8")
+    source = re.search(r"/\* rich-pure:start.*?\*/(.*?)/\* rich-pure:end \*/", js, re.S).group(1)
+    cases = {
+        "sub": "값 $a_i$ 와 $$\\sum_{i=1}^{n} a_i$$ 끝", "paren": "식 \\(x^2+1\\) 이고", "bracket": "식 \\[x^2+1\\] 이고",
+        "money": "가격은 $5 입니다", "range": "가격은 $5 ~ $10 입니다", "won": "$5짜리 책과 $7짜리 펜", "open": "비용 $x 는 정해지지 않았다",
+        "fence": "앞\n```\na$b^c_d $x$\n```\n뒤", "tick": "변수 `a$b^c_d` 를 쓴다",
+        "pow5": "1 <= N <= 10^5", "pow9": "답을 10^9+7 로 나눈다", "xor": "a^b 를 출력한다",
+        "snake": "max_count 와 A_i와 B_i 를 쓴다", "ol": "1. 첫째\n2. 둘째\n3. 셋째",
+        "broken": "깨진 $\\frac{1$ 식", "href": "$\\href{javascript:alert(1)}{x}$", "img": "<img src=x onerror=alert(1)> 글", "script": "<script>alert(1)</script> 글",
+        "link": "[x](javascript:alert(1)) 와 [y](JaVaScRiPt:alert(2))", "plain": "그냥 글입니다. 수식 없음.",
+        "big": "가나다 $ " * 8000, "dollars": "$" * 1000 + "\n" + "$a$ " * 300, "long": "x_i " * 12000,
+    }
+    script = "const esc = (t) => String(t ?? '').replace(/[&<>\"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '\"': '&quot;', \"'\": '&#39;' }[c]));\n" + source + """
+globalThis.window = globalThis;
+const katex = require(%s); globalThis.katex = katex;
+const cases = %s, out = {};
+for (const [k, text] of Object.entries(cases)) {
+  const t = process.hrtime.bigint();
+  const html = rich(text, true, false);
+  const ms = Number(process.hrtime.bigint() - t) / 1e6;
+  const tex = [...html.matchAll(/data-tex="([^"]*)"/g)].map((m) => m[1].replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, "&"));
+  const shown = tex.map((x) => katex.renderToString(x, { throwOnError: false, trust: false }));
+  out[k] = { html, ms, tex, shown };
+}
+console.log(JSON.stringify(out));
+""" % (json.dumps(str(HERE / "katex" / "katex.min.js")), json.dumps(cases))
+    got = json.loads(subprocess.run([node, "-e", script], capture_output=True, text=True, check=True).stdout)
+    math = lambda k: len(re.findall(r'class="katex"|data-tex=', got[k]["html"]))  # noqa: E731  (KaTeX 결과나 렌더 자리)
+    for k in ("sub", "paren", "bracket"):
+        assert math(k) >= 1, (k, got[k]["html"])
+    assert math("sub") >= 2, got["sub"]["html"]  # 식 둘(렌더 자리의 글은 원문이어도 된다: 깨지면 그대로 보이게)
+    for k, kept in (("money", "$5"), ("range", "$5 ~ $10"), ("won", "$5짜리"), ("open", "$x")):  # 금액과 닫히지 않은 $는 글자 그대로
+        assert math(k) == 0 and kept in got[k]["html"], (k, got[k]["html"])
+    assert "$7짜리" in got["won"]["html"]
+    for k, kept in (("fence", "a$b^c_d $x$"), ("tick", "a$b^c_d")):  # 코드 안은 그대로
+        assert math(k) == 0 and kept in got[k]["html"] and "<sup>" not in got[k]["html"] and "<em>" not in got[k]["html"], (k, got[k]["html"])
+    assert "<sup>5</sup>" in got["pow5"]["html"] and "10<sup>" in got["pow5"]["html"] and "105" not in got["pow5"]["html"], got["pow5"]["html"]
+    assert re.search(r"10<sup>9(\+7)?</sup>(\+7)?", got["pow9"]["html"]), got["pow9"]["html"]
+    assert "a^b" in got["xor"]["html"] and "<sup>" not in got["xor"]["html"], got["xor"]["html"]  # XOR일 수 있다
+    assert "max_count" in got["snake"]["html"] and "A_i와 B_i" in got["snake"]["html"] and not re.search(r"<(em|i)[ >]", got["snake"]["html"]) and math("snake") == 0, got["snake"]["html"]
+    assert "<ol>" in got["ol"]["html"] and got["ol"]["html"].count("<li>") == 3, got["ol"]["html"]
+    assert math("plain") == 0 and "<sup>" not in got["plain"]["html"]
+    assert "katex-error" not in got["broken"]["html"] and "\\frac{1" in got["broken"]["html"], got["broken"]["html"]  # 깨진 수식은 원문 글(화면에서 KaTeX 결과가 오류 표시면 원문으로 되돌린다)
+    for k, row in got.items():  # 어떤 글도 스크립트·이벤트 속성·javascript: 링크를 만들지 않는다(KaTeX 결과 포함)
+        every = row["html"] + "".join(row["shown"])
+        assert not re.search(r"<(script|img|iframe|object|embed)\b", every, re.I), (k, every[:200])
+        assert not re.search(r"<[^>]*\son\w+\s*=", every, re.I), (k, every[:200])
+        assert not re.search(r"(href|src)\s*=\s*[\"']?\s*javascript:", every, re.I), (k, every[:200])
+    assert "<a " not in got["link"]["html"] or "javascript:" not in got["link"]["html"].lower().split("<a ", 1)[1]
+    for k in ("big", "dollars", "long"):  # 병적 입력(50KB, $ 1000개)
+        assert got[k]["ms"] < 200, (k, got[k]["ms"])
+
+    # 정적 파일 세 목록: 화면이 부르는 것, 서버 표, 묶음 명세가 같다. 수식 파일은 수식이 있을 때만 받는다(처음 화면은 부르지 않는다)
+    html, css = (HERE / "index.html").read_text(encoding="utf-8"), (HERE / "app.css").read_text(encoding="utf-8")
+    called = set(re.findall(r'(?:src|href)="([^":#]+\.(?:js|css|svg|woff2))"', html)) | set(re.findall(r"url\(\"?([\w./-]+\.woff2)\"?\)", css))
+    served = {path.lstrip("/") for path in server.STATIC}
+    assert {"/" + name for name in called} <= set(server.STATIC), called - served
+    assert not any("katex" in name for name in called), "수식 파일을 처음 화면에서 부른다"
+    assert "/katex/katex.min.js" in js and "/katex/katex.min.css" in js, "app.js가 수식이 있을 때 불러오지 않는다"
+    kcss = (HERE / "katex" / "katex.min.css").read_text(encoding="utf-8")
+    assert not re.search(r"https?://", kcss), "들여온 CSS가 원격 주소를 담고 있다"
+    for ref in re.findall(r"url\(([^)]+)\)", kcss):
+        ref = ref.strip("\"'")
+        assert ref.endswith(".woff2") and "/katex/" + ref in server.STATIC, ref  # woff2만, 모두 서버 표에 있다
+    for name, (file, _) in server.STATIC.items():
+        assert (HERE / file).is_file(), name
+    on_disk = {f"/katex/{p.relative_to(HERE / 'katex')}" for p in (HERE / "katex").rglob("*") if p.is_file() and p.suffix in (".js", ".css", ".woff2")}
+    assert on_disk == {p for p in server.STATIC if p.startswith("/katex/")}, on_disk ^ {p for p in server.STATIC if p.startswith("/katex/")}
+    spec = (HERE.parent / "packaging" / "algoblock.spec").read_text(encoding="utf-8")
+    assert "katex" in spec, "묶음 명세에 수식 파일이 없다"
+    for name in {file for file, _ in server.STATIC.values() if not file.startswith("katex/")}:
+        assert name in spec, name
+
+
 def stages() -> None:
     """과정별 모델: 급과 추론 정도를 고르면 저장되고 바로 쓰인다. 빈 값은 기본값. 모르는 과정·급·정도는 거절한다.
     예전 설정(테마별 모델 이름, Grok·OpenRouter 키)은 조용히 옮기거나 버린다."""
@@ -3438,6 +3520,7 @@ def main() -> None:
     window_background()
     pane_widths()
     pane_fit()
+    math_render()
     stages()
     newest_models()
     read_check()

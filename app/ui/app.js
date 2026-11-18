@@ -199,16 +199,23 @@ const waitLine = (where) => (S.busy && S.busy.where === where // 문구가 걸�
 const pending = (where) => (S.busy && S.busy.where === where ? `<div class="msg tutor pending"><span class="who">튜터</span><div class="bubble">${waitLine(where)}</div></div>` : "");
 
 /* ── 글 꾸미기: 코드 울타리, 표(| a | b |), 목록(- ), 소제목, `코드`, **굵게**, 표준 입출력 문제의 예제 구역 ── */
+/* rich-pure:start 글 꾸미기 전체(esc 말고는 다른 것에 기대지 않는다). node로도 시험한다 */
+/* inline-pure:start 코드와 수식 구간은 먼저 떼어 두고 나머지만 굵게·위첨자를 바꾼 뒤 되돌린다(코드·수식 속 **나 ^가 바뀌지 않는다). 수식은 $…$, $$…$$, \(…\), \[…\]: 여는 $ 뒤나 닫는 $ 앞이 공백이거나 닫는 $ 뒤가 숫자면 수식이 아니다(금액). 줄 단위라 여러 줄에 걸친 수식은 보지 않는다 */
+function inline(t) {
+  const kept = [];
+  const hold = (html) => `\u0000${kept.push(html) - 1}\u0000`;
+  const text = String(t ?? "").replace(/\u0000/g, "").replace(/`([^`\n]+)`/g, (_, code) => hold(`<code>${esc(code)}</code>`))
+    .replace(/\$\$(.+?)\$\$|\\\[(.+?)\\\]|\\\((.+?)\\\)|\$(?=[^\s$])([^$\n]*?\S)\$(?![\d$])/g, (all, d1, d2, i1, i2, at, whole) => {
+      const tex = d1 ?? d2 ?? i1 ?? i2;
+      return tex.trim() && !(i2 !== undefined && /[\\$]/.test(whole[at - 1] || "")) ? hold(`<span class="math" data-tex="${esc(tex)}"${i1 === undefined && i2 === undefined ? ' data-display="1"' : ""}>${esc(all)}</span>`) : all;
+    });
+  return esc(text).replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>").replace(/(^|[^\w.^])(\d+)\^(\d+)(?![\w^])/g, "$1$2<sup>$3</sup>")
+    .replace(/\u0000(\d+)\u0000/g, (_, n) => kept[n]);
+}
+/* inline-pure:end */
 const HEADING = /^(문제 설명|제한 ?사항|입출력 예( 설명)?|입출력 예 ?#\d+|입력|출력|예시)$/;
 // 예제 구역의 머리(서버 sample_cases와 같은 규칙): 머리 다음부터 다음 머리나 빈 줄 둘 전까지가 그 예제의 글이다
 const SAMPLE_HEAD = /^(?:#+\s*)?(예제\s*입력|입력\s*예|sample\s+input|예제\s*출력|출력\s*예|sample\s+output)\s*(\d+)\s*(?:복사)?\s*:?$/i;
-/* inline-pure:start 백틱 안은 코드 그대로 둔다: 먼저 코드를 떼어 두고 굵게를 바꾼 뒤 되돌린다(코드 속 **가 굵게가 되지 않는다). node로도 시험한다 */
-function inline(t) {
-  const codes = [];
-  return esc(t).replace(/\u0000/g, "").replace(/`([^`\n]+)`/g, (_, code) => `\u0000${codes.push(code) - 1}\u0000`)
-    .replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>").replace(/\u0000(\d+)\u0000/g, (_, n) => `<code>${codes[n]}</code>`);
-}
-/* inline-pure:end */
 
 /** program: 표준 입출력 문제. 예제 구역은 글 그대로 <pre>에 담고, 같은 번호의 입력·출력은 두 칸으로 나란히 둔다. */
 // 탭·공백으로 나눈 입출력 예 표(서버 table_cases·flat_table과 같은 규칙의 가장 작은 판정): 머리 줄의 마지막 칸이 결과 낱말이고 뒤 줄들의 칸 수가 맞을 때만 표다
@@ -265,7 +272,7 @@ function rich(text, headings, program) {
   String(text || "").split(/```[a-zA-Z0-9]*\n?/).forEach((part, i) => {
     if (i % 2) return out.push(`<pre class="code"><code>${esc(part.replace(/\s+$/, ""))}</code></pre>`);
     if (headings && !program) part = plainTables(part); // 문제 글(함수 방식)의 탭·공백 표
-    let para = [], list = [], table = [], sample = null;
+    let para = [], list = [], numbered = [], table = [], sample = null;
     const endSample = () => {
       if (!sample) return;
       const rows = sample.rows.join("\n").replace(/^\s*\n|\n\s*$/g, ""); // 앞뒤 빈 줄만 뗀다(줄 앞 공백은 답이다)
@@ -279,6 +286,7 @@ function rich(text, headings, program) {
       const what = (name) => keep.includes(name);
       if (para.length && !what("para")) { out.push(`<p>${para.map(inline).join("<br>")}</p>`); para = []; }
       if (list.length && !what("list")) { out.push(`<ul>${list.map((x) => `<li>${inline(x)}</li>`).join("")}</ul>`); list = []; }
+      if (numbered.length && !what("numbered")) { out.push(`<ol${numbered[0][0] === 1 ? "" : ` start="${numbered[0][0]}"`}>${numbered.map(([, x]) => `<li>${inline(x)}</li>`).join("")}</ol>`); numbered = []; }
       if (table.length && !what("table")) {
         const rows = table.map((row) => row.replace(/^\||\|$/g, "").split("|").map((cell) => cell.trim())).filter((cells) => !cells.every((cell) => /^[-: ]*$/.test(cell)));
         out.push(`<div class="table-wrap"><table>${rows.map((cells, n) => `<tr>${cells.map((cell) => (n ? `<td>${inline(cell)}</td>` : `<th scope="col">${inline(cell)}</th>`)).join("")}</tr>`).join("")}</table></div>`);
@@ -294,9 +302,11 @@ function rich(text, headings, program) {
         endSample();
         continue;
       }
-      if (!t) { flush("table", "list"); continue; } // 빈 줄은 문단만 끊는다. 표와 목록은 다른 글이 올 때까지 잇는다
+      if (!t) { flush("table", "list", "numbered"); continue; } // 빈 줄은 문단만 끊는다. 표와 목록은 다른 글이 올 때까지 잇는다
       if (t.startsWith("|") && t.length > 1) { flush("table"); table.push(t); continue; }
       if (/^[-•]\s+/.test(t)) { flush("list"); list.push(t.replace(/^[-•]\s+/, "")); continue; }
+      const num = /^(\d{1,2})[.)]\s+(\S.*)$/.exec(t);
+      if (num) { flush("numbered"); numbered.push([+num[1], num[2]]); continue; }
       const title = /^#{1,4}\s+(.+)$/.exec(t);
       if (title || (headings && HEADING.test(t))) { flush(); out.push(`<h3>${inline(title ? title[1] : t)}</h3>`); continue; }
       flush("para");
@@ -307,6 +317,33 @@ function rich(text, headings, program) {
   });
   return out.join("");
 }
+/* rich-pure:end */
+
+/* 수식: 글에 수식 구간(.math)이 생길 때만 KaTeX를 이 앱 안에서 불러온다(원격 주소 없음). 실패하면 원문 글이 그대로 남는다 */
+let katexReady = null;
+function loadKatex() {
+  katexReady ??= new Promise((ok, fail) => {
+    const css = document.createElement("link"), js = document.createElement("script");
+    css.rel = "stylesheet"; css.href = "/katex/katex.min.css"; js.src = "/katex/katex.min.js";
+    js.onload = () => ok(window.katex); js.onerror = fail;
+    document.head.append(css, js);
+  }).catch(() => null);
+  return katexReady;
+}
+async function renderMath() {
+  const todo = [...document.querySelectorAll(".math[data-tex]:not([data-done])")];
+  if (!todo.length) return;
+  todo.forEach((el) => el.setAttribute("data-done", "1"));
+  const katex = await loadKatex();
+  if (!katex) return todo.forEach((el) => el.removeAttribute("data-done")); // 받지 못했으면 원문 그대로, 다음 글에서 다시 시도
+  for (const el of todo) {
+    if (!el.isConnected) continue;
+    const original = el.textContent;
+    try { katex.render(el.dataset.tex, el, { throwOnError: false, displayMode: "display" in el.dataset }); } catch { el.textContent = original; }
+    if (el.querySelector(".katex-error")) el.textContent = original; // 깨진 수식은 KaTeX의 빨간 글 대신 쓴 그대로
+  }
+}
+new MutationObserver(() => renderMath()).observe(document.body, { childList: true, subtree: true });
 
 const kindChip = (kind) => (kind ? `<span class="kind kind-${esc(kind)}">${KIND[kind] ? ico("k-" + kind) : ""}${esc((KIND[kind] || [kind])[0])}</span>` : ""); // 종류가 없으면(코드와 맞지 않아 서버가 비웠다) 꼬리표를 그리지 않는다
 const meMsg = (text, sending) => `<div class="msg me${sending ? " sending" : ""}"><span class="who">나</span><div class="bubble">${esc(text)}</div></div>`;
