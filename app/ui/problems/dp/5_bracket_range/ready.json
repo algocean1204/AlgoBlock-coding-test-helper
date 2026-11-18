@@ -15,12 +15,12 @@
   "solution": {
    "approach": "구간 [i, j]를 괄호로 묶어 만들 수 있는 가장 큰 값(big)과 가장 작은 값(small)을 표에 따로 적어 둡니다. 구간의 마지막에 계산할 기호 위치 k를 하나씩 정하면 구간이 [i, k]와 [k+1, j]로 나뉘므로, 두 조각의 big/small로 기호별 최댓값·최솟값을 계산해 모든 k 중 가장 좋은 값을 고릅니다. '+'는 큰 것끼리 더하고 작은 것끼리 더하며, '-'는 왼쪽 최댓값에서 오른쪽 최솟값을 빼야 최대, 왼쪽 최솟값에서 오른쪽 최댓값을 빼야 최소가 됩니다. '^'는 양쪽 최댓값 중 큰 값이 최대, 양쪽 최솟값 중 큰 값이 최소입니다. 짧은 구간부터 채워 가면 필요한 조각은 항상 이미 계산되어 있고, 전체 구간 [0, n-1]의 값이 답입니다.",
    "steps": [
-    "구간 [i, j]의 최댓값 표 big과 최솟값 표 small을 n×n으로 만든다 — 구간 답을 한 번만 계산하고 재사용하기 위해서다.",
-    "길이 1인 구간은 수 카드 하나 그대로이므로 big[i][i]와 small[i][i]에 values[i]를 넣는다 — 가장 짧은 구간이 DP의 시작점이다.",
-    "구간 길이를 2부터 n까지 늘리며 시작 위치 i와 끝 위치 j를 정하고 best는 아주 작게, worst는 아주 크게 시작한다 — 짧은 구간부터 채워야 나뉜 조각의 답이 이미 있다.",
-    "마지막에 계산할 기호 위치 k를 i부터 j-1까지 바꿔 가며 기호가 '+'면 big끼리·small끼리 더하고, '-'면 big에서 small을, small에서 big을 빼며, '^'면 양쪽 big 중 큰 값과 양쪽 small 중 큰 값을 구해 high(최대 후보)와 low(최소 후보)를 만든다 — 기호마다 최대·최소를 만드는 조합이 다르기 때문이다.",
-    "각 k의 high로 best를 갱신하고 low로 worst를 갱신한 뒤 big[i][j]와 small[i][j]에 저장한다 — 모든 괄호 방법 중 가장 큰 값과 작은 값을 남기기 위해서다.",
-    "전체 구간의 big[0][n-1]과 small[0][n-1]을 차례로 담아 반환한다 — 문제가 요구한 순서가 최댓값, 최솟값이다."
+    "구간 [i, j]의 최댓값 표 big과 최솟값 표 small을 n×n으로 만든다, 구간 답을 한 번만 계산하고 재사용하기 위해서다.",
+    "길이 1인 구간은 수 카드 하나 그대로이므로 big[i][i]와 small[i][i]에 values[i]를 넣는다, 가장 짧은 구간이 DP의 시작점이다.",
+    "구간 길이를 2부터 n까지 늘리며 시작 위치 i와 끝 위치 j를 정하고 best는 아주 작게, worst는 아주 크게 시작한다, 짧은 구간부터 채워야 나뉜 조각의 답이 이미 있다.",
+    "마지막에 계산할 기호 위치 k를 i부터 j-1까지 바꿔 가며 기호가 '+'면 big끼리·small끼리 더하고, '-'면 big에서 small을, small에서 big을 빼며, '^'면 양쪽 big 중 큰 값과 양쪽 small 중 큰 값을 구해 high(최대 후보)와 low(최소 후보)를 만든다, 기호마다 최대·최소를 만드는 조합이 다르기 때문이다.",
+    "각 k의 high로 best를 갱신하고 low로 worst를 갱신한 뒤 big[i][j]와 small[i][j]에 저장한다, 모든 괄호 방법 중 가장 큰 값과 작은 값을 남기기 위해서다.",
+    "전체 구간의 big[0][n-1]과 small[0][n-1]을 차례로 담아 반환한다, 문제가 요구한 순서가 최댓값, 최솟값이다."
    ],
    "code": "def solution(values, signs):\n    n = len(values)\n    big = [[0] * n for _ in range(n)]    # big[i][j]: values[i] ~ values[j]를 괄호로 묶어 만들 수 있는 가장 큰 값\n    small = [[0] * n for _ in range(n)]  # small[i][j]: 같은 구간의 가장 작은 값\n    for i in range(n):\n        big[i][i] = values[i]\n        small[i][i] = values[i]\n    for length in range(2, n + 1):  # 짧은 구간부터 채운다\n        for i in range(n - length + 1):\n            j = i + length - 1\n            best = float('-inf')\n            worst = float('inf')\n            for k in range(i, j):  # signs[k]를 맨 마지막에 계산한다: [i, k]와 [k + 1, j]로 나뉜다\n                if signs[k] == '+':\n                    high = big[i][k] + big[k + 1][j]\n                    low = small[i][k] + small[k + 1][j]\n                elif signs[k] == '-':\n                    high = big[i][k] - small[k + 1][j]  # 빼는 쪽은 가장 작을 때 결과가 가장 크다\n                    low = small[i][k] - big[k + 1][j]\n                else:  # '^': 두 값 가운데 큰 값\n                    high = max(big[i][k], big[k + 1][j])\n                    low = max(small[i][k], small[k + 1][j])  # 큰 값을 작게 하려면 양쪽을 모두 작게 한다\n                best = max(best, high)\n                worst = min(worst, low)\n            big[i][j] = best\n            small[i][j] = worst\n    return [big[0][n - 1], small[0][n - 1]]",
    "verified": true,

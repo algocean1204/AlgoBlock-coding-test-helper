@@ -16,11 +16,11 @@
   "solution": {
    "approach": "모든 두 역 사이 거리를 담는 표를 만들고, 플로이드 방법으로 '중간에 거쳐 가도 되는 역'을 1번부터 하나씩 늘려 가며 표를 고칩니다. k번 역까지 거쳐 가 보았을 때의 표는 1~k번 역만 지나는 가장 짧은 시간과 같습니다. 역이 1번부터 순서대로 문을 여는 것과 딱 맞습니다. 그래서 질문을 k별로 미리 묶어 두고, k번째 단계가 끝난 순간 그 질문들에 표의 값으로 답합니다. 이렇게 하면 질문이 5만 개여도 플로이드는 한 번만 돌리면 됩니다.",
    "steps": [
-    "거리표 dist를 무한대로 채우고 각 역에서 자기 자신까지는 0으로 둔다 — 아직 아무 길도 모르는 상태에서 시작하려고",
-    "선로마다 지금 기록보다 짧으면 a→b와 b→a 양쪽에 적는다 — 같은 두 역 사이 선로가 여럿이면 가장 짧은 것만 쓰고, 선로는 양방향이라서",
-    "질문 번호를 k별 목록 asked[k]에 묶어 둔다 — k번 역까지 열린 순간에 한꺼번에 답하려고",
-    "답 배열을 만들고, k를 1부터 n까지 늘리며 모든 두 역 i, j에 대해 k번 역을 거쳐 가는 길이 더 짧으면 dist[i][j]를 고친다 — 플로이드로 거쳐 갈 수 있는 역을 하나씩 늘리는 단계",
-    "같은 k 단계 안에서 asked[k]의 질문마다 dist[a][b]를 답에 넣고, 무한대이면 -1을 넣는다 — 이때 표의 값이 1~k번 역만 지나는 가장 짧은 시간이라서",
+    "거리표 dist를 무한대로 채우고 각 역에서 자기 자신까지는 0으로 둔다, 아직 아무 길도 모르는 상태에서 시작하려고",
+    "선로마다 지금 기록보다 짧으면 a→b와 b→a 양쪽에 적는다, 같은 두 역 사이 선로가 여럿이면 가장 짧은 것만 쓰고, 선로는 양방향이라서",
+    "질문 번호를 k별 목록 asked[k]에 묶어 둔다, k번 역까지 열린 순간에 한꺼번에 답하려고",
+    "답 배열을 만들고, k를 1부터 n까지 늘리며 모든 두 역 i, j에 대해 k번 역을 거쳐 가는 길이 더 짧으면 dist[i][j]를 고친다, 플로이드로 거쳐 갈 수 있는 역을 하나씩 늘리는 단계",
+    "같은 k 단계 안에서 asked[k]의 질문마다 dist[a][b]를 답에 넣고, 무한대이면 -1을 넣는다, 이때 표의 값이 1~k번 역만 지나는 가장 짧은 시간이라서",
     "모든 단계가 끝나면 질문 순서대로 담긴 답 배열을 돌려준다"
    ],
    "code": "def solution(n, tracks, queries):\n    INF = float(\"inf\")\n    dist = [[INF] * (n + 1) for _ in range(n + 1)]\n    for station in range(1, n + 1):\n        dist[station][station] = 0\n    for a, b, minutes in tracks:\n        if minutes < dist[a][b]:  # 같은 두 역 사이 선로가 여럿이면 짧은 것만 남긴다\n            dist[a][b] = minutes\n            dist[b][a] = minutes\n\n    asked = [[] for _ in range(n + 1)]  # asked[k]: k번 역까지 열렸을 때를 묻는 질문의 번호들\n    for index, (k, a, b) in enumerate(queries):\n        asked[k].append(index)\n\n    answer = [0] * len(queries)\n    for k in range(1, n + 1):\n        # 플로이드: k번 역을 거쳐 가는 길로 모든 두 역 사이 거리를 고친다(아직 닫힌 역까지의 거리도 고쳐 둔다)\n        for i in range(1, n + 1):\n            for j in range(1, n + 1):\n                if dist[i][k] + dist[k][j] < dist[i][j]:\n                    dist[i][j] = dist[i][k] + dist[k][j]\n        # 이제 dist[a][b]는 1~k번 역만 거쳐 가는 가장 짧은 시간이다\n        for index in asked[k]:\n            _, a, b = queries[index]\n            answer[index] = dist[a][b] if dist[a][b] != INF else -1\n    return answer",

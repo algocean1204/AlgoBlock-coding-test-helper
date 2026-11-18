@@ -1,6 +1,6 @@
 """디버그 노드: gather → locate/judge → pick_step → speak → check_reply(graph.py)."""
 
-from ..common.talk_rules import BACK_LEAD, agree_opening, banned_in, defer_ask, quotes_ok, repair, unsaid_credit, without_code
+from ..common.talk_rules import BACK_LEAD, agree_opening, banned_in, defer_ask, quotes_ok, repair, tidy, unsaid_credit, without_code
 from ..common.verdict import ASIDE_RULE, FOUND_RULE, ask_verdict
 from ..knowledge.ontology import PITFALLS, pitfall_candidates, pitfall_lines
 from ..llm import llm, model_name
@@ -99,7 +99,7 @@ def check_reply(state: MainState) -> dict:
     text = state.get("reply_draft") or ""
     first = opening(state)
     said = "\n".join([req.code or "", req.text or "", *draft["recent"]])
-    text = repair(text, state["ctx"].problem_text, said, user=req.text or "")
+    text = repair(tidy(text), state["ctx"].problem_text, said, user=req.text or "", first=True)  # 넘치면 결론과 물음은 두고 가운데 근거를 줄인다
     bad = (not text or "```" in text or not text.rstrip().endswith(("?", "？"))
            or banned_in(text, state["ctx"].problem_text + "\n" + said) or agree_opening(text, state["ctx"].problem_text)
            or rules.leaks_fix(text, draft["fixed_line"], req.code or "")
@@ -114,13 +114,13 @@ def check_reply(state: MainState) -> dict:
         text = defer_ask(text, req.text or "")  # 물음이 여럿인데 하나도 받지 않았다: 미룸 말을 앞에(답 본문은 그대로)
     if first:
         report = req.report or {}
-        text = rules.symptom_question(report) if bad else f"{rules.symptom(report)} {text}"
+        text = rules.symptom_question(report) if bad else f"{rules.symptom(report)}\n{text}"  # 실행으로 본 사실이 첫 줄, 질문은 다음 줄
     elif bad:
         text = rules.fallback(name, draft["line"])
     trap = rules.trap_of(state["ctx"].traps, draft.get("trap") or "")
     if trap and name == "cause" and draft["previous"] != draft["step"]:  # 원인 설명 단계에 처음 왔을 때만, 무슨 일이 일어나는지(what)만. 고치는 법(fix)은 사용자가 찾는다
-        text = f"{trap['what']} {text}"
-    text = LEADS.get(draft.get("aside") or "", "") + text
+        text = f"{trap['what']}\n{text}"
+    text = "\n".join(filter(None, [LEADS.get(draft.get("aside") or "", "").strip(), text]))
     record = DebugState(code_hash=draft["hash"], kind=draft["kind"], line=draft["line"], cause=draft["cause"],
                         fixed_line=draft["fixed_line"], step=draft["step"], pitfall=draft.get("pitfall") or "", trap=draft.get("trap") or "")
     line = (draft["line"] if name in rules.SHOWS_LINE and draft["line"] else None) or rules.said_line(text, req.code or "")

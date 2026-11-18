@@ -17,11 +17,11 @@ def _norm(text: str) -> str:
 
 
 def is_fallback(reply: str, move: str | None) -> bool:
-    """규칙 위반으로 정해진 대체 질문이 나갔는가(앞말·이음말은 떼고 본다)."""
+    """규칙 위반으로 정해진 대체 질문이 나갔는가(앞말·이음말은 떼고 본다. 질문은 줄 하나다)."""
     if move == "close":
         return False  # 마침 말은 일부러 고정한 말이다
     fixed = FALLBACK.get(move or "")
-    return bool(fixed) and _norm(reply).endswith(_norm(fixed))
+    return bool(fixed) and any(_norm(line).endswith(_norm(fixed)) for line in (reply or "").split("\n"))
 
 
 def reply_flags(row: dict, previous_reply: str | None) -> list[str]:
@@ -38,7 +38,7 @@ def reply_flags(row: dict, previous_reply: str | None) -> list[str]:
         flags.append("금지 표현")
     if sentence_count(reply) > 3:
         flags.append("3문장 초과")
-    if row["kind"] in ("turn", "debug") and not reply.rstrip().endswith(("?", "？")):
+    if row["kind"] in ("turn", "debug") and not any(line.rstrip().endswith(("?", "？")) for line in reply.split("\n")):  # 질문 아래에 근거·길 안내 줄이 올 수 있다
         flags.append("질문으로 안 끝남")
     for line in (hidden.get("reference") or "").splitlines():
         if len(_norm(line)) >= 5 and line.strip() in reply:
