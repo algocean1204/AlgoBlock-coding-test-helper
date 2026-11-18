@@ -2788,7 +2788,7 @@ for (const [k, text] of Object.entries(cases)) {
 }
 console.log(JSON.stringify(out));
 """ % (json.dumps(str(HERE / "katex" / "katex.min.js")), json.dumps(cases))
-    got = json.loads(subprocess.run([node, "-e", script], capture_output=True, text=True, check=True).stdout)
+    got = json.loads(subprocess.run([node, "-"], input=script, capture_output=True, text=True, check=True).stdout)  # 큰 입력이라 인자 대신 표준 입력으로(리눅스는 인자 하나에 128KB까지다)
     math = lambda k: len(re.findall(r'class="katex"|data-tex=', got[k]["html"]))  # noqa: E731  (KaTeX 결과나 렌더 자리)
     for k in ("sub", "paren", "bracket"):
         assert math(k) >= 1, (k, got[k]["html"])
