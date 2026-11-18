@@ -14,15 +14,14 @@ CONFUSED = ("모르", "몰라", "감이 안", "헷갈", "막혔")  # 막힌 말�
 # 어렵다는 말: 같은 질문을 되풀이하지 않고 더 작게 나눈다. '어려' 부분 일치는 '어려운 건 없고…'에도 걸렸다: 어렵다고 말한 꼴만 보고, 아니라는 말은 뺀다
 HARD = re.compile(r"어려워|어렵(?:네|다|습|고|어|더|기)|이해가?\s*안\s*(?:돼|되|가)")
 NOT_HARD = re.compile(r"어려운\s*(?:건|게|것은?|점은?)\s*없|안\s*어려|어렵지\s*않|어렵진\s*않")
-# 뜻을 묻는 말의 표지. '그게 뭔지 몰라요'가 '모르겠어요'로 끊겨 판정(W)에 가지 못했다
+# 뜻을 묻는 말의 표지. '그게 뭔지 몰라요'가 '모르겠어요'로 끊겨 판정(Q)에 가지 못했다
 TERM_ASK = re.compile(r"뭔지|뭐예요|뭐에요|뭐야|뭔가요|무슨\s*뜻|무슨\s*말")
 OPENING = ("start", "next", "replan")  # 사용자 말 없이 블록의 첫 질문을 내는 사건
 FOLLOW_UNTIL = 1  # 둘째 블록까지만 사용자 방법으로 다시 짠다. 뒤에서는 지금 계획으로 이어 간다
 RUNG0 = ("replan",)  # 사다리 첫 칸으로 세는 다른 이름
 FOUND_OK = "통과예요. 이 블록의 코드는 할 일을 해내요."  # 의자에서 이미 찾은 블록의 코드 확인이 통과했다(묻지 않는다. 동의로 시작하지 않는다)
-# 저장 힌트를 1·2·3번까지 다 낸 뒤의 고정 말(3번을 되풀이하지 않는다)
+# 저장 힌트를 1·2·3번까지 다 낸 뒤의 고정 말(3번을 되풀이하지 않는다). 의자의 찾기 전 블록에도 코드 칸이 있어 두 방식이 같다
 HINTS_DONE = "이 블록의 힌트는 다 봤어요. 블록 칸에 적어 확인받거나, '이 블록 채우기'로 이 블록만 볼 수 있어요."
-HINTS_DONE_UNFOUND = "이 블록의 힌트는 다 봤어요. '이 블록 채우기'로 이 블록만 볼 수 있어요."  # 의자에서 아직 찾지 못한 블록(코드 칸이 없다)
 # 말로 맞혔다. 다음 블록은 블록 코드 확인(또는 넘어가기·채우기)으로만 열린다(말로 열면 코드 칸이 빈 채 지나갔다). 의자·가이드 같다
 WRITE_TIP = "그 생각을 이 블록의 코드 칸에 코드로 적고 '블록 코드 확인'을 눌러 보세요. 확인을 통과하면 다음 블록이 열려요."
 WRITE_TIP_LAST = "그 생각을 이 블록의 코드 칸에 코드로 적고 '블록 코드 확인'을 눌러 보세요. 마지막 블록이라, 확인을 통과하면 모은 코드로 풀이를 돌려 볼 수 있어요."
@@ -97,7 +96,7 @@ def _pick_move(mode: str, plan: BlockPlan, turn: TurnContext, verdict: Verdict |
             return ladder(lead, signal)
         if seen >= len(hints):  # 고정 말이 '이 블록 채우기'를 알리니 같은 안내를 앞말에서 뺀다
             kept = " ".join(part for part in sentences(lead) if "이 블록 채우기" not in part)
-            return MovePlan(LADDER[mode][-1], index, False, kept + " " if kept else "", HINTS_DONE_UNFOUND if mode == "chair" and not found else HINTS_DONE)
+            return MovePlan(LADDER[mode][-1], index, False, kept + " " if kept else "", HINTS_DONE)
         return MovePlan("replan" if turn.event == "replan" else LADDER[mode][min(seen, 2)], index, False, lead, hints[seen])
 
     def advance() -> MovePlan:
@@ -115,8 +114,8 @@ def _pick_move(mode: str, plan: BlockPlan, turn: TurnContext, verdict: Verdict |
     if (mode == "chair" and turn.event == "message" and verdict is not None and verdict.other
             and allow_follow and index <= FOLLOW_UNTIL and not turn.followed_before):
         return MovePlan("replan", index, False)  # 말이 아니라 '사용자 방법으로 다시 짜기' 요청이다
-    if turn.event == "message" and verdict is not None and verdict.aside == "W":
-        return MovePlan("term", index, False)  # 낱말의 뜻을 물었다: 모델이 짧은 뜻과 예를 준 뒤 원래 질문으로 돌아간다. 사다리 칸을 쓰지 않는다
+    if turn.event == "message" and verdict is not None and verdict.aside == "Q":
+        return MovePlan("term", index, False)  # 되물었다(낱말 뜻, 문법, 문제 글): 모델이 먼저 답한 뒤 원래 질문으로 돌아간다. 사다리 칸·힌트 번호를 쓰지 않는다
     if turn.event == "message" and verdict is not None and verdict.aside:
         return hinted(ANSWER_LEAD if verdict.aside == "A" else BACK_LEAD)  # 고정 앞말 뒤에 다음 저장 힌트
     if turn.event == "message" and index == len(blocks) - 1 and (LAST_MOVE[mode] in used or "done" in used):

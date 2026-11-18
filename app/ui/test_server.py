@@ -1089,15 +1089,75 @@ def same_check_once() -> None:
     assert "r.data.repeated) S.note.blocks = { type: \"warn\", text: REPEATED }" in js
 
 
+def chair_check_hides_names() -> None:
+    """의자에서 이름이 아직 가려진 블록의 코드 확인은 튜터 코드의 이름을 말하지 않는다(모델 0회). 첫 질문이 그 그릇을 묻는데,
+    이어 돌리지 못한 까닭으로 튜터 코드의 변수 이름을 알려 주면 그것이 곧 답이었다. 블록 칸의 결과 줄은 이 말의 첫 문장이다. 가이드는 이름을 말한다(same_check_once)."""
+    import re
+    pid = "hash_2_steady_climbers"
+    names = {m for b in next(r for r in ROWS if r["id"] == pid)["ready"]["plan"]["blocks"] for m in re.findall(r"^\s*([A-Za-z_]\w*)\s*=", b["reference"], re.M)}
+    assert names, pid
+    call("/api/reset", id=pid)
+    call("/api/turn", id=pid, mode="chair", event="start")
+    body = call("/api/turn", id=pid, mode="chair", event="block_filled", block_id="b1", code="x = 1")[1]
+    said = body["messages"][-1]["text"]
+    assert body["unsure"] and body["blocks"][0]["name"] is None and said, body
+    assert not [n for n in names if re.search(rf"\b{n}\b", said)], said
+    call("/api/reset", id=pid)
+
+
+def chair_brace_hides_line() -> None:
+    """의자에서 이름이 가려진 블록의 괄호 경계 안내는 튜터 코드의 줄을 인용하지 않는다(모델 0회). 틀 줄이 없는 JavaScript 표준 입출력에서
+    닫은 반복을 적으면 '튜터의 풀이는 이 블록에서 연 괄호(`for …`)를…'로 가려진 블록의 참고 코드 한 줄이 나갔다. 가이드는 그 줄을 인용한다.
+    블록 칸의 결과 줄은 이 말의 첫 문장이다."""
+    if not server.tools()["javascript"]:
+        return
+    code = ('const rows = require("fs").readFileSync(0, "utf8").trim().split("\\n");\nconst n = Number(rows[0]);\nlet total = 0;\n'
+            'for (let i = 1; i <= n; i++) {\n    total += Number(rows[i]);\n}\nconsole.log(total);')
+    lines, hints = code.splitlines(), ["무엇을 하나씩 볼까요?", "몇 줄을 읽어야 할까요?", "입력이 2, 3, 4라면 무엇을 더하나요?"]
+    blocks = [{"id": "b1", "kind": "loop", "name": "줄마다 보기", "goal": "N줄을 하나씩 본다", "reference": "\n".join(lines[:4]), "lines": [1, 4], "checks": ["N줄을 본다"], "hints": hints},
+              {"id": "b2", "kind": "var_during", "name": "합 출력", "goal": "합을 더해 출력한다", "reference": "\n".join(lines[4:]), "lines": [5, 7], "checks": ["합을 출력한다"], "hints": hints}]
+    ready = {"fact": {"spec": "N개의 수를 더한다", "patterns": [], "skills": [], "size": 100},
+             "solution": {"approach": "더한다", "steps": ["읽는다", "더한다"], "code": code, "verified": True, "clues": []},
+             "plan": {"strategy": "fresh", "score": None, "algorithm": "hash", "out_of_scope": False, "link": "", "blocks": blocks}}
+    problem = {"title": "N개의 합", "text": "첫째 줄에 N, 다음 N줄에 정수가 하나씩 주어진다. 합을 출력한다.", "mode": "program", "language": "javascript",
+               "cases": [{"input": "2\n3\n4\n", "expected": "7\n"}, {"input": "3\n1\n1\n1\n", "expected": "3\n", "hidden": True}]}
+    said = {}
+    for mode in ("chair", "guide"):
+        pid = server.register(problem)["id"]
+        with server.tutor() as t:
+            t.adopt(pid, ready)
+        call("/api/turn", id=pid, mode=mode, event="start")
+        body = call("/api/turn", id=pid, mode=mode, event="block_filled", block_id="b1", code="for (const r of rows.slice(1)) {\n}")[1]
+        said[mode] = body["messages"][-1]["text"]
+        assert (body["blocks"][0]["name"] is None) == (mode == "chair"), (mode, body["blocks"])
+    assert "이 블록에서 연 괄호를 이 블록이 끝날 때도 열어 두고" in said["chair"], said["chair"]
+    assert not [row for row in lines[:4] if row.strip() in said["chair"]] and "`total`" not in said["chair"], said["chair"]
+    assert "이 블록에서 연 괄호(`for (let i = 1; i <= n; i++) {`)를" in said["guide"], said["guide"]
+
+
 def result_guides() -> None:
     """채점 결과와 방식 화면의 안내(화면 코드 확인): 큰 입력의 실행 오류는 시간 부족이라 하지 않고, 효율성만 실패하면 ‘틀린 곳 같이 찾기’가 없는 까닭을 말하며,
-    튜터 방식 전환 단추는 무엇이 바뀌는지 말하고, 튜터의 질문으로에서 코드 칸으로 가는 길이 보인다. 브라우저 동작은 화면 확인으로 본다."""
+    튜터 방식 전환 단추는 무엇이 바뀌는지 말한다. 브라우저 동작은 화면 확인으로 본다."""
     js = (HERE / "app.js").read_text(encoding="utf-8")
     assert 'c.kind === "efficiency" && (c.status === "timeout" || c.status === "skipped")' in js and "const slowOnly = slowOnlyOf(r);" in js  # 시간 초과만 '느려요'
     assert "아주 큰 입력에서 실행 중 오류가 났어요: " in js and "아주 큰 입력에서 답이 달라요" in js and "답이 맞아서 ‘틀린 곳 같이 찾기’는 열지 않아요." in js
     assert "혼자 풀기로 바뀌어요" not in js and "오른쪽 칸이 해설로 바뀌어요" in js and "오른쪽 칸이 힌트로 바뀌어요" in js
-    assert 'S.talk === "chair" && !s.blocks.some((b, i) => blockState(b, i) === "found")' in js and 'data-tab="direct">코드 전체 칸 열기' in js
     assert '"message": SLOW_MESSAGE' in (HERE / "server.py").read_text(encoding="utf-8")
+
+
+def block_cell_both_ways() -> None:
+    """지금 블록의 코드 칸과 '블록 코드 확인'은 가이드만의 것이 아니다(화면 코드 확인): 의자도 찾기 전 블록에 칸이 있고 확인이 보이며,
+    '블록은 찾는 대로 열려요' 안내와 '칸이 없다'는 전제의 안내 글이 없다. 넘어가기·끝까지 내 방식은 두 방식 모두에 보인다. 브라우저 동작은 화면 흐름 시험(flow/chair_write.mjs)이 본다."""
+    js = (HERE / "app.js").read_text(encoding="utf-8")
+    start = js.index("function renderBlocks") if "function renderBlocks" in js else js.index("blockState(b, i);")
+    area = js[start:js.index("function syncCheck(ta)")]
+    assert "찾는 대로" not in js and "코드 전체 칸 열기" not in js, "찾기 전 칸 안내가 남아 있다"
+    assert "const cell = !current || !empty || S.talk === \"guide\"" not in area, "칸이 가이드 한정이다"
+    check = js[js.index("function showCheck("):js.index("function syncCheck(ta)")]
+    assert "current && S.mode === \"guide\"" not in check, "지금 블록의 확인 단추가 가이드 한정이다"
+    skip = next(line for line in area.splitlines() if "const skip =" in line)
+    assert "S.talk === \"guide\"" not in skip, "넘어가기가 가이드 한정이다"
+    assert 'S.mode === "guide" && (s.guide.filter' not in js[js.index("function nextAction()"):js.index("const allFound")], "코드로 적으라는 말 뒤 주 단추가 가이드 한정이다"
 
 
 def language_memory() -> None:
@@ -2335,6 +2395,47 @@ def builtin_prepare() -> None:
         call("/api/state", id=pid, open=True)
         assert tries == [pid], tries
     call("/api/language", id=PID, language="python")  # 마지막 언어를 되돌린다
+
+
+def builtin_language_plan(fake) -> None:
+    """기본 문제를 Python이 아닌 언어로 처음 열어도 실린 그 언어의 풀이 가이드와 블록으로 바로 시작한다(AI가 연결돼 있어도 모델 0회. 되돌리면 실패).
+    그 언어의 계획이 실리지 않았으면(풀이를 Python 블록의 차례대로 나눌 수 없는 언어) 예전처럼 처음 시작할 때 모델로 준비한다."""
+    import make_builtin
+
+    def saved_of(row: dict) -> dict:
+        path = HERE / "problems" / row["theme"] / row["id"].removeprefix(row["theme"] + "_") / "ready.json"
+        return json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {}
+
+    with server.tutor() as t:  # 아직 연 적 없는 문제(시험용 묶음은 python만 싣는다: 그 언어의 풀이와 계획을 ready.json에서 묶어 넣는다)
+        row = next(row for row in ROWS if row["id"] != PID and t.store.load(row["id"]) is None and "lines" in ((saved_of(row).get("langs") or {}).get("java") or {}))
+    pid, saved = row["id"], saved_of(row)
+    full = {**make_builtin.entry(HERE / "problems" / row["theme"] / pid.removeprefix(row["theme"] + "_"), True, False), "ready": saved["ready"]}
+    java = make_builtin.lang_ready(full, "java", saved["langs"]["java"])
+    prefs = server.read_json(server.PREFS_FILE, {})
+    server.write_json(server.PREFS_FILE, {**prefs, "language": "java"})  # 마지막으로 고른 언어: 처음 여는 기본 문제도 이 언어로 연다
+    try:
+        with patch.dict(server.BUILTIN[pid], {"languages": [*row["languages"], "java"], "solutions": {**row["solutions"], "java": full["solutions"]["java"]}, "readies": {"java": java}}), \
+                patch.object(server, "connected", lambda: True):
+            calls = len(fake.calls)
+            opened = call("/api/state", id=pid, mode="chair", open=True)[1]
+            assert opened["problem"]["language"] == "java" and len(opened["session"]["blocks"]) == len(java["plan"]["blocks"]), opened["session"]
+            first = call("/api/turn", id=pid, mode="chair", event="start")[1]
+            assert first["messages"][0]["text"] == java["plan"]["blocks"][0]["hints"][0], first
+            with server.tutor() as t:
+                ctx = t.store.load(pid)
+                assert "\n".join(block.reference for block in ctx.plan.blocks) == ctx.solution.code == full["solutions"]["java"].strip("\n")
+            assert call("/api/hint", id=pid, block=1)[1]["hint"] == java["plan"]["blocks"][0]["hints"][0]  # 혼자 풀기의 힌트도 그 언어의 계획에서
+            back = call("/api/language", id=pid, language="python", mode="chair")[1]  # Python으로 바꾸면 실린 Python 계획으로
+            assert len(back["session"]["blocks"]) == len(row["ready"]["plan"]["blocks"]), back["session"]
+            assert len(fake.calls) == calls, fake.calls[calls:]
+        with patch.dict(server.BUILTIN[pid], {"languages": [*row["languages"], "cpp"], "solutions": {**row["solutions"], "cpp": full["solutions"]["cpp"]}, "readies": {}}), \
+                patch.object(server, "connected", lambda: True), use_llm(FakeLlm({})) as other:  # 계획이 실리지 않은 언어
+            assert call("/api/language", id=pid, language="cpp", mode="chair")[1]["session"]["blocks"] == []
+            call("/api/turn", id=pid, mode="chair", event="start")
+            assert other.calls and other.calls[0]["task"].startswith("plan."), other.calls[:1]  # 시작할 때 모델로 풀이 순서를 준비한다(가짜 모델이라 여기서는 실패한다)
+            call("/api/language", id=pid, language="python")
+    finally:
+        server.write_json(server.PREFS_FILE, prefs)
 
 
 def checkpoints() -> None:
@@ -3872,6 +3973,149 @@ def build_only() -> None:
     assert fresh.returncode == 0 and "알림 hash/1_popular_shelf" in fresh.stderr and "실패" not in fresh.stderr, (fresh.returncode, fresh.stderr)
 
 
+def lang_plans() -> None:
+    """기본 문제의 언어별 계획: 블록의 이름·목표·확인·힌트는 Python 계획 그대로이고 줄 구간만 그 언어 풀이에서 받는다(cut_by_lines로 맞춘다).
+    그 언어 코드에 없는 이름을 부르는 힌트만 다시 받는다. 실린 계획은 블록 참고 코드를 이으면 그 언어 정답 풀이와 같다(되돌리면 실패)."""
+    import copy
+    import re
+    import shutil
+
+    import make_builtin
+
+    name = re.compile(r"(?<![A-Za-z0-9_])[A-Za-z_][A-Za-z0-9_]*")
+
+    def full(folder: Path):  # 다섯 언어 풀이를 읽은 행(검사는 다시 돌리지 않는다)과 ready.json
+        saved = json.loads((folder / "ready.json").read_text(encoding="utf-8"))
+        return {**make_builtin.entry(folder, True, False), "ready": saved["ready"]}, saved
+
+    def stray(hint: str, row: dict, language: str) -> set:  # 어느 언어 풀이에 있는 이름인데 문제 글에도 그 언어 풀이에도 없다
+        codes = [set(name.findall(code)) for code in row["solutions"].values()]
+        return {word for word in name.findall(hint) if any(word in code for code in codes)} - set(name.findall(row["text"])) - set(name.findall(row["solutions"][language]))
+
+    # 1. 실린 계획(ready.json의 langs): 이으면 정답 풀이, 글은 Python 계획 그대로, 힌트에 그 언어 코드에 없는 이름이 없다.
+    #    langs가 있는 문제는 다른 언어마다 줄 구간이 있거나, 그 언어 풀이를 Python 블록의 차례대로 나눌 수 없다고 적혀 있다(그 언어는 싣지 않는다)
+    shipped = []
+    for path in sorted((HERE / "problems").glob("*/*/ready.json")):
+        row, saved = full(path.parent)
+        assert not saved.get("langs") or set(saved["langs"]) == set(row["solutions"]) - {"python"}, (row["id"], sorted(saved["langs"]))
+        for language, spans in (saved.get("langs") or {}).items():
+            if spans.get("fits") is False:
+                assert spans == {"source": make_builtin.lang_source(row, language), "fits": False}, (row["id"], language)
+                continue
+            ready, python = make_builtin.lang_ready(row, language, spans), saved["ready"]
+            code = row["solutions"][language].strip("\n")
+            assert "\n".join(block["reference"] for block in ready["plan"]["blocks"]) == ready["solution"]["code"] == code, (row["id"], language)
+            assert ready["fact"] == python["fact"] and {**ready["solution"], "code": ""} == {**python["solution"], "code": ""}, (row["id"], language)
+            assert [{**block, "reference": "", "lines": [], "hints": []} for block in ready["plan"]["blocks"]] == \
+                   [{**block, "reference": "", "lines": [], "hints": []} for block in python["plan"]["blocks"]], (row["id"], language)
+            for block, before in zip(ready["plan"]["blocks"], python["plan"]["blocks"]):
+                assert len(block["hints"]) == len(before["hints"]), (row["id"], language)
+                for hint, old in zip(block["hints"], before["hints"]):
+                    assert not stray(hint, row, language), (row["id"], language, hint)
+                    assert (hint == old) == (not stray(old, row, language)), (row["id"], language, hint)  # 다시 받은 것은 걸린 힌트뿐이다
+            shipped.append((row["id"], language))
+    assert len({pid for pid, _ in shipped}) >= 3, shipped
+
+    # 2. 만들기(가짜 모델): 줄 구간을 쓸 수 없으면 앞 답과 까닭을 붙여 다시 받고, 작은 어긋남(틀 줄)은 cut_by_lines가 고친다. 그 언어 코드에 없는 이름(get)을 부른 힌트 하나만 다시 받는다
+    row, saved = full(HERE / "problems" / "hash" / "1_popular_shelf")
+    row["ready"] = copy.deepcopy(row["ready"])
+    old = row["ready"]["plan"]["blocks"][1]["hints"]
+    old[0] = "count.get으로 꺼낸 값에 1을 더하면 무엇이 될까요?"
+    assert make_builtin.stray_names(old[0], row, "java") == ["get"] and make_builtin.stray_names(old[0], row, "javascript") == []
+    new = "책마다 몇 번 빌려졌는지 알려면 무엇을 적어 둬야 할까요?"
+    spans = [[5, 6], [7, 9], [10, 13], [14, 14]]  # 틀 줄(import·클래스·메서드 머리, 닫는 괄호)을 빠뜨렸다
+    frame = [[1, 4], [5, 9], [10, 13], [14, 16]]  # b1이 import·클래스·메서드 머리(틀 줄)만 받았다: 쓸 수 없다
+    fake = FakeLlm({"plan.draft_blocks": [{"blocks": [{"id": f"b{n}", "lines": span} for n, span in enumerate(frame, 1)]},
+                                          {"blocks": [{"id": f"b{n}", "lines": span} for n, span in enumerate(spans, 1)]}],
+                    "plan.hints": [{"blocks": [{"id": "b2", "hints": [new, "다른 질문 둘?", "다른 질문 셋?"]}]}]})
+    with use_llm(fake):
+        got = make_builtin.lang_plan(row, "java")
+    assert [call["task"] for call in fake.calls] == ["plan.draft_blocks", "plan.draft_blocks", "plan.hints"], fake.calls  # 쓸 수 없는 구간에는 힌트를 다시 받지 않는다
+    again = fake.calls[1]["messages"][-1]["content"]
+    assert "앞 답은 쓸 수 없었다" not in fake.calls[0]["messages"][-1]["content"] and "앞 답은 쓸 수 없었다" in again and "[1, 4]" in again and "틀 줄·빈 줄·주석만 있는 블록이 있다: b1" in again, again
+    assert got["lines"] == [[1, 6], [7, 9], [10, 13], [14, 16]] and got["hints"] == {"b2": [new, "", ""]}, got
+    ready = make_builtin.lang_ready(row, "java", got)
+    assert ready["plan"]["blocks"][1]["hints"] == [new, *old[1:]] and ready["plan"]["blocks"][0]["hints"] == row["ready"]["plan"]["blocks"][0]["hints"]
+    assert "\n".join(block["reference"] for block in ready["plan"]["blocks"]) == row["solutions"]["java"].strip("\n")
+    for bad in ({**got, "source": got["source"] + 1}, {**got, "lines": [[1, 6], [8, 9], [10, 13], [14, 16]]}, {**got, "hints": {}}, {**got, "lines": got["lines"][:3]}):
+        try:
+            make_builtin.lang_ready(row, "java", bad)  # 출처 값이 다름, 빈틈, 다시 받은 힌트 없음, 블록 수가 다름
+            raise AssertionError(bad)
+        except RuntimeError:
+            pass
+    with use_llm(FakeLlm({"plan.draft_blocks": [{"blocks": [{"id": "b1", "lines": [1, 2]}]}] * 3})):
+        try:
+            make_builtin.lang_plan(row, "java")
+            raise AssertionError("세 번 다 쓸 수 없는 구간이면 실패")
+        except RuntimeError as exc:
+            assert "java" in str(exc), exc
+    unfit = FakeLlm({"plan.draft_blocks": [{"fits": False, "blocks": []}]})  # 그 언어 풀이를 같은 차례로 나눌 수 없다는 답: 다시 묻지 않고 그대로 적는다
+    with use_llm(unfit):
+        assert make_builtin.lang_plan(row, "java") == {"source": make_builtin.lang_source(row, "java"), "fits": False} and len(unfit.calls) == 1
+
+    # 2-1. 블록이 같은 일을 하는지(misfits): Python은 find를 앞(b2)에 두고 java는 맨 뒤 메서드로 둔 풀이를 차례대로 억지로 나누면
+    #      b2에 find가 없다. 이런 구간은 싣지 않고, 걸린 까닭을 붙여 다시 받는다(되돌리면 실패)
+    union, _ = full(HERE / "problems" / "graph" / "1_club_union")
+    forced = [[1, 4], [5, 6], [7, 10], [11, 14], [15, 17], [18, 26]]
+    found = make_builtin.misfits(union["ready"]["plan"]["blocks"], [{**block, "reference": "\n".join(union["solutions"]["java"].splitlines()[a - 1:b])}
+                                                                    for block, (a, b) in zip(union["ready"]["plan"]["blocks"], forced)], "java")
+    assert any(line.startswith("b2(") for line in found), found
+    try:
+        make_builtin.lang_ready(union, "java", {"source": make_builtin.lang_source(union, "java"), "lines": forced})
+        raise AssertionError("일이 어긋난 구간을 실었다")
+    except RuntimeError as exc:
+        assert "같은 일을 하지 않는다" in str(exc) and "b2(" in str(exc), exc
+    again = FakeLlm({"plan.draft_blocks": [{"blocks": [{"id": f"b{n}", "lines": span} for n, span in enumerate(forced, 1)]}, {"fits": False, "blocks": []}]})
+    with use_llm(again):
+        assert make_builtin.lang_plan(union, "java", "앞서 실린 구간이 걸렸다")["fits"] is False and len(again.calls) == 2
+    first, second = (call["messages"][-1]["content"] for call in again.calls)
+    assert "앞서 실린 구간이 걸렸다" in first and "같은 일을 하지 않는다" in second and "b2(" in second and "[1, 4]" in second, second
+    assert "함수 머리·값 없는 선언 한 줄" in first  # 일을 하는 줄이 무엇인지 알린다
+
+    # 2-2. Python 블록이 만들어 뒤 블록에 넘기는 것(방향 표)이 그 언어 풀이에 아예 없으면 그 블록의 단계가 없는 것이다(되돌리면 실패).
+    #      이름만 바꿔 같은 자리에서 만들었으면 걸리지 않는다
+    python = [{"id": "b1", "name": "방향 표", "reference": "def solution(moves):\n    delta = {'U': -1, 'D': 1}\n    pos = 0"},
+              {"id": "b2", "name": "따라가기", "reference": "    for move in moves:\n        pos += delta[move]\n    return pos"}]
+    inline = [{"id": "b1", "name": "방향 표", "reference": "class Solution {\n    public int solution(String[] moves) {\n        int pos = 0;"},
+              {"id": "b2", "name": "따라가기", "reference": "        for (String move : moves) {\n            pos += move.equals(\"U\") ? -1 : 1;\n        }\n        return pos;\n    }\n}"}]
+    found = make_builtin.misfits(python, inline, "java")
+    assert len(found) == 1 and found[0].startswith("b1(") and "delta" in found[0], found
+    renamed = [{**inline[0], "reference": inline[0]["reference"] + '\n        Map<String, Integer> change = Map.of("U", -1, "D", 1);'},
+               {**inline[1], "reference": inline[1]["reference"].replace('move.equals(\"U\") ? -1 : 1', "change.get(move)")}]
+    assert not make_builtin.misfits(python, renamed, "java"), make_builtin.misfits(python, renamed, "java")
+
+    # 3. 묶기(모델 없이): ready.json의 줄 구간을 언어마다 실은 계획(readies)으로 묶는다. 출처 값이 맞지 않으면 실패로 알리고 그 언어만 빼며, 없으면 알리기만 한다
+    root = TMP / "lang_root"
+    shutil.copytree(HERE / "problems" / "hash" / "1_popular_shelf", root / "hash" / "1_popular_shelf")
+    folder, out = root / "hash" / "1_popular_shelf", TMP / "lang.json"
+    build = lambda *more: subprocess.run([sys.executable, "-c", f"import sys; sys.path.insert(0, {str(HERE)!r}); import make_builtin as m; from pathlib import Path; m.ROOT = Path({str(root)!r}); "  # noqa: E731
+                                          f"sys.exit(m.build(['--no-model', '--no-check', '--only', 'hash/1_popular_shelf', '--out', {str(out)!r}, *{list(more)!r}]))"], capture_output=True, text=True)
+    done = build()
+    assert done.returncode == 0 and "실패" not in done.stderr, done.stderr
+    built = json.loads(out.read_text(encoding="utf-8"))[0]
+    assert built["ready"] == saved["ready"] and set(built["readies"]) == set(saved["langs"]) == {"java", "cpp", "javascript", "rust"}, built.get("readies", {}).keys()
+    assert built["readies"]["java"] == make_builtin.lang_ready({**built, "ready": saved["ready"]}, "java", saved["langs"]["java"])
+    assert build("--no-langs").returncode == 0 and "readies" not in json.loads(out.read_text(encoding="utf-8"))[0]  # Python만 실으면 언어별 계획도 없다
+    broken = copy.deepcopy(saved)
+    broken["langs"]["java"]["source"] += 1
+    (folder / "ready.json").write_text(json.dumps(broken, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+    done = build()
+    built = json.loads(out.read_text(encoding="utf-8"))[0]
+    assert done.returncode == 1 and "java" in done.stderr and "실패 hash/1_popular_shelf" in done.stderr, done.stderr
+    assert "java" not in built["readies"] and len(built["readies"]) == 3 and built["ready"] == saved["ready"]
+    broken["langs"]["java"] = {"source": saved["langs"]["java"]["source"], "fits": False}  # 나눌 수 없다고 적힌 언어: 알리기만 하고 그 언어만 뺀다(모델 없이도 실패가 아니다)
+    (folder / "ready.json").write_text(json.dumps(broken, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+    done = build()
+    built = json.loads(out.read_text(encoding="utf-8"))[0]
+    assert done.returncode == 0 and "알림 hash/1_popular_shelf: java" in done.stderr and "실패" not in done.stderr, done.stderr
+    assert sorted(built["readies"]) == ["cpp", "javascript", "rust"], built["readies"].keys()
+    del broken["langs"]
+    (folder / "ready.json").write_text(json.dumps(broken, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+    done = build()
+    assert done.returncode == 0 and "알림 hash/1_popular_shelf" in done.stderr and "실패" not in done.stderr, done.stderr
+    assert "readies" not in json.loads(out.read_text(encoding="utf-8"))[0]
+
+
 def neutral_notes() -> None:
     """기본 문제 해설(단서의 뜻·익힌 것·흔한 실수·사다리)은 언어마다 갈리지 않으니 한 언어에만 있는 낱말(KeyError, 딕셔너리, heapq 등)이 없어야 한다."""
     import problemkit
@@ -4149,6 +4393,7 @@ def main() -> None:
     lang_trap_counterexamples()
     problemkit_alone()
     build_only()
+    lang_plans()
     error_lines()
     broken_files()
     fake = FakeLlm({})
@@ -4176,7 +4421,10 @@ def main() -> None:
         chair_found()
         guide_spoken()
         same_check_once()
+        chair_check_hides_names()
+        chair_brace_hides_line()
         result_guides()
+        block_cell_both_ways()
         language_memory()
         no_tool()
         results()
@@ -4197,6 +4445,7 @@ def main() -> None:
         two_step_pending()
         stale_save()
         builtin_prepare()
+        builtin_language_plan(fake)
         own_guide()
         guessed_level()
         kept_languages()
