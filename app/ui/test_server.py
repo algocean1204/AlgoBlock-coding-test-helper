@@ -3992,6 +3992,25 @@ def lang_plans() -> None:
     with use_llm(unfit):
         assert make_builtin.lang_plan(row, "java") == {"source": make_builtin.lang_source(row, "java"), "fits": False} and len(unfit.calls) == 1
 
+    # 2-1. 블록이 같은 일을 하는지(misfits): Python은 find를 앞(b2)에 두고 java는 맨 뒤 메서드로 둔 풀이를 차례대로 억지로 나누면
+    #      b2에 find가 없다. 이런 구간은 싣지 않고, 걸린 까닭을 붙여 다시 받는다(되돌리면 실패)
+    union, _ = full(HERE / "problems" / "graph" / "1_club_union")
+    forced = [[1, 4], [5, 6], [7, 10], [11, 14], [15, 17], [18, 26]]
+    found = make_builtin.misfits(union["ready"]["plan"]["blocks"], [{**block, "reference": "\n".join(union["solutions"]["java"].splitlines()[a - 1:b])}
+                                                                    for block, (a, b) in zip(union["ready"]["plan"]["blocks"], forced)], "java")
+    assert any(line.startswith("b2(") for line in found), found
+    try:
+        make_builtin.lang_ready(union, "java", {"source": make_builtin.lang_source(union, "java"), "lines": forced})
+        raise AssertionError("일이 어긋난 구간을 실었다")
+    except RuntimeError as exc:
+        assert "같은 일을 하지 않는다" in str(exc) and "b2(" in str(exc), exc
+    again = FakeLlm({"plan.draft_blocks": [{"blocks": [{"id": f"b{n}", "lines": span} for n, span in enumerate(forced, 1)]}, {"fits": False, "blocks": []}]})
+    with use_llm(again):
+        assert make_builtin.lang_plan(union, "java", "앞서 실린 구간이 걸렸다")["fits"] is False and len(again.calls) == 2
+    first, second = (call["messages"][-1]["content"] for call in again.calls)
+    assert "앞서 실린 구간이 걸렸다" in first and "같은 일을 하지 않는다" in second and "b2(" in second and "[1, 4]" in second, second
+    assert "함수 머리·값 없는 선언 한 줄" in first  # 일을 하는 줄이 무엇인지 알린다
+
     # 3. 묶기(모델 없이): ready.json의 줄 구간을 언어마다 실은 계획(readies)으로 묶는다. 출처 값이 맞지 않으면 실패로 알리고 그 언어만 빼며, 없으면 알리기만 한다
     root = TMP / "lang_root"
     shutil.copytree(HERE / "problems" / "hash" / "1_popular_shelf", root / "hash" / "1_popular_shelf")
