@@ -220,6 +220,24 @@ class FailureTest(unittest.TestCase):
             rust.TOOLS = saved
 
 
+class WorkDirectoryTest(unittest.TestCase):
+    def test_cleanup_skips_files_it_cannot_remove(self):
+        """Windows는 방금 돌린 실행 파일이 잠겨 지우지 못할 수 있다. 지우지 못한 파일이 있어도 채점 임시 폴더를 닫을 때 오류가 나지 않는다."""
+        def refuse(path, *args, **kwargs):
+            raise PermissionError(13, "Access is denied", path)
+
+        work = common.work_directory()
+        directory = work.name
+        (Path(directory) / "app.exe").write_bytes(b"x")
+        try:
+            with mock.patch("os.unlink", refuse), mock.patch("os.rmdir", refuse):
+                work.cleanup()
+        finally:  # 이 시험이 남긴 것은 직접 치운다
+            for name in os.listdir(directory):
+                os.unlink(os.path.join(directory, name))
+            os.rmdir(directory)
+
+
 class EdgeTest(unittest.TestCase):
     def test_plain_text_expected_matches_string_return(self):
         self.assertTrue(common.same_function_output('"abc"', "abc"))

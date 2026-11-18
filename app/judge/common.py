@@ -480,7 +480,8 @@ def load_cases(mode_dir):
 
 
 def work_directory():
-    return tempfile.TemporaryDirectory(prefix="algoblock-check-")
+    """채점 임시 폴더. Windows는 방금 돌린 실행 파일이 잠깐 잠겨 지우지 못할 수 있어, 지우지 못한 파일은 건너뛴다(운영체제가 나중에 치운다)."""
+    return tempfile.TemporaryDirectory(prefix="algoblock-check-", ignore_cleanup_errors=True)
 
 
 def same_value(actual, expected):
