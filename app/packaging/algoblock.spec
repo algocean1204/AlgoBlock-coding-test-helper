@@ -58,4 +58,12 @@ if sys.platform == "darwin":
                     "NSHighResolutionCapable": True, "LSMinimumSystemVersion": "12.0"},
     )
 else:
-    exe = EXE(pyz, a.scripts, a.binaries, a.datas, UTF8, name=NAME, console=False, upx=False, icon=str(Path(SPECPATH) / "icon" / "icon.ico"))
+    from PyInstaller.utils.win32.versioninfo import (FixedFileInfo, StringFileInfo, StringStruct, StringTable, VarFileInfo, VarStruct,
+                                                     VSVersionInfo)
+
+    numbers = (*map(int, VERSION.split(".")), 0)  # 0.2.1 → (0, 2, 1, 0). 파일 속성의 제품 이름·버전(코드 서명은 이 둘이 정해진 값이기를 요구한다)
+    strings = {"CompanyName": "algocean", "FileDescription": NAME, "FileVersion": VERSION, "InternalName": NAME, "LegalCopyright": "Copyright (c) 2026 algocean. MIT License.",
+               "OriginalFilename": f"{NAME}.exe", "ProductName": NAME, "ProductVersion": VERSION}
+    version = VSVersionInfo(ffi=FixedFileInfo(filevers=numbers, prodvers=numbers),
+                            kids=[StringFileInfo([StringTable("040904B0", [StringStruct(k, v) for k, v in strings.items()])]), VarFileInfo([VarStruct("Translation", [1033, 1200])])])
+    exe = EXE(pyz, a.scripts, a.binaries, a.datas, UTF8, name=NAME, console=False, upx=False, icon=str(Path(SPECPATH) / "icon" / "icon.ico"), version=version)
