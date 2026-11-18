@@ -2831,7 +2831,7 @@ console.log(JSON.stringify(out));
         assert ref.endswith(".woff2") and "/katex/" + ref in server.STATIC, ref  # woff2만, 모두 서버 표에 있다
     for name, (file, _) in server.STATIC.items():
         assert (HERE / file).is_file(), name
-    on_disk = {f"/katex/{p.relative_to(HERE / 'katex')}" for p in (HERE / "katex").rglob("*") if p.is_file() and p.suffix in (".js", ".css", ".woff2")}
+    on_disk = {f"/katex/{p.relative_to(HERE / 'katex').as_posix()}" for p in (HERE / "katex").rglob("*") if p.is_file() and p.suffix in (".js", ".css", ".woff2")}
     assert on_disk == {p for p in server.STATIC if p.startswith("/katex/")}, on_disk ^ {p for p in server.STATIC if p.startswith("/katex/")}
     spec = (HERE.parent / "packaging" / "algoblock.spec").read_text(encoding="utf-8")
     assert "katex" in spec, "묶음 명세에 수식 파일이 없다"
