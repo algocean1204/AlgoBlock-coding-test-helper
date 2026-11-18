@@ -1853,8 +1853,6 @@ def restore_plan(t, pid: str, language: str) -> None:
             if not isinstance(row, dict) or set(row) != set(columns):
                 continue
             extra = ("open_count",) if table == "tutor_session" else ()
-            if name == "session" and row["plan_json"]:  # 돌아온 계획은 낡았다고 다시 짜지 않는다(그 언어로 쓰던 코드가 있고 대화가 지워졌어도)
-                row = {**row, "plan_json": json.dumps({**json.loads(row["plan_json"]), "settled": True}, ensure_ascii=False)}
             t.store.conn.execute(f"INSERT OR REPLACE INTO {table}(problem_id, {', '.join(columns + extra)}) VALUES({', '.join('?' * (len(columns) + len(extra) + 1))})",
                                  (pid, *(row[column] for column in columns), *((1,) if extra else ())))
 

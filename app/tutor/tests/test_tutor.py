@@ -154,7 +154,7 @@ class TutorTest(unittest.TestCase):
             tutor.close()
 
     def test_prepare_builds_plan_ahead_so_first_question_is_instant(self):
-        """문항을 열 때 미리 계획까지 만들어 둔다. 그러면 시작은 저장 질문이라 모델 0회다. 그 사이 코드를 썼으면 그 코드로 다시 짠다."""
+        """문항을 열 때 미리 계획까지 만들어 둔다. 그러면 시작은 저장 질문이라 모델 0회다. 그 사이 코드를 썼어도 준비해 둔 순서로 바로 시작한다."""
         abstract = {"spec": "문자열 배열 둘. 남는 원소 하나.", "patterns": ["dup_names"], "size": 100000, "skills": ["dict_count"]}
         tutor, fake = self.tutor({"plan.abstract": [abstract], "plan.draft_blocks": DRAFT["plan.draft_blocks"] * 3, "plan.assess": ["[check]70 Y"]})
         try:
@@ -173,9 +173,20 @@ class TutorTest(unittest.TestCase):
             tutor.prepare("p2")
             tutor.store.update_code("p2", "def solution(a, b):\n    return a[0]")  # 계획을 만든 뒤 코드를 먼저 썼다
             fake.calls.clear()
-            tutor.turn("p2", "chair", "start")
-            self.assertEqual(fakes.tasks(fake), ["plan.assess", "plan.solve", "plan.draft_blocks"])  # 그 코드를 채점해 다시 짠다
-            self.assertEqual(tutor.store.load("p2").plan.strategy, "keep_flow")
+            started = tutor.turn("p2", "chair", "start")
+            self.assertEqual((fake.calls, started.body["messages"][0]["text"]), ([], fakes.HINTS1[0]))  # 코드를 먼저 썼어도 다시 짜지 않고 저장 힌트가 첫 질문이다
+            self.assertEqual(tutor.store.load("p2").plan.strategy, "fresh")
+        finally:
+            tutor.close()
+
+    def test_code_without_plan_still_prepares_first(self):
+        """계획이 아직 없으면 코드가 있어도 첫 준비 길이 돈다(그 코드로 채점해 짠다)."""
+        tutor, fake = self.tutor({**DRAFT, "plan.assess": ["[check]70 Y"]})
+        try:
+            tutor.store.update_code("p1", "def solution(a, b):\n    return a[0]")
+            tutor.turn("p1", "chair", "start")
+            self.assertEqual(fakes.tasks(fake)[:2], ["plan.assess", "plan.solve"])
+            self.assertIsNotNone(tutor.store.load("p1").plan)
         finally:
             tutor.close()
 
@@ -835,10 +846,11 @@ class TutorTest(unittest.TestCase):
             tutor.close()
 
     def test_canonical_replan_reuses_the_saved_guide(self):
-        """정석 풀이는 문제마다 하나면 된다. 사용자 코드의 방향이 틀려 정석으로 다시 짤 때 가이드를 다시 만들지 않는다."""
+        """정석 풀이는 문제마다 하나면 된다. 계획이 없는 채 시작해 사용자 코드의 방향이 틀려 정석으로 짤 때 저장한 가이드를 다시 만들지 않는다."""
         tutor, fake = self.tutor({"plan.solve": [SOLVED], "plan.draft_blocks": LINED["plan.draft_blocks"] * 2, "plan.assess": ["[check]20 N"]})
         try:
             tutor.prepare("p1")
+            tutor.store.conn.execute("UPDATE tutor_session SET plan_json=NULL WHERE problem_id='p1'")  # 계획만 없고 가이드는 남은 상태
             tutor.store.update_code("p1", "def solution(a, b):\n    return a[0]")
             fake.calls.clear()
             tutor.turn("p1", "chair", "start")
