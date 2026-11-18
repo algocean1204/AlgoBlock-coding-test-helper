@@ -58,7 +58,7 @@ const infoBox = (k, where) => `<div class="info" id="wayinfo-${k}-${where}" role
 const GROUP = { hash: "ds", stack_queue: "ds", heap: "ds", brute_force: "search", dfs: "search", bfs: "search", binary_search: "search",
   graph: "graph", dijkstra: "graph", greedy: "design", dp: "design", two_pointer: "design", sort: "impl", simulation: "impl", implementation: "impl" };
 const GROUP_NAME = { ds: "자료구조", search: "탐색", graph: "그래프", design: "설계", impl: "구현" };
-const lvBadge = (n, guess) => (n ? `<span class="lvb l${n}"${guess ? ' title="문제 글을 보고 어림한 단계예요"' : ""}>${n}단계${guess ? " · 어림" : ""}</span>` : "");
+const lvBadge = (n) => (n ? `<span class="lvb l${n}">${n}단계</span>` : "");
 const themeChip = (key, name) => (name ? `<span class="theme-chip g-${GROUP[key] || "none"}"${GROUP[key] ? ` title="${GROUP_NAME[GROUP[key]]} 갈래"` : ""}>${esc(name)}</span>` : "");
 /** 문제 화면의 풀이법 태그: 풀기 전에는 가리고 '풀이법 태그 보기'로 연다. 통과했거나 힌트·해설을 봤으면 이미 보인다.
     연 것은 화면에서만 바뀌고 도움으로 세지 않는다(준비도·기록에 영향 없음). 목록은 통과한 문제의 태그만 보인다. */
@@ -462,7 +462,7 @@ async function showList() {
   const group = (id, title, list, filter) => (!list.length ? "" : `<div class="list-head"><h2 class="list-label" id="${id}">${title} ${list.length}개</h2>${filter ? chips(list) : ""}</div>
     <ul class="rows" aria-labelledby="${id}">${list.map((p) => `<li${filter ? ` data-lang="${esc(p.language)}"${LIST_LANG && p.language !== LIST_LANG && list.length >= 6 ? " hidden" : ""}` : ""}><a class="row" href="#/p/${esc(p.id)}">
       <span><span class="row-title">${esc(p.title)}</span>
-        <span class="badges">${lvBadge(p.level, p.level_by === "analysis")}${themeChip(p.theme, p.theme_name)}${verifiedBadge(p)}${p.passed > 0 ? tagChips(p.tags) : ""}</span>
+        <span class="badges">${lvBadge(p.level)}${themeChip(p.theme, p.theme_name)}${verifiedBadge(p)}${p.passed > 0 ? tagChips(p.tags) : ""}</span>
         <span class="row-meta">${esc(LANG[p.language] || p.language)} · ${p.submitted ? `통과 ${p.passed} · 제출 ${p.submitted}` : "아직 풀지 않았어요"}</span></span>
       <span></span>${ico("i-caret")}<span class="sr-only">열기</span></a></li>`).join("")}</ul>`);
   let html = group("list-own", "내 문제", all.filter((p) => !p.sample), true);
@@ -1048,7 +1048,7 @@ async function showEdit(pid) {
   $("new-mode").value = p.mode || "function";
   $("new-title").value = p.title;
   $("new-theme").value = p.theme || "";
-  $("new-level").value = p.level_by === "user" ? String(p.level) : ""; // 분석이 어림한 단계는 내가 고른 것이 아니다: 그대로 저장하면 고른 단계로 굳는다
+  $("new-level").value = p.level_by === "user" ? String(p.level) : ""; // 분석이 붙인 단계는 내가 고른 것이 아니다: 그대로 저장하면 고른 단계로 굳는다
   $("new-text").value = p.text;
   resetCases();
   findTable();
@@ -1136,7 +1136,9 @@ function clearProblem(pid) {
     quote: null, sending: null, debug: null, note: {}, codeNote: "", fb: null, solo: null, langWant: null, codeAsk: null, fillAsk: null, prepAt: 0, keptNote: false, keptSeen: false, nextUp: null, pullThenRun: false, tagsOpen: false });
   for (const id of ["code", "say", "fq-text", "debug-say", "run-input"]) $(id).value = "";
   for (const id of ["p-title", "p-text", "blocks", "chat-log", "explain-box", "start-box", "result", "solo-box"]) $(id).innerHTML = "";
-  for (const id of ["result", "debug-sheet", "composer", "fq-composer", "chat-log", "explain-box", "old-feedback", "solo-box", "lang-confirm"]) $(id).hidden = true;
+  for (const id of ["result", "sep-result", "result-big", "debug-sheet", "composer", "fq-composer", "chat-log", "explain-box", "old-feedback", "solo-box", "lang-confirm"]) $(id).hidden = true;
+  splitBig = false; // '결과 크게 보기'는 그 문제의 결과에만
+  splitShow();
   $("code")._seen = "";
   say(""); // 앞 문제의 상태 문구('튜터가 블록 코드를 봤어요')를 남기지 않는다
   $("reset-confirm").hidden = $("del-confirm").hidden = true;
@@ -1219,7 +1221,7 @@ function renderCode() {
   $("p-title").textContent = p.title;
   if (!connected() && S.mode && S.mode !== "solo") S.mode = "solo"; // 모델이 없으면 혼자 풀기뿐이다(고르기 전이면 고르는 칸에서 까닭을 말한다)
   if (!connected()) S.codeTab = "direct"; // 블록은 튜터와 쌓는 것이라, 모델이 없으면 코드 전체만 보여 준다
-  $("p-badges").innerHTML = lvBadge(p.level, p.level_by === "analysis") + themeChip(p.theme, p.theme_name) + (p.sample ? "" : verifiedBadge(p)) + tagsHtml(p);
+  $("p-badges").innerHTML = lvBadge(p.level) + themeChip(p.theme, p.theme_name) + (p.sample ? "" : verifiedBadge(p)) + tagsHtml(p);
   renderCheckLine(p);
   $("p-own").hidden = p.sample; // 내가 등록한 문제만 고치고 지운다
   const picker = $("p-lang-select"), many = p.languages.length > 1, key = p.languages.join(",") + JSON.stringify(TOOLS);
@@ -2498,10 +2500,12 @@ async function loadTools(refresh) {
 }
 
 /* ── 과정별 모델 ── */
-// 과정 여덟을 언제 불리는지로 묶고, 상대 사용량을 적는다. 과정마다의 금액은 재지 않아 숫자를 쓰지 않는다(전체 흐름의 실측 값은 설정 화면의 글에 있다)
+// 과정 열을 언제 불리는지로 묶고, 상대 사용량을 적는다. 과정마다의 금액은 재지 않아 숫자를 쓰지 않는다(전체 흐름의 실측 값은 설정 화면의 글에 있다)
 const THEME_HELP = {
+  split: ["붙여 넣은 글에서 문제와 입출력 예시가 있는 줄 구간을 짚어요.", "적음"],
   read: ["사진·PDF에서 글을 읽어요. 글로 넣으면 쓰지 않아요.", "많음"],
   guide: ["문제의 뼈대와 정답 풀이를 만들어요. 뒤의 모든 대화가 이 결과를 따라요. 어려운 문제에서 풀이 확인이 자주 실패하면 급을 올려 보세요.", "많음"],
+  verify: ["단순한 풀이를 만들어 정답 풀이와 견줘요. 문제를 넣은 뒤 뒤에서 한 번 써요.", "보통"],
   blocks: ["풀이를 블록으로 나누고 블록마다 힌트 질문을 만들어요.", "많음"],
   talk: ["튜터가 건네는 질문, 꼬리질문 답, 블록 채우기.", "적음 × 횟수"],
   judge: ["내 답과 블록 코드가 맞는지 보는 짧은 판정.", "적음 × 횟수"],
@@ -2509,7 +2513,7 @@ const THEME_HELP = {
   feedback: ["제출 뒤의 피드백.", "보통"],
   debug: ["틀린 곳 같이 찾기에서 원인이 있는 줄을 찾아요.", "보통"],
 };
-const THEME_GROUPS = [["문제를 넣을 때 한 번", ["read", "guide", "blocks"]], ["튜터와 풀 때 매번", ["talk", "judge"]], ["제출한 뒤, 누를 때만", ["explain", "feedback", "debug"]]];
+const THEME_GROUPS = [["문제를 넣을 때 한 번", ["split", "read", "guide", "verify", "blocks"]], ["튜터와 풀 때 매번", ["talk", "judge"]], ["제출한 뒤, 누를 때만", ["explain", "feedback", "debug"]]];
 const EFFORT = { low: "낮음", medium: "보통", high: "높음" };
 
 function renderModels() {
@@ -2545,7 +2549,7 @@ function renderAccounts(a) {
   const ready = a.client === "cli" || !!provider;
   CONN = { ready, name: a.client === "cli" ? "이 PC의 Claude Code" : provider };
   ACCOUNTS = a;
-  if (!paneTimer && !paneDrag) { paneSet(a.panes || null, false); splitSet(a.rows ?? null, false); } // 저장한 칸 너비·결과 높이를 첫 그림 전에(accounts를 기다린 뒤에 route()를 부른다)
+  if (!paneTimer && !paneDrag) { paneSet(a.panes || null, false); if ((a.rows ?? null) !== splitRows) splitSet(a.rows ?? null, false); } // 저장한 칸 너비·결과 높이를 첫 그림 전에(accounts를 기다린 뒤에 route()를 부른다). 같은 높이면 '결과 크게 보기'를 끄지 않는다
   if (S.view === "settings") renderModels();
   $("conn-now").textContent = keyBad ? "키 확인 필요" : a.client === "cli" ? "이 PC의 Claude Code" : provider || "AI 연결 안 됨";
   $("conn-dot").classList.toggle("off", !ready);
@@ -3001,7 +3005,8 @@ async function paneSave() {
   clearTimeout(paneTimer);
   paneTimer = null;
   const r = await api("/api/prefs", { panes: paneShares, rows: splitRows });
-  if (!r.ok) say(errorNote(r.error).text);
+  if (!r.ok) return say(errorNote(r.error).text);
+  if (ACCOUNTS) Object.assign(ACCOUNTS, { panes: r.data.panes, rows: r.data.rows }); // 연결 상태가 바뀌어 다시 그려도 저장한 값으로 그린다
 }
 
 function paneReset() {

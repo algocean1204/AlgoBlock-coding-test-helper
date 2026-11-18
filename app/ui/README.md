@@ -47,6 +47,7 @@ uv run -q --no-project --python 3.12 --with langgraph --with pypdf python -B ui/
 python3 -B ui/test_structure.py   # 저장소 구조
 python3 -B ui/test_publish.py     # 공개 전 검사(키, 개인 경로, 내부 이름, 큰 파일, 링크)
 node ui/test_highlight.js         # 코드 칸 문법 색
+uv run -q --no-project --python 3.12 --with langgraph --with pypdf python -B ui/test_flow.py   # 화면 흐름(처음 한 번 stageshow에서 npm ci --ignore-scripts)
 ```
 
 `test_server.py`는 unittest가 아니다. `main()`이 확인 함수를 차례로 부르고, 끝에 `ok`를 찍는다.
@@ -78,6 +79,7 @@ node ui/test_highlight.js         # 코드 칸 문법 색
 | `PretendardVariable.woff2`, `PretendardVariable-LICENSE.txt` | 맥 밖에서 쓰는 글꼴과 그 라이선스(SIL OFL 1.1). 맥은 시스템 글꼴을 쓴다 |
 | `icon.svg`, `favicon.svg` | 앱 아이콘과 파비콘 |
 | `test_server.py`, `test_update.py`, `test_structure.py`, `test_publish.py`, `test_highlight.js` | 화면 서버 시험, 업데이트 시험(`test_server.py`가 부른다), 저장소 구조 시험, 공개 전 검사, 문법 색 시험(Node) |
+| `test_flow.py`, `flow/` | 화면 흐름 시험. 서버를 가짜 모델로 띄우고 `flow/*.mjs`를 브라우저로 돌린다. 브라우저는 `stageshow/scripts/browser.mjs`의 `launch()`로 연다 |
 | `data/` | 사용자 데이터 폴더. git에서 빠진다. 들어 있는 파일은 [Docs/architecture/data.md](../../Docs/architecture/data.md)에 있다 |
 
 ## 서버 API
