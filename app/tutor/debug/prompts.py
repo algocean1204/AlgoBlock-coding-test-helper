@@ -96,13 +96,13 @@ def found_messages(state: MainState) -> list[dict]:
     lines = head + [
         f"사용자 코드(줄 번호 붙임):\n{numbered(state['request'].code or '')}",
         f"진단(사용자에게 보이지 않음): {draft['line']}번째 줄. {draft['cause']}",
-        f"튜터의 직전 질문:{draft['last_question']}",
         "판단 기준: 사용자가 틀린 곳(그 줄이나 그 줄이 하는 일)과 왜 틀렸는지를 자기 말로 짚었으면 Y다. 고치는 법까지 말하지 않아도 된다. "
         "증상만 되풀이하거나 다른 곳을 짚거나 모르겠다고 하면 N이다.",
+        f"튜터의 직전 질문:{draft['last_question']}",
         f"사용자 말:{state['request'].text or ''}",
     ]
-    # 같은 코드의 디버그 턴마다 코드와 진단까지는 같다. 캐시 경계를 그 뒤(직전 질문 앞)에 둔다
-    return [{"role": "system", "content": "너는 코딩테스트 튜터의 판정자다. 판정만 하고 설명하지 않는다."}, cached_user(lines, len(head) + 2)]
+    # 같은 코드의 디버그 턴마다 코드·진단·판단 기준까지는 같다. 캐시 경계를 그 뒤(직전 질문 앞)에 둔다
+    return [{"role": "system", "content": "너는 코딩테스트 튜터의 판정자다. 판정만 하고 설명하지 않는다."}, cached_user(lines, len(head) + 3)]
 
 
 def speak_messages(state: MainState) -> list[dict]:

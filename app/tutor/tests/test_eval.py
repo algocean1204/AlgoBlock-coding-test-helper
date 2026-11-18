@@ -110,12 +110,35 @@ class CachePrefixTest(unittest.TestCase):
     def test_turn_prompts_mark_problem_as_cache_prefix(self):
         from .test_pipeline import chair_state
 
+        from ..chair.prompts import CRITERIA
+
         state = chair_state("이름마다 세요", chair=[fakes.service("질문?", 0)])
         _, fake = fakes.go(state, {"chair.judge": ["[check]N1 g"], "chair.ask": ["무엇을 기록할까요?"]})
         for call in fake.calls:
             user = call["messages"][-1]
             head = user["content"][: user["cache_prefix"]]
-            self.assertIn(head, (f"문제:\n{PROBLEM}", f"문제:\n{PROBLEM}\n언어:python"), call["task"])
+            self.assertIn(head, (f"문제:\n{PROBLEM}\n{CRITERIA}", f"문제:\n{PROBLEM}\n언어:python"), call["task"])
+
+    def test_judge_head_is_same_across_turns_and_blocks(self):
+        """판정의 고정 기준은 캐시되는 앞부분에 있고, 턴·블록마다 바뀌는 글(지금 블록, 직전 질문, 사용자 말)은 경계 뒤에 있다.
+        그래서 다른 블록의 다른 말을 판정해도 앞부분이 같다(캐시를 읽는다). 기준 글은 한 번만 들어간다."""
+        from ..chair.prompts import CRITERIA
+        from .test_pipeline import chair_state
+
+        heads, tails = [], []
+        for text, open_count, said in (("이름마다 세요", 1, "첫 질문?"), ("앞에서부터 다시 훑어요", 2, "둘째 질문?")):
+            state = chair_state(text, chair=[fakes.service(said, open_count - 1)], open_count=open_count)
+            _, fake = fakes.go(state, {"chair.judge": ["[check]N1 g"], "chair.ask": ["무엇을 기록할까요?"]})
+            user = next(call["messages"][-1] for call in fake.calls if call["task"] == "chair.judge")
+            heads.append(user["content"][: user["cache_prefix"]])
+            tails.append(user["content"][user["cache_prefix"]:])
+            self.assertEqual(user["content"].count(CRITERIA), 1)
+        self.assertEqual(heads[0], heads[1])
+        self.assertIn(CRITERIA, heads[0])
+        for tail, text, said in zip(tails, ("이름마다 세요", "앞에서부터 다시 훑어요"), ("첫 질문?", "둘째 질문?")):
+            self.assertIn(f"사용자 말:{text}", tail)
+            self.assertIn(f"직전 질문:{said}", tail)
+            self.assertIn("지금 블록:", tail)
 
     def test_debug_turns_cache_code_and_diagnosis_and_one_shot_calls_do_not_mark(self):
         """같은 코드의 디버그 턴은 코드·진단까지 같은 앞부분을 읽는다. 한 번만 부르는 해설은 캐시 표시를 하지 않는다(쓰기 할증만 붙는다)."""
