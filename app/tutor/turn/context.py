@@ -31,7 +31,7 @@ def prepare(state: MainState) -> dict:
         followed_before=cut >= 0 or replanned is not None,
         basis_asked=any(m.role == "service" and m.move == "basis" for m in said[max(cut, 0):]),
         previous=next((m.text for m in reversed(here) if m.role == "user"), ""),
-        tipped=any(FILL_TIP in m.text for m in service),
+        tipped=any(FILL_TIP.strip() in m.text for m in service),  # 앞말이었던 옛 말과 길 안내 줄인 새 말 모두
         hints_seen=sum(bool(h.strip()) and any(h.strip() in m.text for m in service) for h in plan.blocks[index].hints),
     )
     return {"turn": turn}

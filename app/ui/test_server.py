@@ -1051,7 +1051,7 @@ def chair_found() -> None:
     assert [(m["role"], m["block_index"]) for m in body["messages"][-2:]] == [("user", 0), ("service", 0)]
     indented = "\n".join(LINES[1:5])  # 첫 줄 앞 공백이 저장까지 남는다(저장하며 첫 줄 들여쓰기를 잃어 다음 확인에서 평평해졌다)
     said = call("/api/turn", id=pid, mode="chair", event="block_filled", block_id="b1", code="\n" + indented + "  \n")[1]["messages"][-1]["text"]
-    assert said == "공개 예시로만 확인했어요. 통과예요. 이 블록의 코드는 할 일을 해내요.", said
+    assert said == "공개 예시로만 확인했어요.\n통과예요. 이 블록의 코드는 할 일을 해내요.", said  # 통과의 단서가 첫 줄
     with server.tutor() as t:
         assert t.store.load(pid).block_states["b1"].code == indented, t.store.load(pid).block_states["b1"].code
     status, body = call("/api/turn", id=pid, mode="guide", event="block_filled", block_id="b1", code="\n".join(LINES[:5]))  # 가이드도 앞 블록을 고쳐 다시 확인한다

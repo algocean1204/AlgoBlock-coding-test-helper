@@ -16,7 +16,7 @@ from langgraph.graph import END, START, StateGraph
 from ..common.progress_view import active_plan, found_check
 from ..common.verdict import ASIDE_RULE, TERM_RULE, ask_verdict
 from ..llm import llm, model_name
-from ..state import MainState, MovePlan, Verdict
+from ..state import MainState, MovePlan, Said, Verdict
 from .code_check import check_code
 from .context import prepare
 from ..common.talk_rules import OWN_WAY, WITHDRAWN, rename_note
@@ -58,8 +58,8 @@ def turn_graph(mode: str, judge_messages, judge_rule: str, system: str, steps: d
         return {"move": move}
 
     def speak(state: MainState) -> dict:
-        text = llm(model_name()).use(speak_messages(state, state["turn"], state["move"], system, steps), None, task=speak_task)
-        return {"reply_draft": clean_text(text)}
+        said: Said = llm(model_name()).use(speak_messages(state, state["turn"], state["move"], system, steps), Said, task=speak_task)
+        return {"reply_draft": clean_text(said.question), "reply_note": clean_text(said.note)}
 
     def check_reply(state: MainState) -> dict:
         move = state["move"]
@@ -67,20 +67,19 @@ def turn_graph(mode: str, judge_messages, judge_rule: str, system: str, steps: d
         withdrawn = state.get("withdrawn") or []
         verdict, filled = state.get("verdict"), state["request"].event == "block_filled"
         unsure = filled and verdict is not None and (verdict.unsure or (verdict.ok and not verdict.ran))  # 실행이 뒷받침하지 못했다(화면이 '확인 전'으로 그 말을 보인다)
-        # 통과의 단서(실행하지 못한 판단, 공개 예시로만 확인)는 말의 맨 앞에(이름 안내·다음 블록 말보다 먼저)
-        said = f"{verdict.seen} " if filled and verdict is not None and verdict.ok and verdict.seen else ""
+        # 줄마다 한 칸: 결과(통과의 단서, 이름 안내, 앞말) → 질문 → 근거 → 길 안내. 통과의 단서(실행하지 못한 판단, 공개 예시로만 확인)가 맨 위다
+        said = verdict.seen if filled and verdict is not None and verdict.ok and verdict.seen else ""
         extra = {"renamed": named, **({"withdrawn": withdrawn} if withdrawn else {}), **({"unsure": True} if unsure else {})} if filled else {}
         note = rename_note(named)  # 이름만 달라 통과했다: 통과 말 뒤에 이름 안내(마침 말이면 뒤에, 아니면 다음 질문 앞에)
         if move.saved:  # 저장 힌트(계획 때 검사했다)와 고정 문구는 다시 검사하지 않는다. 4차 실제 모델 확인: 힌트 속 import 줄이 '참고 코드'에 걸려 대체 질문이 나갔다
-            text = move.lead + move.saved
-            reply = f"{text} {note}" if note and move.move == "done" else (f"{note} " if note else "") + text
+            rows = [said, move.lead, move.saved, note] if move.move == "done" else [said, note, move.lead, move.saved]
         else:
-            text, _ = checked_reply(state, move, state.get("reply_draft") or "")
-            reply = (f"{note} " if note else "") + move.lead + text
-        if withdrawn:
-            reply = f"{reply} {WITHDRAWN.format(n=len(withdrawn))}"
+            asked, told, _ = checked_reply(state, move, state.get("reply_draft") or "", state.get("reply_note") or "")
+            rows = [said, note, move.lead, asked, told]
+        rows += [move.way, WITHDRAWN.format(n=len(withdrawn)) if withdrawn else ""]
+        reply = "\n".join(row.strip() for row in rows if row and row.strip())
         boxed = {"boxed": True} if filled and verdict is not None and "```" in verdict.seen else {}  # 실행에서 본 여러 줄 출력을 엔진이 글상자로 넣었다(모델의 말은 위에서 펜스를 거른다)
-        return {"result": {"reply": said + reply, "advance": move.advance, "move": move.move, **extra, **boxed}}
+        return {"result": {"reply": reply, "advance": move.advance, "move": move.move, **extra, **boxed}}
 
     def after_prepare(state: MainState) -> str:
         if state.get("error"):

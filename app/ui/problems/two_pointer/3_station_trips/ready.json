@@ -16,10 +16,10 @@
   "solution": {
    "approach": "(a, b) 한 쌍은 gaps[a]부터 gaps[b-1]까지 이어진 구간 하나와 같습니다. 그래서 합이 정확히 k인 연속 구간의 개수를 세면 됩니다. 오른쪽 끝 right를 한 칸씩 늘리며 그 값을 합에 더합니다. 합이 k보다 커지면 k 이하가 될 때까지 왼쪽 끝 left의 값을 빼며 당깁니다. 모든 거리가 양수라서 오른쪽 끝마다 합이 k가 되는 왼쪽 끝은 많아야 하나입니다. 따라서 당긴 뒤 합이 k이면 한 쌍을 세면 되고, 두 끝이 앞으로만 움직이므로 전체를 한 번 훑는 시간에 끝납니다.",
    "steps": [
-    "센 개수, 구간의 왼쪽 끝 left, 구간 합 total을 0으로 둔다 — 빈 구간에서 시작한다",
-    "오른쪽 끝 right를 0부터 끝까지 옮기며 gaps[right]를 total에 더한다 — 구간을 한 칸 늘린다",
-    "total이 k보다 크면 gaps[left]를 빼고 left를 한 칸 옮긴다. 이것을 k 이하가 될 때까지 반복한다 — 값이 모두 양수라 왼쪽을 줄이면 합이 줄어든다",
-    "total이 k와 같으면 개수를 1 늘린다 — left번 역부터 right+1번 역까지가 거리 k인 한 쌍이다",
+    "센 개수, 구간의 왼쪽 끝 left, 구간 합 total을 0으로 둔다, 빈 구간에서 시작한다",
+    "오른쪽 끝 right를 0부터 끝까지 옮기며 gaps[right]를 total에 더한다, 구간을 한 칸 늘린다",
+    "total이 k보다 크면 gaps[left]를 빼고 left를 한 칸 옮긴다. 이것을 k 이하가 될 때까지 반복한다, 값이 모두 양수라 왼쪽을 줄이면 합이 줄어든다",
+    "total이 k와 같으면 개수를 1 늘린다, left번 역부터 right+1번 역까지가 거리 k인 한 쌍이다",
     "센 개수를 돌려준다"
    ],
    "code": "def solution(gaps, k):\n    count = 0\n    left = 0\n    total = 0  # gaps[left]부터 gaps[right]까지의 합 = left번 역에서 right + 1번 역까지의 거리\n    for right in range(len(gaps)):\n        total += gaps[right]\n        # 거리가 모두 양수라 왼쪽을 당기면 합이 줄어든다. k 이하가 될 때까지 당긴다\n        while total > k:\n            total -= gaps[left]\n            left += 1\n        if total == k:\n            count += 1\n    return count",

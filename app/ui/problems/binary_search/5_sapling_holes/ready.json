@@ -17,13 +17,13 @@
   "solution": {
    "approach": "간격을 하나 정해 놓고, 그 간격을 지키면서 구덩이에 최대 몇 그루를 심을 수 있는지 셉니다. 구덩이와 큰 나무를 위치 순으로 정렬해 앞에서부터 한 번만 훑는데, 바로 앞에 선 나무의 위치와 바로 뒤에 올 큰 나무의 위치를 기억해 두고, 둘 다와 간격 이상 떨어지면 일단 심습니다. 앞에서 심을수록 뒤쪽에 더 많은 자리가 남기 때문입니다. 심은 수가 count 이상이면 그 간격은 가능합니다(더 많이 심었다면 몇 그루만 덜 심으면 됩니다). 가능한 간격 중 가장 큰 값을 이분탐색으로 찾습니다.",
    "steps": [
-    "planted 함수 시작: 심은 수 count=0, 바로 앞 나무 위치 last를 아주 먼 곳으로, 큰 나무 포인터 i=0으로 둔다 — 아직 앞에 아무 나무도 없는 상태를 표현하기 위해서다.",
-    "구덩이를 앞에서부터 보면서, 그 구덩이보다 앞에 있는 큰 나무를 지나가며 last를 갱신한다 — 구덩이 바로 앞의 큰 나무를 알아야 간격을 잴 수 있다.",
-    "구덩이 뒤에 오는 첫 큰 나무 위치를 구한다(없으면 아주 먼 곳) — 큰 나무는 뒤쪽에도 간격을 지켜야 하기 때문이다.",
-    "앞 나무와도 뒤 큰 나무와도 gap 이상 떨어져 있으면 심고 count를 올린 뒤 last를 그 구덩이로 바꾼다 — 방금 심은 묘목이 다음 구덩이의 앞 나무가 되기 때문이다. 끝나면 count를 돌려준다.",
-    "solution에서 trees와 holes를 정렬한다 — 한 번 훑기로 확인하기 위해서다(원본은 바꾸지 않는다).",
-    "이분탐색 범위를 정한다: left는 1, right는 전체 위치의 폭에서 시작해 큰 나무 이웃끼리의 간격 중 가장 작은 값으로 줄인다 — 큰 나무끼리의 간격은 바꿀 수 없어 답이 그보다 클 수 없기 때문이다.",
-    "mid를 정해 planted로 센 수가 count 이상이면 answer=mid로 기록하고 더 큰 간격을 찾아 left를 올리고, 아니면 right를 내린다 — 가능한 가장 큰 간격을 찾기 위해서다. 끝나면 answer를 돌려준다."
+    "planted 함수 시작: 심은 수 count=0, 바로 앞 나무 위치 last를 아주 먼 곳으로, 큰 나무 포인터 i=0으로 둔다, 아직 앞에 아무 나무도 없는 상태를 표현하기 위해서다.",
+    "구덩이를 앞에서부터 보면서, 그 구덩이보다 앞에 있는 큰 나무를 지나가며 last를 갱신한다, 구덩이 바로 앞의 큰 나무를 알아야 간격을 잴 수 있다.",
+    "구덩이 뒤에 오는 첫 큰 나무 위치를 구한다(없으면 아주 먼 곳), 큰 나무는 뒤쪽에도 간격을 지켜야 하기 때문이다.",
+    "앞 나무와도 뒤 큰 나무와도 gap 이상 떨어져 있으면 심고 count를 올린 뒤 last를 그 구덩이로 바꾼다, 방금 심은 묘목이 다음 구덩이의 앞 나무가 되기 때문이다. 끝나면 count를 돌려준다.",
+    "solution에서 trees와 holes를 정렬한다, 한 번 훑기로 확인하기 위해서다(원본은 바꾸지 않는다).",
+    "이분탐색 범위를 정한다: left는 1, right는 전체 위치의 폭에서 시작해 큰 나무 이웃끼리의 간격 중 가장 작은 값으로 줄인다, 큰 나무끼리의 간격은 바꿀 수 없어 답이 그보다 클 수 없기 때문이다.",
+    "mid를 정해 planted로 센 수가 count 이상이면 answer=mid로 기록하고 더 큰 간격을 찾아 left를 올리고, 아니면 right를 내린다, 가능한 가장 큰 간격을 찾기 위해서다. 끝나면 answer를 돌려준다."
    ],
    "code": "def planted(trees, holes, gap):\n    count = 0\n    last = -10**10  # 지금 보는 구덩이 바로 앞에 있는 나무의 위치(앞에 나무가 없으면 아주 먼 곳)\n    i = 0  # trees[i]: 지금 보는 구덩이 뒤에 오는 첫 큰 나무\n    for hole in holes:\n        while i < len(trees) and trees[i] < hole:  # 구덩이보다 앞에 있는 큰 나무를 지나간다\n            last = trees[i]\n            i += 1\n        next_tree = trees[i] if i < len(trees) else 10**10  # 뒤에 큰 나무가 없으면 아주 먼 곳\n        # 앞 나무와도, 뒤에 오는 큰 나무와도 gap 이상 떨어져야 심는다\n        if hole - last >= gap and next_tree - hole >= gap:\n            count += 1\n            last = hole\n    return count\n\n\ndef solution(trees, holes, count):\n    trees = sorted(trees)\n    holes = sorted(holes)\n    left = 1\n    right = max(trees[-1], holes[-1]) - min(trees[0], holes[0])\n    for i in range(len(trees) - 1):  # 큰 나무끼리의 간격은 바꿀 수 없으므로 답은 이보다 클 수 없다\n        right = min(right, trees[i + 1] - trees[i])\n    answer = 1\n    while left <= right:\n        mid = (left + right) // 2\n        if planted(trees, holes, mid) >= count:  # count그루보다 많이 심을 수 있으면 몇 그루를 덜 심으면 된다\n            answer = mid\n            left = mid + 1\n        else:\n            right = mid - 1\n    return answer",
    "verified": true,

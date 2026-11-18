@@ -16,11 +16,11 @@
   "solution": {
    "approach": "size를 low부터 high까지 하나씩 대 보면서 남는 과일 수를 계산합니다. 사과와 배는 섞을 수 없으므로 남는 수는 '사과를 size로 나눈 나머지 + 배를 size로 나눈 나머지'입니다. 지금까지 가장 적게 남은 값과 그때의 size를 기억해 두고, 작은 size부터 보기 때문에 남는 수가 같거나 더 적으면 갱신합니다. 같을 때도 갱신하면 가장 큰 size가 남습니다. 마지막에 고른 size로 사과 상자 수와 배 상자 수를 더해 돌려줍니다.",
    "steps": [
-    "지금까지 고른 size를 low로, 지금까지 가장 적게 남은 과일 수를 apples + pears + 1로 시작한다 — 어떤 size의 남는 수보다도 크게 잡아 첫 후보가 반드시 기록되게 한다",
-    "size를 low부터 high까지 하나씩 대 보는 반복문을 시작한다 — 후보가 최대 10만 개라 전부 확인해도 충분히 빠르다",
-    "left에 apples % size + pears % size를 담는다 — 사과와 배를 섞지 않으므로 나머지를 따로 구해 더한다",
-    "left가 지금까지 가장 적게 남은 과일 수보다 작거나 같으면 고른 size와 그때 남은 수를 바꾼다 — 같을 때도 바꿔야 남는 수가 같은 후보 중 가장 큰 size가 남는다",
-    "[고른 size, 사과 상자 수(apples ÷ 고른 size의 몫)와 배 상자 수(pears ÷ 고른 size의 몫)를 더한 값]을 돌려준다 — 고른 size로 두 상자 수를 몫으로 구해 더한다"
+    "지금까지 고른 size를 low로, 지금까지 가장 적게 남은 과일 수를 apples + pears + 1로 시작한다, 어떤 size의 남는 수보다도 크게 잡아 첫 후보가 반드시 기록되게 한다",
+    "size를 low부터 high까지 하나씩 대 보는 반복문을 시작한다, 후보가 최대 10만 개라 전부 확인해도 충분히 빠르다",
+    "left에 apples % size + pears % size를 담는다, 사과와 배를 섞지 않으므로 나머지를 따로 구해 더한다",
+    "left가 지금까지 가장 적게 남은 과일 수보다 작거나 같으면 고른 size와 그때 남은 수를 바꾼다, 같을 때도 바꿔야 남는 수가 같은 후보 중 가장 큰 size가 남는다",
+    "[고른 size, 사과 상자 수(apples ÷ 고른 size의 몫)와 배 상자 수(pears ÷ 고른 size의 몫)를 더한 값]을 돌려준다, 고른 size로 두 상자 수를 몫으로 구해 더한다"
    ],
    "code": "def solution(apples, pears, low, high):\n    best_size = low\n    best_left = apples + pears + 1  # 어떤 size보다도 많이 남는 값에서 시작한다\n    for size in range(low, high + 1):  # 상자 크기를 하나씩 대 본다\n        left = apples % size + pears % size  # 사과와 배는 섞지 않으므로 따로 남는다\n        if left <= best_left:  # 같을 때도 바꾸면 더 큰 size가 남는다\n            best_size = size\n            best_left = left\n    return [best_size, apples // best_size + pears // best_size]",
    "verified": true,

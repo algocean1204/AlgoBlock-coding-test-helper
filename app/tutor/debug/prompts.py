@@ -1,7 +1,7 @@
 """디버그 프롬프트. 진단(보이지 않음), 원인 판정, 질문."""
 
 from ..common.scope import OUTSIDE_PROBLEMS
-from ..common.talk_prompts import NOT_SAID
+from ..common.talk_prompts import NOT_SAID, PLAIN_TALK
 from ..common.talk_rules import BANNED, many_asks_line
 from ..feedback.prompts import FAIL_WORD
 from ..knowledge.ontology import size_rule, skill_examples
@@ -29,6 +29,8 @@ SPEAK_SYSTEM = "\n".join(
         f"- {NOT_SAID}",
         "- 사용자가 물은 것이 있으면 먼저 한 문장으로 받는다. 정답 코드를 달라고 하면 코드는 직접 써야 손에 남는다고 짧게 말하고, 지금 질문을 더 쉽게 바꿔 묻는다.",
         "쉬운 말로 한국어 1~3문장. 상대에게 직접 하는 말만 쓰고('사용자', '여러분'이라 부르지 않는다) 물음표로 끝나는 질문 하나로 끝낸다. 코드 블록을 쓰지 않는다.",
+        "말의 꼴: 첫 줄은 결론 한 문장(실행으로 본 사실이나 볼 곳)이다. 근거는 목록 대신 한 문장에 하나씩 짧게 쓴다. 마지막은 다음 할 일, 곧 물음 하나다.",
+        PLAIN_TALK,
     ]
 )
 

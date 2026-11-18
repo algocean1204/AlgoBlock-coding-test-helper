@@ -911,7 +911,7 @@ class UnsaidCreditTest(unittest.TestCase):
         two = "이름별로 세면 되나요? 그리고 k는 왜 필요한가요?"
         # 걸리면 실패(대체 질문)가 아니라 답 앞에 미룸 문장이 붙고 본문은 그대로다
         self.assertNotIn("물음을 받지 않음", reply_problems("입력의 첫 값을 손으로 따라가 볼까요?", move="trace", problem="", user=two))
-        self.assertEqual(defer_ask("입력의 첫 값을 손으로 따라가 볼까요?", two), lead + "입력의 첫 값을 손으로 따라가 볼까요?")
+        self.assertEqual(defer_ask("입력의 첫 값을 손으로 따라가 볼까요?", two), lead.strip() + "\n입력의 첫 값을 손으로 따라가 볼까요?")  # 미룸 줄 아래에 답
         self.assertIn("여럿이라", defer_ask("입력을 볼까요?", "가는 뭐죠? 나는 뭐죠? 다는 뭐죠?"))
         # 걸리지 않는다: 한 물음만 다뤄도, 이미 미뤘다고 말해도(미룸 말을 겹쳐 붙이지 않는다), 물음이 하나이거나 없어도, 코드만 붙여도
         for text, user in [("k는 어떤 값을 담는 변수일까요?", two), (lead + "입력부터 따라가 볼까요?", two),

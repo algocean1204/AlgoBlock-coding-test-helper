@@ -99,12 +99,12 @@ def asks_ignored(text: str, user: str) -> bool:
 DEFER_TAIL = "다른 물음은 다음 차례에 이어 봐요."
 
 
-def defer_ask(text: str, user: str) -> str:
-    """물음이 여럿인데 답이 하나도 받지 않았으면 답 앞에 미룸 문장을 붙인다(답 본문은 그대로, 못 받은 물음은 다음 차례에 many_asks_line이 잇는다)."""
-    if not asks_ignored(text, user):
+def defer_ask(text: str, user: str, seen: str | None = None) -> str:
+    """물음이 여럿인데 답(seen. 없으면 text)이 하나도 받지 않았으면 답 위에 미룸 줄을 둔다(답 본문은 그대로, 못 받은 물음은 다음 차례에 many_asks_line이 잇는다)."""
+    if not asks_ignored(text if seen is None else seen, user):
         return text
     many = "여럿이라" if asked_count(user) > 2 else "둘이라"
-    return f"물음이 {many} 하나씩 볼게요. {DEFER_TAIL} {text}"
+    return f"물음이 {many} 하나씩 볼게요. {DEFER_TAIL}\n{text}"
 
 
 def deferred_user(said) -> list[str]:
@@ -230,7 +230,7 @@ _HANGUL = re.compile(r"[가-힣]")
 _ENGLISH = re.compile(r"[A-Za-z]+(?:[ ,]+[A-Za-z]+){4,}")  # 영어 다섯 낱말 이상 = 모델의 지시문·메모가 샌 것
 _NOTE = re.compile(r"(하자|보자|묻자|이끌자|시키자)[.。]?(\s|$)")  # '…따라가 보게 하자' 같은 모델의 계획 메모
 # '…라고 물었어요.', '…된다"고 했어요.', '…제대로 짚었네요.'
-_ECHO = re.compile(r"((이)?시군요|계시군요|(말해|알려|짚어) 주셨(어요|네요|습니다)|짚었(어요|네요)|짚으셨(네요|어요|군요)|물으셨(어요|네요|군요)|말씀이(시)?군요"
+_ECHO = re.compile(r"((이)?시군요|계시군요|(말해|알려|짚어) 주셨(어요|네요|습니다)|짚었(어요|네요)|짚으셨(네요|어요|군요)|물으셨(어요|네요|군요)|보셨(네요|군요)|말씀이(시)?군요"
                    r"|라고 물었어요|고 (했|하셨)어요)[.!]?$")  # 사용자 말을 되받는 첫 문장
 _CODE_SPAN = re.compile(r"```.*?```|`[^`\n]*`", re.S)
 _CODE_LINE = re.compile(r"[\w)\]]\s*=[^=]|[(\[]\s*['‘\"]")  # 대입, 또는 괄호 바로 뒤 따옴표가 있는 줄은 코드 모양이다
@@ -469,6 +469,80 @@ def drop_echo(text: str) -> str:
     if kept != parts:
         parts = [_ORDER_LEAN.sub("", kept[0]), *kept[1:]]
     return _CONNECTIVE.sub("", " ".join(parts))
+
+
+QUESTION_CHARS = 120  # 의자·가이드 말의 질문 칸 길이 한도
+NOTE_CHARS = 80  # 근거 칸 길이 한도
+_JAMO = re.compile(r"[\u3131-\u318e]+")  # 낱자모(ㄱ, ㅏ …): 글자를 치다 만 것이다
+_DASH = re.compile(r"\s*[—―]+\s*")
+
+
+def stray_jamo(text: str, known: str = "") -> list[str]:
+    """코드 구간 밖의 낱자모 가운데 문제 글·사용자 말(known)에 없는 것('ㄱ밧', '값ㅏ은')."""
+    return [run for run in _JAMO.findall(without_code(text or "")) if run not in (known or "")]
+
+
+def field_problems(text: str, limit: int, known: str = "") -> list[str]:
+    """두 칸 말(질문, 근거)의 칸 하나 검사: 문제 글·사용자 말에 없는 낱자모, 한 문장 넘음, 길이. 고치지 않는다."""
+    found = []
+    if stray_jamo(text, known):
+        found.append("낱자모")
+    if sentence_count(without_code(text)) > 1:
+        found.append("여러 문장")
+    if len((text or "").strip()) > limit:
+        found.append("길이")
+    return found
+
+
+def note_problems(note: str, known: str = "", **check) -> list[str]:
+    """근거 칸 검사. 한 문장·NOTE_CHARS자 이하의 평서문이고, 말풍선 검사(금지 표현, 동의로 시작, 답을 말함, 참고 코드, 뒤 블록 이름, 인용)를 지난다. 비면 통과."""
+    if not (note or "").strip():
+        return []
+    found = field_problems(note, NOTE_CHARS, known)
+    if note.rstrip().endswith(("?", "？")):
+        found.append("물음")
+    return found + [item for item in reply_problems(note, **check) if item not in ("질문으로 끝나지 않음", "3문장 초과")]
+
+
+def _undash(part: str) -> str:
+    part = _DASH.sub(", ", part)
+    return re.sub(r",\s*(?=[,.?!？])", "", part)  # 줄표가 문장 부호 바로 앞에 있었다
+
+
+def _plain_fix(part: str) -> str:
+    part = _undash(part).replace("되어지", "되").replace("하였", "했")
+    part = re.sub(r"(?<=\S)[ \t]{2,}(?=\S)", " ", part)
+    return re.sub(r"([?!？,])\1+", r"\1", part)
+
+
+def _unquoted(line: str, fix) -> str:
+    """따옴표 구간(문제 글·사용자 말 인용, 예시 값)은 그대로 두고 나머지에 fix."""
+    out, at = [], 0
+    for found in _QUOTES.finditer(line):
+        out += [fix(line[at:found.start()]), found.group(0)]
+        at = found.end()
+    return "".join(out) + fix(line[at:])
+
+
+def tidy(text: str) -> str:
+    """뜻이 바뀌지 않는 손질: 줄표 → 쉼표, '되어지' → '되', '하였' → '했', 겹친 공백·문장 부호를 하나로.
+    따옴표 구간과 코드 구간(백틱·펜스)은 그대로 둔다. 코드 모양 줄('count=0으로 둔다 — …')은 줄표만 고친다(줄표는 코드에 쓰이지 않는다). 줄은 그대로다."""
+    return outside_code(text or "", lambda line: _unquoted(line, _plain_fix),
+                        lambda piece: piece if piece.startswith("`") else _unquoted(piece, _undash))
+
+
+def shape_problems(text: str) -> list[str]:
+    """긴 글(해설·피드백)의 꼴: 첫 줄은 결론 한 문장(70자 이하), 목록 항목은 5개 이하·항목마다 90자 이하. 고치지 않고 까닭만 돌려준다(기록용)."""
+    rows = [row.strip() for row in re.sub(r"```.*?```", "", text or "", flags=re.S).splitlines() if row.strip()]
+    items = [re.sub(r"^(?:[-•]|\d{1,2}[.)])\s+", "", row) for row in rows if re.match(r"(?:[-•]|\d{1,2}[.)])\s", row)]
+    found = []
+    if rows and (sentence_count(rows[0]) > 1 or len(rows[0]) > 70):
+        found.append("첫 줄")
+    if len(items) > 5:
+        found.append("항목 수")
+    if any(len(item) > 90 for item in items):
+        found.append("항목 길이")
+    return found
 
 
 def drop_told(text: str, reference: str, language: str, problem: str) -> str:

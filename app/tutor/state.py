@@ -227,9 +227,10 @@ class MovePlan:
     move: str
     target: int
     advance: bool
-    lead: str = ""  # 이음말 또는 앞말
+    lead: str = ""  # 이음말 또는 앞말(결과 줄. 질문 위에 놓인다)
     saved: str | None = None
     missing_signal: str = ""
+    way: str = ""  # 막혔을 때 갈 길 안내(채우기·넘어가기). 질문과 근거 아래 따로 놓인다
 
 
 @dataclass
@@ -260,7 +261,8 @@ class MainState(TypedDict, total=False):
     turn: TurnContext
     verdict: Verdict
     move: MovePlan
-    reply_draft: str  # 말풍선 초안
+    reply_draft: str  # 말풍선 초안(의자·가이드는 질문 칸)
+    reply_note: str  # 의자·가이드 말풍선의 근거 칸 초안
     block_check: BlockState | None  # 블록 판정 기록
     block_fixes: list  # 다시 고른 앞 블록의 판정 기록(짝을 새 차례로 고쳐 쓴 것)
     withdrawn: list  # 이 블록의 글이 바뀌어 통과를 물린 뒤 블록 id
@@ -366,6 +368,14 @@ class Diagnosis:
 @dataclass
 class Reply:
     text: str
+
+
+@dataclass
+class Said:
+    """의자·가이드 말(모델 출력): 물음 하나와, 그 물음이 기대는 사실 한 줄(없으면 빈 글)"""
+
+    question: str
+    note: str = ""
 
 
 @dataclass

@@ -20,8 +20,10 @@ from ..turn.moves import asks, rule_verdict
 
 STEPS = {"chair": CHAIR_STEPS, "guide": GUIDE_STEPS}
 GRAMMAR = "파이썬에서 for 문은 어떻게 써요?"
-EXPLAIN = ("for는 모음에서 값을 하나씩 꺼내 같은 일을 되풀이하는 문법이에요. 예를 들어 `for fruit in fruits:` 아래에 `print(fruit)`를 두면 과일 이름이 하나씩 찍혀요. "
-           "그럼 처음 질문으로 돌아가서, 이 블록에서는 무엇을 하나씩 보면 될까요?")
+# 되묻기 답(두 칸): 근거 칸에 뜻과 상관없는 예, 질문 칸에 처음 질문으로 돌아가는 물음. 나가는 말은 질문 줄 아래 근거 줄이다
+EXPLAIN = {"note": "for는 모음에서 값을 하나씩 꺼내 되풀이하는 문법이에요(예: `for fruit in fruits:`).",
+           "question": "처음 질문으로 돌아가서, 이 블록에서는 무엇을 하나씩 보면 될까요?"}
+EXPLAINED = EXPLAIN["question"] + "\n" + EXPLAIN["note"]
 CLAIM = "0보다 큰 값만 골라서 더해요"  # 블록의 답(자기 생각)
 REASK = "for 문 쓰는 법을 알려 주세요"  # 물음 꼴이 아닌 되묻기
 UNCLEAR = "0보다 큰 값만 더하면 되는 건가요?"  # 물음 꼴로 낸 자기 생각
@@ -66,7 +68,7 @@ class QuestionTurnTest(unittest.TestCase):
                     result = done["result"]
                     self.assertEqual((done["open_count"], result["advance"], result["move"]), (i + 1, False, "term"))
                     self.assertEqual(fakes.tasks(fake), [f"{mode}.judge", ASK[mode]])
-                    self.assertEqual((done.get("block_check"), done.get("block_fixes"), result["reply"]), (None, None, EXPLAIN))
+                    self.assertEqual((done.get("block_check"), done.get("block_fixes"), result["reply"]), (None, None, EXPLAINED))
                     after, rows = saved(done, mode)
                     asked_about = getattr(ctx, mode)[-1].block_index
                     self.assertEqual([r["block_index"] for r in rows], [asked_about, asked_about])
@@ -118,7 +120,7 @@ class QuestionTurnTest(unittest.TestCase):
             for i in range(N):
                 line = BLOCKS[i].reference.splitlines()[-1].strip()
                 with self.subTest(mode=mode, block=i + 1, line=line):
-                    done, _ = talked(mode, context(mode, i), GRAMMAR, "[check]Q", f"`{line}`처럼 쓰면 돼요. 그럼 이어서 무엇을 적을까요?")
+                    done, _ = talked(mode, context(mode, i), GRAMMAR, "[check]Q", {"note": f"`{line}`처럼 쓰면 돼요.", "question": "이어서 무엇을 적을까요?"})
                     self.assertEqual((done["open_count"], done["result"]["advance"], done["result"]["move"]), (i + 1, False, "term"))
                     self.assertNotIn(line, done["result"]["reply"])
 
@@ -132,7 +134,7 @@ class MisjudgedTest(unittest.TestCase):
             for i in range(N):
                 with self.subTest(mode=mode, block=i + 1):
                     done, fake = talked(mode, context(mode, i), CLAIM, "[check]Q")
-                    self.assertEqual((done["open_count"], done["result"]["advance"], done["result"]["move"], done["result"]["reply"]), (i + 1, False, "term", EXPLAIN))
+                    self.assertEqual((done["open_count"], done["result"]["advance"], done["result"]["move"], done["result"]["reply"]), (i + 1, False, "term", EXPLAINED))
                     self.assertEqual(len(fake.calls), 2)
                     self.assertIsNone(done.get("block_check"))
 
@@ -220,7 +222,7 @@ class TalkBankTest(unittest.TestCase):
             for text, label, kind, scene in bank.BANK:
                 with self.subTest(mode=mode, text=text):
                     judge = "[check]Q" if label == bank.ASK else JUDGED.get(kind)
-                    scripts = {**({f"{mode}.judge": [judge]} if judge else {}), ASK[mode]: ["작은 예로 먼저 볼게요. 처음 질문으로 돌아가면 무엇을 정해야 할까요?"]}
+                    scripts = {**({f"{mode}.judge": [judge]} if judge else {}), ASK[mode]: [{"note": "작은 예로 먼저 볼게요.", "question": "처음 질문으로 돌아가면 무엇을 정해야 할까요?"}]}
                     done, fake = fakes.go(fakes.make_state("turn", scene_context(mode, scene), mode=mode, event="message", text=text), scripts)
                     self.assertIsNone(done.get("error"))
                     self.assertEqual((done["open_count"], done["result"]["advance"], done.get("block_check")), (1, False, None))
@@ -252,7 +254,8 @@ class TermLeakTest(unittest.TestCase):
     # 중괄호 없는 'if (x > 0) total += x;'의 머리만 쓴 꼴, 머리에 몸을 붙인 꼴, else if 꼴
     LANG_LEAKS += [(language, code) for language in ("java", "javascript", "cpp")
                    for code in ("`if (x > 0)`", "`if (x > 0) {`", "`if (x > 0) { print(x); }`", "`} else if (x > 0) {`")]
-    NAMED = "지금은 양수만 더하기 블록이니 하나씩 보는 문법부터 볼게요. 그럼 items의 값을 어떻게 하나씩 볼까요?"
+    NAMED = {"note": "지금은 양수만 더하기 블록이니 하나씩 보는 문법부터 볼게요.", "question": "items의 값을 어떻게 하나씩 볼까요?"}
+    NAMED_ASK = {"question": "양수만 더하기 블록에서 items의 값을 어떻게 하나씩 볼까요?"}
     STARTERS = {"plus": "def solution(items):\n    answer = 0\n    return answer", "shelf": "def solution(loans, k):\n    answer = []\n    return answer"}
     # 양수만 더하기 장면을 언어마다 옮긴 것: (시작 코드, 지금 블록 참고 코드, 상관없는 문법 예)
     LANGS = {
@@ -271,7 +274,14 @@ class TermLeakTest(unittest.TestCase):
                  "    let mut total = 0;\n    for x in items {\n        if x > 0 { total += x; }\n    }",
                  ["`let score: i32 = 90;`", "`fn add(a: i32, b: i32) -> i32 {`", "`use std::collections::HashMap;`", "`x as usize`"]),
     }
-    TAIL = "처럼 쓰면 돼요. 그럼 처음 질문으로 돌아가서, items의 값을 어떻게 하나씩 볼까요?"
+    TAIL = "처럼 쓰면 돼요."
+    BACK = "처음 질문으로 돌아가서, items의 값을 어떻게 하나씩 볼까요?"
+
+    @staticmethod
+    def parts(reply):
+        """'예. 그럼 질문?'을 두 칸으로: 예는 근거 칸, 물음은 질문 칸."""
+        note, question = reply.split(" 그럼 ")
+        return note, question
 
     def scene(self, mode, scene, language=None):
         """말 은행 장면에 시작 코드를 붙인 문맥(진입 함수의 인자가 이 문제의 이름이다). language를 주면 지금 블록 코드를 그 언어로 바꾼다."""
@@ -292,28 +302,36 @@ class TermLeakTest(unittest.TestCase):
         return done["result"]["reply"]
 
     def test_problem_code_falls_back(self):
+        """이 문제 코드를 옮긴 예가 질문 칸에 있으면 대체 질문, 근거 칸에 있으면 근거 칸만 빠진다(어느 쪽이든 그 코드는 나가지 않는다)."""
         from ..common.talk_rules import FALLBACK
 
         for mode in ("chair", "guide"):
             for scene, reply in self.LEAKS:
+                note, question = self.parts(reply)
                 with self.subTest(mode=mode, reply=reply):
-                    self.assertEqual(self.turn(mode, self.scene(mode, scene), reply, scene), FALLBACK["term"])
+                    self.assertEqual(self.turn(mode, self.scene(mode, scene), {"question": note.rstrip(".") + "?"}, scene), FALLBACK["term"])
+                    self.assertEqual(self.turn(mode, self.scene(mode, scene), {"note": note, "question": question}, scene), question)
             for language, code in [(language, "`items[0]`") for language in self.LANGS] + self.LANG_LEAKS:  # 진입 함수의 인자를 쓴 코드는 언어마다 막힌다
                 with self.subTest(mode=mode, language=language, code=code):
-                    self.assertEqual(self.turn(mode, self.scene(mode, "plus", language), code + self.TAIL), FALLBACK["term"])
+                    ctx = self.scene(mode, "plus", language)
+                    self.assertEqual(self.turn(mode, ctx, {"question": f"{code}처럼 쓰면, {self.BACK}"}), FALLBACK["term"])
+                    self.assertEqual(self.turn(mode, ctx, {"note": code + self.TAIL, "question": self.BACK}), self.BACK)
 
     def test_unfound_block_name_falls_back_only_in_chair(self):
         from ..common.talk_rules import FALLBACK
 
-        self.assertEqual(self.turn("chair", self.scene("chair", "plus"), self.NAMED), FALLBACK["term"])  # 의자: 지금 블록 이름은 찾을 답이다
-        self.assertEqual(self.turn("guide", self.scene("guide", "plus"), self.NAMED), self.NAMED)  # 가이드: 지금 블록 이름은 이미 보인다
+        self.assertEqual(self.turn("chair", self.scene("chair", "plus"), self.NAMED_ASK), FALLBACK["term"])  # 의자: 지금 블록 이름은 찾을 답이다
+        self.assertEqual(self.turn("chair", self.scene("chair", "plus"), self.NAMED), self.NAMED["question"])  # 근거 칸에 있으면 그 칸만 빠진다
+        self.assertEqual(self.turn("guide", self.scene("guide", "plus"), self.NAMED_ASK), self.NAMED_ASK["question"])  # 가이드: 지금 블록 이름은 이미 보인다
+        self.assertEqual(self.turn("guide", self.scene("guide", "plus"), self.NAMED), self.NAMED["question"] + "\n" + self.NAMED["note"])
 
     def test_unrelated_example_goes_out(self):
         for mode in ("chair", "guide"):
             for language, (_, _, examples) in self.LANGS.items():
                 for example in examples:
                     with self.subTest(mode=mode, language=language, example=example):
-                        self.assertEqual(self.turn(mode, self.scene(mode, "plus", language), example + self.TAIL), example + self.TAIL)
+                        reply = {"note": example + self.TAIL, "question": self.BACK}
+                        self.assertEqual(self.turn(mode, self.scene(mode, "plus", language), reply), self.BACK + "\n" + example + self.TAIL)
 
     def test_term_step_hides_current_block_name_in_chair(self):
         self.assertIn("지금 블록 이름", CHAIR_STEPS["term"])
