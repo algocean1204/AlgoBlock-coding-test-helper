@@ -2976,6 +2976,7 @@ def http() -> None:
             status, payload = send("/api/problems", body)
             assert (status, payload["detail"]["message"]) == (400, "요청을 읽지 못했어요."), (body[:10], status, payload)
         assert send("/api/problems", b"", headers={"Content-Length": "twelve"})[0] == 400  # 본문 없이 보낸다: 길이를 모르면 서버가 남은 본문을 읽지 않아, 본문이 있으면 Windows가 연결을 끊을 수 있다
+        assert send("/api/problems", b"", headers={"Content-Length": "\u00b2"})[0] == 400  # 위첨자 숫자(²): isdigit은 숫자로 보지만 int는 못 읽는다
         for method in ("PUT", "DELETE", "PATCH", "OPTIONS"):
             assert send("/api/problems", method=method)[0] == 405
         handle = server.handle
