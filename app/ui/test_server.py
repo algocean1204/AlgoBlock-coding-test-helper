@@ -2907,6 +2907,42 @@ def broken_files() -> None:
     assert (folder / kept[2]).read_text(encoding="utf-8") == '[{"id": "u1", "title": "잘' and "problems.json" in err.getvalue()
 
 
+def save_retry() -> None:
+    """바꿔 넣기가 PermissionError면(Windows에서 백신·색인 프로그램이 파일을 잠깐 연 때) 짧게 다시 한다.
+    끝내 못 하거나 다른 오류면 바로 알리고, 임시 파일을 남기지 않고 원래 파일은 그대로 둔다."""
+    real = Path.replace
+    with tempfile.TemporaryDirectory() as folder:
+        path = Path(folder) / "prefs.json"
+        tmp = path.with_suffix(".tmp")
+
+        def failing(times: int, error: OSError):
+            tries = []
+
+            def replace(self, target):  # 이 시험의 임시 파일만 실패시킨다(다른 코드의 바꿔 넣기는 그대로)
+                if self == tmp:
+                    tries.append(error)
+                    if len(tries) <= times:
+                        raise error
+                return real(self, target)
+
+            return tries, patch.object(Path, "replace", replace)
+
+        tries, swap = failing(2, PermissionError("다른 프로그램이 열고 있다"))
+        with swap:
+            server.write_json(path, {"n": 1})
+        assert len(tries) == 3 and server.read_json(path, {}) == {"n": 1} and not tmp.exists(), tries
+        for error, allowed in ((PermissionError("다른 프로그램이 계속 열고 있다"), range(2, 11)), (OSError("바꿔 넣지 못했다"), [1])):  # 다른 오류는 다시 하지 않는다
+            tries, swap = failing(99, error)
+            with swap:
+                try:
+                    server.write_json(path, {"n": 2})
+                    raise AssertionError("바꿔 넣지 못하면 알려야 한다")
+                except OSError as exc:
+                    assert exc is error, exc
+            assert len(tries) in allowed, (error, tries)
+            assert server.read_json(path, {}) == {"n": 1} and not tmp.exists()
+
+
 def http() -> None:
     """실제 HTTP: 다른 사이트의 요청과 깨진 요청을 본문을 읽기 전에 막고, 오류는 한국어 JSON으로."""
     import contextlib
@@ -3505,6 +3541,36 @@ def read_write_apart() -> None:
     finally:
         path.unlink(missing_ok=True)
         path.with_suffix(".tmp").unlink(missing_ok=True)
+
+
+def broken_rewritten() -> None:
+    """깨진 파일을 읽고 옮기기 전에 다른 요청이 같은 파일을 새로 쓰면, 새로 쓴 파일을 옮기지 않고 그 값을 돌려준다.
+    해석(잠금 밖)하는 순간에 쓰기를 끼워 순서를 정한다. 그사이 바뀌지 않은 깨진 파일은 지금처럼 옮긴다."""
+    import contextlib
+    import io
+    path, bad = server.DATA / "rewritten.json", '{"n": '
+    wrote = []
+
+    def loads(text, *args, **kwargs):
+        if text == bad and not wrote:  # 이 파일의 첫 해석에서만 끼운다
+            wrote.append(1)
+            server.write_json(path, {"n": 1})
+        return json.loads(text, *args, **kwargs)
+
+    try:
+        path.write_text(bad, encoding="utf-8")
+        with patch.object(server, "json", SimpleNamespace(**{**vars(json), "loads": loads})), contextlib.redirect_stderr(io.StringIO()):
+            assert server.read_json(path, {}) == {"n": 1} and wrote
+        assert json.loads(path.read_text(encoding="utf-8")) == {"n": 1}, "새로 쓴 파일이 옮겨졌다"
+        assert not list(server.DATA.glob("rewritten.json.broken-*")), "새로 쓴 파일을 깨진 파일로 옮겼다"
+        path.write_text(bad, encoding="utf-8")  # 아무도 끼어들지 않으면 깨진 파일을 옮긴다
+        with contextlib.redirect_stderr(io.StringIO()):
+            assert server.read_json(path, {}) == {}
+        kept = list(server.DATA.glob("rewritten.json.broken-*"))
+        assert not path.exists() and len(kept) == 1 and kept[0].read_text(encoding="utf-8") == bad, kept
+    finally:
+        for left in [path, path.with_suffix(".tmp"), *server.DATA.glob("rewritten.json.broken-*")]:
+            left.unlink(missing_ok=True)
 
 
 def way_from_talk() -> None:
@@ -4996,6 +5062,7 @@ def main() -> None:
     lang_plans()
     error_lines()
     broken_files()
+    save_retry()
     fake = FakeLlm({})
     with use_llm(fake):
         assert not call("/api/accounts")[1]["connected"]  # 키가 없다: 아래는 모두 AI 없이 돈다
@@ -5128,6 +5195,7 @@ def main() -> None:
     cross_cases()
     way_saved()
     read_write_apart()
+    broken_rewritten()
     way_from_talk()
     mode_switch_keeps()
     way_restart()

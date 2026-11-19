@@ -36,7 +36,7 @@ tutor.adopt("p1", ready)                                       # 미리 만든 �
 | `llm/` | 모델 입구, 가짜 모델, 모양 맞추기 | 모델을 부르는 노드 |
 | `store/` | SQLite 표(`schema.py`, 표 12개. 버전은 `MIGRATIONS`의 길이), 계획 JSON(`codec.py`), `Store` | A2, A12, `Tutor`의 일부 메서드, 화면 서버 |
 | `common/scope.py` | 풀이 범위 15종, 설계 원칙 | A4, A5, A6, A7, A9, A10, A13 |
-| `llm/themes.py` | 과정 여덟(문제 읽기, 풀이 가이드, 블록 설계와 힌트, 대화, 판정, 해설, 피드백, 디버그 진단)마다 급과 추론 정도, 시리즈마다 최신 모델 이름 | 모델을 부르는 모든 노드(입구에서 고름) |
+| `llm/themes.py` | 과정 열(문제 나누기, 문제 읽기, 풀이 가이드, 검증 풀이, 블록 설계와 힌트, 대화, 판정, 해설, 피드백, 디버그 진단)마다 급과 추론 정도, 시리즈마다 최신 모델 이름 | 모델을 부르는 모든 노드(입구에서 고름) |
 | `common/solution.py` | 풀이 가이드를 프롬프트 앞부분에 싣는다(`solution_of`, `solution_lines`) | 대화·판정·코드 확인·채우기·해설·피드백 |
 | `knowledge/ontology.py` | 기법 30, 패턴 31, 함정 32, 구현 기술 20, 입력 크기 규칙 | A4, A10, A13 |
 | `knowledge/index.py` | 벡터 색인(Qdrant 로컬), 열기(`open_index`), 임베딩 이름표 | A4 |

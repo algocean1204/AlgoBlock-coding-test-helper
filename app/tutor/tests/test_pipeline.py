@@ -15,7 +15,7 @@ from ..llm import LlmFailed, LlmTimeout
 from ..main import AGENTS, build
 from ..state import BlockState, DebugState, FilledBlock, Solution, Submission
 from ..feedback.prompts import WAY_TEXT
-from ..turn.code_check import BRACE_CLOSE, BRACE_OPEN, NOT_JOINED, _RUNTIME, brace_note, code_hash, unrun_note
+from ..turn.code_check import BRACE_CLOSE, NOT_JOINED, _RUNTIME, brace_note, code_hash, unrun_note
 from ..turn.moves import FOUND_OK, HINTS_DONE, WRITE_TIP, WRITE_TIP_LAST
 
 ZERO = _RUNTIME[2][1]  # 0으로 나눈 실행 오류의 쉬운 말

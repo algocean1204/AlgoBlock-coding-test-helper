@@ -19,7 +19,7 @@ from ..llm import llm, model_name
 from ..state import MainState, MovePlan, Said, Verdict
 from .code_check import check_code
 from .context import prepare
-from ..common.talk_rules import BACK_LEAD, HARD_LEAD, KIND_LABEL, OWN_WAY, WITHDRAWN, open_lead, rename_note
+from ..common.talk_rules import ANSWER_LEAD, ANSWER_NO, BACK_LEAD, HARD_LEAD, KIND_LABEL, OWN_WAY, WITHDRAWN, open_lead, rename_note
 from .moves import HINTS_DONE, asks, pick_move, rule_verdict
 from .talk import carries_deferred, checked_reply, clean_text, speak_messages
 
@@ -73,7 +73,8 @@ def turn_graph(mode: str, judge_messages, judge_rule: str, system: str, steps: d
         said = verdict.seen if filled and verdict is not None and verdict.ok and verdict.seen else ""
         extra = {"renamed": named, **({"withdrawn": withdrawn} if withdrawn else {}), **({"unsure": True} if unsure else {})} if filled else {}
         note = rename_note(named)  # 이름만 달라 통과했다: 통과 말 뒤에 이름 안내(마침 말이면 뒤에, 아니면 다음 질문 앞에)
-        # 줄마다 칸 하나를 짝짓는다(None은 글에만: 블록 여는 말은 화면의 머리 몫, 이음말은 군말). 길 안내 줄은 모두 '이 블록 채우기'를 가리켜 단추 표시가 된다
+        # 줄마다 칸 하나를 짝짓는다(None은 글에만: 블록 여는 말은 화면의 머리 몫, 이음말은 군말). 길 안내 줄은 '이 블록 채우기'를 가리켜 단추 표시가 된다.
+        # 답 요청의 길 안내 줄은 앞 문장(답을 주지 않는다)을 결과 칸에 남긴다. 힌트를 다 본 뒤에는 그 문장만 남아 칸 없이 둔다(화면이 글 전체를 보인다)
         lead = None if move.lead.strip() in BARE_LEADS else "result"
         if move.saved:  # 저장 힌트(계획 때 검사했다)와 고정 문구는 다시 검사하지 않는다. 4차 실제 모델 확인: 힌트 속 import 줄이 '참고 코드'에 걸려 대체 질문이 나갔다
             saved = ("way" if move.saved == HINTS_DONE else "result" if move.fact else "question", move.saved)
@@ -86,6 +87,8 @@ def turn_graph(mode: str, judge_messages, judge_rule: str, system: str, steps: d
         reply = "\n".join(row for _, row in rows)
         parts = {"block_index": move.target}
         for slot, row in rows:
+            if slot == "way" and row == ANSWER_LEAD.strip():
+                slot, row = "result", ANSWER_NO
             if slot in ("result", "question", "note"):
                 parts[slot] = f"{parts[slot]}\n{row}" if slot in parts else row
         last = filled and move.advance and move.target == state["turn"].index == len(active_plan(state).blocks) - 1

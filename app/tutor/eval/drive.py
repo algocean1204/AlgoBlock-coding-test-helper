@@ -175,7 +175,7 @@ class Session:
         return out, row
 
     def _reply_row(self, row: dict) -> None:
-        """방금 나간 튜터 말과 그 숨은 블록 정보를 기록에 붙인다."""
+        """방금 나간 튜터 말과 그 칸(parts. 칸을 남기기 전의 말이면 None), 숨은 블록 정보를 기록에 붙인다."""
         if row["status"] != 200:
             return
         ctx = self.ctx()
@@ -183,7 +183,7 @@ class Session:
         if not said:
             return
         last = said[-1]
-        row.update(reply=last.text, move=last.move, hidden=self.hidden(ctx, last.block_index), context=self.visible[-4:])
+        row.update(reply=last.text, move=last.move, parts=last.parts, hidden=self.hidden(ctx, last.block_index), context=self.visible[-4:])
         self.visible.append(f"튜터: {last.text}")
 
     def start(self) -> None:
