@@ -13,6 +13,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -91,20 +92,15 @@ def scripted(script: Path):
             os.environ.pop(name, None) if value is None else os.environ.__setitem__(name, value)
 
 
-def self_check(script: Path) -> None:
-    """흐름을 일부러 실패시켜 본다: 앱이 아닌 빈 화면이 서버 밖 주소를 부르면 막아서 적고, 뷰포트마다 사진을 남기고 1로 끝나야 한다."""
-    page = TMP / "broken"
-    page.mkdir(exist_ok=True)
-    probe = "http://203.0.113.7/probe.png"  # 문서용 주소(어디로도 가지 않는다)
-    (page / "index.html").write_text(f'<!doctype html><meta charset="utf-8"><title>빈 화면</title><img src="{probe}" alt="">', encoding="utf-8")
-    httpd, base = serve(partial(Quiet, directory=str(page)))
+PROBE = "http://203.0.113.7/probe.png"  # 문서용 주소(어디로도 가지 않는다)
+
+
+def self_check(script: Path, base: str) -> None:
+    """흐름을 일부러 실패시켜 본다: 앱이 아닌 빈 화면(base)이 서버 밖 주소를 부르면 막아서 적고, 뷰포트마다 사진을 남기고 1로 끝나야 한다."""
     shots = TMP / f"broken-{script.stem}"
-    try:
-        out = run(script, base, shots)
-    finally:
-        httpd.shutdown()
+    out = run(script, base, shots)
     names = " ".join(path.name for path in shots.glob("*.png"))
-    if out.returncode != 1 or f"external: {probe}" not in out.stderr or not all(tag in names for tag in VIEWPORTS):
+    if out.returncode != 1 or f"external: {PROBE}" not in out.stderr or not all(tag in names for tag in VIEWPORTS):
         raise AssertionError(f"{script.name}: 실패를 잡지 못했다(종료 {out.returncode}, 사진 [{names}])\n{out.stdout}{out.stderr}")
 
 
@@ -115,8 +111,15 @@ def main() -> bool:
     failed = []
     try:
         assert scripts, "flow/*.mjs가 없다"
-        for script in scripts:
-            self_check(script)
+        page = TMP / "broken"
+        page.mkdir()
+        (page / "index.html").write_text(f'<!doctype html><meta charset="utf-8"><title>빈 화면</title><img src="{PROBE}" alt="">', encoding="utf-8")
+        blank, empty = serve(partial(Quiet, directory=str(page)))
+        try:  # 빈 화면에서는 스크립트마다 시간 초과를 기다려 오래 걸린다. 함께 돌린다
+            with ThreadPoolExecutor(4) as pool:
+                list(pool.map(lambda script: self_check(script, empty), scripts))
+        finally:
+            blank.shutdown()
         httpd, base = serve(server.Handler)
         try:
             for script in scripts:
