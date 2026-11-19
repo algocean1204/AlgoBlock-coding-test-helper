@@ -3167,6 +3167,111 @@ def block_badges() -> None:
     assert before == [None, "블록 3/3", None], before  # 다시 짜기 전이면 그대로 붙는다
 
 
+def pure_area(js: str, needle: str) -> str:
+    """화면 코드에서 needle이 든 `-pure:start … -pure:end` 구역의 글."""
+    for found in re.finditer(r"/\* ([\w-]+)-pure:start.*?\*/(.*?)/\* \1-pure:end \*/", js, re.S):
+        if needle in found.group(2):
+            return found.group(2)
+    raise AssertionError(f"{needle}가 든 순수 구역이 없다")
+
+
+def reply_slots() -> None:
+    """튜터 말의 칸 나누기(화면 순수 구역을 node로): parts가 없으면 null, 있으면 결과·질문·근거·단추로. 빈 칸은 비어 있고, 단추만 있으면 글을 결과 자리에 한 번 둔다. facts는 근거에 합친다."""
+    import shutil
+    node = shutil.which("node")
+    if not node:
+        return print("node가 없어 말 칸 나누기 시험은 건너뜀")
+    js = (HERE / "app.js").read_text(encoding="utf-8")
+    area = pure_area(js, "replySlots")
+    source = js[:js.index("\n};\n", js.index("const KIND = {")) + 4] + pure_area(js, "const badgeTexts") + (area if "const badgeTexts" not in area else "")
+    say = lambda text, parts=None: {"role": "service", "text": text, "block_index": 1, "move": "clue", **({"parts": parts} if parts is not None else {})}  # noqa: E731
+    facts = {"index": 1, "names": ["count", "shelf"], "goal": "k가 된 순간에 담는다"}
+    full = {"block_index": 1, "result": "첫째 줄\n둘째 줄", "question": "물음 하나?", "note": "되받기 한 줄", "buttons": ["fill", "skip"]}
+    cases = [
+        [{"role": "user", "text": "내 말", "block_index": 1}, None],
+        [say("옛 말"), None],
+        [say("본문", full), None],
+        [say("본문", full), facts],
+        [say("본문", full), {**facts, "goal": ""}],
+        [say("본문", full), {"index": 1, "names": [], "goal": ""}],
+        [say("본문", {"block_index": 1, "question": "물음?"}), None],
+        [say("힌트를 다 봤어요", {"block_index": 1, "buttons": ["fill"]}), None],
+        [say("힌트를 다 봤어요", {"block_index": 1, "note": "되받기", "buttons": ["fill"]}), None],
+        [say("본문", {"block_index": 1}), None],
+        [say("본문", {"block_index": 1, "result": "결과 줄", "buttons": ["fill", "skip", "run"]}), None],
+        [say("본문", full), {**facts, "index": 2}],  # 앞 블록을 다시 확인한 말: 지금 블록(2)의 사실은 붙이지 않는다
+    ]
+    script = f"{source}\nconst cases = {json.dumps(cases)};\nconsole.log(JSON.stringify(cases.map(([m, f]) => replySlots(m, f))))"
+    user, old, plain, merged, no_goal, no_facts, only_q, only_btn, note_btn, bare, three, other_block = json.loads(subprocess.run([node, "-e", script], capture_output=True, text=True, check=True).stdout)
+    assert (user, old) == (None, None), (user, old)  # 칸이 없는 말(사용자 말, 옛 말)은 null: 글로 그린다
+    assert plain == {"result": ["첫째 줄", "둘째 줄"], "question": "물음 하나?", "evidence": ["되받기 한 줄"], "buttons": ["fill", "skip"]}, plain
+    assert merged["result"] == plain["result"] and merged["question"] == plain["question"] and merged["buttons"] == plain["buttons"]
+    assert len(merged["evidence"]) == 3 and merged["evidence"][0] == "되받기 한 줄", merged  # 되받기 → 이름 → 할 일 순서
+    assert "count" in merged["evidence"][1] and "shelf" in merged["evidence"][1] and "k가 된 순간에 담는다" in merged["evidence"][2], merged
+    assert len(no_goal["evidence"]) == 2 and "k가 된 순간" not in " ".join(no_goal["evidence"]) and "count" in no_goal["evidence"][1], no_goal  # 의자: 할 일이 빈 글이면 줄이 없다
+    assert no_facts["evidence"] == ["되받기 한 줄"], no_facts  # 이름도 할 일도 없으면 되받기만
+    assert only_q == {"result": [], "question": "물음?", "evidence": [], "buttons": []}, only_q  # 빈 칸은 빈 것
+    assert only_btn == {"result": ["힌트를 다 봤어요"], "question": "", "evidence": [], "buttons": ["fill"]}, only_btn  # 단추만 덩그러니 남지 않게 글을 결과 자리에
+    assert note_btn == {"result": [], "question": "", "evidence": ["되받기"], "buttons": ["fill"]}, note_btn  # 근거가 있으면 글을 되풀이하지 않는다
+    assert bare == {"result": [], "question": "", "evidence": [], "buttons": []}, bare
+    assert three["buttons"] == ["fill", "skip", "run"] and three["result"] == ["결과 줄"], three
+    assert other_block == plain, other_block  # 말의 블록과 facts의 블록이 다르면 근거는 되받기 한 줄뿐
+
+
+def rich_list() -> None:
+    """긴 글의 `- ` 목록은 목록(ul > li)으로 그려지고 인라인 코드가 살아 있다(화면 순수 구역을 node로)."""
+    import shutil
+    node = shutil.which("node")
+    if not node:
+        return print("node가 없어 목록 그리기 시험은 건너뜀")
+    js = (HERE / "app.js").read_text(encoding="utf-8")
+    source = js[:js.index("\n", js.index("const esc"))] + pure_area(js, "function rich(")
+    script = source + '\nconsole.log(JSON.stringify(rich("한 줄 결론이에요.\\n- 첫째 `a`예요\\n- 둘째예요\\n- 셋째예요\\n다음에는 코드를 적어요.")))'
+    html = json.loads(subprocess.run([node, "-e", script], capture_output=True, text=True, check=True).stdout)
+    assert html.count("<li>") == 3 and "<ul" in html and "<code>a</code>" in html and html.index("한 줄 결론이에요.") < html.index("<ul") < html.index("다음에는 코드를 적어요."), html
+
+
+def block_facts(fake) -> None:
+    """상태 응답의 block_facts(모델 0회): 지금 블록 번호, 통과한 내 블록 코드가 만든 이름, 가이드에서만 그 블록의 할 일(의자는 늘 빈 글). 계획이 없으면 null."""
+    from tutor.common.talk_rules import told_sentences
+    asked = len(fake.calls)
+    none = server.register({**GOOD, "title": "합 문제"})["id"]  # 계획이 없는 문제
+    state = call("/api/state", id=none, mode="guide")[1]
+    assert "block_facts" in state and state["block_facts"] is None, state.get("block_facts")
+    plan = FIRST["ready"]["plan"]["blocks"]
+    goal = lambda i: plan[i]["name"] if told_sentences(plan[i]["goal"], plan[i]["reference"], "python", FIRST["text"]) else plan[i]["goal"]  # noqa: E731  답이 드러나면 이름만
+    for way in ("guide", "chair"):
+        call("/api/reset", id=PID)
+        call("/api/turn", id=PID, mode=way, event="start")
+        first = call("/api/state", id=PID, mode=way)[1]["block_facts"]
+        assert first == {"index": 0, "names": [], "goal": goal(0) if way == "guide" else ""}, (way, first)
+        if way == "chair":
+            assert call("/api/fill", id=PID, block_id="b1")[1]["open_count"] == 2  # 의자는 찾아야 다음 블록이 열린다
+        call("/api/turn", id=PID, mode=way, event="block_filled", block_id="b1", code="\n".join(LINES[:5]))
+        state = call("/api/state", id=PID, mode=way)[1]
+        facts = state["block_facts"]
+        assert state["session"]["open_count"] == 2 and facts["index"] == 1, (way, facts)
+        assert sorted(facts["names"]) == ["count", "shelf", "title"], (way, facts)  # 통과한 블록 1의 코드가 만든 이름
+        assert facts["goal"] == (goal(1) if way == "guide" else ""), (way, facts)
+    server.told_sentences, real = (lambda *args: ["답"]), server.told_sentences  # 할 일이 블록의 답을 말하면 블록 이름만 보인다
+    try:
+        assert call("/api/state", id=PID, mode="guide")[1]["block_facts"]["goal"] == plan[1]["name"]
+        assert call("/api/state", id=PID, mode="chair")[1]["block_facts"]["goal"] == ""
+    finally:
+        server.told_sentences = real
+    # '이대로 넘어가기'로 둔 블록(확인 전)과 통과하지 못한 블록(N)의 코드가 만든 이름은 넣지 않는다
+    call("/api/reset", id=PID)
+    call("/api/turn", id=PID, mode="guide", event="start")
+    call("/api/turn", id=PID, mode="guide", event="block_filled", block_id="b1", code="    skip_name = 1", skip=True, quiet=True)
+    call("/api/turn", id=PID, mode="guide", event="block_filled", block_id="b2", code="        miss_name = 0")
+    with server.tutor() as t:
+        assert {key: b.verdict for key, b in t.store.load(PID).block_states.items()} == {"b1": "?", "b2": "N"}
+    facts = call("/api/state", id=PID, mode="guide")[1]["block_facts"]
+    assert facts["index"] == 1 and facts["names"] == [], facts
+    assert len(fake.calls) == asked, fake.calls[asked:]  # 모델 호출 0회
+    call("/api/reset", id=PID)
+
+
 def ai_marks() -> None:
     """AI를 부르는 단추의 작은 표시와 비용 안내(화면 코드 확인): 표시는 data-ai로 한 곳(CSS)에서 그리고, 설정의 금액은 README의 실측 값과 같다. 사진 단계에 AI 사용을 알린다."""
     import re
@@ -4912,6 +5017,7 @@ def main() -> None:
         passed_reopen()
         own_way_flow()
         state_names_by_mode()
+        block_facts(fake)
         keyboard_focus()
         chair_found()
         guide_spoken()
@@ -4969,6 +5075,8 @@ def main() -> None:
         case_arg_count()
         ai_marks()
         block_badges()
+        reply_slots()
+        rich_list()
         report_terms()
         new_draft()
         menu_and_title_note()

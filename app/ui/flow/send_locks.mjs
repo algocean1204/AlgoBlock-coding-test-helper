@@ -486,7 +486,7 @@ for (const viewport of VIEWPORTS) {
       await t.current().locator('textarea.codey').evaluate((el) => { el.focus(); el.setSelectionRange(2, 4) })
       t.mutate = (json) => { // 서버가 튜터 말을 하나 더 한 것처럼 꾸민다
         const chat = json.session.chair
-        if (chat && chat.length) chat.push({ ...chat[chat.length - 1], id: `answer-${chat.length}`, text: '새 튜터 말이에요' })
+        if (chat && chat.length) { const { parts, ...last } = chat[chat.length - 1]; chat.push({ ...last, id: `answer-${chat.length}`, text: '새 튜터 말이에요' }) } // 칸(parts)이 있는 말은 칸으로 그려져, 글만 바꾼 말에는 칸을 떼어 글로 그리게 한다
         return json
       }
       gate.release('ok')
