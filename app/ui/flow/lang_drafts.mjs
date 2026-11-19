@@ -17,7 +17,7 @@ const problem = ready.filter((p) => p.readies && Object.keys(p.readies).length &
 const second = ready.find((p) => p.id !== problem.id)
 const other = Object.keys(problem.readies)[0]
 const WRONG = `${problem.solutions.python.split('\n').find((l) => l.startsWith('def solution'))}\n    return None\n` // 어떤 기본 문제에서도 틀리는 코드(함수 머리만 두고 아무것도 돌려주지 않는다)
-const A = '파이썬에서 쓰던 답 ㄱ-초안', B = `${other}에서 쓰던 답 ㄴ-초안`, DA = '파이썬 디버그 ㄷ-초안', DB = `${other} 디버그 ㄹ-초안`, Q = '다른 문제에서 쓰던 답 ㅁ-초안'
+const A = '파이썬에서 쓰던 답 ㄱ-초안', B = `${other}에서 쓰던 답 ㄴ-초안`, DA = '파이썬 디버그 ㄷ-초안', DB = `${other} 디버그 ㄹ-초안`, Q = '다른 문제에서 쓰던 답 ㅁ-초안', R = '파이썬 실행 입력 ㅂ-초안'
 const VIEWPORTS = [{ width: 1366, height: 689 }, { width: 1093, height: 551 }]
 const browser = await launch()
 let failed = 0
@@ -84,7 +84,7 @@ async function flow(name, viewport, steps) {
     sent,
   }
   try { await steps(t) } catch (e) { problems.push(`steps: ${String(e.message).split('\n')[0]}`) }
-  const leaked = sent.filter((q) => q.path !== '/api/turn' && q.path !== '/api/debug' && [A, B, DA, DB, Q].some((s) => q.body.includes(s)))
+  const leaked = sent.filter((q) => q.path !== '/api/turn' && q.path !== '/api/debug' && [A, B, DA, DB, Q, R].some((s) => q.body.includes(s)))
   if (leaked.length) problems.push(`서버로 가는 요청에 입력 칸 글이 실렸다: ${leaked.map((q) => q.path).join(', ')}`)
   await post('/api/language', { id: problem.id, language: 'python' })
   await post('/api/reset', { id: problem.id })
@@ -203,6 +203,14 @@ for (const viewport of VIEWPORTS) {
     const { need, page } = t
     let held = null
     await need('튜터와 차례로를 시작한다', () => t.start())
+    await need('파이썬에서 틀린 코드를 실행해 결과를 만들고 실행 입력 칸에 적는다', async () => {
+      await page.evaluate(() => { setCodeTab('direct', 'quiet'); render() })
+      await page.locator('#code').fill(WRONG)
+      await page.locator('#run').click()
+      await page.locator('#result .verdict').waitFor({ state: 'visible', timeout: 15000 })
+      await page.locator('#run-own summary').click()
+      await page.locator('#run-input').fill(R)
+    })
     await need(`파이썬 글을 적고 ${other}로 바꾸는 응답을 붙잡아 둔다`, async () => {
       await page.locator('#say').fill(A)
       held = t.holdNextLang()
@@ -224,6 +232,10 @@ for (const viewport of VIEWPORTS) {
       await t.title(problem)
       await t.settled(other)
       await t.expect('say', '', `${other} 처음`)
+    })
+    await need('실행 입력 칸이 비어 있고 파이썬의 결과가 보이지 않는다(그 자리에서 바꿀 때처럼)', async () => {
+      await t.expect('run-input', '', `${other} 처음`)
+      if (await page.locator('#result .verdict').count()) throw new Error('앞 언어의 결과 줄이 남았다')
     })
     await need('파이썬으로 바꾸면 파이썬의 글이다', async () => { await t.choose('python'); await t.expect('say', A, '파이썬 복귀') })
   })
