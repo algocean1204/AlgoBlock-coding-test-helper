@@ -1363,6 +1363,7 @@ async function loadState(open) {
 
 /** 서버가 준 문제 상태를 화면 상태로 옮긴다. 처음 받았을 때만 코드 칸과 문제 글을 채운다(적던 글을 덮지 않게). mode: 상태를 받을 때 보낸 방식 */
 function applyState(data, mode = S.talk) {
+  stateAsked++; // 이보다 먼저 보낸 상태 요청의 늦은 응답은 버린다(언어 바꾸기·체크포인트 되돌리기의 응답을 그 전 상태로 덮지 않게)
   const first = !S.problem;
   S.problem = data.problem;
   TOOLS = data.problem.tools;
