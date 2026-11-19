@@ -49,6 +49,7 @@ async function flow(name, viewport, steps, problem) {
     current: () => page.locator('#blocks > li.block[aria-current="step"]'),
     tutorSays: () => page.locator('#chat-log .msg.tutor'),
     pick: async (way) => {
+      await page.waitForFunction(() => document.getElementById('p-title')?.textContent.trim().length > 0, null, { timeout: 15000 }) // 문제 상태를 받아 그린 뒤에 누른다
       const narrow = await page.locator('#problem-peek').isVisible()
       if (narrow) { await page.locator('#problem-peek').click(); await page.locator('#problem-peek').click() } // 좁은 창: 접힌 문제 띠를 한 번 폈다 접는다
       await page.locator(`#way-tabs [data-way="${way}"]`).click() // 탭 한 번으로 바로 시작한다(시작 단추가 없다)
