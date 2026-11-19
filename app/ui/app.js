@@ -1328,16 +1328,17 @@ function clearProblem(pid) {
 }
 
 const tutorWay = (mode) => mode === "chair" || mode === "guide";
-/* 문제마다 보내지 않은 글과 마지막 결과. 앱이 켜진 동안만 둔다(다른 문제를 열었다 돌아와도 남게). 고른 방식은 서버가 문제마다 남긴다(/api/way) */
-const DRAFTS = ["say", "debug-say", "run-input"], KEPT = {};
+/* 문제마다 보내지 않은 글과 마지막 결과. 앱이 켜진 동안만 둔다(다른 문제를 열었다 돌아와도 남게). 고른 방식은 서버가 문제마다 남긴다(/api/way)
+   langs: 다른 언어에 두고 온 대화·디버그 칸의 글(언어를 바꿀 때 담고, 그 언어로 돌아오면 꺼낸다) */
+const DRAFTS = ["say", "debug-say", "run-input"], TALKS = ["say", "debug-say"], KEPT = {};
 
 async function showCode(pid) {
   show("code");
   if (S.pid !== pid) {
-    if (S.pid && S.problem) KEPT[S.pid] = { result: S.result, ...Object.fromEntries(DRAFTS.map((id) => [id, $(id).value])) };
+    if (S.pid && S.problem) KEPT[S.pid] = { ...KEPT[S.pid], result: S.result, ...Object.fromEntries(DRAFTS.map((id) => [id, $(id).value])) };
     clearProblem(pid);
     const kept = KEPT[pid];
-    if (kept) { S.result = kept.result; for (const id of DRAFTS) $(id).value = kept[id]; }
+    if (kept) { S.result = kept.result; for (const id of DRAFTS) $(id).value = kept[id] || ""; }
   }
   render();
   await loadState(true);
@@ -2467,7 +2468,7 @@ async function loadSolution(force) {
 /** 언어를 바꾼다. 대화·블록 진행은 서버가 언어마다 보관하고 돌아오면 되살린다(묻지 않는다). */
 async function changeLanguage(language) {
   harvest();
-  const pid = S.pid, code = $("code").value, blocks = S.blockCode, talk = S.talk; // 아직 저장하지 않은 블록 칸도 예전 언어의 것으로 함께 보낸다
+  const pid = S.pid, from = S.problem.language, code = $("code").value, blocks = S.blockCode, talk = S.talk; // 아직 저장하지 않은 블록 칸도 예전 언어의 것으로 함께 보낸다
   clearTimeout(codeTimer); clearTimeout(blocksTimer); codeTimer = blocksTimer = null;
   $("code").readOnly = true; // 바꾸는 동안 적은 옛 언어의 코드가 새 언어 칸에 저장되지 않게 잠근다. 다 바꾸면 서버가 준 새 언어의 코드로 채운다
   // 열어 둔 해설 칸·받은 해설·펼친 정답 코드는 새 언어로 다시 받아 그대로 둔다. 기다리는 동안 다시 그리기 전에 적어 둔다
@@ -2477,7 +2478,11 @@ async function changeLanguage(language) {
     .finally(() => { $("code").readOnly = false; });
   if (!r || S.pid !== pid) return;
   if (!r.ok) { $("code-error").textContent = errorNote(r.error).text; $("code-error").hidden = false; return render(); }
+  const langs = ((KEPT[pid] ??= {}).langs ??= {}), back = langs[language] || {}; // 보내지 않은 대화·디버그 글은 서버에 보내지 않고 언어마다 여기 둔다
+  langs[from] = Object.fromEntries(TALKS.map((id) => [id, $(id).value]));
+  delete langs[language];
   clearProblem(pid);
+  for (const id of TALKS) $(id).value = back[id] || "";
   applyState(r.data, talk);
   if (kept.mode === "solo" && kept.open) S.mode = "solo"; // 기억하지 않은 방식(결과에서 연 해설)이어도 그 칸에 머문다
   S.soloOpen = kept.open;
