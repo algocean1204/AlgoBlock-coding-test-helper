@@ -3507,6 +3507,36 @@ def read_write_apart() -> None:
         path.with_suffix(".tmp").unlink(missing_ok=True)
 
 
+def broken_rewritten() -> None:
+    """깨진 파일을 읽고 옮기기 전에 다른 요청이 같은 파일을 새로 쓰면, 새로 쓴 파일을 옮기지 않고 그 값을 돌려준다.
+    해석(잠금 밖)하는 순간에 쓰기를 끼워 순서를 정한다. 그사이 바뀌지 않은 깨진 파일은 지금처럼 옮긴다."""
+    import contextlib
+    import io
+    path, bad = server.DATA / "rewritten.json", '{"n": '
+    wrote = []
+
+    def loads(text, *args, **kwargs):
+        if text == bad and not wrote:  # 이 파일의 첫 해석에서만 끼운다
+            wrote.append(1)
+            server.write_json(path, {"n": 1})
+        return json.loads(text, *args, **kwargs)
+
+    try:
+        path.write_text(bad, encoding="utf-8")
+        with patch.object(server, "json", SimpleNamespace(**{**vars(json), "loads": loads})), contextlib.redirect_stderr(io.StringIO()):
+            assert server.read_json(path, {}) == {"n": 1} and wrote
+        assert json.loads(path.read_text(encoding="utf-8")) == {"n": 1}, "새로 쓴 파일이 옮겨졌다"
+        assert not list(server.DATA.glob("rewritten.json.broken-*")), "새로 쓴 파일을 깨진 파일로 옮겼다"
+        path.write_text(bad, encoding="utf-8")  # 아무도 끼어들지 않으면 깨진 파일을 옮긴다
+        with contextlib.redirect_stderr(io.StringIO()):
+            assert server.read_json(path, {}) == {}
+        kept = list(server.DATA.glob("rewritten.json.broken-*"))
+        assert not path.exists() and len(kept) == 1 and kept[0].read_text(encoding="utf-8") == bad, kept
+    finally:
+        for left in [path, path.with_suffix(".tmp"), *server.DATA.glob("rewritten.json.broken-*")]:
+            left.unlink(missing_ok=True)
+
+
 def way_from_talk() -> None:
     """방식을 고른 적이 없으면 마지막 대화의 방식으로 연다(/api/way 없이 튜터를 시작한 예전 기록)."""
     pid = server.register(GOOD)["id"]
@@ -5128,6 +5158,7 @@ def main() -> None:
     cross_cases()
     way_saved()
     read_write_apart()
+    broken_rewritten()
     way_from_talk()
     mode_switch_keeps()
     way_restart()

@@ -239,7 +239,7 @@ class Refuse(Exception):
 
 def read_json(path: Path, default):
     """없으면 기본값. 깨졌거나 형이 다르면 <이름>.broken-<때>로 옮겨 두고(사용자가 되살릴 수 있게) 기본값.
-    파일 읽기만 바꿔 쓰기와 같은 잠금 안에서 한다(해석은 밖에서)."""
+    파일 읽기와 옮기기는 바꿔 쓰기와 같은 잠금 안에서 한다(해석은 밖에서)."""
     try:
         with FILE_LOCK:
             raw = path.read_bytes()
@@ -251,16 +251,20 @@ def read_json(path: Path, default):
             return value
     except (ValueError, RecursionError):  # JSON 오류, UTF-8 오류, 너무 깊은 중첩
         pass
-    stamp = time.strftime("%Y%m%d-%H%M%S")
-    broken, n = path.with_name(f"{path.name}.broken-{stamp}"), 1
-    while broken.exists():  # 덮어쓰지 않는다
-        broken, n = path.with_name(f"{path.name}.broken-{stamp}-{n}"), n + 1
-    try:
-        path.rename(broken)
-        print(f"{path}을(를) 읽지 못해 {broken.name}(으)로 옮겨 두고 기본값으로 시작합니다.", file=sys.stderr)
-    except OSError as exc:  # 다른 요청이 먼저 옮겼거나 읽기 전용 폴더다
-        print(f"{path}을(를) 읽지 못해 기본값으로 시작합니다(옮기지 못함: {exc}).", file=sys.stderr)
-    return default
+    with FILE_LOCK:
+        try:
+            changed = path.read_bytes() != raw  # 해석하는 사이 다른 요청이 새로 썼으면 그 파일은 옮기지 않는다
+            if not changed:
+                stamp = time.strftime("%Y%m%d-%H%M%S")
+                broken, n = path.with_name(f"{path.name}.broken-{stamp}"), 1
+                while broken.exists():  # 덮어쓰지 않는다
+                    broken, n = path.with_name(f"{path.name}.broken-{stamp}-{n}"), n + 1
+                path.rename(broken)
+                print(f"{path}을(를) 읽지 못해 {broken.name}(으)로 옮겨 두고 기본값으로 시작합니다.", file=sys.stderr)
+        except OSError as exc:  # 다른 요청이 먼저 옮겼거나 읽기 전용 폴더다
+            changed = False
+            print(f"{path}을(를) 읽지 못해 기본값으로 시작합니다(옮기지 못함: {exc}).", file=sys.stderr)
+    return read_json(path, default) if changed else default  # 새로 쓴 파일은 잠금을 놓은 뒤 다시 읽는다(잠금은 다시 들어갈 수 없다)
 
 
 def write_json(path: Path, data) -> None:
