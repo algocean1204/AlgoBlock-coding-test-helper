@@ -102,7 +102,6 @@ const S = {
   blockCode: {}, // 블록 id → {code, by: "me" | "tutor"}
   result: null, // 마지막 채점 결과 또는 {alert: 알림}. 예시 실행이면 run: true, 직접 입력이면 own: true(서버의 error는 오류 글이라 알림과 이름을 나눈다)
   solo: null, // 혼자 풀기: {shown: 본 힌트들, seen, total, sol: 해설, ask: 포기 확인 중, note}
-  langWant: null, // 바꾸려는 언어(확인을 기다리는 중)
   codeAsk: null, // 코드 칸 확인을 기다리는 일: restore(체크포인트로 되돌리기), clear(초기화), pull(블록 코드 가져오기로 바꾸기)
   fillAsk: null, // '이 블록 채우기'로 적은 코드를 바꿀지 묻는 블록 id
   ownAsk: null, // 의자에서 '끝까지 내 방식으로 쓰기'를 묻는 블록 id(찾지 않은 뒤 블록의 이름이 보인다)
@@ -1316,11 +1315,11 @@ const closeAsset = () => { const box = $("asset"); box.close ? box.close() : box
 /* ── 05–08 코드 화면 ── */
 function clearProblem(pid) {
   Object.assign(S, { pid, problem: null, session: null, hasFeedback: false, mode: null, tried: null, startAfter: false, soloOpen: null, talk: "chair", codeTab: "direct", blockCode: {}, result: null,
-    quote: null, sending: null, debug: null, note: {}, codeNote: "", fb: null, solo: null, langWant: null, codeAsk: null, fillAsk: null, ownAsk: null, prepAt: 0, keptNote: false, keptSeen: false, nextUp: null, pullThenRun: false, tagsOpen: false });
+    quote: null, sending: null, debug: null, note: {}, codeNote: "", fb: null, solo: null, codeAsk: null, fillAsk: null, ownAsk: null, prepAt: 0, keptNote: false, keptSeen: false, nextUp: null, pullThenRun: false, tagsOpen: false });
   for (const id of ["code", ...DRAFTS]) $(id).value = "";
   for (const id of ["p-title", "p-text", "explain-box", "tutor-note", "result", "solo-box"]) $(id).innerHTML = "";
   for (const id of ["blocks", "chat-log"]) setHtml($(id), "");
-  for (const id of ["result", "sep-result", "result-big", "debug-sheet", "composer", "fq-composer", "chat-log", "explain-box", "old-feedback", "solo-box", "lang-confirm"]) $(id).hidden = true;
+  for (const id of ["result", "sep-result", "result-big", "debug-sheet", "composer", "fq-composer", "chat-log", "explain-box", "old-feedback", "solo-box"]) $(id).hidden = true;
   splitBig = false; // '결과 크게 보기'는 그 문제의 결과에만
   splitShow();
   $("code")._seen = "";
@@ -1424,9 +1423,8 @@ function renderCode() {
   picker.hidden = !many;
   $("p-lang").textContent = LANG[p.language] || p.language;
   if (picker._key !== key) { picker._key = key; picker.innerHTML = langOptions(p.languages); }
-  if (!S.langWant) picker.value = p.language;
+  picker.value = p.language;
   picker.disabled = !!(S.busy || S.running); // 언어 바꾸기는 두 줄을 다 잡는다
-  $("lang-confirm").hidden = !S.langWant;
   $("code-tools").hidden = !!S.codeAsk;
   $("code-confirm").hidden = !S.codeAsk;
   $("cp-save").disabled = $("code-clear").disabled = !!S.busy;
@@ -2433,15 +2431,16 @@ async function loadSolution(force) {
   if (r.ok && !S.nextUp) await loadNextUp(); // 해설 칸의 ‘다음 문제’
 }
 
+/** 언어를 바꾼다. 대화·블록 진행은 서버가 언어마다 보관하고 돌아오면 되살린다(묻지 않는다). */
 async function changeLanguage(language) {
-  const pid = S.pid, code = $("code").value;
+  harvest();
+  const pid = S.pid, code = $("code").value, blocks = S.blockCode; // 아직 저장하지 않은 블록 칸도 예전 언어의 것으로 함께 보낸다
   clearTimeout(codeTimer); clearTimeout(blocksTimer); codeTimer = blocksTimer = null;
-  S.langWant = null;
   $("code").readOnly = true; // 바꾸는 동안 적은 옛 언어의 코드가 새 언어 칸에 저장되지 않게 잠근다. 다 바꾸면 서버가 준 새 언어의 코드로 채운다
   // 열어 둔 해설 칸·받은 해설·펼친 정답 코드는 새 언어로 다시 받아 그대로 둔다. 기다리는 동안 다시 그리기 전에 적어 둔다
   const kept = { mode: S.mode, open: S.soloOpen, sol: !!(S.solo && S.solo.sol), code: S.solo ? S.solo.codeOpen : undefined };
   // 튜터가 뒤에서 이 문제의 계획을 만드는 중이면 그것이 끝날 때까지 기다린다(길면 30초쯤). 그동안 무엇을 하는지 보여 준다
-  const r = await work(`언어를 바꾸는 중: ${LANG[language] || language}…`, "lang", () => api("/api/language", { id: pid, language, ...(codeEmpty() ? {} : { code }) })) // 시작 코드뿐이면 저장하지 않는다
+  const r = await work(`언어를 바꾸는 중: ${LANG[language] || language}…`, "lang", () => api("/api/language", { id: pid, language, blocks, ...(codeEmpty() ? {} : { code }) })) // 시작 코드뿐이면 저장하지 않는다
     .finally(() => { $("code").readOnly = false; });
   if (!r || S.pid !== pid) return;
   if (!r.ok) { $("code-error").textContent = errorNote(r.error).text; $("code-error").hidden = false; return render(); }
@@ -2454,16 +2453,6 @@ async function changeLanguage(language) {
   else render();
   if (ACCOUNTS) ACCOUNTS.language = language; // 서버가 기억한 마지막 언어(등록 화면의 기본값)
   say(`언어를 바꿨어요: ${LANG[language] || language}`);
-}
-
-function wantLanguage(language) {
-  const s = S.session;
-  harvest();
-  const progressed = s.chair.length || s.guide.length || s.explain || Object.values(S.blockCode).some((b) => (b.code || "").trim()); // 내가 한 것이 있을 때만 묻는다
-  if (!progressed) return void changeLanguage(language);
-  S.langWant = language; // 지워질 것이 있으면 먼저 묻는다
-  render();
-  $("lang-no").focus();
 }
 
 async function startMode() {
@@ -3521,7 +3510,7 @@ document.addEventListener("click", (e) => {
     "panes-reset": paneReset,
     "result-big": () => { splitBig = !splitBig; splitShow(); },
     "problem-peek": () => { const open = $("panes").classList.toggle("peek"); el.setAttribute("aria-expanded", String(open)); el.textContent = open ? "문제 접기" : "문제 펼치기"; },
-    "lang-yes": () => changeLanguage(S.langWant), "lang-no": () => { S.langWant = null; render(); $("p-lang-select").focus(); }, "debug-start": debugStart, "to-feedback": askFeedback, "fb-again": askFeedback, "fb-get": askFeedback,
+    "debug-start": debugStart, "to-feedback": askFeedback, "fb-again": askFeedback, "fb-get": askFeedback,
     "old-feedback": () => { location.hash = `#/p/${S.pid}/feedback`; },
     "goto-line": gotoLine,
     "prep-again": prepAgain, "prep-again-top": prepAgain, "swap-guide": swapGuide,
@@ -3623,7 +3612,7 @@ document.addEventListener("change", (e) => {
     return;
   }
   if (e.target.id === "new-theme") return syncForm();
-  if (e.target.id === "p-lang-select") return void (e.target.value !== S.problem.language && wantLanguage(e.target.value));
+  if (e.target.id === "p-lang-select") return void (e.target.value !== S.problem.language && changeLanguage(e.target.value));
   if (e.target.id === "upd-auto") return void updAct("auto", { on: e.target.checked });
   if (e.target.name === "keyname") { setKeyShown(false); return renderKeyStatus(); }
   if (e.target.name === "scheme") return void chooseScheme(e.target.value);
