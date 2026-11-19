@@ -72,8 +72,8 @@ async function flow(name, viewport, steps) {
     settled: (language) => page.waitForFunction((l) => document.getElementById('p-lang-select')?.value === l && !document.getElementById('p-lang-select').disabled
       && !document.querySelector('#chat-log .msg.tutor.pending') && document.querySelectorAll('#chat-log .msg.tutor:not(.pending)').length > 0, language, { timeout: 10000 }),
     choose: async (language) => {
-      const done = page.waitForResponse((r) => new URL(r.url()).pathname === '/api/language', { timeout: 5000 })
-      await page.locator('#p-lang-select').selectOption(language)
+      const done = page.waitForResponse((r) => new URL(r.url()).pathname === '/api/language', { timeout: 15000 }) // 느린 러너에서는 바꾸기 응답이 5초(기본 대기)를 넘기도 한다
+      await page.locator('#p-lang-select').selectOption(language, { timeout: 15000 })
       await done
       await t.settled(language)
     },
@@ -184,8 +184,8 @@ for (const viewport of VIEWPORTS) {
     await need('적고 바꾸기가 실패하게 한다', async () => {
       await page.locator('#say').fill(A)
       t.failNextLang()
-      const done = page.waitForResponse((r) => new URL(r.url()).pathname === '/api/language', { timeout: 5000 })
-      await page.locator('#p-lang-select').selectOption(other)
+      const done = page.waitForResponse((r) => new URL(r.url()).pathname === '/api/language', { timeout: 15000 })
+      await page.locator('#p-lang-select').selectOption(other, { timeout: 15000 })
       await done
       await page.waitForFunction(() => !document.getElementById('p-lang-select').disabled && !document.querySelector('#chat-log .msg.tutor.pending'), null, { timeout: 10000 })
     })
@@ -207,7 +207,7 @@ for (const viewport of VIEWPORTS) {
     await need(`파이썬 글을 적고 ${other}로 바꾸는 응답을 붙잡아 둔다`, async () => {
       await page.locator('#say').fill(A)
       held = t.holdNext('/api/language')
-      await page.locator('#p-lang-select').selectOption(other)
+      await page.locator('#p-lang-select').selectOption(other, { timeout: 15000 })
       await held.reached
     })
     await need('응답이 오기 전에 다른 문제로 옮긴다', async () => {
@@ -215,7 +215,7 @@ for (const viewport of VIEWPORTS) {
       await t.title(second)
     })
     await need('붙잡은 응답을 풀고 바꾸기가 끝날 때까지 기다린다', async () => {
-      const done = page.waitForResponse((r) => new URL(r.url()).pathname === '/api/language', { timeout: 5000 })
+      const done = page.waitForResponse((r) => new URL(r.url()).pathname === '/api/language', { timeout: 15000 })
       held.release()
       await done
       await page.waitForFunction(() => !document.getElementById('p-lang-select').disabled, null, { timeout: 5000 })

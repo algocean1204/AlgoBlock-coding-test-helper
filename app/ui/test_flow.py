@@ -23,7 +23,6 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 TMP = Path(tempfile.mkdtemp(prefix="algoblock-flow-"))
 (TMP / "data").mkdir()
-(TMP / "data" / "prefs.json").write_text(json.dumps({"tour_seen": True}), encoding="utf-8")  # 처음 안내 창이 화면을 가리지 않게
 os.environ["ALGOBLOCK_UI_DATA"] = str(TMP / "data")  # 사용자 데이터 폴더를 건드리지 않는다
 os.environ["ALGOBLOCK_UI_PREPARE"] = "0"
 for name in ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "ALGOBLOCK_LLM_MODEL", "ALGOBLOCK_LLM_PROVIDER", "ALGOBLOCK_UI_CLIENT", "ALGOBLOCK_EVAL_EXTRA", "ALGOBLOCK_UI_SCENARIOS"):
@@ -134,6 +133,8 @@ def main() -> bool:
         httpd, base = serve(server.Handler)
         try:
             for script in scripts:
+                # 처음 안내 창이 화면을 가리지 않게. 흐름마다 이 값으로 되돌려 앞 흐름이 실패하며 남긴 설정(마지막 언어 등)을 넘기지 않는다
+                (TMP / "data" / "prefs.json").write_text(json.dumps({"tour_seen": True}), encoding="utf-8")
                 with scripted(script):
                     out = run(script, base, shots)
                     left = {task: len(items) for task, items in FAKE.scripts.items() if items}
