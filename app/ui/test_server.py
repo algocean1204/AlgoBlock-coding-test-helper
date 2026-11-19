@@ -3304,6 +3304,75 @@ def way_saved() -> None:
     assert not [f.name for f in server.DATA.glob("*.json") if first in f.read_text(encoding="utf-8")], "지운 문제의 방식 기록이 남았다"
 
 
+def read_write_apart() -> None:
+    """자료 파일 읽기와 바꿔 쓰기가 겹치지 않는다. Windows는 다른 쪽이 연 파일을 바꿔 넣지 못하고, 바꿔 넣는 중인 파일을 열지 못한다(PermissionError).
+    그 규칙을 흉내 내어 한쪽이 파일을 쥔 동안 다른 쪽이 오게 한다. 겹치면 쓰기는 실패하고(요청은 500), 읽기는 저장된 값 대신 기본값을 돌려준다."""
+    import threading
+    path = server.DATA / "apart.json"
+    server.write_json(path, {"n": 0})
+    real_read, real_replace = server.Path.read_bytes, server.Path.replace
+    reading, moving, entered, met = set(), set(), threading.Event(), threading.Event()
+
+    def read_bytes(self):
+        if self != path:
+            return real_read(self)
+        if self in moving:
+            met.set()
+            raise PermissionError(13, "바꿔 넣는 중이다", str(self))
+        reading.add(self)
+        entered.set()
+        try:
+            met.wait(0.2)  # 그사이 바꿔 넣기가 오면 겹친다
+            return real_read(self)
+        finally:
+            reading.discard(self)
+
+    def replace(self, target):
+        target = Path(target)
+        if target != path:
+            return real_replace(self, target)
+        if target in reading:
+            met.set()
+            raise PermissionError(13, "다른 쪽이 읽는 중이다", str(target))
+        moving.add(target)
+        entered.set()
+        try:
+            met.wait(0.2)  # 그사이 읽기가 오면 겹친다
+            return real_replace(self, target)
+        finally:
+            moving.discard(target)
+
+    def overlap(first, second) -> tuple[list, list]:
+        errors, values = [], []
+
+        def run(job):
+            try:
+                values.append(job())
+            except Exception as exc:  # noqa: BLE001 - 겹쳐서 난 오류를 모은다
+                errors.append(exc)
+        entered.clear()
+        met.clear()
+        one = threading.Thread(target=run, args=(first,))
+        one.start()
+        assert entered.wait(2), "먼저 시작한 쪽이 파일에 닿지 않았다"
+        two = threading.Thread(target=run, args=(second,))
+        two.start()
+        one.join()
+        two.join()
+        return errors, values
+
+    try:
+        with patch.object(server.Path, "read_bytes", read_bytes), patch.object(server.Path, "replace", replace):
+            errors, values = overlap(lambda: server.read_json(path, {}), lambda: server.write_json(path, {"n": 1}))  # 읽는 중에 바꿔 쓰기
+            assert not errors and {"n": 0} in values, (errors, values)
+            errors, values = overlap(lambda: server.write_json(path, {"n": 2}), lambda: server.read_json(path, {}))  # 바꿔 쓰는 중에 읽기
+            assert not errors and {"n": 2} in values, (errors, values)  # 기본값({})이 아니라 저장된 값
+        assert server.read_json(path, {}) == {"n": 2}
+    finally:
+        path.unlink(missing_ok=True)
+        path.with_suffix(".tmp").unlink(missing_ok=True)
+
+
 def way_from_talk() -> None:
     """방식을 고른 적이 없으면 마지막 대화의 방식으로 연다(/api/way 없이 튜터를 시작한 예전 기록)."""
     pid = server.register(GOOD)["id"]
@@ -4687,6 +4756,7 @@ def main() -> None:
     read_check()
     cross_cases()
     way_saved()
+    read_write_apart()
     way_from_talk()
     mode_switch_keeps()
     way_restart()
