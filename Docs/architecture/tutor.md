@@ -5,12 +5,13 @@
 ## 입구
 
 - 공개 진입점은 `Tutor`, `extract`, `IngestError`, `Outcome`, `graph`, `run`이다.
-- 요청 종류는 `explain`, `turn`, `followup`, `fill`, `feedback`, `debug`, `prepare` 7개다. 저장은 성공했을 때만 한다. 체크포인터는 쓰지 않는다.
+- 요청 종류는 `explain`, `turn`, `fill`, `feedback`, `debug`, `prepare` 6개다. 저장은 성공했을 때만 한다. 체크포인터는 쓰지 않는다.
+- 예전에 남긴 꼬리질문 기록(`message.thread`가 `quote:<말 id>`)은 세션 응답의 `followups`로 읽기만 한다. 새로 쓰는 요청은 없다.
 - 모델에서 예외가 나면 그래프 밖에서 오류 응답으로 바뀐다. 저장 노드에 닿지 않으므로 아무것도 저장되지 않는다.
 
 ## 에이전트
 
-에이전트는 13개(A1–A13)이고, A13이 디버그다. 한 폴더가 LangGraph 그래프 하나다. 노드 수는 그 그래프의 노드 개수다.
+에이전트는 12개(A1–A13, A8은 비운 번호)이고, A13이 디버그다. 한 폴더가 LangGraph 그래프 하나다. 노드 수는 그 그래프의 노드 개수다.
 
 | 표시 | 이름 | 폴더 | 하는 일 | 노드 수 |
 |---|---|---|---|---|
@@ -21,7 +22,6 @@
 | A5 | 해설 | `explain/` | 해설을 쓰고 절 제목을 검사한다 | 2 |
 | A6 | 생각하는 의자 | `chair/` + `turn/` | 질문으로 생각을 이끄는 대화 | 6 |
 | A7 | 가이드 | `guide/` + `turn/` | A6과 같은 그래프. 판정 규칙과 프롬프트만 다르다 | 6 |
-| A8 | 꼬리질문 | `followup/` | 꼬리질문에 답한다 | 3 |
 | A9 | 블록 채우기 | `fill/` | 블록 코드를 채운다 | 2 |
 | A10 | 피드백 | `feedback/` | 제출 결과를 분석해 피드백을 쓴다 | 4 |
 | A11 | 나가는 글 검사 | `output_check/` | 나가는 말과 블록 코드를 마지막으로 검사한다 | 2 |
@@ -32,7 +32,7 @@
 
 ## 요청 하나의 흐름
 
-메인 그래프는 `context → request_check → plan → 기능 → output_check → save` 순서다. 기능은 `explain`, `chair`, `guide`, `followup`, `fill`, `feedback`, `debug` 중 하나다.
+메인 그래프는 `context → request_check → plan → 기능 → output_check → save` 순서다. 기능은 `explain`, `chair`, `guide`, `fill`, `feedback`, `debug` 중 하나다.
 
 - `context` 뒤: 오류이거나 저장된 결과가 있으면 끝낸다. 해설이나 같은 제출의 피드백이 있으면 그것을 쓴다. 모델을 부르지 않는다.
 - `request_check` 뒤: `prepare`는 계획이 없을 때만 `plan`으로 간다. `debug`는 계획 없이 기능으로 간다. 나머지는 계획이 없을 때만 `plan`으로 간다. 계획을 만든 뒤 사용자가 코드를 먼저 썼어도 다시 짜지 않고 준비해 둔 순서로 시작한다.

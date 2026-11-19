@@ -21,7 +21,7 @@ def check_request(state: MainState) -> dict:
     kind = state["request"].kind
     if kind not in KINDS:
         return fail("validation", "알 수 없는 요청이에요. 화면을 새로 열고 다시 해 주세요.")
-    return {"turn": _turn, "followup": _followup, "fill": _fill, "feedback": _feedback, "debug": _debug}.get(kind, lambda s: {})(state)
+    return {"turn": _turn, "fill": _fill, "feedback": _feedback, "debug": _debug}.get(kind, lambda s: {})(state)
 
 
 def _debug(state: MainState) -> dict:
@@ -55,17 +55,6 @@ def _turn(state: MainState) -> dict:
         current = _current_block(state)
         if not (req.code or "").strip() or ((current is None or req.block_id != current.id) and found_check(state) is None):
             return fail("validation", "이 블록에 코드를 적은 뒤 확인해 주세요.")
-    return {}
-
-
-def _followup(state: MainState) -> dict:
-    req = state["request"]
-    if req.mode not in {"chair", "guide"}:
-        return fail("validation", "푸는 방식이 맞지 않아요. 방식을 다시 골라 주세요.")
-    if not req.quote_id or not (req.text or "").strip():
-        return fail("validation", "물어볼 말을 골라 질문을 적어 주세요.")
-    if not any(item.id == req.quote_id and item.role == "service" for item in mode_messages(state)):
-        return fail("not_found", "물어볼 말을 찾지 못했어요. 화면을 새로 열고 다시 해 주세요.")
     return {}
 
 

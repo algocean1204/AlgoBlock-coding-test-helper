@@ -1,4 +1,4 @@
-"""에이전트 13개(A1–A13)와 단계 번호가 정해진 대로인지, 그래프 경계가 지켜지는지."""
+"""에이전트 12개(A1–A13, A8은 비운 번호)와 단계 번호가 정해진 대로인지, 그래프 경계가 지켜지는지."""
 
 import re
 import unittest
@@ -6,10 +6,10 @@ import unittest
 from . import fakes
 from ..main import AGENTS, graph
 
-# 에이전트별 단계 수: A1 5, A2 2, A3 1, A4 5, A5 2, A6·A7 6, A8 3, A9 2, A10 4, A11 2, A12 3, A13 6(디버그)
+# 에이전트별 단계 수: A1 5, A2 2, A3 1, A4 5, A5 2, A6·A7 6, A9 2, A10 4, A11 2, A12 3, A13 6(디버그)
 DESIGN = {
     "ingest": 5, "context": 2, "request_check": 1, "plan": 8, "explain": 2, "chair": 6, "guide": 6,
-    "followup": 3, "fill": 2, "feedback": 4, "debug": 6, "output_check": 2, "save": 3,
+    "fill": 2, "feedback": 4, "debug": 6, "output_check": 2, "save": 3,
 }
 
 

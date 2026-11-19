@@ -19,10 +19,8 @@ def strip_fence(text: str) -> str:
 def guard(state: MainState) -> dict:
     result = dict(state.get("result") or {})
     kind = state["request"].kind
-    if kind in {"turn", "followup", "debug"} and "```" in (result.get("reply") or "") and not result.pop("boxed", False):
+    if kind in {"turn", "debug"} and "```" in (result.get("reply") or "") and not result.pop("boxed", False):
         return fail("invalid_output", "말풍선에 코드 펜스가 있습니다.")
-    if kind == "followup":
-        result.pop("advance", None)
     if kind == "feedback" and "```" in (result.get("similar_hint") or ""):
         return fail("invalid_output", "힌트에 코드 펜스가 있습니다.")
     if kind == "fill":

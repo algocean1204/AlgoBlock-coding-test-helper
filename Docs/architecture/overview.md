@@ -44,7 +44,7 @@ flowchart LR
 | 폴더 | 책임 |
 |---|---|
 | `app/ui/` | 화면(HTML·JS·CSS), 로컬 HTTP 서버, 창, 기본 문제와 케이스 도구 |
-| `app/tutor/` | LangGraph 튜터 엔진(`Tutor`). 에이전트 13개(A1–A13, 표는 [튜터 엔진](tutor.md)에 있다), 에이전트마다 폴더 하나 |
+| `app/tutor/` | LangGraph 튜터 엔진(`Tutor`). 에이전트 12개(A1–A13, A8은 비운 번호, 표는 [튜터 엔진](tutor.md)에 있다), 에이전트마다 폴더 하나 |
 | `app/tutor/store/` | SQLite 표 12개, 스키마 버전(현재 9) 처리, 저장소 |
 | `app/tutor/knowledge/` | 온톨로지, 벡터 색인, 임베딩 |
 | `app/tutor/llm/` | 엔진 쪽 모델 입구, 과정 표, 시험용 가짜 모델 |
