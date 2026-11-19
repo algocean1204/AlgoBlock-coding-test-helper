@@ -3077,15 +3077,26 @@ class Handler(BaseHTTPRequestHandler):
             return 403, "forbidden", "이 화면에서 보낸 요청만 받아요."
         return None
 
+    def _reject(self, status: int, code: str, message: str) -> None:
+        """본문을 해석하기 전에 거절한다. 응답을 쓴 뒤 상한 안의 남은 본문은 읽어 버린다(읽지 않은 데이터를 남긴 채 닫으면
+        Windows는 연결을 끊어 보낸 쪽이 거절 응답을 읽지 못한다). 길이가 깨졌거나 상한보다 크면 읽지 않고 닫는다."""
+        self._send(status, {"detail": {"code": code, "message": message}})
+        size = self.headers.get("Content-Length") or "0"
+        if size.isdigit() and int(size) <= MAX_BODY:
+            try:
+                self.rfile.read(int(size))
+            except OSError:  # 응답은 이미 보냈다
+                pass
+
     def do_POST(self):
         refused = self._refused()
         if refused:
-            return self._send(refused[0], {"detail": {"code": refused[1], "message": refused[2]}})
+            return self._reject(*refused)
         size = self.headers.get("Content-Length") or "0"
         if not size.isdigit():  # 숫자가 아니거나 음수(-1이면 끝까지 읽으려다 멈춘다)
-            return self._send(400, {"detail": {"code": "validation", "message": "요청을 읽지 못했어요."}})
+            return self._reject(400, "validation", "요청을 읽지 못했어요.")
         if int(size) > (MAX_FILE_BODY if self.path in FILE_PATHS else MAX_BODY):
-            return self._send(413, {"detail": {"code": "validation", "message": "보낸 내용이 너무 커요. 줄여서 다시 보내 주세요."}})
+            return self._reject(413, "validation", "보낸 내용이 너무 커요. 줄여서 다시 보내 주세요.")
         began, calls = time.monotonic(), len(CLI.calls)
         try:
             try:
@@ -3110,7 +3121,7 @@ class Handler(BaseHTTPRequestHandler):
         self._send(status, payload)
 
     def _not_allowed(self):
-        self._send(405, {"detail": {"code": "method_not_allowed", "message": "이 방식의 요청은 받지 않아요."}})
+        self._reject(405, "method_not_allowed", "이 방식의 요청은 받지 않아요.")
 
     do_PUT = do_DELETE = do_PATCH = do_OPTIONS = do_TRACE = do_CONNECT = _not_allowed
 
