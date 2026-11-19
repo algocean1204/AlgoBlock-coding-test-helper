@@ -6,6 +6,7 @@
 //   읽는 글: 튜터 말 요소의 aria-label '블록 N에 대한 튜터 말', 표의 접근 가능한 이름(aria-label이 있으면 그것, 없으면 글)은 '블록 N'으로 시작한다.
 //   누르면: 그 블록 칸(`#blocks > li`의 N번째)이 보이고 코드 칸에 초점이 간다(칸이 있을 때).
 //   block_index가 없는 옛 말에는 표가 없다. 블록이 바뀔 때만 뜨던 구분선(.turn)은 없다. 옛 꼬리질문 기록은 읽기 전용으로 보인다.
+//   다시 짜기 장면(replan): 다시 짠 계획의 첫 말(move 'replan')보다 앞의 말(옛 계획의 번호)에는 표가 없고, 그 말부터는 지금 계획의 표가 붙는다.
 import { launch } from '../stageshow/scripts/browser.mjs'
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
@@ -28,13 +29,19 @@ const CHAT = [
   svc('m4', '다음 질문이에요. 어떻게 되풀이할까요?', 1, 'open'), svc('m5', '이 자리에서 무엇을 가를까요?', 2, 'open'),
   { id: 'm6', role: 'service', text: '옛 기록의 말이에요.', at, block_index: null, move: null },
 ]
-const WITH_INDEX = ['m1', 'm3', 'm4', 'm5'], EXPECT_NO = { m1: 1, m3: 1, m4: 2, m5: 3 }
+const WITH_INDEX = ['m1', 'm3', 'm4', 'm5'], EXPECT_NO = { m1: 1, m3: 1, m4: 2, m5: 3, r1: 1 }
+// 다시 짜기 장면: 옛 계획의 말 둘(지금 계획에도 있는 번호) 뒤에 다시 짠 계획의 첫 말이 오고 CHAT이 이어진다
+const OLD_PLAN = [
+  svc('o1', '옛 계획의 질문이에요. 무엇을 셀까요?', 2, 'open'), usr('o2', '정렬해서 앞에서부터 보면 돼요', 2), svc('o3', '옛 계획의 다음 질문이에요.', 3),
+  svc('r1', '말한 방법으로 다시 짰어요. 무엇부터 볼까요?', 0, 'replan'),
+]
 
 const browser = await launch()
 let failed = 0
 
-async function flow(way, viewport) {
-  const tag = `block_badge-${way}-${viewport.width}x${viewport.height}`
+async function flow(way, viewport, scenario) {
+  const tag = `block_badge-${scenario}-${way}-${viewport.width}x${viewport.height}`
+  const chat = scenario === 'replan' ? [...OLD_PLAN, ...CHAT] : CHAT, withIndex = scenario === 'replan' ? ['r1', ...WITH_INDEX] : WITH_INDEX
   const context = await browser.newContext({ viewport })
   context.setDefaultTimeout(4000)
   const page = await context.newPage()
@@ -57,7 +64,7 @@ async function flow(way, viewport) {
         total = s.blocks.length
         s.blocks = s.blocks.map((b, i) => ({ ...b, kind: KINDS[i % 4], name: i < 2 || way === 'guide' ? `시험블록${i + 1}` : null })) // 의자에서 3번째 블록은 아직 못 찾았다
         s.open_count = 3
-        s.chair = s.guide = CHAT
+        s.chair = s.guide = chat
         s.followups = [{ quote_id: 'm4', messages: [usr('f1', OLD_ASK, null), { ...svc('f2', OLD_ANSWER, null, 'followup') }] }]
         return route.fulfill({ response: res, json })
       }
@@ -71,7 +78,7 @@ async function flow(way, viewport) {
   })
   let stuck = false
   const need = async (what, fn) => { if (stuck) return; try { await fn() } catch (e) { stuck = true; problems.push(`${what}: ${String(e.message).split('\n')[0]}`) } }
-  const check = async (what, fn) => { try { await fn() } catch (e) { problems.push(`${what}: ${String(e.message).split('\n')[0]}`) } } // 확인은 서로 막지 않는다(어느 것이 실패하는지 모두 본다)
+  const check = async (what, fn) => { if (stuck) return; try { await fn() } catch (e) { problems.push(`${what}: ${String(e.message).split('\n')[0]}`) } } // 확인은 서로 막지 않는다(어느 것이 실패하는지 모두 본다). 화면이 열리지 않았으면 이미 실패라 건너뛴다
   const r = await context.request.post(`${base}/api/reset`, { data: { id: PID }, timeout: 30000 }) // 준비 요청: 화면을 기다리는 4초 기본값과 따로(느린 러너)
   if (!r.ok()) problems.push(`reset ${r.status()}`)
   await page.goto(`${base}/#/p/${PID}`)
@@ -92,14 +99,23 @@ async function flow(way, viewport) {
     if (await page.locator('#chat-log textarea').count()) throw new Error('대화 칸 안에 입력 칸이 있다')
   })
   await check('블록 번호가 있는 튜터 말마다 표가 하나씩 있고 글이 맞다', async () => {
-    if ((await page.locator('#chat-log .block-badge').count()) !== WITH_INDEX.length) throw new Error(`표 ${await page.locator('#chat-log .block-badge').count()}개, 기대 ${WITH_INDEX.length}`)
-    for (const id of WITH_INDEX) {
+    if ((await page.locator('#chat-log .block-badge').count()) !== withIndex.length) throw new Error(`표 ${await page.locator('#chat-log .block-badge').count()}개, 기대 ${withIndex.length}`)
+    for (const id of withIndex) {
       const badge = msg(id).locator('button.block-badge')
       if ((await badge.count()) !== 1) throw new Error(`${id}: button.block-badge ${await badge.count()}개`)
       const n = EXPECT_NO[id], want = `블록 ${n}/${total} · ${LABEL[KINDS[(n - 1) % 4]]}`
       const got = (await badge.innerText()).replace(/\s+/g, ' ').trim()
       if (got !== want) throw new Error(`${id}: 표 글 ${JSON.stringify(got)}, 기대 ${JSON.stringify(want)}`)
     }
+  })
+  if (scenario === 'replan') await check('다시 짜기 앞의 옛 계획 말에는 표가 없고, 다시 짜기 말부터 지금 계획의 표가 붙는다', async () => {
+    for (const id of ['o1', 'o3']) {
+      if ((await msg(id).count()) !== 1) throw new Error(`${id}: 옛 계획 말이 그려지지 않았다`)
+      if (await msg(id).locator('.block-badge').count()) throw new Error(`${id}: 옛 계획 말에 표가 있다(${await msg(id).locator('.block-badge').first().innerText()})`)
+      if (/^블록 \d/.test((await msg(id).getAttribute('aria-label')) || '')) throw new Error(`${id}: 옛 계획 말에 블록 번호 aria-label이 붙었다`)
+    }
+    const got = (await msg('r1').locator('button.block-badge').innerText()).replace(/\s+/g, ' ').trim(), want = `블록 1/${total} · ${LABEL[KINDS[0]]}`
+    if (got !== want) throw new Error(`다시 짜기 말의 표 글 ${JSON.stringify(got)}, 기대 ${JSON.stringify(want)}`)
   })
   await check('의자에서 찾기 전 블록의 표에는 이름이 없다', async () => {
     const got = (await msg('m5').locator('.block-badge').innerText())
@@ -111,7 +127,7 @@ async function flow(way, viewport) {
     if (!(await msg('m6').innerText()).includes('옛 기록의 말이에요')) throw new Error('옛 말의 글이 없다')
   })
   await check('읽는 글: 튜터 말은 "블록 N에 대한 튜터 말", 표는 "블록 N"으로 읽힌다', async () => {
-    for (const id of WITH_INDEX) {
+    for (const id of withIndex) {
       const n = EXPECT_NO[id]
       const label = await msg(id).getAttribute('aria-label')
       if (label !== `블록 ${n}에 대한 튜터 말`) throw new Error(`${id}: aria-label ${JSON.stringify(label)}`)
@@ -176,6 +192,6 @@ async function flow(way, viewport) {
   await context.close()
 }
 
-for (const viewport of VIEWPORTS) for (const way of ['chair', 'guide']) await flow(way, viewport)
+for (const viewport of VIEWPORTS) for (const way of ['chair', 'guide']) for (const scenario of ['plain', 'replan']) await flow(way, viewport, scenario)
 await browser.close()
 process.exit(failed ? 1 : 0)
