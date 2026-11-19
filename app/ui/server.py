@@ -2833,6 +2833,8 @@ def handle(path: str, body: dict) -> tuple[int, dict]:
 
     p = problem(body)
     pid = p.id
+    if path == "/api/prep":  # 준비 중 폴링: 준비·대조 표시만 돌려준다(전체 상태는 값이 바뀔 때만 화면이 다시 받는다)
+        return 200, {"id": pid, "preparing": pid in PREPARING, "checking": pid in CHECKING}
     with tutor() as t:
         if t.store.load(pid) is None:  # 기본 문제는 처음 열 때 엔진 저장소에 넣는다(마지막으로 고른 언어로)
             t.store.put_problem(pid, first_language(p), p.text, title=p.title)
