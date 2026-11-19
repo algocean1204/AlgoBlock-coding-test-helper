@@ -2002,12 +2002,13 @@ def change_language(t, p, language: str, code: str | None, blocks: dict | None =
     write_json(CODES_FILE, {**codes, pid: mine})
     keep_plan(t, pid, ctx.language)
     try:
+        clear_blocks(pid)  # 담아 둔 옛 언어의 칸 글·내 방식을 먼저 비운다(뒤의 칸 파일 쓰기가 실패해도 새 언어 칸에 옛 언어 글이 남지 않는다)
         with t.store.conn:  # 지우기·언어와 코드·되살리기를 한 트랜잭션으로(중간에 실패하면 예전 언어의 계획과 대화가 저장소에 그대로 남는다)
             drop_rows(t, pid)
             t.store.conn.execute("UPDATE problem SET language=?, direct_code=? WHERE id=?", (language, mine.get(language, ""), pid))
             talk = restore_plan(t, pid, language)
     except BaseException:
-        unkeep_talk(pid, ctx.language)  # 저장소가 그대로이니 방금 담은 대화 사본을 뺀다(남기면 바로잡기가 그 뒤에 고친 칸 글을 옛 사본으로 덮는다)
+        settle_left(pid, ctx.language)  # 저장소가 그대로이니 비운 칸 글·내 방식을 방금 담은 사본으로 되돌리고 사본을 뺀다(남기면 바로잡기가 그 뒤에 고친 칸 글을 덮는다)
         raise
     LANG[pid] = language
     forget_plan(pid)
@@ -2090,14 +2091,9 @@ def settle_talk(pid: str, language: str, talk: dict) -> None:
     rows = {key: value for key, value in read_json(BLOCKS_FILE, {}).items() if key != pid}
     write_json(BLOCKS_FILE, {**rows, pid: blocks} if blocks else rows)
     own_way(pid, talk.get("own_way") is True)
-    unkeep_talk(pid, language)  # 되살린 대화는 보관분에서 뺀다(지금 언어의 대화는 저장소에만 있다)
-
-
-def unkeep_talk(pid: str, language: str) -> None:
-    """보관분에서 그 언어의 talk를 뺀다."""
     saved = read_json(KEPT_FILE, {})
     kept = (saved.get(pid) or {}).get(language)
-    if isinstance(kept, dict) and "talk" in kept:
+    if isinstance(kept, dict) and "talk" in kept:  # 되살린 대화는 보관분에서 뺀다(지금 언어의 대화는 저장소에만 있다)
         del kept["talk"]
         write_json(KEPT_FILE, saved)
 
@@ -2124,6 +2120,11 @@ def drop_plan(t, pid: str, *more: str) -> None:
     with t.store.conn:
         drop_rows(t, pid, *more)
     forget_plan(pid)
+    clear_blocks(pid)
+
+
+def clear_blocks(pid: str) -> None:
+    """블록 칸 글과 '끝까지 내 방식으로'를 비운다."""
     write_json(BLOCKS_FILE, {key: value for key, value in read_json(BLOCKS_FILE, {}).items() if key != pid})
     own_way(pid, False)
 
