@@ -113,7 +113,7 @@ async function flow(name, viewport, steps, opts = {}) {
     if (!r.ok()) problems.push(`reset ${r.status()}`)
   } catch (e) { problems.push(`reset: ${String(e.message).split('\n')[0]}`) }
   if (opts.prepOn) t.prepOn = true
-  await page.goto(`${base}/#/p/${problem.id}`)
+  await page.goto(`${base}/#/p/${problem.id}`, { timeout: 30000 })
   Object.assign(t, {
     blocks: () => page.locator('#blocks > li'),
     current: () => page.locator('#blocks > li.block[aria-current="step"]'),
@@ -245,7 +245,7 @@ for (const viewport of VIEWPORTS) {
       if (t.count(isRun) !== 1) throw new Error(`실행 ${t.count(isRun)}회`)
     })
     await need('문제 글 칸: Enter는 줄바꿈이고 등록하지 않는다', async () => {
-      await page.goto(`${base}/#/new`)
+      await page.goto(`${base}/#/new`, { timeout: 30000 })
       await page.locator('#new-text').waitFor({ state: 'visible', timeout: 5000 })
       await page.locator('#new-text').fill('문제')
       await page.locator('#new-text').press('End')

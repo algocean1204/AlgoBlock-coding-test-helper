@@ -55,7 +55,7 @@ async function flow(name, viewport, steps) {
   })
   const post = async (path, data) => { const r = await context.request.post(`${base}${path}`, { data, timeout: 30000 }); if (!r.ok()) problems.push(`${path} ${r.status()}`) }
   for (const p of [problem, second]) { await post('/api/language', { id: p.id, language: 'python' }); await post('/api/reset', { id: p.id }) }
-  await page.goto(`${base}/#/p/${problem.id}`)
+  await page.goto(`${base}/#/p/${problem.id}`, { timeout: 30000 })
   const t = {
     page, need,
     failNextLang: () => { failLang = true },
