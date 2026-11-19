@@ -3035,6 +3035,12 @@ class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
     disable_nagle_algorithm = True  # 머리와 본문을 따로 쓴다: 이어 쓰는 연결에서 본문이 상대의 늦은 ACK를 기다리지 않게
 
+    def handle(self):
+        try:
+            super().handle()
+        except ConnectionError:  # 상대가 연결을 끊었다(쉬던 연결을 버림, 응답을 쓰는 중에 떠남): 서버의 handle_error가 자취를 찍지 않게 조용히 끝낸다
+            pass  # 요청 처리 중의 오류는 do_POST가 이미 500으로 바꿔 자취를 남겼다
+
     def _send(self, status: int, payload, kind: str = "application/json", headers: dict | None = None, close: bool = False) -> None:
         data = payload if isinstance(payload, bytes) else json.dumps(payload, ensure_ascii=False).encode("utf-8")
         self.send_response(status)
@@ -3043,8 +3049,9 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Cache-Control", "no-store")
         for name, value in (headers or {}).items():
             self.send_header(name, value)
-        if close or "Transfer-Encoding" in self.headers or (self.command == "GET" and self.headers.get("Content-Length", "0") != "0"):
-            self.send_header("Connection", "close")  # 남은 본문을 다음 요청으로 읽지 않게(close_connection도 선다)
+        if (close or "Transfer-Encoding" in self.headers or len(self.headers.get_all("Content-Length", ())) > 1
+                or (self.command == "GET" and self.headers.get("Content-Length", "0") != "0")):
+            self.send_header("Connection", "close")  # 남은 본문을 다음 요청으로 읽지 않게(길이가 둘 이상이면 어디까지가 본문인지 모른다. close_connection도 선다)
         self.end_headers()
         self.wfile.write(data)
 

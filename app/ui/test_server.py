@@ -3078,6 +3078,82 @@ def keep_alive() -> None:
         httpd.server_close()
 
 
+def quiet_disconnects() -> None:
+    """상대가 연결을 끊어 난 오류(쉬던 연결을 RST로 끊음, 응답을 쓰는 중에 끊음)는 자취를 남기지 않고, 그 밖의 오류는 지금처럼 남긴다.
+    Content-Length가 둘 이상인 요청은 응답 뒤에 닫는다(남은 바이트를 같은 연결의 다음 요청으로 읽지 않게)."""
+    import contextlib
+    import io
+    import socket
+    import struct
+    import threading
+    from http.client import HTTPConnection
+
+    done, asked, gone = threading.Semaphore(0), threading.Event(), threading.Event()
+
+    class Watched(server.ThreadingHTTPServer):
+        def shutdown_request(self, request):  # 오류 출력(handle_error) 뒤에 불린다: 연결 하나가 끝까지 처리됐다
+            super().shutdown_request(request)
+            done.release()
+
+    httpd = Watched(("127.0.0.1", 0), server.Handler)
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+
+    def connect() -> HTTPConnection:
+        return HTTPConnection("127.0.0.1", httpd.server_port, timeout=60)
+
+    def reset(conn: HTTPConnection) -> None:  # FIN 대신 RST로 끊는다(브라우저가 연결을 버릴 때처럼)
+        conn.sock.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0))
+        conn.close()
+
+    def slow(path, body):  # 모델을 오래 기다리는 사이에 상대가 떠난다
+        asked.set()
+        gone.wait(60)
+        return 200, {"text": "x" * (16 << 20)}  # 소켓 버퍼보다 크게: 쓰는 중에 끊긴 것을 알아챈다
+
+    try:
+        with contextlib.redirect_stderr(io.StringIO()) as err:
+            conn = connect()
+            conn.request("GET", "/")
+            assert conn.getresponse().read()
+            reset(conn)  # 쉬던 연결을 끊는다
+            assert done.acquire(timeout=60), "서버가 끊긴 연결을 끝내지 못했다"
+            with patch.object(server, "handle", slow):
+                conn = connect()
+                conn.request("POST", "/api/problems", b"{}", {"Content-Type": "application/json"})
+                assert asked.wait(60)
+                reset(conn)
+                gone.set()
+                assert done.acquire(timeout=60), "서버가 응답을 쓰다 끊긴 연결을 끝내지 못했다"
+            quiet = err.getvalue()
+            assert "Traceback" not in quiet, quiet
+            with patch.object(server, "scheme_pref", lambda: 1 / 0):  # 응답 전에 난 오류: 지금처럼 자취를 남긴다
+                with socket.create_connection(("127.0.0.1", httpd.server_port), timeout=60) as raw:
+                    raw.sendall(b"GET / HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n")
+                    assert raw.recv(1) == b""
+                assert done.acquire(timeout=60)
+            with patch.object(server, "handle", lambda path, body: (_ for _ in ()).throw(ConnectionResetError("model"))):  # 요청 처리 중의 연결 오류는 500이다
+                conn = connect()
+                conn.request("POST", "/api/problems", b"{}", {"Content-Type": "application/json"})
+                assert conn.getresponse().status == 500
+                conn.close()
+                assert done.acquire(timeout=60)
+            conn = connect()
+            conn.putrequest("POST", "/api/problems")
+            for name, value in (("Content-Type", "application/json"), ("Content-Length", "2"), ("Content-Length", "5")):
+                conn.putheader(name, value)
+            conn.endheaders(b"{}")
+            res = conn.getresponse()
+            assert res.status == 200 and res.getheader("Connection") == "close" and res.read() and conn.sock is None, res.getheaders()
+            conn.close()
+            assert done.acquire(timeout=60)
+        loud = err.getvalue()[len(quiet):]
+        assert "ZeroDivisionError" in loud and "ConnectionResetError: model" in loud, loud
+    finally:
+        gone.set()
+        httpd.shutdown()
+        httpd.server_close()
+
+
 def b64(data: bytes) -> str:
     return base64.b64encode(data).decode()
 
@@ -5254,6 +5330,7 @@ def main() -> None:
         http()
         reject_drain()
         keep_alive()
+        quiet_disconnects()
         upload()
         assert not fake.calls, fake.calls  # 파일 읽기와 원본 보관도 모델을 부르지 않는다
     try:
