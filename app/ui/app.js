@@ -111,6 +111,7 @@ const S = {
   fb: null, wantFeedback: false,
   busy: null, // AI 줄의 기다림 {label, where, t0}: 대화·시작·채우기·해설·피드백·디버그와 그 밖의 일
   running: null, // 실행 줄의 기다림(예시 실행·제출). AI 줄과 서로 기다리지 않는다
+  skipping: false, // '이대로 넘어가기'·'끝까지 내 방식으로 쓰기' 요청이 끝나지 않았다(두 줄과 따로. 그동안 두 단추를 잠근다)
 };
 
 /* ── 서버 ── */
@@ -1328,16 +1329,17 @@ function clearProblem(pid) {
 }
 
 const tutorWay = (mode) => mode === "chair" || mode === "guide";
-/* 문제마다 보내지 않은 글과 마지막 결과. 앱이 켜진 동안만 둔다(다른 문제를 열었다 돌아와도 남게). 고른 방식은 서버가 문제마다 남긴다(/api/way) */
-const DRAFTS = ["say", "debug-say", "run-input"], KEPT = {};
+/* 문제마다 보내지 않은 글과 마지막 결과. 앱이 켜진 동안만 둔다(다른 문제를 열었다 돌아와도 남게). 고른 방식은 서버가 문제마다 남긴다(/api/way)
+   langs: 다른 언어에 두고 온 대화·디버그 칸의 글(언어를 바꿀 때 담고, 그 언어로 돌아오면 꺼낸다) */
+const DRAFTS = ["say", "debug-say", "run-input"], TALKS = ["say", "debug-say"], KEPT = {};
 
 async function showCode(pid) {
   show("code");
   if (S.pid !== pid) {
-    if (S.pid && S.problem) KEPT[S.pid] = { result: S.result, ...Object.fromEntries(DRAFTS.map((id) => [id, $(id).value])) };
+    if (S.pid && S.problem) KEPT[S.pid] = { ...KEPT[S.pid], result: S.result, ...Object.fromEntries(DRAFTS.map((id) => [id, $(id).value])) };
     clearProblem(pid);
     const kept = KEPT[pid];
-    if (kept) { S.result = kept.result; for (const id of DRAFTS) $(id).value = kept[id]; }
+    if (kept) { S.result = kept.result; for (const id of DRAFTS) $(id).value = kept[id] || ""; }
   }
   render();
   await loadState(true);
@@ -1637,9 +1639,9 @@ function renderBlocks() {
         ${result}
         <div class="block-actions">
           ${check ? `<button type="button" class="btn small" data-check="${esc(b.id)}" data-model${current ? "" : ` aria-label="블록 ${n} 코드 확인"`}>블록 코드 확인</button>` : ""}
-          ${skip ? `<button type="button" class="btn quiet small" data-skip="${esc(b.id)}">이대로 넘어가기</button>` : ""}
-          ${skip && !S.ownWay ? (S.ownAsk === b.id ? `<span class="confirm"><span>아직 찾지 않은 뒤 블록이 모두 열려요. 마지막 블록을 뺀 블록은 이름도 보여요.</span><button type="button" class="btn danger small" data-own-yes="${esc(b.id)}">그래도 열기</button><button type="button" class="btn quiet small" data-own-no="${esc(b.id)}">더 생각해 보기</button></span>`
-            : `<button type="button" class="btn quiet small" data-own="${esc(b.id)}" title="이 블록은 넘어가고 남은 블록을 모두 열어요. 블록마다 확인하지 않고, 다 쓴 뒤 ‘모아서 실행’으로 확인해요">끝까지 내 방식으로 쓰기</button>`) : ""}
+          ${skip ? `<button type="button" class="btn quiet small" data-skip="${esc(b.id)}"${S.skipping ? ' aria-disabled="true"' : ""}>이대로 넘어가기</button>` : ""}
+          ${skip && !S.ownWay ? (S.ownAsk === b.id ? `<span class="confirm"><span>아직 찾지 않은 뒤 블록이 모두 열려요. 마지막 블록을 뺀 블록은 이름도 보여요.</span><button type="button" class="btn danger small" data-own-yes="${esc(b.id)}"${S.skipping ? ' aria-disabled="true"' : ""}>그래도 열기</button><button type="button" class="btn quiet small" data-own-no="${esc(b.id)}">더 생각해 보기</button></span>`
+            : `<button type="button" class="btn quiet small" data-own="${esc(b.id)}"${S.skipping ? ' aria-disabled="true"' : ""} title="이 블록은 넘어가고 남은 블록을 모두 열어요. 블록마다 확인하지 않고, 다 쓴 뒤 ‘모아서 실행’으로 확인해요">끝까지 내 방식으로 쓰기</button>`) : ""}
           ${S.fillAsk === b.id ? (unfound ? `<span class="confirm"><span>아직 찾지 못한 블록이에요. 채우면 ${i < s.blocks.length - 1 ? "이 블록의 이름과 " : ""}튜터의 코드가 보여요.</span><button type="button" class="btn danger small" data-fill-yes="${esc(b.id)}" data-model>그래도 채우기</button><button type="button" class="btn quiet small" data-fill-no="${esc(b.id)}">더 생각해 보기</button></span>`
       : `<span class="confirm"><span>적은 코드를 튜터의 코드로 바꿀까요?</span><button type="button" class="btn danger small" data-fill-yes="${esc(b.id)}" data-model>바꾸기</button><button type="button" class="btn quiet small" data-fill-no="${esc(b.id)}">그대로 두기</button></span>`)
     : `<button type="button" class="btn quiet small" data-fill="${esc(b.id)}" data-model${current ? "" : ` aria-label="블록 ${n} 채우기"`}>이 블록 채우기</button>`}
@@ -2315,7 +2317,7 @@ function slotsHtml(x, index, live) {
     x.question ? `<div class="slot-question" role="group" aria-label="질문">${mark("i-ask")}<div>${rich(x.question)}</div></div>` : ""}${
     x.evidence.length ? `<ul class="slot-evidence" role="list" aria-label="근거">${x.evidence.map((row) => `<li>${mark("i-bulb")}<span>${inline(row)}</span></li>`).join("")}</ul>` : ""}${
     acts.length ? `<div class="slot-buttons" role="group" aria-label="할 수 있는 일">${acts.map((act) => `<button type="button" class="btn small" data-act="${act}" data-act-block="${index}"${
-      !live ? " disabled" : act === "fill" ? " data-model" : act === "run" ? ' data-model="run"' : ""}>${SLOT_ACTS[act]}</button>`).join("")}</div>` : ""}</div>`;
+      !live ? " disabled" : act === "fill" ? " data-model" : act === "run" ? ' data-model="run"' : S.skipping ? ' aria-disabled="true"' : ""}>${SLOT_ACTS[act]}</button>`).join("")}</div>` : ""}</div>`;
 }
 
 function renderTutor() {
@@ -2467,7 +2469,7 @@ async function loadSolution(force) {
 /** 언어를 바꾼다. 대화·블록 진행은 서버가 언어마다 보관하고 돌아오면 되살린다(묻지 않는다). */
 async function changeLanguage(language) {
   harvest();
-  const pid = S.pid, code = $("code").value, blocks = S.blockCode, talk = S.talk; // 아직 저장하지 않은 블록 칸도 예전 언어의 것으로 함께 보낸다
+  const pid = S.pid, from = S.problem.language, code = $("code").value, blocks = S.blockCode, talk = S.talk; // 아직 저장하지 않은 블록 칸도 예전 언어의 것으로 함께 보낸다
   clearTimeout(codeTimer); clearTimeout(blocksTimer); codeTimer = blocksTimer = null;
   $("code").readOnly = true; // 바꾸는 동안 적은 옛 언어의 코드가 새 언어 칸에 저장되지 않게 잠근다. 다 바꾸면 서버가 준 새 언어의 코드로 채운다
   // 열어 둔 해설 칸·받은 해설·펼친 정답 코드는 새 언어로 다시 받아 그대로 둔다. 기다리는 동안 다시 그리기 전에 적어 둔다
@@ -2475,9 +2477,15 @@ async function changeLanguage(language) {
   // 튜터가 뒤에서 이 문제의 계획을 만드는 중이면 그것이 끝날 때까지 기다린다(길면 30초쯤). 그동안 무엇을 하는지 보여 준다
   const r = await work(`언어를 바꾸는 중: ${LANG[language] || language}…`, "lang", () => api("/api/language", { id: pid, language, blocks, mode: talk, ...(codeEmpty() ? {} : { code }) })) // 시작 코드뿐이면 저장하지 않는다
     .finally(() => { $("code").readOnly = false; });
-  if (!r || S.pid !== pid) return;
+  if (!r || (!r.ok && S.pid !== pid)) return;
   if (!r.ok) { $("code-error").textContent = errorNote(r.error).text; $("code-error").hidden = false; return render(); }
+  // 보내지 않은 대화·디버그 글은 서버에 보내지 않고 언어마다 여기 둔다. 기다리는 동안 다른 문제로 옮겼으면 떠나며 담아 둔 글(KEPT[pid])을 바꾼다
+  const away = S.pid !== pid, k = (KEPT[pid] ??= {}), langs = (k.langs ??= {}), back = langs[language] || {};
+  langs[from] = Object.fromEntries(TALKS.map((id) => [id, away ? k[id] || "" : $(id).value]));
+  delete langs[language];
+  if (away) return void TALKS.forEach((id) => { k[id] = back[id] || ""; });
   clearProblem(pid);
+  for (const id of TALKS) $(id).value = back[id] || "";
   applyState(r.data, talk);
   if (kept.mode === "solo" && kept.open) S.mode = "solo"; // 기억하지 않은 방식(결과에서 연 해설)이어도 그 칸에 머문다
   S.soloOpen = kept.open;
@@ -2591,34 +2599,27 @@ async function checkBlock(blockId) {
   if (r.ok && S.pid === pid) markChecked(block.id, code, r.data);
 }
 
-/** 이대로 넘어가기: 확인하지 않고 그 블록을 '확인 전'으로 둔 채 다음 블록을 연다(모델·실행 없이). 실패한 확인에 갇히지 않게 한다. */
-async function skipBlock(blockId) {
+/** 이대로 넘어가기: 확인하지 않고 그 블록을 '확인 전'으로 둔 채 다음 블록을 연다(모델·실행 없이). 실패한 확인에 갇히지 않게 한다.
+    ownWay: 끝까지 내 방식으로 쓰기. 이 블록은 넘어가기와 같게 두고 남은 블록을 모두 연다. 이 문제의 튜터 방식 동안 블록 코드 확인을 숨긴다. */
+async function skipBlock(blockId, ownWay = false) {
   harvest();
   const pid = S.pid, mode = S.talk, block = S.session.blocks.find((b) => b.id === blockId);
   const code = block ? (S.blockCode[block.id] || {}).code || "" : "";
-  if (!code.trim()) return;
+  if (!code.trim() || S.skipping) return; // 보낸 넘어가기·내 방식이 끝나기 전에는 둘 다 다시 보내지 않는다(같은 블록의 확인 말이 두 번 쌓인다)
   S.note.blocks = S.note.chat = null;
-  const r = await api("/api/turn", { id: pid, mode, event: "block_filled", block_id: block.id, code, skip: true, quiet: true });
-  if (S.pid !== pid) return;
-  if (!r.ok) S.note.chat = errorNote(r.error);
-  say(r.ok ? "확인 전으로 두고 다음 블록을 열었어요." : "");
-  await loadState();
-  if (r.ok && S.pid === pid) markChecked(block.id, code, r.data, true);
-}
-
-/** 끝까지 내 방식으로 쓰기: 이 블록은 넘어가기와 같게 '확인 전'으로 두고 남은 블록을 모두 연다(모델·실행 없이). 이 문제의 튜터 방식 동안 블록 코드 확인을 숨긴다. */
-async function ownWayBlock(blockId) {
-  harvest();
-  const pid = S.pid, block = S.session.blocks.find((b) => b.id === blockId);
-  const code = block ? (S.blockCode[block.id] || {}).code || "" : "";
-  if (!code.trim()) return;
-  S.note.blocks = S.note.chat = null;
-  const r = await api("/api/turn", { id: pid, mode: S.talk, event: "block_filled", block_id: block.id, code, skip: true, quiet: true, own_way: true });
-  if (S.pid !== pid) return;
-  if (!r.ok) S.note.chat = errorNote(r.error);
-  say(r.ok ? "남은 블록을 모두 열었어요. 다 쓴 뒤 모아서 실행으로 확인해요." : "");
-  await loadState();
-  if (r.ok && S.pid === pid) markChecked(block.id, code, r.data, true);
+  S.skipping = true;
+  render();
+  try {
+    const r = await api("/api/turn", { id: pid, mode, event: "block_filled", block_id: block.id, code, skip: true, quiet: true, ...(ownWay ? { own_way: true } : {}) });
+    if (S.pid !== pid) return;
+    if (!r.ok) S.note.chat = errorNote(r.error);
+    say(!r.ok ? "" : ownWay ? "남은 블록을 모두 열었어요. 다 쓴 뒤 모아서 실행으로 확인해요." : "확인 전으로 두고 다음 블록을 열었어요.");
+    await loadState();
+    if (r.ok && S.pid === pid) markChecked(block.id, code, r.data, true);
+  } finally {
+    S.skipping = false; // 실패해도 다시 누를 수 있다
+    render();
+  }
 }
 
 /** 튜터 차례로 돌아가기: 블록 코드 확인을 다시 보인다(열린 블록과 칸의 글은 그대로). */
@@ -3478,12 +3479,12 @@ document.addEventListener("click", (e) => {
   if (el.dataset.check) return void checkBlock(el.dataset.check);
   if (el.dataset.skip) return void skipBlock(el.dataset.skip);
   if (el.dataset.own) { // 의자는 찾지 않은 뒤 블록의 이름이 보이니 먼저 묻는다('이 블록 채우기'와 같다)
-    if (S.talk !== "chair" || S.session.open_count >= S.session.blocks.length) return void ownWayBlock(el.dataset.own);
+    if (S.talk !== "chair" || S.session.open_count >= S.session.blocks.length) return void skipBlock(el.dataset.own, true);
     S.ownAsk = el.dataset.own;
     render();
     return void document.querySelector(`[data-own-no="${CSS.escape(S.ownAsk)}"]`).focus();
   }
-  if (el.dataset.ownYes) { S.ownAsk = null; return void ownWayBlock(el.dataset.ownYes); }
+  if (el.dataset.ownYes) { S.ownAsk = null; return void skipBlock(el.dataset.ownYes, true); }
   if (el.dataset.ownNo) { S.ownAsk = null; render(); return void document.querySelector(`[data-own="${CSS.escape(el.dataset.ownNo)}"]`).focus(); }
   if (el.hasAttribute("data-own-off")) return void ownWayOff();
   if (el.dataset.theme) return void setTheme(el.dataset.theme, el.dataset.pick, el.dataset.effort);
