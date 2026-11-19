@@ -15,6 +15,8 @@ vector<vector<int>> solution(vector<vector<int>> board, int k) {
         for (int r = top + 1; r <= bottom; r++) cells.push_back({r, right});
         for (int c = right - 1; c >= left; c--) cells.push_back({bottom, c});
         for (int r = bottom - 1; r > top; r--) cells.push_back({r, left});
+        vector<int> values;
+        for (auto [r, c] : cells) values.push_back(board[r][c]);
         int length = cells.size();
         int shift = k % length; // 칸 수만큼 돌면 제자리로 돌아온다
         if (ring % 2 == 1) {
@@ -22,8 +24,8 @@ vector<vector<int>> solution(vector<vector<int>> board, int k) {
         }
         // 시계 방향으로 shift칸 돌면 i번째 칸의 보석은 i + shift번째 칸으로 간다
         for (int i = 0; i < length; i++) {
-            pair<int, int> to = cells[(i + shift) % length];
-            result[to.first][to.second] = board[cells[i].first][cells[i].second];
+            auto [r, c] = cells[(i + shift) % length];
+            result[r][c] = values[i];
         }
     }
     return result;

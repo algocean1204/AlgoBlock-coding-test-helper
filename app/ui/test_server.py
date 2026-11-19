@@ -4760,6 +4760,13 @@ def lang_plans() -> None:
     # 2-1. 블록이 같은 일을 하는지(misfits): Python은 find를 앞(b2)에 두고 java는 맨 뒤 메서드로 둔 풀이를 차례대로 억지로 나누면
     #      b2에 find가 없다. 이런 구간은 싣지 않고, 걸린 까닭을 붙여 다시 받는다(되돌리면 실패)
     union, _ = full(HERE / "problems" / "graph" / "1_club_union")
+    tail = ("class Solution {\n    public int solution(int n, int[][] merges) {\n        int[] parent = new int[n + 1];\n"
+            "        for (int i = 0; i <= n; i++) parent[i] = i;\n\n        int groups = n;\n        for (int[] m : merges) {\n"
+            "            // find를 재귀로 쓰면 긴 줄 입력에서 스택이 넘치므로 반복문으로 쓴다\n            int rootA = find(parent, m[0]);\n            int rootB = find(parent, m[1]);\n"
+            "            if (rootA != rootB) {\n                parent[rootB] = rootA;\n                groups--;\n            }\n        }\n"
+            "        return groups;\n    }\n\n    private int find(int[] parent, int x) {\n        while (parent[x] != x) {\n"
+            "            parent[x] = parent[parent[x]]; // 경로 압축: 한 칸 위를 건너뛰어 대표에 가깝게 고쳐 둔다\n            x = parent[x];\n        }\n        return x;\n    }\n}\n")  # find를 맨 뒤 메서드로 둔 풀이(실린 풀이는 Python 차례를 따른다)
+    union["solutions"] = {**union["solutions"], "java": tail}
     forced = [[1, 4], [5, 6], [7, 10], [11, 14], [15, 17], [18, 26]]
     found = make_builtin.misfits(union["ready"]["plan"]["blocks"], [{**block, "reference": "\n".join(union["solutions"]["java"].splitlines()[a - 1:b])}
                                                                     for block, (a, b) in zip(union["ready"]["plan"]["blocks"], forced)], "java")

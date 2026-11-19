@@ -18,6 +18,7 @@ fn solution(board: Vec<Vec<i32>>, k: i32) -> Vec<Vec<i32>> {
         for r in (top + 1..bottom).rev() {
             cells.push((r, left));
         }
+        let values: Vec<i32> = cells.iter().map(|&(r, c)| board[r][c]).collect();
         let length = cells.len();
         let mut shift = k as usize % length; // 칸 수만큼 돌면 제자리로 돌아온다
         if ring % 2 == 1 {
@@ -26,7 +27,7 @@ fn solution(board: Vec<Vec<i32>>, k: i32) -> Vec<Vec<i32>> {
         // 시계 방향으로 shift칸 돌면 i번째 칸의 보석은 i + shift번째 칸으로 간다
         for i in 0..length {
             let (r, c) = cells[(i + shift) % length];
-            result[r][c] = board[cells[i].0][cells[i].1];
+            result[r][c] = values[i];
         }
     }
     result

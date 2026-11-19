@@ -1,16 +1,15 @@
+#include <map>
 #include <string>
+#include <utility>
 #include <vector>
 
 using namespace std;
 
 vector<int> solution(int rows, int cols, vector<int> start, string commands) {
+    map<char, pair<int, int>> move = {{'N', {-1, 0}}, {'S', {1, 0}}, {'W', {0, -1}}, {'E', {0, 1}}};
     int row = start[0], col = start[1];
     for (char command : commands) {
-        int dr = 0, dc = 0;
-        if (command == 'N') dr = -1;
-        else if (command == 'S') dr = 1;
-        else if (command == 'W') dc = -1;
-        else dc = 1;
+        auto [dr, dc] = move[command];
         int nextRow = row + dr, nextCol = col + dc;
         if (nextRow >= 0 && nextRow < rows && nextCol >= 0 && nextCol < cols) {
             row = nextRow;
