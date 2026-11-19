@@ -1381,9 +1381,10 @@ function applyState(data) {
     if (p.passed > 0) loadNextUp(); // 통과한 문제를 다시 열어도 '다음 문제'로 갈 수 있게
     if (p.study.has_guide && p.study.passed_now) loadSolution(false); // 이번 풀이에서 통과한 문제는 실전 신호를 준비해 둔다('처음부터' 뒤에는 열 때만 보인다)
     // 방식: 서버가 문제마다 남긴 것(고른 적이 없으면 대화가 있는 쪽, 없으면 혼자 풀기). 연결이 없으면 혼자 풀기로 연다
+    // 이 상태를 받기 전에 탭을 눌렀으면 그 방식(서버가 저장보다 이 요청을 먼저 처리했을 수 있다. 연결이 없을 때 누른 튜터 탭은 연 뒤에 누른 것처럼 연결 안내를 보인다)
     let way = data.way || "solo";
     if (tutorWay(way) && !connected()) way = "solo";
-    S.mode = way;
+    S.mode = way = S.mode || way;
     if (tutorWay(way)) { S.talk = way; S.codeTab = "blocks"; if (!codeEmpty()) S.keptNote = S.keptSeen = true; }
   }
   S.solo.total = S.problem.study.hints_total; // 튜터가 뒤에서 계획을 다 만들면 힌트가 생긴다(새로 고침하지 않아도)
