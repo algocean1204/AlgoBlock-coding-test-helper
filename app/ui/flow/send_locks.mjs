@@ -3,7 +3,7 @@
 // 쓰는 법: node send_locks.mjs <주소> <사진 폴더>   (test_flow.py가 서버를 띄운 뒤 부른다)
 // 모델은 쓰지 않는다. 보낸 말·디버그·해설 같은 AI 요청은 화면이 부르는 순간 route가 받아 붙잡거나(hold) 꾸민 응답으로 답한다.
 // 정한 이름: 대화 칸 #say(보내기 #send), 디버그 칸 #debug-say, 상태 응답의 준비 표시는 POST /api/prep {id} → {preparing, checking}(1KB 이하),
-//   개발 표시는 /api/accounts의 dev가 참일 때 window.__ab.perf = { press_to_paint_ms, send_to_clear_ms, tab_to_change_ms, rerender_ms }.
+//   개발 표시는 /api/accounts의 dev가 참일 때 window.__ab.perf = { press_to_paint_ms, send_to_clear_ms, tab_to_change_ms, rerender_ms, debug_rerender_ms }.
 import { launch } from '../stageshow/scripts/browser.mjs'
 import { mkdirSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -109,7 +109,7 @@ async function flow(name, viewport, steps, opts = {}) {
   let stuck = false
   t.need = async (what, fn) => { if (stuck) return; try { await fn() } catch (e) { stuck = true; problems.push(`${what}: ${String(e.message).split('\n')[0]}`) } }
   try {
-    const r = await context.request.post(`${base}/api/reset`, { data: { id: problem.id } })
+    const r = await context.request.post(`${base}/api/reset`, { data: { id: problem.id }, timeout: 30000 }) // 준비 요청: 화면을 기다리는 4초 기본값과 따로(느린 러너)
     if (!r.ok()) problems.push(`reset ${r.status()}`)
   } catch (e) { problems.push(`reset: ${String(e.message).split('\n')[0]}`) }
   if (opts.prepOn) t.prepOn = true
@@ -432,7 +432,7 @@ for (const viewport of VIEWPORTS) {
     const { need, page } = t
     let wrongResult
     await need('틀린 코드의 채점 결과(실패)를 얻어 둔다', async () => {
-      const r = await page.request.post(`${base}/api/run`, { data: { id: problem.id, code: WRONG } })
+      const r = await page.request.post(`${base}/api/run`, { data: { id: problem.id, code: WRONG }, timeout: 30000 }) // 준비 요청(채점은 느린 러너에서 4초를 넘을 수 있다)
       wrongResult = await r.json()
       if (wrongResult.ok) throw new Error('틀린 코드가 통과했다')
     })
@@ -543,7 +543,7 @@ for (const viewport of VIEWPORTS.slice(0, 1)) {
       if (t.count(isPrep) !== polls || t.count(isState) !== baseState + 1) throw new Error('끝난 뒤에도 요청이 계속 나간다')
     })
     await need('실제 /api/prep은 1KB 이하의 가벼운 응답이다', async () => {
-      const r = await page.request.post(`${base}/api/prep`, { data: { id: problem.id } })
+      const r = await page.request.post(`${base}/api/prep`, { data: { id: problem.id }, timeout: 30000 }) // 응답 크기를 본다(시간은 보지 않는다)
       if (!r.ok()) throw new Error(`상태 ${r.status()}`)
       const text = await r.text()
       const j = JSON.parse(text)
@@ -608,6 +608,36 @@ for (const viewport of VIEWPORTS) {
       if (n > 2) throw new Error(`긴 작업 ${n}회`)
     })
   }, { dev: true })
+  // ── 9b. 틀린 곳 같이 찾기의 긴 대화도 다시 그리기가 목표 안이고, 같은 내용이면 다시 그리지 않는다 ──
+  await flow('perf-debug', viewport, async (t) => {
+    const { need, page } = t
+    await need('디버그 대화 60개가 남은 채 틀린 곳 찾기를 연다', async () => {
+      t.mutate = (json) => {
+        const debug = json.session.debug = json.session.debug || []
+        while (debug.length < 60) debug.push(debug.length % 2 ? { role: 'user', text: `${debug.length}번째 줄에서 값이 바뀌어요` } : { role: 'service', text: `${debug.length}번째 줄에서 \`total\`은 어떤 값이 될까요?` })
+        return json
+      }
+      t.rules.unshift({ pred: isDebug, handler: (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ message: '어디서 값이 사라질까요?', passed: false, line: null }) }) })
+      await t.pick('chair')
+      await t.wrongRun()
+      await page.locator('#debug-start').click()
+      await page.waitForFunction(() => document.querySelectorAll('#debug-log .msg').length > 60 && !document.querySelector('#debug-log .msg.pending'), null, { timeout: 5000 })
+    })
+    await need('디버그 대화 60개의 다시 그리기가 50ms 이하다', async () => {
+      // 답이 하나 더 붙는 실제 다시 그리기를 잰다. 그린 직후 읽어 뒤의 건너뛰기가 값을 덮지 않게 한다
+      const p = await page.evaluate(async () => {
+        const before = document.querySelectorAll('#debug-log .msg').length
+        await debugCall(null)
+        return { before, after: document.querySelectorAll('#debug-log .msg').length, ms: window.__ab.perf.debug_rerender_ms }
+      })
+      if (!(p.before > 60 && p.after > p.before)) throw new Error(`내용이 바뀌지 않았다(${p.before} → ${p.after})`)
+      if (!(p.ms >= 0 && p.ms <= 50)) throw new Error(`debug_rerender_ms=${p.ms}`)
+    })
+    await need('같은 내용이면 디버그 대화를 다시 그리지 않는다', async () => {
+      const kept = await page.evaluate(() => { const first = document.querySelector('#debug-log .msg'); render(); return first.isConnected })
+      if (!kept) throw new Error('같은 내용인데 대화를 새로 그렸다')
+    })
+  }, { dev: true })
   await flow('perf-off', viewport, async (t) => {
     const { need, page } = t
     await need('개발 표시가 아니면 반응 시간을 남기지 않는다', async () => {
@@ -633,8 +663,9 @@ for (const viewport of VIEWPORTS) {
   await flow('state-speed', viewport, async (t) => {
     const { need, page } = t
     await need('/api/state 중앙값이 250ms 이하다', async () => {
+      // 중앙값으로 판정해 한 번 튄 응답은 견딘다. 요청마다 4초 기본값을 두면 튄 응답 하나에 판정 전에 끊긴다
       const ms = []
-      for (let i = 0; i < 7; i++) { const s = Date.now(); const r = await page.request.post(`${base}/api/state`, { data: { id: problem.id } }); if (!r.ok()) throw new Error(`상태 ${r.status()}`); ms.push(Date.now() - s) }
+      for (let i = 0; i < 7; i++) { const s = Date.now(); const r = await page.request.post(`${base}/api/state`, { data: { id: problem.id }, timeout: 30000 }); if (!r.ok()) throw new Error(`상태 ${r.status()}`); ms.push(Date.now() - s) }
       ms.sort((a, b) => a - b)
       if (ms[3] > 250) throw new Error(`중앙값 ${ms[3]}ms`)
     })

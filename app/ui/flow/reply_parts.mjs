@@ -4,10 +4,11 @@
 // 정한 이름(구현이 지킬 것):
 //   칸이 있는 튜터 말 `.msg.tutor[data-msg]`의 `.bubble` 안에 `.reply-parts` 하나. 그 안에 이 차례로
 //   `.slot-result`(결과) → `.slot-question`(질문) → `ul.slot-evidence > li`(근거) → `.slot-buttons > button[data-act]`(fill·skip·run). 빈 칸은 그리지 않는다.
-//   머리는 기존 `button.block-badge`로 칸들보다 앞에 있다. 칸 요소마다 aria-label(근거는 목록, 나머지는 role="group"), 결과·질문·근거 칸 안에 작은 표 `.slot-mark`.
+//   머리는 기존 `button.block-badge`로 칸들보다 앞에 있다. 칸 요소마다 aria-label(근거는 role="list", 나머지는 role="group"), 결과·질문·근거 칸 안에 작은 표 `.slot-mark`.
 //   보이는 글에 칸 이름 낱말(결과·질문·근거)을 쓰지 않는다. 칸이 없는 말(옛 말·사용자 말)에는 `.reply-parts`가 없다.
 //   단추: 가장 최근 튜터 말의 단추만 켜지고 앞의 말의 단추는 disabled. fill은 기존 '이 블록 채우기'와 같은 /api/fill 요청,
 //   skip은 /api/turn {event:'block_filled', skip:true, quiet:true}, run은 /api/run을 부른다.
+//   키보드로 누른 단추: 새 튜터 말에 같은 단추가 있으면 그 단추에, 없으면 그 단추의 블록(data-act-block) 코드 칸에 초점이 남는다.
 //   근거 목록: 말의 note 한 줄, 그리고 가장 최근 튜터 말이 지금 블록(block_facts.index)이면 상태 응답의 block_facts(names·goal)가 더해진다.
 import { launch } from '../stageshow/scripts/browser.mjs'
 import { mkdirSync } from 'node:fs'
@@ -90,7 +91,7 @@ async function flow(way, viewport, scenario) {
   let stuck = false
   const need = async (what, fn) => { if (stuck) return; try { await fn() } catch (e) { stuck = true; problems.push(`${what}: ${String(e.message).split('\n').slice(0, 3).join(' | ')}`) } }
   const check = async (what, fn) => { if (stuck) return; try { await fn() } catch (e) { problems.push(`${what}: ${String(e.message).split('\n').slice(0, 3).join(' | ')}`) } }
-  const r = await context.request.post(`${base}/api/reset`, { data: { id: PID } })
+  const r = await context.request.post(`${base}/api/reset`, { data: { id: PID }, timeout: 30000 }) // 준비 요청: 화면을 기다리는 4초 기본값과 따로(느린 러너)
   if (!r.ok()) problems.push(`reset ${r.status()}`)
   await page.goto(`${base}/#/p/${PID}`)
   await need('문제 제목이 그려진다', () => page.waitForFunction(() => document.getElementById('p-title')?.textContent.trim().length > 0, null, { timeout: 15000 }))
@@ -115,12 +116,12 @@ async function flow(way, viewport, scenario) {
       if (n !== 1) throw new Error(`${id}: .bubble .reply-parts ${n}개`)
     }
   })
-  await check('칸 요소마다 이름(aria-label)이 있고(근거는 목록, 나머지는 role=group) 칸 이름 낱말이 보이지 않는다', async () => {
+  await check('칸 요소마다 이름(aria-label)이 있고(근거는 role=list, 나머지는 role=group) 칸 이름 낱말이 보이지 않는다', async () => {
     const bad = await page.evaluate(([slotSel, words]) => {
       const out = [], names = new Set()
       for (const el of document.querySelectorAll(`#chat-log .reply-parts :is(${slotSel})`)) {
         const label = (el.getAttribute('aria-label') || '').trim()
-        if ((el.tagName === 'UL' ? ![null, 'list'].includes(el.getAttribute('role')) : el.getAttribute('role') !== 'group') || !label) out.push(`${el.className}: role/aria-label 없음`)  // 근거 목록은 목록으로 읽힌다(role이 없거나 list. WebKit은 list-style: none인 목록의 목록 뜻을 빼서 list를 단다)
+        if (el.getAttribute('role') !== (el.tagName === 'UL' ? 'list' : 'group') || !label) out.push(`${el.className}: role/aria-label 없음`)  // 근거 목록은 role="list"로 목록으로 읽힌다(WebKit은 list-style: none인 목록의 목록 뜻을 뺀다)
         names.add(el.className.split(' ')[0] + '|' + label)
       }
       for (const rp of document.querySelectorAll('#chat-log .reply-parts')) if (new RegExp(words).test(rp.innerText)) out.push(`보이는 글에 칸 이름 낱말: ${rp.innerText.slice(0, 60)}`)
@@ -241,6 +242,17 @@ async function flow(way, viewport, scenario) {
       await page.waitForFunction(() => document.activeElement && document.activeElement !== document.body, null, { timeout: 2000 })
       const at = await page.evaluate(() => { const a = document.activeElement, m = a.closest('.msg'); return { tag: a.tagName, id: a.id, act: a.dataset.act, msg: m && m.dataset.msg, block: a.dataset.block } })
       if (!((at.act === 'skip' && at.msg === 'm7') || at.block === blockId)) throw new Error(`초점이 ${JSON.stringify(at)}에 있다`)
+    })
+    await check('키보드(Enter)로 누른 단추와 같은 단추가 새 튜터 말에 없으면 초점이 그 단추의 블록 코드 칸으로 간다', async () => {
+      served = [...chat, svc('m7', '새 결과 줄이에요.', 2, { block_index: 2, result: '새 결과 줄이에요.', buttons: ['fill', 'skip'] }), svc('m8', '이 블록은 확인 전으로 두었어요.', 2, { block_index: 2, result: '이 블록은 확인 전으로 두었어요.' })]
+      await msg('m7').locator('.slot-buttons > button[data-act="skip"]').focus()
+      await page.keyboard.press('Enter')
+      await msg('m8').waitFor({ state: 'visible' })
+      const ok = await page.waitForFunction((id) => { const a = document.activeElement; return a && a.tagName === 'TEXTAREA' && a.dataset.block === id }, blockId, { timeout: 3000 }).then(() => true, () => false)
+      if (!ok) {
+        const at = await page.evaluate(() => { const a = document.activeElement, m = a.closest('.msg'); return { tag: a.tagName, id: a.id, act: a.dataset.act, msg: m && m.dataset.msg, block: a.dataset.block } })
+        throw new Error(`초점이 ${JSON.stringify(at)}에 있다(기대: 블록 칸 ${blockId})`)
+      }
     })
   }
   if (problems.length) {

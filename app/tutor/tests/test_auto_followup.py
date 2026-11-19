@@ -3,6 +3,7 @@
 내용 없는 말과 답 요청은 규칙이 가른다(모델 0회). 실제 모델로 재는 오분류는 ALGOBLOCK_LIVE=1일 때만 돈다."""
 
 import os
+import re
 import unittest
 from dataclasses import replace
 
@@ -28,6 +29,11 @@ CLAIM = "0보다 큰 값만 골라서 더해요"  # 블록의 답(자기 생각)
 REASK = "for 문 쓰는 법을 알려 주세요"  # 물음 꼴이 아닌 되묻기
 UNCLEAR = "0보다 큰 값만 더하면 되는 건가요?"  # 물음 꼴로 낸 자기 생각
 JUDGED = {"주장": "[check]Y t", "물음 꼴 생각": "[check]Y t", "코드": "[check]Y t", "딴말": "[check]O"}  # 말 은행의 답(규칙 밖)에 줄 판정
+
+
+def bare(text):
+    """말끝(물음표·마침표·느낌표·'요')과 띄어쓰기 차이를 뗀 말."""
+    return re.sub(r"(?:[\s?？.!~…]|요)+$", "", " ".join(text.split()))
 
 
 def talked(mode, ctx, text, judge, reply=EXPLAIN):
@@ -175,6 +181,20 @@ class JudgeRuleTest(unittest.TestCase):
                 self.assertTrue(rule)
                 for word in ("튜터", "문제", "문법", "개념", "자기 생각"):
                     self.assertIn(word, rule)
+
+    def test_judge_prompt_splits_q_by_meaning(self):
+        """Q는 꼴이 아니라 무엇을 묻는지로 가른다: 물음표 없는 되묻기도 Q, 물음 꼴로 낸 자기 생각과 답을 모르겠다는 말은 Q가 아니다.
+        말 은행의 말(되묻기와 답 모두)을 예문으로 옮기지 않는다. 말끝만 바꾼 문장도 막는다(실제 모델 측정이 외운 말을 재지 않게)."""
+        for mode in ("chair", "guide"):
+            with self.subTest(mode=mode):
+                _, fake = talked(mode, context(mode, 1), GRAMMAR, "[check]Q")
+                rule = "\n".join(line for line in fakes.prompt(fake, f"{mode}.judge").splitlines() if "[check]Q" in line)
+                for words in ("물음표가 없어도", "문제 글의 뜻", "언어 문법", "알고리즘 개념", "물음표나 말끝이 어떻든 Q가 아니라", "답을 모르겠다는 말도 Q가 아니다"):
+                    self.assertIn(words, rule)
+                flat = " ".join(rule.split())
+                for text, _, _, _ in bank.BANK:
+                    if bare(text):
+                        self.assertNotIn(bare(text), flat)
 
     def test_term_step_carries_grammar_rules(self):
         """되묻는 말 차례의 지시: 문법은 이 문제와 상관없는 작은 예로 답하고, 이 블록의 답은 말하지 않고, 원래 질문으로 돌아온다."""

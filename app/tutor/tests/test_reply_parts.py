@@ -182,6 +182,48 @@ class SavedPartsTest(unittest.TestCase):
                 self.assertEqual(rows[-1]["text"], ar.HINTS[0][1] + "\n" + ANSWER_LEAD.strip())  # text는 그대로
                 self.assertEqual(len(fake.calls), 0)
 
+    def test_ask_for_answer_keeps_the_no_answer_sentence_in_result_and_the_way_as_button(self):
+        sentence = ANSWER_LEAD.split(".")[0] + "."  # 답을 주지 않는다는 문장
+        for mode in ("chair", "guide"):
+            with self.subTest(mode=mode):
+                done, fake, rows, after = self.saved(mode, 0, ar.talk("그냥 답 코드 알려 줘"))
+                parts = self.check_common(mode, done, rows, after)
+                self.assertIn("result", parts)
+                self.assertIn(sentence, parts["result"])  # 첫 문장은 결과 칸에 남는다
+                self.assertNotIn("이 블록 채우기", parts["result"])  # 길 안내는 글이 아니라 단추다
+                self.assertIn("fill", parts["buttons"])
+                self.assertEqual(parts["question"], ar.HINTS[0][1])
+                self.assertEqual(len(fake.calls), 0)
+
+    def test_other_way_leads_stay_buttons_only(self):
+        from ..common.talk_rules import FILL_TIP
+
+        for mode in ("chair", "guide"):
+            with self.subTest(mode=mode):
+                chat = [fakes.service(ar.HINTS[0][0], 0, "m1", ar.OPENING[mode]), fakes.user("모르겠어요", 0, "u1"), fakes.service(ar.HINTS[0][1], 0, "m2", "clue")]
+                done, fake, rows, after = self.saved(mode, 0, ar.talk("잘 모르겠음"), chat)
+                parts = self.check_common(mode, done, rows, after)
+                self.assertIn(FILL_TIP.strip(), rows[-1]["text"])  # 길 안내가 붙은 말이다(전제)
+                self.assertNotIn("result", parts)  # 결과 칸에 길 안내 문장이 새로 생기지 않는다
+                self.assertIn("fill", parts["buttons"])
+                self.assertEqual(parts["question"], ar.HINTS[0][2])
+                self.assertEqual(len(fake.calls), 0)
+
+    def test_ask_for_answer_after_all_hints_keeps_both_sentences_on_screen(self):
+        """힌트를 다 본 뒤 답을 달라고 하면 고정 말(HINTS_DONE)과 답을 주지 않는다는 문장만 남는다.
+        칸 글 없이 단추만 두어 화면이 글 전체를 결과로 보인다(결과 칸에 거절만 넣으면 '힌트는 다 봤어요'가 빠진다)."""
+        from ..common.talk_rules import ANSWER_NO
+
+        for mode in ("chair", "guide"):
+            with self.subTest(mode=mode):
+                chat = [fakes.service(ar.HINTS[0][0], 0, "m1", ar.OPENING[mode]), fakes.user("모르겠어요", 0, "u1"), fakes.service(ar.HINTS[0][1], 0, "m2", "clue"),
+                        fakes.user("몰라요", 0, "u2"), fakes.service(ar.HINTS[0][2], 0, "m3", "trace")]
+                done, fake, rows, after = self.saved(mode, 0, ar.talk("그냥 답 코드 알려 줘"), chat)
+                parts = self.check_common(mode, done, rows, after)
+                self.assertEqual(rows[-1]["text"], HINTS_DONE + "\n" + ANSWER_NO)
+                self.assertEqual(parts, {"block_index": 0, "buttons": ["fill"]})
+                self.assertEqual(len(fake.calls), 0)
+
     def test_failed_check_stores_result_then_question(self):
         for mode in ("chair", "guide"):
             with self.subTest(mode=mode):
