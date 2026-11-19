@@ -107,7 +107,7 @@ def _pick_move(mode: str, plan: BlockPlan, turn: TurnContext, verdict: Verdict |
         return MovePlan(LADDER[mode][0], index + 1, True, open_lead(mode, shown_kind(blocks[index + 1], language)), (blocks[index + 1].hints or [None])[0])
 
     def write() -> MovePlan:
-        return MovePlan("write", index, False, saved=WRITE_TIP_LAST if index == len(blocks) - 1 else WRITE_TIP)
+        return MovePlan("write", index, False, saved=WRITE_TIP_LAST if index == len(blocks) - 1 else WRITE_TIP, fact=True)  # 물음이 아닌 안내라 칸으로는 결과다
 
     if turn.event in OPENING:
         return hinted({"start": "", "replan": REPLAN_LEAD}.get(turn.event, open_lead(mode, shown_kind(blocks[index], language))))
