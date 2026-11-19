@@ -99,7 +99,7 @@ def summarize(name: str, rows: list[dict], calls: list[dict], trusted: dict) -> 
 
 def report(summaries: list[dict], rows_by: dict[str, list[dict]], trusted: dict) -> str:
     keys = ["blocks_open", "blocks_total", "user_turns", "max_stuck", "fills", "submitted_ok", "submits", "debug_turns", "replanned", "fallback", "repeat", "leak",
-            "fake_quote", "banned", "clean_reply_rate", "latency_p50", "latency_p95", "cache_hit_rate", "errors"]
+            "fake_quote", "banned", "clean_reply_rate", "slot_clean_rate", "latency_p50", "latency_p95", "cache_hit_rate", "errors"]
     lines = ["# QA 보고서", "", f"- 평가기 믿는 기준: {', '.join(c for c, ok in trusted.items() if ok) or '없음(보정 전)'}", ""]
     lines += ["| 지표 | " + " | ".join(s["session"] for s in summaries) + " |", "| --- |" + " --- |" * len(summaries)]
     for key in keys + [f"j_{c}_rate" for c in CRITERIA]:
