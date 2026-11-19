@@ -302,6 +302,7 @@ class Store:
         return [_message(row) for row in rows]
 
     def _followups(self, problem_id: str) -> list[FollowupThread]:
+        """옛 꼬리질문 기록(thread가 quote:<말 id>). 새로 쓰지 않고 읽기만 한다."""
         rows = self.conn.execute(
             "SELECT * FROM message WHERE problem_id=? AND thread LIKE 'quote:%' ORDER BY id",
             (problem_id,),

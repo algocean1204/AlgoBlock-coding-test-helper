@@ -232,7 +232,7 @@ PREREQUISITE = {
 
 
 # 구현 기술: id → (이름, 언제 필요한가, 이 문제와 상관없는 변수로 쓴 문법 예 한 줄). 알고리즘은 아는데 손이 안 움직일 때 쓰는 것이다.
-# 문법 예는 파이썬으로 써서 확인한 것이라 꼬리질문·디버그의 '같은 문법의 다른 예'에는 파이썬일 때만 쓴다(skill_examples). 이름과 '언제'는 언어와 상관없는 말이다.
+# 문법 예는 파이썬으로 써서 확인한 것이라 디버그의 '같은 문법의 다른 예'에는 파이썬일 때만 쓴다(skill_examples). 이름과 '언제'는 언어와 상관없는 말이다.
 SKILLS = {
     "dict_count": ("{맵+로} 개수 세기", "값마다 몇 번 나왔는지 셀 때", "fruit[name] = fruit.get(name, 0) + 1"),
     "dict_loop": ("{맵} 훑기", "키와 값을 함께 볼 때", "for name, count in fruit.items():"),
@@ -287,7 +287,7 @@ def known_skills(ids) -> list[str]:
 
 
 def skill_examples(ids, language: str, limit: int = 3) -> list[str]:
-    """구현 기술의 문법 예(이 문제와 상관없는 변수로 쓴 것). 꼬리질문과 디버그가 문법을 보여 줄 때 참고한다.
+    """구현 기술의 문법 예(이 문제와 상관없는 변수로 쓴 것). 디버그가 문법을 보여 줄 때 참고한다.
     예는 파이썬뿐이라 다른 언어에는 주지 않는다(지어내지 않는다)."""
     if language != "python":
         return []

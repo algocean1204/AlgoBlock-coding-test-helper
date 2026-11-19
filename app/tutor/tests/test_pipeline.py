@@ -1571,30 +1571,6 @@ class HonestCheckTest(unittest.TestCase):
 
 
 class OtherFeatureTest(unittest.TestCase):
-    def test_followup(self):
-        chair = [fakes.service("인용문장?", 0, "m1"), fakes.service("OTHER_CHAT_SECRET?", 0, "m2")]
-        ctx = fakes.context(plan=fakes.planned(fakes.two() + [fakes.block(3, "뒤", "LATER_REF", "branch")]), open_count=1, chair=chair)
-        done, fake = fakes.go(fakes.make_state("followup", ctx, mode="chair", quote_id="m1", text="왜 그래요"),
-                              {"followup.answer": ["'제목이 같으면 같은 책입니다'(문제 글)라서요. 그럴 때 무엇을 놓칠까요?"]})
-        body = fakes.prompt(fake, "followup.answer")
-        self.assertIn("인용한 말:인용문장?", body)
-        self.assertIn("(추론)", body)
-        for leak in ("OTHER_CHAT_SECRET", "LATER_REF"):
-            self.assertNotIn(leak, body)
-        self.assertEqual(done["result"]["move"], "followup")
-        self.assertNotIn("advance", done["result"])
-        self.assertEqual(done["open_count"], 1)
-        done, _ = fakes.go(fakes.make_state("followup", ctx, mode="chair", quote_id="m1", text="왜"), {"followup.answer": ["정답은 딕셔너리예요."]})
-        self.assertEqual(done["result"]["reply"], FALLBACK["followup"])
-
-    def test_followup_syntax_examples_follow_the_language(self):
-        """문법 예는 파이썬으로만 써 두었으니 파이썬 사용자의 꼬리질문에만 들어간다."""
-        chair = [fakes.service("인용문장?", 0, "m1")]
-        for language, shown in (("python", True), ("java", False)):
-            ctx = fakes.context(plan=fakes.planned(fakes.two()), open_count=1, chair=chair, skills=["dict_count"], language=language)
-            _, fake = fakes.go(fakes.make_state("followup", ctx, mode="chair", quote_id="m1", text="왜"), {"followup.answer": ["그럴 때 무엇을 놓칠까요?"]})
-            self.assertEqual("fruit.get(name, 0)" in fakes.prompt(fake, "followup.answer"), shown, language)
-
     def test_debug_question_prompt_syntax_examples_follow_the_language(self):
         """디버그 질문 프롬프트의 '문법 예'는 파이썬 사용자에게만 간다."""
         from ..debug.prompts import speak_messages
@@ -1607,14 +1583,13 @@ class OtherFeatureTest(unittest.TestCase):
 
     def test_syntax_example_passes(self):
         """문법을 물으면 대체 질문만 나왔다. 문제와 무관한 예의 코드 안 문자열은 인용 검사에서 뺀다."""
-        ctx = fakes.context(plan=fakes.planned(fakes.two()), open_count=1, chair=[fakes.service("인용문장?", 0, "m1")])
+        blocks = fakes.two()
         for answer in ("과일 이름으로 한 줄 보여 드리면, basket = deque(['사과', '배', '포도']) 같은 덱에서 basket.popleft()를 쓰면 맨 앞의 '사과'가 빠져요. "
                        "그러면 명단에서 맨 앞을 꺼낼 때는 무엇을 쓰면 될까요?",
                        "과일 이름으로 한 줄 보여 드리면, `basket = deque([\"사과\", \"배\", \"포도\"])` 같은 덱에서 `basket.popleft()`를 쓰면 맨 앞의 사과가 빠져요. "
                        "그러면 명단에서 맨 앞을 꺼낼 때는 무엇을 쓰면 될까요?"):
-            done, _ = fakes.go(fakes.make_state("followup", ctx, mode="chair", quote_id="m1", text="덱에서 맨 앞을 꺼내는 법을 다른 예로 보여 줘요"),
-                               {"followup.answer": [answer]})
-            self.assertEqual(done["result"]["reply"], answer)
+            self.assertEqual(reply_problems(answer, move="term", problem=fakes.PROBLEM, reference=blocks[0].reference, later_names=[blocks[1].name],
+                                            said="덱에서 맨 앞을 꺼내는 법을 다른 예로 보여 줘요"), [])
 
     def test_fill_returns_reference_without_model(self):
         ref = "    if load + w <= limit:\n        belt.append(w)"  # 들여쓰기의 차는 남는다(첫 줄 기준으로 놓는다)

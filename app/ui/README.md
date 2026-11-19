@@ -116,11 +116,11 @@ POST, 문제와 무관한 것 16개
 | `/api/chatgpt/login` | ChatGPT 로그인 주소 받기 |
 | `/api/update` | 새 버전. `action`: `status`, `check`, `auto`(`on`), `skip`, `download`, `install`, `reveal`. 거절은 409 |
 
-POST, 문제 하나에 대한 것 20개. 본문에 `id`가 필요하다.
+POST, 문제 하나에 대한 것 19개. 본문에 `id`가 필요하다.
 
 | 경로 | 설명 |
 | --- | --- |
-| `/api/state` | 문제 화면 상태. 등록한 문제는 `open: true`면 뒤에서 튜터 준비를 시작한다(기본 문제는 튜터를 시작할 때 준비한다) |
+| `/api/state` | 문제 화면 상태(예전에 남긴 꼬리질문 기록은 `session.followups`로 읽기만 한다). 등록한 문제는 `open: true`면 뒤에서 튜터 준비를 시작한다(기본 문제는 튜터를 시작할 때 준비한다) |
 | `/api/language` | 풀이 언어 바꾸기. 코드, 계획, 대화, 블록 진행을 언어마다 보관하고 그 언어로 돌아오면 되살린다. `blocks`로 아직 저장하지 않은 블록 칸을 함께 받는다 |
 | `/api/run` | 공개 예시만 실행하거나 `input` 하나를 직접 실행한다. 제출로 남기지 않는다 |
 | `/api/hint` | 다음 힌트 하나(`block`: 그 블록의 다음 힌트, 1부터. 없으면 아직 다 보지 않은 첫 블록. `peek: true`면 본 것과 블록 목차만 다시 보여 준다) |
@@ -135,7 +135,6 @@ POST, 문제 하나에 대한 것 20개. 본문에 `id`가 필요하다.
 | `/api/submit` | 모든 케이스로 채점하고 제출로 남긴다 |
 | `/api/feedback/get` | 저장된 피드백 |
 | `/api/turn` | '튜터의 질문으로'나 '튜터와 차례로'의 한 턴 |
-| `/api/followup` | 꼬리질문 |
 | `/api/fill` | 이 블록 채우기 |
 | `/api/explain` | 튜터 해설 |
 | `/api/feedback` | 피드백 만들기 |

@@ -6,14 +6,14 @@ from dataclasses import replace
 from ..common.progress_view import current_index
 from ..common.talk_rules import CHECKED
 from ..context.nodes import store_of
-from ..state import ChatMessage, FollowupThread, MainState, fail
+from ..state import ChatMessage, MainState, fail
 from ..store import now
 from .respond import body_for, feedback_body
 
 
-def _row(mode, thread, role, text, block_index, quote_id, move=None, parts=None) -> dict:
+def _row(mode, thread, role, text, block_index, move=None, parts=None) -> dict:
     return {"mode": mode, "thread": thread, "role": role, "text": text, "block_index": block_index,
-            "quote_id": quote_id, "move": move, "parts": parts, "at": now()}
+            "move": move, "parts": parts, "at": now()}
 
 
 def _said(role, text, block_index, move) -> tuple:
@@ -32,22 +32,18 @@ def collect(state: MainState) -> dict:
         # 블록 코드 확인의 글에는 판정(Y·N·?)을 남긴다. 서비스 말의 move는 사다리 차례를 세는 데 쓰여 건드리지 않는다
         checked = (CHECKED + ("?" if result.get("unsure") else "Y" if verdict.ok else "N")) if request.event == "block_filled" and verdict is not None else None
         if user:
-            rows.append(_row(mode, "main", "user", user, current_index(state), None, checked))
+            rows.append(_row(mode, "main", "user", user, current_index(state), checked))
         move = state.get("move")
-        rows.append(_row(mode, "main", "service", result.get("reply", ""), move.target if move else None, None, result.get("move"), state.get("reply_parts")))
+        rows.append(_row(mode, "main", "service", result.get("reply", ""), move.target if move else None, result.get("move"), state.get("reply_parts")))
         # 같은 블록 코드를 다시 확인해 같은 판정·같은 말이 나왔다: 대화에 같은 짝을 또 쌓지 않는다(바뀌지 않은 코드를 거듭 확인하면 같은 말이 줄줄이 쌓였다)
         chat = ctx.chair if mode == "chair" else ctx.guide
         if request.event == "block_filled" and len(chat) >= len(rows) and [_said(m.role, m.text, m.block_index, m.move) for m in chat[-len(rows):]] == [
                 _said(r["role"], r["text"], r["block_index"], r["move"]) for r in rows]:
             rows, result = [], {**result, "repeated": True}
-    elif request.kind == "followup":
-        mode, thread = request.mode or "chair", f"quote:{request.quote_id}"
-        rows += [_row(mode, thread, "user", request.text or "", None, request.quote_id),
-                 _row(mode, thread, "service", result.get("reply", ""), None, request.quote_id, "followup")]
     elif request.kind == "debug":
         if (request.text or "").strip():
-            rows.append(_row("chair", "debug", "user", request.text.strip(), None, None))
-        rows.append(_row("chair", "debug", "service", result.get("reply", ""), None, None, result.get("move")))
+            rows.append(_row("chair", "debug", "user", request.text.strip(), None))
+        rows.append(_row("chair", "debug", "service", result.get("reply", ""), None, result.get("move")))
     fact = state.get("abstract")
     changes = {
         "debug_state": state.get("debug_state"),
@@ -92,17 +88,14 @@ def save(state: MainState, config) -> dict:
 def _merged(state: MainState):
     """다시 읽기에 실패했을 때: 저장할 변경을 문맥에 얹어 같은 모양을 만든다(이미 커밋됐으므로 오류로 만들지 않는다)."""
     ctx, c, request = state["ctx"], state["changes"], state["request"]
-    new = [ChatMessage(id="", role=r["role"], text=r["text"], at=r["at"], block_index=r["block_index"], quote_id=r["quote_id"], move=r["move"],
+    new = [ChatMessage(id="", role=r["role"], text=r["text"], at=r["at"], block_index=r["block_index"], move=r["move"],
                        parts=r.get("parts")) for r in c["messages"]]
-    chair, guide, followups = list(ctx.chair), list(ctx.guide), list(ctx.followups)
+    chair, guide = list(ctx.chair), list(ctx.guide)
     if request.kind == "turn":
         (guide if request.mode == "guide" else chair).extend(new)
-    elif request.kind == "followup":
-        old = next((t for t in followups if t.quote_id == request.quote_id), None)
-        followups = [t for t in followups if t is not old] + [FollowupThread(request.quote_id, (old.messages if old else []) + new)]
     if request.kind == "debug":
         return replace(ctx, debug=list(ctx.debug) + new, debug_state=c["debug_state"])
-    return replace(ctx, plan=c["plan"], open_count=c["open_count"], explain=c["explain"], chair=chair, guide=guide, followups=followups)
+    return replace(ctx, plan=c["plan"], open_count=c["open_count"], explain=c["explain"], chair=chair, guide=guide)
 
 
 def respond(state: MainState, config) -> dict:

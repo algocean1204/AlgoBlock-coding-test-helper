@@ -2033,7 +2033,7 @@ def retire_languages() -> None:
 
 SOLUTION_COLUMNS = ("approach", "steps_json", "code", "verified", "clues_json")
 SESSION_COLUMNS = ("plan_json", "explain_json", "solution_json")  # 대화 진행(open_count)은 대화와 함께 talk에 둔다(talk가 없는 옛 보관분은 첫 블록부터)
-TALK_TABLES = ("message", "block_state", "debug_state")  # 언어마다 따로 보관하는 대화(꼬리질문·디버그 대화 포함)·블록 판정·디버그 상태
+TALK_TABLES = ("message", "block_state", "debug_state")  # 언어마다 따로 보관하는 대화(옛 꼬리질문·디버그 대화 포함)·블록 판정·디버그 상태
 
 
 def keep_plan(t, pid: str, language: str) -> None:
@@ -2073,7 +2073,7 @@ def restore_plan(t, pid: str, language: str) -> dict:
         extra = ("open_count",) if table == "tutor_session" else ()
         t.store.conn.execute(f"INSERT OR REPLACE INTO {table}(problem_id, {', '.join(columns + extra)}) VALUES({', '.join('?' * (len(columns) + len(extra) + 1))})",
                              (pid, *(row[column] for column in columns), *((opened,) if extra else ())))
-    for table in TALK_TABLES:  # 말 id도 그대로 넣는다(꼬리질문이 말 id로 잇는다. AUTOINCREMENT라 지운 id를 다른 말이 받지 않는다)
+    for table in TALK_TABLES:  # 말 id도 그대로 넣는다(옛 꼬리질문 기록이 말 id로 잇는다. AUTOINCREMENT라 지운 id를 다른 말이 받지 않는다)
         known = {column[1] for column in t.store.conn.execute(f"PRAGMA table_info({table})")} - {"problem_id"}
         rows = talk.get(table)
         for row in rows if isinstance(rows, list) else []:
@@ -2973,7 +2973,7 @@ def handle(path: str, body: dict) -> tuple[int, dict]:
             saved = t.feedback_get(pid)
             return saved.status, feedback_language(t, saved.body)
         with LOCKS[pid]:
-            if path in ("/api/turn", "/api/followup", "/api/fill", "/api/explain", "/api/feedback", "/api/debug"):
+            if path in ("/api/turn", "/api/fill", "/api/explain", "/api/feedback", "/api/debug"):
                 t.store.mark_help(pid)  # 튜터 기능을 쓴 시각(학습 보고서가 도움 없이 푼 문제를 가린다)
             if path == "/api/turn":
                 mine = body.get("own_way") is True and body.get("skip") is True  # 끝까지 내 방식으로 쓰기: 넘어가기 + 남은 블록 모두 열기
@@ -2981,8 +2981,6 @@ def handle(path: str, body: dict) -> tuple[int, dict]:
                              quiet=body.get("quiet") is True, skip=body.get("skip") is True, own_way=mine)
                 if mine and out.status < 400:
                     own_way(pid, True)
-            elif path == "/api/followup":
-                out = t.followup(pid, body.get("mode"), body.get("quote_id"), body.get("text"))
             elif path == "/api/fill":
                 out = t.fill(pid, body.get("block_id"), filled=body.get("filled") or [])
             elif path == "/api/explain":

@@ -1,6 +1,7 @@
 """평가기 시험: 규칙 검사, 모델 평가기 표 세기(근거 검증·다수결), 보정 지표, 캐시 경계 표시."""
 
 import unittest
+from types import SimpleNamespace
 
 from ..eval import checks
 from ..eval.calibrate import kappa, score
@@ -46,6 +47,78 @@ class ChecksTest(unittest.TestCase):
         self.assertEqual((got["repeat"], got["max_stuck"], got["blocks_open"], got["submitted_ok"]), (1, 1, 2, True))
         self.assertEqual(got["cache_hit_rate"], 0.9)
         self.assertEqual(got["latency_p50"], 2.0)
+
+
+MISS = {"decision": "못 찾음", "move": "clue", "advance": False}
+
+
+class FakeSession:
+    """play()가 부르는 Session의 자리(모델·저장소 없음). say는 대본대로 답하고, 부른 차례를 log에 남긴다."""
+
+    def __init__(self, script):
+        self.script, self.log, self.rows, self.visible, self.filled = list(script), [], [], [], {}
+
+    def __call__(self, scenario, mode):
+        return self
+
+    def start(self):
+        self.rows.append({"kind": "turn", "event": "start", "status": 200})
+
+    def ctx(self):
+        return SimpleNamespace(plan=SimpleNamespace(blocks=["b1", "b2", "b3"]))
+
+    def say(self, text):
+        self.log.append(text)
+        row = {"kind": "turn", "event": "message", "status": 200, **(self.script.pop(0) if self.script else MISS)}
+        self.rows.append(row)
+        return row
+
+    def check(self):
+        self.log.append("check")
+        return {"status": 200, "passed": True, "last": True, "move": None}
+
+    def fill(self):
+        self.log.append("fill")
+        return {"status": 200, "hidden": {"index": 2}}  # 마지막 블록을 채웠다: 코드 쓰기로
+
+    def next(self):
+        self.log.append("next")
+
+    def submit(self, code):
+        return {"ok": True}
+
+    def feedback(self):
+        pass
+
+    def explain(self):
+        pass
+
+
+class PlayAskTest(unittest.TestCase):
+    """같은 블록에서 3번 막히면 한 번 튜터 말을 되묻는다. 그 말도 메인 대화 턴이라 결과(넘김·write)를 보통 턴처럼 따른다."""
+
+    def play(self, script):
+        from unittest import mock
+
+        from ..eval import drive
+
+        fake = FakeSession(script)
+        said = lambda scenario, visible, what: "ASK" if "되묻" in what else "ANSWER"  # noqa: E731
+        with mock.patch.multiple(drive, Session=fake, novice_say=said, novice_code=lambda *a: ""):
+            drive.play(SimpleNamespace(id="p1"))
+        return fake
+
+    def test_block_passed_on_ask_counts_again_in_the_new_block(self):
+        fake = self.play([MISS] * 3 + [{"decision": "찾음", "move": "open", "advance": True}])
+        # 새 블록에서는 처음부터 다시 센다: 3번 막히면 되묻고, 되묻기를 빼고 5번째 막힘에서 채운다
+        self.assertEqual(fake.log, ["ANSWER"] * 3 + ["ASK"] + ["ANSWER"] * 3 + ["ASK"] + ["ANSWER"] * 2 + ["fill"])
+        self.assertEqual([r.get("ask", False) for r in fake.rows[1:]], [False] * 3 + [True] + [False] * 3 + [True] + [False] * 2)
+        got = checks.session_metrics(fake.rows, [])
+        self.assertEqual((got["user_turns"], got["max_stuck"]), (8, 5))  # 되묻는 말은 사용자 턴과 막힘에 넣지 않는다
+
+    def test_write_on_ask_goes_to_block_check(self):
+        fake = self.play([MISS] * 3 + [{"decision": "찾음", "move": "write", "advance": False}])
+        self.assertEqual(fake.log, ["ANSWER"] * 3 + ["ASK", "check"])
 
 
 ITEM = {"user": "returned에 있는지만 보면 돼요", "reply": "dict로 이름마다 세면 어떨까요?"}

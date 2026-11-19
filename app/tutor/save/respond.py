@@ -98,9 +98,6 @@ def body_for(request, result: dict, ctx) -> dict:
             body["repeated"] = bool(result.get("repeated"))  # 바뀌지 않은 코드를 다시 확인해 같은 말이 나와 대화에 더하지 않았다(화면이 그 사실을 한 번 알린다)
             body["unsure"] = bool(result.get("unsure"))  # 실행이 뒷받침하지 못했다(실행하지 못하고 코드를 읽어 판정했거나, 확인 전으로 넘어왔거나, 내 블록 탓이라 할 수 없다. 화면이 그 칸을 '확인 전'으로 보인다)
         return body
-    if kind == "followup":
-        thread = next((t for t in ctx.followups if t.quote_id == request.quote_id), None)
-        return {"quote_id": request.quote_id, "messages": messages_body(thread.messages if thread else [])}
     if kind == "fill":
         # 내 이름에 맞춰 채우지 못하면 그 알림(화면이 블록 칸 아래 알림 줄에 보인다)
         return {"block_id": request.block_id, "code": result.get("code", ""), "open_count": ctx.open_count, **({"note": result["note"]} if result.get("note") else {})}

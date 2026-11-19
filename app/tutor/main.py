@@ -24,7 +24,7 @@ from .state import FilledBlock, MainState, Solution, Solved, TutorRequest
 from .store import Store
 from .store.codec import plan_from_json
 
-FEATURES = ("explain", "chair", "guide", "followup", "fill", "feedback", "debug")
+FEATURES = ("explain", "chair", "guide", "fill", "feedback", "debug")
 NO_PLAN = ("debug",)  # 계획 없이 도는 기능(사용자 코드만 본다)
 AGENTS = ("context", "request_check", "plan", *FEATURES, "output_check", "save")
 
@@ -83,7 +83,6 @@ def default_agents() -> dict:
     from .explain.graph import graph as explain
     from .feedback.graph import graph as feedback
     from .fill.graph import graph as fill
-    from .followup.graph import graph as followup
     from .guide.graph import graph as guide
     from .output_check.graph import graph as output_check
     from .plan.graph import graph as plan
@@ -91,7 +90,7 @@ def default_agents() -> dict:
     from .save.graph import graph as save
 
     made = dict(context=context, request_check=request_check, plan=plan, explain=explain, chair=chair, guide=guide,
-                followup=followup, fill=fill, feedback=feedback, debug=debug, output_check=output_check, save=save)
+                fill=fill, feedback=feedback, debug=debug, output_check=output_check, save=save)
     return {name: build_one() for name, build_one in made.items()}
 
 
@@ -186,9 +185,6 @@ class Tutor:
         own_way: skip과 함께 남은 블록을 모두 연다('끝까지 내 방식으로 쓰기')."""
         return self.handle(TutorRequest(kind="turn", problem_id=problem_id, mode=mode, event=event, text=text, block_id=block_id, code=code, quiet=quiet, skip=skip,
                                         own_way=own_way))
-
-    def followup(self, problem_id, mode, quote_id, text) -> Outcome:
-        return self.handle(TutorRequest(kind="followup", problem_id=problem_id, mode=mode, quote_id=quote_id, text=text))
 
     def fill(self, problem_id, block_id, filled=None) -> Outcome:
         rows = [item if isinstance(item, FilledBlock) else FilledBlock(id=item["id"], code=item["code"]) for item in filled or []]
