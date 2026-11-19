@@ -769,16 +769,12 @@ details.solution > * + * { margin-top: 8px; }
 .msg.me .bubble { background: var(--accent); color: var(--on-accent); border-bottom-right-radius: 6px; white-space: pre-wrap; }
 .msg.me .bubble code { background: rgb(255 255 255 / 0.2); }
 .msg.me.sending .bubble { opacity: 0.6; }
-.msg.is-quoted .bubble { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--accent-text); }
-.msg-tools { display: flex; }
-.msg-tools .btn { min-height: 24px; padding: 0 8px; font-size: 12.5px; color: var(--accent-text); }
-.msg-tools .btn:hover, .msg-tools .btn.press { background: var(--accent-soft); color: var(--accent-text); }
+/* 튜터 말이 겨눈 블록(블록 N/전체 · 종류): 누르면 그 블록 칸으로 간다 */
+.btn.block-badge { min-height: 24px; padding: 0 8px; font-size: 12.5px; white-space: normal; text-align: start; }
 .thread { display: grid; gap: 8px; margin: 2px 0 4px 14px; padding: 2px 0 2px 12px; border-left: 2px solid var(--fill-2); }
 .thread-title { font-size: 12px; font-weight: 700; color: var(--muted); }
 .thread .msg { max-width: 100%; }
 .thread .msg .bubble { padding: 7px 12px; font-size: 14px; }
-.turn { display: flex; align-items: center; gap: 8px; margin: 10px 0 2px; color: var(--muted); font-size: 12.5px; font-weight: 600; }
-.turn::before, .turn::after { content: ""; flex: 1; height: 1px; background: var(--line); }
 .notice { align-self: center; max-width: 100%; padding: 8px 14px; border-radius: 999px; background: var(--success-soft); text-align: center; font-size: 13px; font-weight: 600; color: var(--success); }
 .notice.warn { border-radius: var(--r-md); background: var(--warning-soft); color: var(--warning); } /* 블록을 모두 채웠다는 안내 아래, 빈 블록 알림 */
 .old-talk summary { width: fit-content; padding: 2px 6px; border-radius: 6px; font-size: 13px; font-weight: 600; color: var(--muted); cursor: pointer; }
@@ -795,9 +791,6 @@ details.solution > * + * { margin-top: 8px; }
 .composer > label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .composer textarea { min-height: 62px; max-height: 200px; border-radius: 12px; }
 .composer-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.composer.follow { background: var(--surface-2); }
-.quote-row { display: flex; align-items: flex-start; gap: 8px; }
-.quote { flex: 1; min-width: 0; padding-left: 10px; border-left: 3px solid var(--accent-text); font-size: 13px; color: var(--muted); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 
 .sheet { position: absolute; inset: 0; z-index: 2; display: flex; flex-direction: column; background: var(--surface); animation: rise 0.25s var(--ease); }
 .sheet-head { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 8px 8px 16px; background: var(--warning-soft); }

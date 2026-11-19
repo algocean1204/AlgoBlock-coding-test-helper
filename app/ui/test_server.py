@@ -3157,8 +3157,9 @@ def ai_marks() -> None:
     assert '[data-ai]::after { content: "AI";' in css
     for name in ("to-feedback", "debug-start", "to-explain", "explain-start", "fb-get"):  # 화면 코드가 그리는 단추. 첫 질문·블록 힌트는 저장 힌트로 답해 모델을 부르지 않는다
         assert re.search(rf'id="{name}" class="[^"]*" data-model data-ai', js), name
-    for name in ("send", "fq-send", "debug-send", "fb-again"):
+    for name in ("send", "debug-send", "fb-again"):
         assert re.search(rf'id="{name}" class="[^"]*" data-model data-ai', html), name
+    assert "fq-send" not in html and "/api/followup" not in js  # 꼬리질문 단추가 없다: 되묻는 말도 '내 답'으로 보낸다
     assert "data-ai" not in re.search(r'<button[^>]*id="submit"[^>]*>', html).group(0) and "data-ai" not in re.search(r'<button[^>]*id="run"[^>]*>', html).group(0)  # 채점·실행은 AI가 아니다
     assert 'id="start"' not in js and "data-ai" not in re.search(r'id="result-tutor-hint"[^>]*>', js).group(0)  # 튜터 둘은 시작 단추 없이 탭을 누르면 시작한다
     assert all(re.search(rf'id="way-tab-{way}"[^>]*data-ai>', html) for way in ("chair", "guide")) and "data-ai" not in re.search(r'id="way-tab-solo"[^>]*>', html).group(0)
