@@ -176,6 +176,19 @@ class JudgeRuleTest(unittest.TestCase):
                 for word in ("튜터", "문제", "문법", "개념", "자기 생각"):
                     self.assertIn(word, rule)
 
+    def test_judge_prompt_splits_q_by_meaning(self):
+        """Q는 꼴이 아니라 무엇을 묻는지로 가른다: 물음표 없는 되묻기도 Q, 물음 꼴로 낸 자기 생각과 답을 모르겠다는 말은 Q가 아니다.
+        말 은행의 되묻기를 예문으로 옮기지 않는다(실제 모델 측정이 외운 말을 재지 않게)."""
+        for mode in ("chair", "guide"):
+            with self.subTest(mode=mode):
+                _, fake = talked(mode, context(mode, 1), GRAMMAR, "[check]Q")
+                rule = "\n".join(line for line in fakes.prompt(fake, f"{mode}.judge").splitlines() if "[check]Q" in line)
+                for words in ("물음표가 없어도", "문제 글의 뜻", "언어 문법", "알고리즘 개념", "물음표나 말끝이 어떻든 Q가 아니라", "답을 모르겠다는 말도 Q가 아니다"):
+                    self.assertIn(words, rule)
+                for text, label, _, _ in bank.BANK:
+                    if label == bank.ASK:
+                        self.assertNotIn(text, rule)
+
     def test_term_step_carries_grammar_rules(self):
         """되묻는 말 차례의 지시: 문법은 이 문제와 상관없는 작은 예로 답하고, 이 블록의 답은 말하지 않고, 원래 질문으로 돌아온다."""
         for mode, steps in STEPS.items():
