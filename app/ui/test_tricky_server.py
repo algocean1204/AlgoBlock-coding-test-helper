@@ -4,8 +4,10 @@
 계약: cross_run이 붙인 정확성 케이스는 tag('edge'·'tricky'·'random')를 갖고, cross_run 결과와 문제 목록의 check에 counts·indistinct가 있다.
 """
 
+import atexit
 import json
 import os
+import shutil
 import sys
 import tempfile
 import unittest
@@ -13,6 +15,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 TMP = Path(tempfile.mkdtemp(prefix="algoblock-tricky-test-"))
+atexit.register(shutil.rmtree, TMP, ignore_errors=True)  # 끝나면(실패해도) 이 시험이 만든 자료 폴더를 지운다
 os.environ["ALGOBLOCK_UI_DATA"] = str(TMP / "data")
 os.environ["ALGOBLOCK_UI_BUILTIN"] = str(TMP / "builtin.json")
 os.environ["ALGOBLOCK_UI_PREPARE"] = "0"
