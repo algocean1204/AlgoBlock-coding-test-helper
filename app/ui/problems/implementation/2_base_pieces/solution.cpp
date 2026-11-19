@@ -4,9 +4,9 @@
 
 using namespace std;
 
-vector<long long> solution(int base, long long reading) {
-    const string DIGITS = "0123456789ABCDEF";
+const string DIGITS = "0123456789ABCDEF";
 
+string toBase(long long reading, int base) {
     // 나머지를 끝 자리부터 모은 뒤 뒤집는다
     string text = "";
     while (reading > 0) {
@@ -14,6 +14,20 @@ vector<long long> solution(int base, long long reading) {
         reading /= base;
     }
     reverse(text.begin(), text.end());
+    return text;
+}
+
+long long readBase(const string& text, int base) {
+    // 앞자리부터 값 = 값 × base + 자리값
+    long long value = 0;
+    for (char ch : text) {
+        value = value * base + (long long) DIGITS.find(ch);
+    }
+    return value;
+}
+
+vector<long long> solution(int base, long long reading) {
+    string text = toBase(reading, base);
 
     // 앞 자리보다 작아지는 곳에서 새 조각을 시작한다
     vector<string> pieces;
@@ -25,15 +39,10 @@ vector<long long> solution(int base, long long reading) {
             pieces.back() += text[i];
         }
     }
-
-    // 조각마다 앞자리부터 값 = 값 × base + 자리값으로 읽어 가장 큰 값을 고른다
     long long largest = 0;
     for (const string& piece : pieces) {
-        long long value = 0;
-        for (char ch : piece) {
-            value = value * base + (long long) DIGITS.find(ch);
-        }
-        largest = max(largest, value);
+        long long found = readBase(piece, base);
+        if (found > largest) largest = found;
     }
     return {(long long) pieces.size(), largest};
 }

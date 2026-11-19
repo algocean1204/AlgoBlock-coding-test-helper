@@ -1,12 +1,14 @@
+use std::collections::HashMap;
+
 fn solution(expr: String) -> i32 {
+    let partner = HashMap::from([(')', '('), (']', '['), ('}', '{')]);
     let mut stack: Vec<char> = Vec::new();
     let mut deepest: i32 = 0;
     for ch in expr.chars() {
         if ch == '(' || ch == '[' || ch == '{' {
             stack.push(ch);
             deepest = deepest.max(stack.len() as i32);
-        } else if ch == ')' || ch == ']' || ch == '}' {
-            let open = if ch == ')' { '(' } else if ch == ']' { '[' } else { '{' };
+        } else if let Some(&open) = partner.get(&ch) {
             if stack.last() != Some(&open) {
                 return -1;
             }

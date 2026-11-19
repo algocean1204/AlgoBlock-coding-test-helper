@@ -1,11 +1,14 @@
 // 언어 함정: cpp.int_overflow @ "모든 칸의 점수를 더한 값"
+#include <map>
 #include <string>
+#include <utility>
 #include <vector>
 
 using namespace std;
 
 long long solution(vector<string> board) {
     int rows = board.size(), cols = board[0].size();
+    map<char, pair<int, int>> step = {{'U', {-1, 0}}, {'D', {1, 0}}, {'L', {0, -1}}, {'R', {0, 1}}};
     const int NEW = 0, ON_PATH = 1, DONE = 2; // 아직 안 감 / 지금 걷는 길 위 / 점수가 정해짐
     vector<vector<int>> state(rows, vector<int>(cols, NEW));
     vector<vector<int>> order(rows, vector<int>(cols, 0)); // 지금 길에서 몇 번째로 밟은 칸인가
@@ -21,11 +24,9 @@ long long solution(vector<string> board) {
                 state[r][c] = ON_PATH;
                 order[r][c] = path.size();
                 path.push_back(r * cols + c);
-                char arrow = board[r][c];
-                if (arrow == 'U') r--;
-                else if (arrow == 'D') r++;
-                else if (arrow == 'L') c--;
-                else c++;
+                auto [dr, dc] = step[board[r][c]];
+                r += dr;
+                c += dc;
                 if (r < 0 || r >= rows || c < 0 || c >= cols) {
                     nextScore = 0; // 밖이다: 더 밟을 칸이 없다
                     break;

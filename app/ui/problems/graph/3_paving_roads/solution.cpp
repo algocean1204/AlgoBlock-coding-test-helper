@@ -4,18 +4,18 @@
 
 using namespace std;
 
-// 재귀 대신 반복문: 긴 줄 입력에서 스택이 넘치지 않게
-int find(vector<int>& parent, int x) {
-    while (parent[x] != x) {
-        parent[x] = parent[parent[x]]; // 경로 압축
-        x = parent[x];
-    }
-    return x;
-}
-
 int solution(int n, vector<vector<int>> roads) {
     vector<int> parent(n + 1);
     for (int i = 0; i <= n; i++) parent[i] = i;
+
+    // 재귀 대신 반복문: 긴 줄 입력에서 스택이 넘치지 않게
+    auto find = [&](int x) {
+        while (parent[x] != x) {
+            parent[x] = parent[parent[x]]; // 경로 압축
+            x = parent[x];
+        }
+        return x;
+    };
 
     // 싼 길부터 본다
     sort(roads.begin(), roads.end(), [](const vector<int>& p, const vector<int>& q) { return p[2] < q[2]; });
@@ -23,8 +23,8 @@ int solution(int n, vector<vector<int>> roads) {
     long long total = 0; // 비용 합이 int를 넘을 수 있어 long long
     int paved = 0;
     for (auto& r : roads) {
-        int rootA = find(parent, r[0]);
-        int rootB = find(parent, r[1]);
+        int rootA = find(r[0]);
+        int rootB = find(r[1]);
         if (rootA == rootB) continue; // 이미 오갈 수 있다: 포장하면 고리가 생긴다
         parent[rootB] = rootA;
         total += r[2];

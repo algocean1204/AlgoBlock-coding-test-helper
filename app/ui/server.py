@@ -3082,7 +3082,7 @@ class Handler(BaseHTTPRequestHandler):
         Windows는 연결을 끊어 보낸 쪽이 거절 응답을 읽지 못한다). 길이가 깨졌거나 상한보다 크면 읽지 않고 닫는다."""
         self._send(status, {"detail": {"code": code, "message": message}})
         size = self.headers.get("Content-Length") or "0"
-        if size.isdigit() and int(size) <= MAX_BODY:
+        if size.isascii() and size.isdigit() and int(size) <= MAX_BODY:
             try:
                 self.rfile.read(int(size))
             except OSError:  # 응답은 이미 보냈다
@@ -3093,7 +3093,7 @@ class Handler(BaseHTTPRequestHandler):
         if refused:
             return self._reject(*refused)
         size = self.headers.get("Content-Length") or "0"
-        if not size.isdigit():  # 숫자가 아니거나 음수(-1이면 끝까지 읽으려다 멈춘다)
+        if not (size.isascii() and size.isdigit()):  # 숫자가 아니거나 음수(-1이면 끝까지 읽으려다 멈춘다). ASCII 숫자만: isdigit은 위첨자(²)도 숫자로 보지만 int는 못 읽는다
             return self._reject(400, "validation", "요청을 읽지 못했어요.")
         if int(size) > (MAX_FILE_BODY if self.path in FILE_PATHS else MAX_BODY):
             return self._reject(413, "validation", "보낸 내용이 너무 커요. 줄여서 다시 보내 주세요.")

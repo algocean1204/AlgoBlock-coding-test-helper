@@ -6,14 +6,16 @@
 using namespace std;
 
 long long solution(vector<int> fix, vector<int> line, int walk) {
+    // a 다음에 b를 고치면 b의 손님이 (fix[a] + walk) × line[b]만큼 더 기다리고,
+    // b 다음에 a를 고치면 a의 손님이 (fix[b] + walk) × line[a]만큼 더 기다린다 → 작은 쪽 차례가 앞
+    auto compare = [&](int a, int b) {
+        return (long long)(fix[a] + walk) * line[b] < (long long)(fix[b] + walk) * line[a];
+    };
+
     int n = fix.size();
     vector<int> order(n);
     iota(order.begin(), order.end(), 0);
-    // a 다음에 b를 고치면 b의 손님이 (fix[a] + walk) × line[b]만큼 더 기다리고,
-    // b 다음에 a를 고치면 a의 손님이 (fix[b] + walk) × line[a]만큼 더 기다린다 → 작은 쪽 차례가 앞
-    sort(order.begin(), order.end(), [&](int a, int b) {
-        return (long long)(fix[a] + walk) * line[b] < (long long)(fix[b] + walk) * line[a];
-    });
+    sort(order.begin(), order.end(), compare);
 
     long long now = 0;  // 지금 시각
     long long total = 0;  // 기다림의 합 (int를 넘을 수 있다)
