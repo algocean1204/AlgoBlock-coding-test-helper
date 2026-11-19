@@ -1,7 +1,7 @@
 """두 QA 실행 기록을 같은 규칙 검사로 다시 세어 나란히 놓는다(규칙 검사를 고친 뒤에도 전·후를 같은 잣대로 본다).
 
 python3 -m tutor.eval.compare results/qa-A.jsonl results/qa-B.jsonl
-모델 평가기 판정은 기록에 남은 것을 그대로 쓴다.
+모델 평가기 판정은 기록에 남은 것을 그대로 쓴다. 칸(parts)이 없는 옛 기록은 칸 기준을 재지 않는다(slot_clean_rate가 None).
 """
 
 import json
@@ -11,7 +11,7 @@ from collections import defaultdict
 from .checks import annotate
 from .judge import CRITERIA
 
-KEYS = ("blocks_open", "user_turns", "max_stuck", "fills", "submitted_ok", "clean_reply_rate", "fake_quote", "leak", "latency_p50")
+KEYS = ("blocks_open", "user_turns", "max_stuck", "fills", "submitted_ok", "clean_reply_rate", "slot_clean_rate", "fake_quote", "leak", "latency_p50")
 
 
 def load(path: str) -> dict[str, list[dict]]:
