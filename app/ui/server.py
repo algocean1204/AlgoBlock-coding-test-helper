@@ -3030,7 +3030,12 @@ def handle(path: str, body: dict) -> tuple[int, dict]:
 
 
 class Handler(BaseHTTPRequestHandler):
-    def _send(self, status: int, payload, kind: str = "application/json", headers: dict | None = None) -> None:
+    # 연결을 이어 쓴다: 요청마다 연결을 열고 닫으면 닫힌 연결(TIME_WAIT)이 쌓여 Windows에서 소켓이 바닥난다.
+    # 그래서 모든 응답은 _send로 Content-Length를 붙여 쓰고, 읽지 않은 본문이 남은 요청은 응답 뒤에 닫는다
+    protocol_version = "HTTP/1.1"
+    disable_nagle_algorithm = True  # 머리와 본문을 따로 쓴다: 이어 쓰는 연결에서 본문이 상대의 늦은 ACK를 기다리지 않게
+
+    def _send(self, status: int, payload, kind: str = "application/json", headers: dict | None = None, close: bool = False) -> None:
         data = payload if isinstance(payload, bytes) else json.dumps(payload, ensure_ascii=False).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", f"{kind}; charset=utf-8" if kind.startswith("text/") or kind == "application/json" or kind.endswith("+xml") else kind)
@@ -3038,6 +3043,8 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Cache-Control", "no-store")
         for name, value in (headers or {}).items():
             self.send_header(name, value)
+        if close or "Transfer-Encoding" in self.headers or (self.command == "GET" and self.headers.get("Content-Length", "0") != "0"):
+            self.send_header("Connection", "close")  # 남은 본문을 다음 요청으로 읽지 않게(close_connection도 선다)
         self.end_headers()
         self.wfile.write(data)
 
@@ -3080,20 +3087,21 @@ class Handler(BaseHTTPRequestHandler):
     def _reject(self, status: int, code: str, message: str) -> None:
         """본문을 해석하기 전에 거절한다. 응답을 쓴 뒤 상한 안의 남은 본문은 읽어 버린다(읽지 않은 데이터를 남긴 채 닫으면
         Windows는 연결을 끊어 보낸 쪽이 거절 응답을 읽지 못한다). 길이가 깨졌거나 상한보다 크면 읽지 않고 닫는다."""
-        self._send(status, {"detail": {"code": code, "message": message}})
         size = self.headers.get("Content-Length") or "0"
-        if size.isdigit() and int(size) <= MAX_BODY:
+        drain = size.isascii() and size.isdigit() and int(size) <= MAX_BODY
+        self._send(status, {"detail": {"code": code, "message": message}}, close=not drain)
+        if drain:
             try:
                 self.rfile.read(int(size))
-            except OSError:  # 응답은 이미 보냈다
-                pass
+            except OSError:  # 응답은 이미 보냈다. 깨진 연결은 이어 쓰지 않는다
+                self.close_connection = True
 
     def do_POST(self):
         refused = self._refused()
         if refused:
             return self._reject(*refused)
         size = self.headers.get("Content-Length") or "0"
-        if not size.isdigit():  # 숫자가 아니거나 음수(-1이면 끝까지 읽으려다 멈춘다)
+        if not (size.isascii() and size.isdigit()):  # 숫자가 아니거나 음수(-1이면 끝까지 읽으려다 멈춘다). ASCII 숫자만: isdigit은 위첨자(²)도 숫자로 보지만 int는 못 읽는다
             return self._reject(400, "validation", "요청을 읽지 못했어요.")
         if int(size) > (MAX_FILE_BODY if self.path in FILE_PATHS else MAX_BODY):
             return self._reject(413, "validation", "보낸 내용이 너무 커요. 줄여서 다시 보내 주세요.")

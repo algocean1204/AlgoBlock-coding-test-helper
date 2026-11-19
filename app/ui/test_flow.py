@@ -23,7 +23,6 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 TMP = Path(tempfile.mkdtemp(prefix="algoblock-flow-"))
 (TMP / "data").mkdir()
-(TMP / "data" / "prefs.json").write_text(json.dumps({"tour_seen": True}), encoding="utf-8")  # 처음 안내 창이 화면을 가리지 않게
 os.environ["ALGOBLOCK_UI_DATA"] = str(TMP / "data")  # 사용자 데이터 폴더를 건드리지 않는다
 os.environ["ALGOBLOCK_UI_PREPARE"] = "0"
 for name in ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "ALGOBLOCK_LLM_MODEL", "ALGOBLOCK_LLM_PROVIDER", "ALGOBLOCK_UI_CLIENT", "ALGOBLOCK_EVAL_EXTRA", "ALGOBLOCK_UI_SCENARIOS"):
@@ -106,11 +105,12 @@ def self_check(script: Path, base: str) -> None:
 
 
 def short_waits(script: Path) -> list[str]:
-    """기본 대기를 줄인 흐름(setDefaultTimeout)의 서버 요청(request.post·get)은 timeout을 따로 준다: 준비 요청이 느린 러너에서 화면 대기 기본값에 끊기지 않게."""
+    """기본 대기를 줄인 흐름(setDefaultTimeout)의 서버 요청(request.post·get)과 페이지 이동(goto·reload)은 timeout을 따로 준다:
+    준비 요청과 페이지를 여는 일이 느린 러너에서 화면 대기 기본값에 끊기지 않게."""
     text = script.read_text(encoding="utf-8")
     if "setDefaultTimeout(" not in text:
         return []
-    return [f"{script.name}:{n}" for n, line in enumerate(text.splitlines(), 1) if re.search(r"request\.(post|get)\(", line) and "timeout:" not in line]
+    return [f"{script.name}:{n}" for n, line in enumerate(text.splitlines(), 1) if re.search(r"request\.(post|get)\(|\.(goto|reload)\(", line) and "timeout:" not in line]
 
 
 def main() -> bool:
@@ -121,7 +121,7 @@ def main() -> bool:
     try:
         assert scripts, "flow/*.mjs가 없다"
         loose = [where for script in scripts for where in short_waits(script)]
-        assert not loose, f"기본 대기를 줄인 흐름의 서버 요청에 timeout이 없다(같은 줄에 적는다): {loose}"
+        assert not loose, f"기본 대기를 줄인 흐름의 서버 요청·페이지 이동에 timeout이 없다(같은 줄에 적는다): {loose}"
         page = TMP / "broken"
         page.mkdir()
         (page / "index.html").write_text(f'<!doctype html><meta charset="utf-8"><title>빈 화면</title><img src="{PROBE}" alt="">', encoding="utf-8")
@@ -134,6 +134,8 @@ def main() -> bool:
         httpd, base = serve(server.Handler)
         try:
             for script in scripts:
+                # 처음 안내 창이 화면을 가리지 않게. 흐름마다 이 값으로 되돌려 앞 흐름이 실패하며 남긴 설정(마지막 언어 등)을 넘기지 않는다
+                (TMP / "data" / "prefs.json").write_text(json.dumps({"tour_seen": True}), encoding="utf-8")
                 with scripted(script):
                     out = run(script, base, shots)
                     left = {task: len(items) for task, items in FAKE.scripts.items() if items}

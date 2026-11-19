@@ -43,6 +43,8 @@ const holdState = async (p, pid) => {
   })
   return { got, release }
 }
+// 길을 풀고(남은 처리의 오류는 버린다) 닫는다. 닫는 동안 아직 받는 중인 응답(route.fetch)이 던져 node가 실패 줄과 사진 없이 죽지 않게
+const shut = async (p) => { await p.unrouteAll({ behavior: 'ignoreErrors' }); await p.context().close() }
 const VIEWPORTS = [{ width: 1366, height: 689 }, { width: 1093, height: 551 }]
 const browser = await launch()
 let failed = 0
@@ -163,7 +165,7 @@ for (const viewport of VIEWPORTS) {
     const other = await open(await browser.newContext(), viewport, true, problems)
     try {
       await other.waitForFunction((t) => document.querySelector(t)?.getAttribute('aria-selected') === 'true', TAB('guide'), { timeout: 5000 })
-    } finally { await other.context().close() }
+    } finally { await shut(other) }
   })
   await need('새로 고쳐도 같은 방식과 같은 대화다', async () => {
     await page.reload()
@@ -203,7 +205,7 @@ for (const viewport of VIEWPORTS) {
     if ((await drafts.locator('#result .verdict').innerText()) !== verdict) throw new Error('결과 줄이 달라졌다')
   })
 
-  await drafts.context().close()
+  await shut(drafts)
 
   // 7. 실행이 끝나기 전에 튜터 탭을 누르면 실행이 끝난 뒤 한 번만 시작한다(실행 요청을 붙잡아 둔다)
   const runner = await take()
@@ -229,7 +231,7 @@ for (const viewport of VIEWPORTS) {
     if (starts !== 1) throw new Error(`시작 요청 ${starts}회`)
   })
 
-  await late.context().close()
+  await shut(late)
 
   // 8. 탭을 누를 때 보낸 상태 요청이 시작 뒤의 상태보다 늦게 와도 첫 질문을 덮지 않는다
   const racer = await take()
@@ -260,7 +262,7 @@ for (const viewport of VIEWPORTS) {
     if (!(await race.locator('#chat-log').isVisible()) || (await race.locator('#chat-log').innerText()) !== first) throw new Error('늦은 상태 응답이 대화를 옛 상태로 덮었다')
   })
 
-  await race.context().close()
+  await shut(race)
 
   // 9. 더 정확한 풀이로 바꿔 끼우면(대화가 지워진다) 튜터가 한 번 더 시작한다. 시작한 뒤 대화만 지워지면 '다시 시작' 단추가 남는다
   const swapper = await take()
@@ -297,7 +299,7 @@ for (const viewport of VIEWPORTS) {
     if (swapStarts !== 3) throw new Error(`다시 시작 단추가 시작하지 않았다(${swapStarts}회)`)
   })
 
-  await swap.context().close()
+  await shut(swap)
 
   // 10. 문제를 고쳐 저장하고 돌아오면, 고치기 전에 담아 둔 보내지 않은 글과 결과 줄을 되살리지 않는다
   let ed = null, ownId = null
@@ -332,7 +334,7 @@ for (const viewport of VIEWPORTS) {
     if (await ed.locator('#result .verdict').count()) throw new Error('고치기 전 케이스로 받은 결과 줄이 돌아왔다')
   })
 
-  await ed?.context().close()
+  if (ed) await shut(ed)
 
   // 11. 연결이 없으면 튜터 탭 안에 연결 안내 카드(탭은 그대로 보이고, 모델은 부르지 않는다). 그 탭은 방식으로 남지 않는다
   const off = await open(await browser.newContext(), viewport, false, problems)
@@ -373,7 +375,7 @@ for (const viewport of VIEWPORTS) {
   })
   await need('서버에도 의자로 남는다', async () => { const way = await wayOf(early.id); if (way !== 'chair') throw new Error(way) })
   hold.release()
-  await quick.context().close()
+  await shut(quick)
 
   // 13. 방식 저장(/api/way)이 늦어 서버가 상태 요청을 먼저 처리해도 누른 방식이 남는다
   const slow = await take()
@@ -399,7 +401,7 @@ for (const viewport of VIEWPORTS) {
     if (way !== 'chair') throw new Error(way)
   })
   letWay(); hold.release()
-  await lag.context().close()
+  await shut(lag)
 
   // 14. 앞 문제에서 상태를 받기 전에 누른 방식이 다른 문제로 새지 않는다(앞 문제의 상태 응답은 붙잡아 둔다)
   const from = await take(), to = await take()
@@ -432,7 +434,7 @@ for (const viewport of VIEWPORTS) {
     await titled(move, to.id)
     await stayed()
   })
-  await move.context().close()
+  await shut(move)
 
   // 15. 연결이 없을 때 상태를 받기 전에 누른 튜터 탭: 연 뒤에 누른 것처럼 그 탭의 연결 안내가 보이고, 방식으로 남지 않는다
   const bare = await take()
@@ -454,7 +456,7 @@ for (const viewport of VIEWPORTS) {
     if (way !== 'solo') throw new Error(`서버의 방식: ${way}`)
   })
   hold.release()
-  await offEarly.context().close()
+  await shut(offEarly)
 
   if (problems.length) {
     failed++
@@ -462,8 +464,8 @@ for (const viewport of VIEWPORTS) {
     await page.screenshot({ path: join(shots, `mode_tabs-${tag}.png`) }).catch((e) => console.error(`screenshot ${tag}: ${String(e.message).split('\n')[0]}`))
     console.error(`FAIL ${tag}\n  - ${problems.join('\n  - ')}`)
   } else console.log(`ok ${tag}`)
-  await context.close()
-  await off.context().close()
+  await shut(page)
+  await shut(off)
 }
 await browser.close()
 process.exit(failed ? 1 : 0)

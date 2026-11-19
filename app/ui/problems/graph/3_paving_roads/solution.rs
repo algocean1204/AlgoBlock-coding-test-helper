@@ -1,14 +1,14 @@
-// 재귀 대신 반복문: 긴 줄 입력에서 깊어지지 않게
-fn find(parent: &mut Vec<usize>, mut x: usize) -> usize {
-    while parent[x] != x {
-        parent[x] = parent[parent[x]]; // 경로 압축
-        x = parent[x];
-    }
-    x
-}
-
 fn solution(n: i32, roads: Vec<Vec<i32>>) -> i32 {
     let mut parent: Vec<usize> = (0..=n as usize).collect();
+
+    // 재귀 대신 반복문: 긴 줄 입력에서 깊어지지 않게
+    fn find(parent: &mut Vec<usize>, mut x: usize) -> usize {
+        while parent[x] != x {
+            parent[x] = parent[parent[x]]; // 경로 압축
+            x = parent[x];
+        }
+        x
+    }
 
     let mut sorted = roads.clone();
     sorted.sort_by_key(|r| r[2]); // 싼 길부터 본다

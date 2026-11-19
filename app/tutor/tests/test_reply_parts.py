@@ -4,6 +4,9 @@
 - 마지막 스키마 버전이 message.parts_json(TEXT, NULL 허용)을 더한다. 옛 기록은 NULL이다.
 - parts는 서비스 말(튜터 대화 줄)에만 있다. 꼴: {"block_index": int, "result"?: str, "question"?: str, "note"?: str, "buttons"?: [str]}.
   비어 있는 칸은 키를 두지 않는다. 길 안내 글(막혔을 때 갈 길)은 칸 글이 아니라 buttons 표시로만 남고, text에는 지금처럼 그대로 들어간다.
+  예외: 답을 달라는 말에 붙는 길 안내의 앞 문장("답 코드는 드리지 않아요.")은 결과 칸에 남는다. text에서는 질문 아래 줄이라 칸 순서가 text 순서와 다르다.
+- 질문 자리에 오는 고정 안내 문장(코드로 적으라는 말, 물음을 미루는 말, 마침 말의 앞 문장)은 결과 칸에 둔다. 코드로 적으라는 말에는 질문 칸이 없다.
+  저장 힌트(계획 때 검사한 질문)는 앞 문장이 있어도 질문 칸에 통째로 둔다.
 - 저장 줄(save.nodes.collect의 messages)은 "parts" 키를 늘 가진다(없으면 None).
 - 응답의 메시지(respond.messages_body)는 parts가 있는 말에만 "parts" 키를 낸다. 없는 말은 키가 없어 응답 모양이 이전과 같다.
 - text는 지금과 같은 줄 꼴로 채운다. 모델 호출 수는 바뀌지 않는다.
@@ -259,6 +262,68 @@ class SavedPartsTest(unittest.TestCase):
         self.assertNotIn("question", parts)
         self.assertTrue(parts.get("result") or parts.get("buttons"))
         self.assertEqual(len(fake.calls), 0)
+
+    def question_only(self, mode, i, make, chat, text, told, asked):
+        """질문 칸은 물음 한 문장(엔진·평가기의 칸 검사에 걸리지 않음)이거나 없고, 물음이 아닌 고정 안내 문장은 결과 칸에 있다. text는 그대로다."""
+        from ..common.talk_rules import QUESTION_CHARS, field_problems
+        from ..eval.checks import reply_flags
+
+        done, fake, rows, after = self.saved(mode, i, make, chat)
+        parts = self.check_common(mode, done, rows, after)
+        self.assertEqual(rows[-1]["text"], text)
+        self.assertEqual(done["result"]["reply"], text)
+        self.assertIn(told, parts.get("result", ""))
+        self.assertEqual(parts.get("question"), asked)
+        if asked:
+            self.assertEqual(field_problems(asked, QUESTION_CHARS, ar.PROBLEM), [])
+            self.assertTrue(asked.endswith("?"))
+        self.in_text(text, parts)
+        flags = reply_flags({"kind": "turn", "reply": text, "parts": parts, "problem": ar.PROBLEM, "user": rows[0]["text"]}, None)
+        self.assertFalse([f for f in flags if f.startswith(("질문 칸", "근거 칸"))], flags)  # 평가기의 칸 기준(slot_clean_rate)
+        return fake
+
+    def test_write_tip_is_a_result_without_question(self):
+        from ..turn.moves import WRITE_TIP, WRITE_TIP_LAST
+
+        for mode in ("chair", "guide"):
+            for i, tip in ((0, WRITE_TIP), (ar.N - 1, WRITE_TIP_LAST)):
+                with self.subTest(mode=mode, i=i):
+                    self.question_only(mode, i, ar.talk("0보다 큰 값만 골라서 더해요", "[check]Y t"), None, tip, tip, None)
+
+    def test_deferral_line_is_a_result_above_the_question(self):
+        from ..common.talk_rules import DEFER_TAIL
+
+        told = f"물음이 둘이라 하나씩 볼게요. {DEFER_TAIL}"
+        for mode in ("chair", "guide"):
+            with self.subTest(mode=mode):
+                fake = self.question_only(mode, 0, ar.talk("음수는 빼야 하나요? 반복문은 어디서 시작하나요?", "[check]N1", ar.ASKED), None,
+                                          f"{told}\n{ar.ASKED}", told, ar.ASKED)
+                self.assertEqual(len(fake.calls), 2)  # 판정 1 + 말 1(그대로)
+
+    def test_close_keeps_only_its_last_sentence_as_the_question(self):
+        from ..common.talk_rules import FALLBACK
+
+        told, asked = FALLBACK["close"].split(". ", 1)  # 앞 문장은 안내, 뒤 문장이 물음
+        told += "."
+        for mode, last in (("chair", "recap"), ("guide", "run")):
+            with self.subTest(mode=mode):
+                chat = [fakes.service(ar.HINTS[2][0], 2, "s0", ar.OPENING[mode]), fakes.user(ar.PASS[2], 2, "u0"), fakes.service(ar.ASKED, 2, "s1", last)]
+                fake = self.question_only(mode, ar.N - 1, ar.talk("합을 0에서 시작해서 양수만 더하고 돌려줘요"), chat, FALLBACK["close"], told, asked)
+                self.assertEqual(len(fake.calls), 0)
+
+    def test_two_sentence_saved_hint_stays_whole_in_question(self):
+        """저장 힌트는 계획 때 검사한 질문이다: 앞 문장(질문의 바탕)이 있어도 질문 칸에 통째로 두고 결과 칸을 만들지 않는다."""
+        hint = "items가 [3, -1, 2]라고 해 볼게요. 처음 합은 얼마일까요?"
+        blocks = [replace(ar.BLOCKS[0], hints=[ar.HINTS[0][0], hint, ar.HINTS[0][2]]), *ar.BLOCKS[1:]]
+
+        def make(mode, i, ctx):
+            return fakes.make_state("turn", replace(ctx, plan=fakes.planned(blocks)), mode=mode, event="message", text="모르겠어요"), {}, None
+
+        for mode in ("chair", "guide"):
+            with self.subTest(mode=mode):
+                done, fake, rows, after = self.saved(mode, 0, make)
+                parts = self.check_common(mode, done, rows, after)
+                self.assertEqual((rows[-1]["text"], parts, len(fake.calls)), (hint, {"block_index": 0, "question": hint}, 0))
 
     def test_text_stays_the_line_form_of_the_reply(self):
         """칸을 더해도 reply(곧 text)는 그대로다. 줄 수 세기·보고서·평가기가 읽는 것이 text다."""

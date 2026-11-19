@@ -2976,6 +2976,7 @@ def http() -> None:
             status, payload = send("/api/problems", body)
             assert (status, payload["detail"]["message"]) == (400, "요청을 읽지 못했어요."), (body[:10], status, payload)
         assert send("/api/problems", b"", headers={"Content-Length": "twelve"})[0] == 400  # 본문 없이 보낸다: 길이를 모르면 서버가 남은 본문을 읽지 않아, 본문이 있으면 Windows가 연결을 끊을 수 있다
+        assert send("/api/problems", b"", headers={"Content-Length": "\u00b2"})[0] == 400  # 위첨자 숫자(²): isdigit은 숫자로 보지만 int는 못 읽는다
         for method in ("PUT", "DELETE", "PATCH", "OPTIONS"):
             assert send("/api/problems", method=method)[0] == 405
         handle = server.handle
@@ -3023,8 +3024,58 @@ def reject_drain() -> None:
     assert send(f"{size}\r\nContent-Type: application/json", body, "PUT") == (405, "method_not_allowed", b"")
     assert send(f"Content-Length: {server.MAX_BODY + 1}\r\nContent-Type: text/plain", body) == (415, "unsupported_media_type", body)  # 상한보다 크면 읽지 않는다
     assert send("Content-Length: twelve\r\nContent-Type: application/json", body) == (400, "validation", body)  # 길이를 모르면 읽지 않는다
+    # 읽지 않은 본문이 남으면 그 응답 뒤에 닫는다(이어 쓰는 연결에서 남은 본문을 다음 요청으로 읽지 않게)
+    assert send("Content-Length: 2", b"{}", "GET") == (404, "not_found", b"{}")
+    chunked = b"2\r\n{}\r\n0\r\n\r\n"
+    assert send("Transfer-Encoding: chunked\r\nContent-Type: application/json\r\nOrigin: null", chunked) == (403, "forbidden", chunked)
     httpd.shutdown()
     httpd.server_close()
+
+
+def keep_alive() -> None:
+    """연결 하나로 요청을 이어 보낸다(요청마다 연결을 열고 닫으면 닫힌 연결이 쌓인다). 정상·거절·오류 응답 뒤에도 같은 연결로 다음 응답을 바로 받고,
+    읽지 않은 본문이 남는 거절(길이가 깨짐, 상한보다 큼)만 그 응답 뒤에 닫는다."""
+    import contextlib
+    import io
+    import threading
+    from http.client import HTTPConnection
+
+    httpd = server.ThreadingHTTPServer(("127.0.0.1", 0), server.Handler)
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    conn = HTTPConnection("127.0.0.1", httpd.server_port, timeout=60)
+
+    def send(method: str, path: str, body: bytes | None = None, headers: dict | None = None) -> tuple[int, bytes]:
+        conn.request(method, path, body, {"Content-Type": "application/json", **(headers or {})})
+        res = conn.getresponse()
+        return res.status, res.read()
+
+    handle = server.handle
+    try:
+        with contextlib.redirect_stderr(io.StringIO()):
+            assert send("GET", "/")[0] == 200
+            sock = conn.sock
+            assert sock is not None, "첫 응답 뒤에 연결을 닫았다"
+            for method, path, body, headers, status in (
+                    ("POST", "/api/problems", b"{}", None, 200),
+                    ("POST", "/api/problems", b'{"id": "x"}', {"Content-Type": "text/plain"}, 415),  # 본문을 읽기 전에 거절하고 남은 본문은 읽어 버린다
+                    ("POST", "/api/problems", b"{}", {"Origin": "https://evil.example"}, 403),
+                    ("PUT", "/api/problems", b'{"id": "x"}', None, 405),
+                    ("POST", "/api/problems", b"{", None, 400),
+                    ("GET", "/nope", None, None, 404),
+                    ("GET", "/app.css", None, None, 200)):
+                got, data = send(method, path, body, headers)
+                assert (got, conn.sock) == (status, sock), (method, path, got)
+                assert data and (got == 200 or json.loads(data)["detail"]["message"]), (method, path, data[:80])
+            server.handle = lambda path, body: 1 / 0
+            assert (send("POST", "/api/problems", b"{}")[0], conn.sock) == (500, sock)  # 안에서 난 오류도 연결을 이어 쓴다
+            server.handle = handle
+            assert send("POST", "/api/problems", b"", {"Content-Length": "twelve"})[0] == 400 and conn.sock is None  # 길이를 모르는 본문은 읽지 않으니 닫는다
+            assert send("POST", "/api/problems", b"{}")[0] == 200  # 닫힌 뒤에는 새 연결로 다시 받는다
+    finally:
+        server.handle = handle
+        conn.close()
+        httpd.shutdown()
+        httpd.server_close()
 
 
 def b64(data: bytes) -> str:
@@ -4760,6 +4811,13 @@ def lang_plans() -> None:
     # 2-1. 블록이 같은 일을 하는지(misfits): Python은 find를 앞(b2)에 두고 java는 맨 뒤 메서드로 둔 풀이를 차례대로 억지로 나누면
     #      b2에 find가 없다. 이런 구간은 싣지 않고, 걸린 까닭을 붙여 다시 받는다(되돌리면 실패)
     union, _ = full(HERE / "problems" / "graph" / "1_club_union")
+    tail = ("class Solution {\n    public int solution(int n, int[][] merges) {\n        int[] parent = new int[n + 1];\n"
+            "        for (int i = 0; i <= n; i++) parent[i] = i;\n\n        int groups = n;\n        for (int[] m : merges) {\n"
+            "            // find를 재귀로 쓰면 긴 줄 입력에서 스택이 넘치므로 반복문으로 쓴다\n            int rootA = find(parent, m[0]);\n            int rootB = find(parent, m[1]);\n"
+            "            if (rootA != rootB) {\n                parent[rootB] = rootA;\n                groups--;\n            }\n        }\n"
+            "        return groups;\n    }\n\n    private int find(int[] parent, int x) {\n        while (parent[x] != x) {\n"
+            "            parent[x] = parent[parent[x]]; // 경로 압축: 한 칸 위를 건너뛰어 대표에 가깝게 고쳐 둔다\n            x = parent[x];\n        }\n        return x;\n    }\n}\n")  # find를 맨 뒤 메서드로 둔 풀이(실린 풀이는 Python 차례를 따른다)
+    union["solutions"] = {**union["solutions"], "java": tail}
     forced = [[1, 4], [5, 6], [7, 10], [11, 14], [15, 17], [18, 26]]
     found = make_builtin.misfits(union["ready"]["plan"]["blocks"], [{**block, "reference": "\n".join(union["solutions"]["java"].splitlines()[a - 1:b])}
                                                                     for block, (a, b) in zip(union["ready"]["plan"]["blocks"], forced)], "java")
@@ -5195,6 +5253,7 @@ def main() -> None:
         checks()
         http()
         reject_drain()
+        keep_alive()
         upload()
         assert not fake.calls, fake.calls  # 파일 읽기와 원본 보관도 모델을 부르지 않는다
     try:

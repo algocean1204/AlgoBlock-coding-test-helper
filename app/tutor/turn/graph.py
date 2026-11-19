@@ -19,13 +19,26 @@ from ..llm import llm, model_name
 from ..state import MainState, MovePlan, Said, Verdict
 from .code_check import check_code
 from .context import prepare
-from ..common.talk_rules import ANSWER_LEAD, ANSWER_NO, BACK_LEAD, HARD_LEAD, KIND_LABEL, OWN_WAY, WITHDRAWN, open_lead, rename_note
+from ..common.talk_rules import (ANSWER_LEAD, ANSWER_NO, BACK_LEAD, DEFER_TAIL, FALLBACK, HARD_LEAD, KIND_LABEL, OWN_WAY, WITHDRAWN, open_lead, rename_note,
+                                sentences)
 from .moves import HINTS_DONE, asks, pick_move, rule_verdict
 from .talk import carries_deferred, checked_reply, clean_text, speak_messages
 
 STEPS = {"N1": "prepare", "N2": "judge", "N3": "check_code", "N4": "pick_move", "N5": "speak", "N6": "check_reply"}
 # 칸에 넣지 않는 앞말: 블록 여는 말(화면이 블록 번호·종류로 머리를 그린다)과 이음말
 BARE_LEADS = {open_lead("chair", kind).strip() for kind in (*KIND_LABEL, "")} | {BACK_LEAD.strip(), HARD_LEAD.strip()}
+
+
+def fixed_told(row: str) -> tuple[str, str]:
+    """질문 줄에서 물음이 아닌 고정 안내를 떼어 (결과 칸, 질문 칸)으로 나눈다. 알려진 고정 문구만 뗀다:
+    물음을 미루는 줄(defer_ask가 질문 위 줄로 붙인다)과 마침 말의 앞 문장. 모델 질문과 저장 힌트(계획 때 검사한 질문)는 통째로 질문이다."""
+    head, _, rest = row.partition("\n")
+    if head.endswith(DEFER_TAIL) and rest:
+        return head, rest
+    if row == FALLBACK["close"]:
+        *told, asked = sentences(row)
+        return " ".join(told), asked
+    return "", row
 
 
 def turn_graph(mode: str, judge_messages, judge_rule: str, system: str, steps: dict):
@@ -89,8 +102,9 @@ def turn_graph(mode: str, judge_messages, judge_rule: str, system: str, steps: d
         for slot, row in rows:
             if slot == "way" and row == ANSWER_LEAD.strip():
                 slot, row = "result", ANSWER_NO
-            if slot in ("result", "question", "note"):
-                parts[slot] = f"{parts[slot]}\n{row}" if slot in parts else row
+            for key, piece in zip(("result", "question"), fixed_told(row)) if slot == "question" else [(slot, row)]:  # 글(text)은 그대로, 칸만 나눈다
+                if piece and key in ("result", "question", "note"):
+                    parts[key] = f"{parts[key]}\n{piece}" if key in parts else piece
         last = filled and move.advance and move.target == state["turn"].index == len(active_plan(state).blocks) - 1
         stuck = filled and verdict is not None and not verdict.ok and move.target == base_open_count(state) - 1  # '이대로 넘어가기'는 지금 블록에만 있다
         buttons = [name for name, on in (("fill", any(slot == "way" for slot, _ in rows)), ("skip", stuck), ("run", last)) if on]

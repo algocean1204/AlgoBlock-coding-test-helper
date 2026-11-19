@@ -87,7 +87,7 @@ async function flow(which, viewport) {
   const need = async (what, fn) => { if (stuck) return; try { await fn() } catch (e) { stuck = true; problems.push(`${what}: ${String(e.message).split('\n').slice(0, 3).join(' | ')}`) } }
   const r = await context.request.post(`${base}/api/reset`, { data: { id: PID }, timeout: 30000 }) // 준비 요청: 화면을 기다리는 4초 기본값과 따로(느린 러너)
   if (!r.ok()) problems.push(`reset ${r.status()}`)
-  await page.goto(`${base}/#/p/${PID}`)
+  await page.goto(`${base}/#/p/${PID}`, { timeout: 30000 })
   await need('문제 제목이 그려진다', () => page.waitForFunction(() => document.getElementById('p-title')?.textContent.trim().length > 0, null, { timeout: 15000 }))
   await need('튜터 말과 두 단추가 보인다', async () => {
     if (await page.locator('#problem-peek').isVisible()) { await page.locator('#problem-peek').click(); await page.locator('#problem-peek').click() }
