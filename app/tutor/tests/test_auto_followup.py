@@ -333,6 +333,44 @@ class TermLeakTest(unittest.TestCase):
                         reply = {"note": example + self.TAIL, "question": self.BACK}
                         self.assertEqual(self.turn(mode, self.scene(mode, "plus", language), reply), self.BACK + "\n" + example + self.TAIL)
 
+    def test_bare_code_line_is_caught_in_both_fields(self):
+        """백틱 없이 쓴 이 문제 코드 줄('if x > 0:', 'if (x > 0) {')도 코드다. 지금 블록의 참고 코드가 아니어도 막힌다:
+        질문 칸이면 대체 질문, 근거 칸이면 근거만 빠진다."""
+        from ..common.talk_rules import FALLBACK
+
+        s = bank.SCENES["plus"]
+        split = [Block(id="b1", kind="loop", name="하나씩 보기", goal="items를 하나씩 본다", reference="    for x in items:", hints=list(s["hints"])),
+                 Block(id="b2", kind="condition", name=s["name"], goal=s["goal"], reference="        if x > 0:\n            total += x", hints=list(s["hints"]))]
+        scenes = [(language, code, lambda mode, language=language: self.scene(mode, "plus", language))
+                  for language, code in (("java", "if (x > 0) {"), ("javascript", "if (x > 0) {"), ("cpp", "if (x > 0) {"), ("rust", "if x > 0 {"))]
+        scenes.append(("python", "if x > 0:", lambda mode: replace(self.scene(mode, "plus"), plan=fakes.planned(split))))  # 조건 줄이 다음 블록에 있다
+        for mode in ("chair", "guide"):
+            for language, code, make in scenes:
+                with self.subTest(mode=mode, language=language):
+                    self.assertEqual(self.turn(mode, make(mode), {"question": f"{code}처럼 쓰면, {self.BACK}"}), FALLBACK["term"])
+                    self.assertEqual(self.turn(mode, make(mode), {"note": f"{code}처럼 쓰면 조건을 걸 수 있어요.", "question": self.BACK}), self.BACK)
+
+    def test_bare_unrelated_example_goes_out(self):
+        """백틱 없이 쓴 상관없는 문법 예와 이 문제의 이름을 말로 가리킨 근거는 그대로 나간다."""
+        rows = [("python", "for fruit in fruits: 처럼 쓰면 하나씩 꺼내요."), ("python", "if score > 0: 처럼 쓰면 조건을 걸 수 있어요."),
+                ("python", "items의 값을 하나씩 꺼내 보면 돼요."), ("java", "if (score > 0) { 처럼 쓰면 조건을 걸 수 있어요."),
+                ("rust", "if score > 0 { 처럼 쓰면 조건을 걸 수 있어요.")]
+        for mode in ("chair", "guide"):
+            for language, note in rows:
+                with self.subTest(mode=mode, note=note):
+                    reply = self.turn(mode, self.scene(mode, "plus", language), {"note": note, "question": self.BACK})
+                    self.assertEqual(reply, self.BACK + "\n" + note)
+        # 이름만 나열한 조각('return new int[]{most, seconds};'의 'most, seconds')은 말 줄에서 막지 않는다(평범한 말과 문제 글 인용이 막혔다)
+        returns = {"java": "        int most = 0;\n        int seconds = 0;\n        return new int[]{most, seconds};",
+                   "cpp": "        int most = 0;\n        int seconds = 0;\n        return {most, seconds};"}
+        note, asked = "most, seconds 두 값을 구해요.", "[most, seconds]를 돌려주려면 무엇을 먼저 구할까요?"
+        for mode in ("chair", "guide"):
+            for language, code in returns.items():
+                ctx = self.scene(mode, "plus", language)
+                ctx = replace(ctx, plan=fakes.planned([ctx.plan.blocks[0], replace(ctx.plan.blocks[1], reference=code)]))
+                with self.subTest(mode=mode, language=language):
+                    self.assertEqual(self.turn(mode, ctx, {"note": note, "question": asked}), asked + "\n" + note)
+
     def test_term_step_hides_current_block_name_in_chair(self):
         self.assertIn("지금 블록 이름", CHAIR_STEPS["term"])
 
