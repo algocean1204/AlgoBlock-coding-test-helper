@@ -2274,6 +2274,18 @@ function tutorNote(mode) {
   return S.tried === mode ? `${about}<button type="button" class="btn small" id="start-again" data-model>다시 시작</button>` : ""; // 시작한 뒤 대화가 지워졌다: 스스로 다시 시작하지 않으니 단추를 둔다
 }
 
+/* badge-pure:start 튜터 말마다 붙일 블록 번호 표의 글('블록 2/5 · 반복', 붙이지 않으면 null). node로도 시험한다.
+   그 말이 겨눈 블록(엔진이 준다)의 번호와 종류만 쓴다. 이름은 쓰지 않는다(의자에서는 찾을 답이다).
+   번호가 없는 예전 말, 지금 계획에 없는 번호, 다시 짠 계획의 첫 말(replan)보다 앞의 말(옛 계획의 번호)에는 붙이지 않는다 */
+const badgeTexts = (chat, blocks) => {
+  const cut = chat.map((m) => m.role === "service" && m.move === "replan").lastIndexOf(true);
+  return chat.map((m, k) => {
+    const b = m.role === "service" && k >= cut && Number.isInteger(m.block_index) && blocks[m.block_index];
+    return b ? `블록 ${m.block_index + 1}/${blocks.length}${KIND[b.kind] ? ` · ${KIND[b.kind][0]}` : ""}` : null;
+  });
+};
+/* badge-pure:end */
+
 function renderTutor() {
   const s = S.session, mode = S.mode, finding = !!(S.debug && S.debug.open);
   const solo = mode === "solo", railed = solo && !S.soloOpen && !finding;
@@ -2306,13 +2318,13 @@ function renderTutor() {
   if (!live) return void ($("tutor-note").innerHTML = tutorNote(mode));
 
   let n = 0, html = "";
-  chat.forEach((m) => {
+  const badges = badgeTexts(chat, s.blocks);
+  chat.forEach((m, k) => {
     if (m.role !== "service") return void (html += meMsg(m.text));
     n += 1;
-    // 블록 번호 표: 그 말이 겨눈 블록(엔진이 준다)의 번호와 종류. 이름은 쓰지 않는다(의자에서는 찾을 답이다). 누르면 그 블록 칸으로 간다. 번호가 없는 예전 기록에는 달지 않는다
-    const b = Number.isInteger(m.block_index) && s.blocks[m.block_index], no = m.block_index + 1;
-    html += b ? `<div class="msg tutor" data-msg="${esc(m.id)}" role="group" aria-label="블록 ${no}에 대한 튜터 말"><span class="who">튜터</span>
-      <button type="button" class="btn quiet small block-badge" data-goto-block="${m.block_index}" title="이 블록 칸으로 가기">블록 ${no}/${s.blocks.length}${KIND[b.kind] ? ` · ${esc(KIND[b.kind][0])}` : ""}</button><div class="bubble">${rich(m.text)}</div></div>`
+    const no = m.block_index + 1; // 표를 누르면 그 블록 칸으로 간다
+    html += badges[k] ? `<div class="msg tutor" data-msg="${esc(m.id)}" role="group" aria-label="블록 ${no}에 대한 튜터 말"><span class="who">튜터</span>
+      <button type="button" class="btn quiet small block-badge" data-goto-block="${m.block_index}" title="이 블록 칸으로 가기">${esc(badges[k])}</button><div class="bubble">${rich(m.text)}</div></div>`
       : `<div class="msg tutor" data-msg="${esc(m.id)}"><span class="who">튜터</span><div class="bubble">${rich(m.text)}</div></div>`;
     const thread = (s.followups.find((t) => t.quote_id === m.id) || { messages: [] }).messages; // 꼬리질문 단추가 있던 때의 기록: 읽기만 한다
     if (thread.length) html += `<div class="thread" role="group" aria-label="${n}번째 튜터 말의 꼬리질문"><span class="thread-title">꼬리질문</span>${thread.map((x) => (x.role === "service" ? tutorBubble(x.text) : meMsg(x.text))).join("")}</div>`;

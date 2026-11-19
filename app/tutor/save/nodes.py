@@ -31,15 +31,12 @@ def collect(state: MainState) -> dict:
         verdict = state.get("verdict")
         # 블록 코드 확인의 글에는 판정(Y·N·?)을 남긴다. 서비스 말의 move는 사다리 차례를 세는 데 쓰여 건드리지 않는다
         checked = (CHECKED + ("?" if result.get("unsure") else "Y" if verdict.ok else "N")) if request.event == "block_filled" and verdict is not None else None
-        chat, move, parts = ctx.chair if mode == "chair" else ctx.guide, state.get("move"), state.get("reply_parts")
-        # 되물은 말과 그 답은 되물은 튜터 말(대화의 마지막 튜터 말)의 블록 번호를 잇는다. 앞 블록을 다시 확인한 직후면 그 앞 블록이다
-        quoted = next((m.block_index for m in reversed(chat) if m.role == "service"), None) if move and move.move == "term" else None
-        if quoted is not None and parts:
-            parts = {**parts, "block_index": quoted}
         if user:
-            rows.append(_row(mode, "main", "user", user, current_index(state) if quoted is None else quoted, None, checked))
-        rows.append(_row(mode, "main", "service", result.get("reply", ""), quoted if quoted is not None else move.target if move else None, None, result.get("move"), parts))
+            rows.append(_row(mode, "main", "user", user, current_index(state), None, checked))
+        move = state.get("move")
+        rows.append(_row(mode, "main", "service", result.get("reply", ""), move.target if move else None, None, result.get("move"), state.get("reply_parts")))
         # 같은 블록 코드를 다시 확인해 같은 판정·같은 말이 나왔다: 대화에 같은 짝을 또 쌓지 않는다(바뀌지 않은 코드를 거듭 확인하면 같은 말이 줄줄이 쌓였다)
+        chat = ctx.chair if mode == "chair" else ctx.guide
         if request.event == "block_filled" and len(chat) >= len(rows) and [_said(m.role, m.text, m.block_index, m.move) for m in chat[-len(rows):]] == [
                 _said(r["role"], r["text"], r["block_index"], r["move"]) for r in rows]:
             rows, result = [], {**result, "repeated": True}

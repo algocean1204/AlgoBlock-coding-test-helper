@@ -3150,6 +3150,23 @@ def aid_note() -> None:
     assert not server.unaided_open(SimpleNamespace(builtin=True), [], study, "2026-01-01T00:00:00+00:00", False)  # 튜터와 말했다
 
 
+def block_badges() -> None:
+    """튜터 말의 블록 번호 표 글(화면 순수 구역을 node로): 번호와 종류만, 번호가 없는 예전 말·지금 계획에 없는 번호·다시 짜기 앞의 말에는 없다."""
+    import shutil
+    node = shutil.which("node")
+    if not node:
+        return print("node가 없어 블록 번호 표 시험은 건너뜀")
+    js = (HERE / "app.js").read_text(encoding="utf-8")
+    source = js[:js.index("\n};\n", js.index("const KIND = {")) + 4] + re.search(r"/\* badge-pure:start.*?\*/(.*?)/\* badge-pure:end \*/", js, re.S).group(1)
+    blocks = [{"kind": "var_from_problem", "name": "합"}, {"kind": "loop", "name": None}, {"kind": None, "name": "끝"}]
+    say = lambda i, move=None: {"role": "service", "block_index": i, "move": move}  # noqa: E731
+    chat = [say(None), say(2, "open"), {"role": "user", "block_index": 2, "move": None}, say(0, "replan"), say(1), say(2), say(7), say(None)]
+    script = f"{source}\nconsole.log(JSON.stringify([badgeTexts({json.dumps(chat)}, {json.dumps(blocks)}), badgeTexts({json.dumps(chat[:3])}, {json.dumps(blocks)})]))"
+    now, before = json.loads(subprocess.run([node, "-e", script], capture_output=True, text=True, check=True).stdout)
+    assert now == [None, None, None, "블록 1/3 · 문제에서 바로 오는 변수", "블록 2/3 · 반복", "블록 3/3", None, None], now  # 다시 짠 뒤: 앞의 옛 계획 말에는 없다. 종류를 모르면 번호만
+    assert before == [None, "블록 3/3", None], before  # 다시 짜기 전이면 그대로 붙는다
+
+
 def ai_marks() -> None:
     """AI를 부르는 단추의 작은 표시와 비용 안내(화면 코드 확인): 표시는 data-ai로 한 곳(CSS)에서 그리고, 설정의 금액은 README의 실측 값과 같다. 사진 단계에 AI 사용을 알린다."""
     import re
@@ -4904,6 +4921,7 @@ def main() -> None:
         early_solution_report()
         case_arg_count()
         ai_marks()
+        block_badges()
         report_terms()
         new_draft()
         menu_and_title_note()
