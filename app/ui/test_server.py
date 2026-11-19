@@ -306,9 +306,10 @@ def builtin(fake) -> None:
     else:
         assert call("/api/submit", id=PID, code=JS)[1]["status"] == "toolchain_missing"
     assert len(call("/api/language", id=PID, language="python")[1]["session"]["blocks"]) == 2
-    with server.tutor() as t:  # 돌아온 계획은 그 언어로 쓰던 코드가 있어도 다시 짜지 않고 그대로 시작한다
+    with server.tutor() as t:  # 하던 대화도 그대로 돌아온다. 돌아온 계획은 그 언어로 쓰던 코드가 있어도 다시 짜지 않고 그대로 시작한다
+        assert [m.text for m in t.store.load(PID).chair] == [first["messages"][0]["text"]]
         t.store.update_code(PID, CODE)
-        assert call("/api/turn", id=PID, mode="chair", event="start")[1]["messages"][0]["text"]
+        assert call("/api/turn", id=PID, mode="guide", event="start")[1]["messages"][0]["text"]
         t.store.update_code(PID, "")
     assert not fake.calls, fake.calls  # 여기까지 모델을 한 번도 부르지 않았다
 
@@ -3441,15 +3442,15 @@ def way_not_in_browser() -> None:
 
 
 def confirm_allowlist() -> None:
-    """확인 묻기는 되돌릴 수 없는 일에만 남긴다: 처음부터·삭제·키 삭제·코드 덮어쓰기·채우기 덮어쓰기·케이스 바뀜·입력 비우기, 그리고 언어 전환.
-    언어를 바꾸면 그 문제의 튜터 대화와 블록 진행이 지워져 아직 묻는다(#324에서 언어별로 남기면 뺀다). 방식 바꾸기는 묻지 않는다."""
+    """확인 묻기는 되돌릴 수 없는 일에만 남긴다: 처음부터·삭제·키 삭제·코드 덮어쓰기·채우기 덮어쓰기·케이스 바뀜·입력 비우기.
+    방식 바꾸기와 언어 바꾸기는 묻지 않는다(언어마다 대화와 블록 진행을 남겨 돌아오면 되살린다)."""
     import re
     ids = set()
     for name in ("index.html", "app.js"):
         for tag in re.findall(r"<[a-z]+\b[^>]*\bclass=\"[^\"]*\bconfirm\b[^\"]*\"[^>]*>", (HERE / name).read_text(encoding="utf-8")):
             found = re.search(r"\bid=\"([^\"$]+)\"", tag)
             ids.add(found.group(1) if found else "block-fill")  # 블록 채우기 확인은 id 없이 그린다
-    allowed = {"new-clear-confirm", "reset-confirm", "del-confirm", "key-delete-confirm", "code-confirm", "edit-confirm", "block-fill", "lang-confirm"}
+    allowed = {"new-clear-confirm", "reset-confirm", "del-confirm", "key-delete-confirm", "code-confirm", "edit-confirm", "block-fill"}
     assert ids == allowed, (sorted(ids - allowed), sorted(allowed - ids))
 
 
@@ -3939,7 +3940,7 @@ def newest_models() -> None:
 
 
 def kept_languages() -> None:
-    """언어마다 준비 결과를 보관한다: 언어 A → B → A에서 두 번째 A는 모델 0회(가이드·계획·해설을 되살린다). 대화 진행은 처음부터."""
+    """언어마다 준비 결과를 보관한다: 언어 A → B → A에서 두 번째 A는 모델 0회(가이드·계획·해설을 되살린다). 대화 진행도 되살린다."""
     pid = server.register(GOOD)["id"]
     ready = own_ready("def solution(a, b):\n    return a + b")
     fake = FakeLlm({})
@@ -3958,7 +3959,7 @@ def kept_languages() -> None:
         assert ctx.plan is not None and ctx.solution.code == ready["solution"]["code"]
         assert t.store.conn.execute("SELECT explain_json FROM tutor_session WHERE problem_id=?", (pid,)).fetchone()[0] == '{"sections": []}'
         assert t.prepare(pid).status == 200 and not fake.calls  # 계획이 있어 미리 만들기가 모델을 부르지 않는다
-        assert ctx.open_count == 1 and not ctx.chair  # 대화 진행은 처음부터
+        assert ctx.open_count == 1 and ctx.chair  # 대화 진행도 그대로(자세한 것은 language_round_trip_keeps_talk)
     assert back["session"]["blocks"]
     again = call("/api/language", id=pid, language="java")[1]
     with server.tutor() as t:
@@ -3966,6 +3967,190 @@ def kept_languages() -> None:
     call("/api/problems/edit", id=pid, title=GOOD["title"], text=GOOD["text"] + " 고침", cases=GOOD["cases"])  # 글을 고치면 보관한 것도 버린다
     assert pid not in server.read_json(server.KEPT_FILE, {})
     assert again["session"]["blocks"]
+    call("/api/problems/delete", id=pid)
+
+
+def talk_of(pid: str) -> tuple:
+    """그 문제의 대화(꼬리질문 포함)·블록 판정·디버그 상태 줄, 열린 블록 수, 블록 칸, 내 방식."""
+    with server.tutor() as t:
+        rows = tuple(tuple(tuple(row) for row in t.store.conn.execute(f"SELECT * FROM {table} WHERE problem_id=? ORDER BY {order}", (pid,)))
+                     for table, order in (("message", "id"), ("block_state", "block_id"), ("debug_state", "problem_id")))
+        ctx = t.store.load(pid)
+    return rows, ctx.open_count, server.read_json(server.BLOCKS_FILE, {}).get(pid, {}), pid in server.read_json(server.OWN_FILE, {})
+
+
+def language_round_trip_keeps_talk() -> None:
+    """언어 A → B → A: A의 튜터 대화·꼬리질문·블록 진행(열린 수, 판정, 블록 칸, 내 방식)·디버그 상태가 그대로 돌아온다(모델 0회).
+    B는 B의 것(처음이면 빈 것)이다. 아직 저장하지 않은 블록 칸(요청의 blocks)도 A의 것으로 남는다.
+    '처음부터'와 문제 지우기는 모든 언어의 보관분을 지우고, 보관분이 없는 옛 자료는 계획만 되살려 대화를 새로 연다."""
+    pid = server.register(GOOD)["id"]
+    fake = FakeLlm({})
+    with use_llm(fake):
+        with server.tutor() as t:
+            t.adopt(pid, own_ready("def solution(a, b):\n    return a + b"))
+        call("/api/turn", id=pid, mode="chair", event="start")
+        call("/api/turn", id=pid, mode="guide", event="start")
+        with server.tutor() as t:
+            first = t.store.conn.execute("SELECT MIN(id) FROM message WHERE problem_id=?", (pid,)).fetchone()[0]
+            t.store.conn.execute("INSERT INTO message(problem_id, mode, thread, quote_id, role, text, at) VALUES(?, 'chair', ?, ?, 'user', '왜요?', 't')", (pid, f"quote:{first}", str(first)))  # 꼬리질문은 말 id로 잇는다
+            t.store.conn.execute("INSERT INTO block_state(problem_id, block_id, code, code_hash, verdict, at) VALUES(?, 'b1', 'return a + b', 'h', 'Y', 't')", (pid,))
+            t.store.conn.execute("INSERT INTO debug_state(problem_id, code_hash, kind, line, cause, fixed_line) VALUES(?, 'h', 'wrong_answer', 1, '까닭', 'return a + b')", (pid,))
+            t.store.conn.commit()
+        server.own_way(pid, True)
+        typed = {"b1": {"code": "def solution(a, b):\n    return a + b  # 아직 저장 전", "by": "me"}}
+        python = talk_of(pid)
+        assert python[0][0] and python[0][1] and python[0][2] and python[1] >= 1 and python[3], python
+        assert "블록 코드 모양" in refuses("/api/language", id=pid, language="java", blocks={"b1": "x"}) and talk_of(pid) == python  # 모양이 틀리면 바꾸지 않는다
+
+        call("/api/language", id=pid, language="java", blocks=typed)
+        assert talk_of(pid) == (((), (), ()), 0, {}, False), talk_of(pid)  # B는 처음이라 비어 있다
+        with server.tutor() as t:
+            t.adopt(pid, own_ready("class Solution { int solution(int a, int b) { return a + b; } }"))
+        call("/api/turn", id=pid, mode="chair", event="start")
+        with server.tutor() as t:  # 같은 블록 id(b1)를 두 언어가 따로 쓴다
+            t.store.conn.execute("INSERT INTO block_state(problem_id, block_id, code, code_hash, verdict, at) VALUES(?, 'b1', 'return a + b;', 'j', 'N', 't')", (pid,))
+            t.store.conn.commit()
+        call("/api/blocks", id=pid, blocks={"b1": {"code": "return a + b;", "by": "me"}}, language="java")
+        java = talk_of(pid)
+        assert java[0][0] and java[0][1] and java[2] and not java[3], java
+
+        back = call("/api/language", id=pid, language="python")[1]
+        assert talk_of(pid) == (python[0], python[1], typed, True), (talk_of(pid), python)  # A의 것이 그대로(블록 칸은 바꾸기 직전에 보낸 것)
+        assert "talk" not in server.read_json(server.KEPT_FILE, {})[pid]["python"]  # 되살린 대화는 보관분에서 뺀다(두 군데에 남지 않는다)
+        assert back["blocks"] == typed and back["own_way"] is True and back["session"]["blocks"]
+        assert call("/api/language", id=pid, language="java")[1]["problem"]["language"] == "java" and talk_of(pid) == java  # B도 B의 것
+        call("/api/language", id=pid, language="python")
+        assert talk_of(pid) == (python[0], python[1], typed, True)
+        assert not fake.calls, fake.calls
+
+        call("/api/reset", id=pid)  # 처음부터: 지금 언어와 보관한 다른 언어의 대화·블록 진행을 모두 지운다
+        assert not any("talk" in saved for saved in server.read_json(server.KEPT_FILE, {}).get(pid, {}).values())
+        call("/api/language", id=pid, language="java")
+        rows, opened, blocks, mine = talk_of(pid)
+        assert (rows, blocks, mine) == (((), (), ()), {}, False) and opened == 1, talk_of(pid)  # 계획은 남고 대화는 처음부터
+
+        call("/api/turn", id=pid, mode="chair", event="start")
+        call("/api/language", id=pid, language="python")
+        saved = server.read_json(server.KEPT_FILE, {})
+        assert "talk" in saved[pid]["java"]
+        saved[pid]["java"].pop("talk")  # 대화를 보관하기 전에 저장한 옛 자료
+        server.write_json(server.KEPT_FILE, saved)
+        call("/api/language", id=pid, language="java")
+        with server.tutor() as t:
+            ctx = t.store.load(pid)
+            assert ctx.plan is not None and ctx.open_count == 1 and not ctx.chair and not ctx.block_states  # 계획만 되살리고 대화는 새로
+        assert call("/api/turn", id=pid, mode="chair", event="start")[0] == 200 and not fake.calls, fake.calls
+
+        call("/api/language", id=pid, language="python")
+        call("/api/problems/delete", id=pid)  # 지우면 모든 언어의 보관분도 지운다
+        assert pid not in server.read_json(server.KEPT_FILE, {}) and pid not in server.read_json(server.BLOCKS_FILE, {})
+    js = (HERE / "app.js").read_text(encoding="utf-8")
+    change = js[js.index("async function changeLanguage("):js.index("\n}\n", js.index("async function changeLanguage("))]
+    assert re.search(r'api\("/api/language", \{[^}]*\bblocks\b', change) and "harvest()" in change, "언어를 바꿀 때 아직 저장하지 않은 블록 칸을 함께 보내야 한다"
+    assert "langWant" not in js and "wantLanguage" not in js, "언어 바꾸기 확인이 남았다"
+
+
+def language_switch_faults() -> None:
+    """언어를 바꾸는 중에 실패해도 대화와 블록 칸의 글을 잃지 않는다(모델 0회).
+    손으로 고친 보관분: 형이 맞지 않는 줄은 건너뛰고 바꾸기는 끝난다(언어와 코드가 함께 바뀐다).
+    저장소를 바꾸는 중의 실패: 예전 언어의 대화가 그대로고, 대화가 없으면 새로 시작하는 화면처럼 하고 언어를 오가도 처음 말이 남는다.
+    방금 담은 사본은 빼서, 실패 뒤에 고친 칸 글을 다시 연 화면이 옛 사본으로 덮지 않는다.
+    되살린 뒤 블록 칸 파일 쓰기의 실패: 그 언어의 칸 글이 보관분에 남고, 다시 연 화면이나 다음 바꾸기가 마저 쓴다
+    (다른 언어의 칸 글이 이 언어의 것으로 보이거나 담기지 않는다. 그사이 상태를 새로 받지 않은 화면이 보낸 코드·칸 글은 다른 언어의 것이라 쓰지 않는다).
+    처음 가는 언어(보관한 칸 글이 없다)에서 실패해도 그 언어의 칸은 비어 있고 다른 언어의 글이 담기지 않는다."""
+    pid = server.register(GOOD)["id"]
+    plans = {"python": own_ready("def solution(a, b):\n    return a + b"), "java": own_ready("class Solution { int solution(int a, int b) { return a + b; } }")}
+    fake = FakeLlm({})
+
+    def start(language: str) -> str:  # 계획이 없으면 넣고, 대화가 없으면 시작한다(화면이 튜터 탭에서 스스로 시작하듯). 첫 말 id
+        with server.tutor() as t:
+            if t.store.load(pid).plan is None:
+                t.adopt(pid, plans[language])
+            if not t.store.load(pid).chair:
+                call("/api/turn", id=pid, mode="chair", event="start")
+            return t.store.load(pid).chair[0].id
+
+    def firsts() -> tuple[str, str]:  # 두 언어를 오간 뒤 각 언어의 첫 말 id
+        call("/api/language", id=pid, language="java")
+        java = start("java")
+        call("/api/language", id=pid, language="python")
+        return start("python"), java
+
+    with use_llm(fake):
+        py_first = start("python")
+        call("/api/language", id=pid, language="java")
+        java_first = start("java")
+        java_blocks, java_code = {"b1": {"code": "return a + b; // 자바 칸", "by": "me"}}, "class Solution {}"
+        call("/api/blocks", id=pid, blocks=java_blocks, language="java")
+        call("/api/code", id=pid, code=java_code, language="java")
+        call("/api/language", id=pid, language="python")  # 자바의 대화·블록 칸은 이제 보관분에만 있다
+
+        saved = server.read_json(server.KEPT_FILE, {})
+        talk = saved[pid]["java"]["talk"]
+        talk["message"].append({**talk["message"][0], "id": 99999, "text": {"손으로": "넣은 사전"}})
+        talk["block_state"].append({"block_id": "b9", "code": ["목록"], "code_hash": "h", "verdict": "Y", "at": "t"})
+        server.write_json(server.KEPT_FILE, saved)
+        moved = call("/api/language", id=pid, language="java")[1]["problem"]
+        with server.tutor() as t:
+            ids = [m.id for m in t.store.load(pid).chair]
+        assert (moved["language"], moved["code"]) == ("java", java_code) and ids[0] == java_first and "99999" not in ids, (moved["language"], moved["code"], ids)
+        assert all(row[1] != "b9" for row in talk_of(pid)[0][1])  # 형이 맞지 않는 줄은 건너뛴다
+        call("/api/language", id=pid, language="python")
+
+        call("/api/blocks", id=pid, blocks={"b1": {"code": "return a + b  # 실패 전", "by": "me"}}, language="python")
+        before = talk_of(pid)
+        with patch.object(server, "restore_plan", side_effect=RuntimeError("되살리는 중 실패")):
+            try:
+                call("/api/language", id=pid, language="java")
+                raise AssertionError("되살리는 중 실패를 알려야 한다")
+            except RuntimeError:
+                pass
+        with server.tutor() as t:
+            assert t.store.load(pid).language == "python" and talk_of(pid) == before, "바꾸는 중에 실패하자 예전 언어의 대화가 사라졌다"
+        edited = {"b1": {"code": "return a + b  # 실패 뒤에 고침", "by": "me"}}
+        call("/api/blocks", id=pid, blocks=edited, language="python")
+        assert call("/api/state", id=pid, open=True)[1]["blocks"] == edited, "되돌려진 바꾸기의 옛 사본이 그 뒤에 고친 칸 글을 덮었다"
+        assert firsts() == (py_first, java_first), "다시 시작하고 언어를 오가자 처음 말이 사라졌다"
+
+        write = server.write_json
+
+        def blocks_write_fails(language: str) -> None:  # 저장소를 바꾼 뒤(그 언어가 된 뒤)의 블록 칸 파일 쓰기만 실패한다(디스크가 가득 참)
+            def full(path, data):
+                if path == server.BLOCKS_FILE and server.LANG.get(pid) == language:
+                    raise OSError(28, "No space left on device")
+                return write(path, data)
+            with patch.object(server, "write_json", full):
+                try:
+                    call("/api/language", id=pid, language=language)
+                    raise AssertionError("블록 칸 쓰기 실패를 알려야 한다")
+                except OSError:
+                    pass
+
+        def kept_blocks(language: str):
+            return (((server.read_json(server.KEPT_FILE, {}).get(pid) or {}).get(language) or {}).get("talk") or {}).get("blocks")
+
+        py_blocks, py_code = {"b1": {"code": "return a + b  # 파이썬 칸", "by": "me"}}, "def solution(a, b):\n    return a + b  # 파이썬 코드"
+        call("/api/blocks", id=pid, blocks=py_blocks, language="python")
+        call("/api/code", id=pid, code=py_code, language="python")
+        blocks_write_fails("java")  # 언어는 자바이고, 자바 칸 글은 보관분에만 있다
+        assert java_blocks in (kept_blocks("java"), server.read_json(server.BLOCKS_FILE, {}).get(pid)), "블록 칸의 글이 어디에도 남지 않았다"
+        assert call("/api/state", id=pid, open=True)[1]["blocks"] == java_blocks, "다시 연 화면의 블록 칸에 다른 언어의 글이 보인다"
+        call("/api/language", id=pid, language="python")
+        call("/api/language", id=pid, language="java")  # 더 실패 없이 한 번 더 오간다
+        assert (server.read_json(server.BLOCKS_FILE, {}).get(pid), kept_blocks("python")) == (java_blocks, py_blocks), "오간 뒤 어느 언어의 칸 글이 사라졌다"
+
+        blocks_write_fails("python")  # 화면은 상태를 새로 받지 않아 아직 자바의 코드·칸 글을 보낸다
+        call("/api/language", id=pid, language="cpp", code=java_code, blocks=java_blocks)
+        back = call("/api/language", id=pid, language="python")[1]
+        assert (back["blocks"], back["problem"]["code"]) == (py_blocks, py_code), "다른 언어의 코드·칸 글이 파이썬의 것으로 담겼다"
+        assert call("/api/language", id=pid, language="java")[1]["blocks"] == java_blocks
+
+        blocks_write_fails("rust")  # 처음 가는 언어: 되살릴 칸 글이 없다
+        assert call("/api/state", id=pid, open=True)[1]["blocks"] == {}, "처음 간 언어의 칸에 다른 언어의 글이 보인다"
+        call("/api/language", id=pid, language="java")
+        assert call("/api/language", id=pid, language="rust")[1]["blocks"] == {} and not kept_blocks("rust"), "다른 언어의 칸 글이 처음 간 언어의 것으로 담겼다"
+        assert call("/api/language", id=pid, language="java")[1]["blocks"] == java_blocks, "원래 언어의 칸 글이 사라졌다"
+        assert not fake.calls, fake.calls
     call("/api/problems/delete", id=pid)
 
 
@@ -4596,7 +4781,7 @@ def solution_traps() -> None:
         assert server.problem_shape(PID, "python")["traps"] == []
     js, css = (HERE / "app.js").read_text(encoding="utf-8"), (HERE / "app.css").read_text(encoding="utf-8")
     assert '<div class="traps"><h5>이 언어로 풀 때 조심할 것</h5>' in js and js.index('class="traps"') < js.index('<pre class="code"><code>${esc(sol.code') and ".traps {" in css
-    change = js[js.index("async function changeLanguage"):js.index("function wantLanguage")]
+    change = js[js.index("async function changeLanguage"):js.index("\n}\n", js.index("async function changeLanguage"))]
     assert change.index("const kept = ") < change.index("await work(") and "S.solo.codeOpen = kept.code;" in change  # 기다리는 동안의 다시 그리기 전에 적어 둔다
     assert "codeOpen(S.solo, passed)" in js and "noteCodeToggle(S.solo, summary.parentElement.open)" in js
     import re
@@ -4686,6 +4871,8 @@ def main() -> None:
         own_guide()
         guessed_level()
         kept_languages()
+        language_round_trip_keeps_talk()
+        language_switch_faults()
         edit_changes()
         explicit_mode()
         program_mode()
