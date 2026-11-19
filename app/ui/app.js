@@ -2476,11 +2476,13 @@ async function changeLanguage(language) {
   // 튜터가 뒤에서 이 문제의 계획을 만드는 중이면 그것이 끝날 때까지 기다린다(길면 30초쯤). 그동안 무엇을 하는지 보여 준다
   const r = await work(`언어를 바꾸는 중: ${LANG[language] || language}…`, "lang", () => api("/api/language", { id: pid, language, blocks, mode: talk, ...(codeEmpty() ? {} : { code }) })) // 시작 코드뿐이면 저장하지 않는다
     .finally(() => { $("code").readOnly = false; });
-  if (!r || S.pid !== pid) return;
+  if (!r || (!r.ok && S.pid !== pid)) return;
   if (!r.ok) { $("code-error").textContent = errorNote(r.error).text; $("code-error").hidden = false; return render(); }
-  const langs = ((KEPT[pid] ??= {}).langs ??= {}), back = langs[language] || {}; // 보내지 않은 대화·디버그 글은 서버에 보내지 않고 언어마다 여기 둔다
-  langs[from] = Object.fromEntries(TALKS.map((id) => [id, $(id).value]));
+  // 보내지 않은 대화·디버그 글은 서버에 보내지 않고 언어마다 여기 둔다. 기다리는 동안 다른 문제로 옮겼으면 떠나며 담아 둔 글(KEPT[pid])을 바꾼다
+  const away = S.pid !== pid, k = (KEPT[pid] ??= {}), langs = (k.langs ??= {}), back = langs[language] || {};
+  langs[from] = Object.fromEntries(TALKS.map((id) => [id, away ? k[id] || "" : $(id).value]));
   delete langs[language];
+  if (away) return void TALKS.forEach((id) => { k[id] = back[id] || ""; });
   clearProblem(pid);
   for (const id of TALKS) $(id).value = back[id] || "";
   applyState(r.data, talk);

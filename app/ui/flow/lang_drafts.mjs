@@ -1,7 +1,7 @@
 // 흐름 시험: 언어를 바꿔도 튜터에게 아직 보내지 않은 글(대화 칸 #say, 디버그 칸 #debug-say)이 언어마다 남는다.
 // 쓰는 법: node lang_drafts.mjs <주소> <사진 폴더>   (test_flow.py가 서버를 띄운 뒤 부른다)
 // 연결 상태는 /api/accounts 응답으로만 바꾼다(키를 넣지 않는다). 보내기(/api/turn)·디버그 첫 질문(/api/debug)은 route가 꾸민 응답으로 받아 모델을 부르지 않는다.
-// 기대: 언어마다 따로 남고, 돌아오면 되살고, 보내면 그 언어의 것만 비고, 문제를 옮겨도 섞이지 않고, 바꾸기가 실패해도 잃지 않고, 서버로 가는 요청에 글이 실리지 않는다.
+// 기대: 언어마다 따로 남고, 돌아오면 되살고, 보내면 그 언어의 것만 비고, 문제를 옮겨도(바꾸기를 기다리는 동안 옮겨도) 섞이지 않고, 바꾸기가 실패해도 잃지 않고, 서버로 가는 요청에 글이 실리지 않는다.
 import { launch } from '../stageshow/scripts/browser.mjs'
 import { mkdirSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -26,7 +26,7 @@ let failed = 0
 async function flow(name, viewport, steps) {
   const tag = `${name}-${viewport.width}x${viewport.height}`
   const problems = [], sent = []
-  let stuck = false, failLang = false
+  let stuck = false, failLang = false, hold = null
   const need = async (what, fn) => { if (stuck) return; try { await fn() } catch (e) { stuck = true; problems.push(`${what}: ${String(e.message).split('\n')[0]}`) } }
   const context = await browser.newContext({ viewport })
   context.setDefaultTimeout(5000)
@@ -47,6 +47,7 @@ async function flow(name, viewport, steps) {
     if (req.method() === 'POST' && url.pathname.startsWith('/api/')) sent.push({ path: url.pathname, body: req.postData() || '' })
     let body = {}
     try { body = JSON.parse(req.postData() || '{}') } catch {}
+    if (url.pathname === '/api/language' && hold) { const h = hold; hold = null; const res = await route.fetch(); h.got(); await h.wait; return route.fulfill({ response: res }) }
     if (url.pathname === '/api/language' && failLang) { failLang = false; return route.fulfill({ status: 502, contentType: 'application/json', body: JSON.stringify({ detail: { code: 'llm_timeout', message: '모델이 답하지 않았어요' } }) }) }
     if (url.pathname === '/api/turn' && body.event === 'message') return route.fulfill({ status: 200, contentType: 'application/json', body: '{}' })
     if (url.pathname === '/api/debug') return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ message: '어디서 값이 사라질까요?', passed: false, line: null }) })
@@ -58,6 +59,12 @@ async function flow(name, viewport, steps) {
   const t = {
     page, need,
     failNextLang: () => { failLang = true },
+    holdNextLang: () => { // 다음 바꾸기 응답을 release()까지 붙잡는다(서버는 이미 바꿨다). reached: 붙잡았을 때
+      let release, got
+      const wait = new Promise((r) => { release = r }), reached = new Promise((r) => { got = r })
+      hold = { wait, got }
+      return { reached, release }
+    },
     title: (p) => page.waitForFunction((s) => (document.getElementById('p-title')?.textContent || '').includes(s), p.title, { timeout: 10000 }),
     value: (id) => page.locator(`#${id}`).inputValue(),
     expect: async (id, want, what) => { const got = await page.locator(`#${id}`).inputValue(); if (got !== want) throw new Error(`${what}: #${id}가 ${JSON.stringify(got)}(기대 ${JSON.stringify(want)})`) },
@@ -189,6 +196,36 @@ for (const viewport of VIEWPORTS) {
       await t.choose('python')
       await t.expect('say', A, '파이썬 복귀')
     })
+  })
+
+  // ── 6. 바꾸기 응답을 기다리는 동안 다른 문제로 옮겼다 돌아와도 언어마다 따로 남는다 ──
+  await flow('switch-away-while-changing', viewport, async (t) => {
+    const { need, page } = t
+    let held = null
+    await need('튜터와 차례로를 시작한다', () => t.start())
+    await need(`파이썬 글을 적고 ${other}로 바꾸는 응답을 붙잡아 둔다`, async () => {
+      await page.locator('#say').fill(A)
+      held = t.holdNextLang()
+      await page.locator('#p-lang-select').selectOption(other)
+      await held.reached
+    })
+    await need('응답이 오기 전에 다른 문제로 옮긴다', async () => {
+      await page.evaluate((id) => { location.hash = `#/p/${id}` }, second.id)
+      await t.title(second)
+    })
+    await need('붙잡은 응답을 풀고 바꾸기가 끝날 때까지 기다린다', async () => {
+      const done = page.waitForResponse((r) => new URL(r.url()).pathname === '/api/language', { timeout: 5000 })
+      held.release()
+      await done
+      await page.waitForFunction(() => !document.getElementById('p-lang-select').disabled, null, { timeout: 5000 })
+    })
+    await need(`처음 문제로 돌아오면 ${other} 칸은 비어 있다`, async () => {
+      await page.evaluate((id) => { location.hash = `#/p/${id}` }, problem.id)
+      await t.title(problem)
+      await t.settled(other)
+      await t.expect('say', '', `${other} 처음`)
+    })
+    await need('파이썬으로 바꾸면 파이썬의 글이다', async () => { await t.choose('python'); await t.expect('say', A, '파이썬 복귀') })
   })
 }
 await browser.close()
