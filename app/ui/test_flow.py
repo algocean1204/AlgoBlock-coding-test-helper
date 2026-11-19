@@ -105,11 +105,12 @@ def self_check(script: Path, base: str) -> None:
 
 
 def short_waits(script: Path) -> list[str]:
-    """기본 대기를 줄인 흐름(setDefaultTimeout)의 서버 요청(request.post·get)은 timeout을 따로 준다: 준비 요청이 느린 러너에서 화면 대기 기본값에 끊기지 않게."""
+    """기본 대기를 줄인 흐름(setDefaultTimeout)의 서버 요청(request.post·get)과 페이지 이동(goto·reload)은 timeout을 따로 준다:
+    준비 요청과 페이지를 여는 일이 느린 러너에서 화면 대기 기본값에 끊기지 않게."""
     text = script.read_text(encoding="utf-8")
     if "setDefaultTimeout(" not in text:
         return []
-    return [f"{script.name}:{n}" for n, line in enumerate(text.splitlines(), 1) if re.search(r"request\.(post|get)\(", line) and "timeout:" not in line]
+    return [f"{script.name}:{n}" for n, line in enumerate(text.splitlines(), 1) if re.search(r"request\.(post|get)\(|\.(goto|reload)\(", line) and "timeout:" not in line]
 
 
 def main() -> bool:
@@ -120,7 +121,7 @@ def main() -> bool:
     try:
         assert scripts, "flow/*.mjs가 없다"
         loose = [where for script in scripts for where in short_waits(script)]
-        assert not loose, f"기본 대기를 줄인 흐름의 서버 요청에 timeout이 없다(같은 줄에 적는다): {loose}"
+        assert not loose, f"기본 대기를 줄인 흐름의 서버 요청·페이지 이동에 timeout이 없다(같은 줄에 적는다): {loose}"
         page = TMP / "broken"
         page.mkdir()
         (page / "index.html").write_text(f'<!doctype html><meta charset="utf-8"><title>빈 화면</title><img src="{PROBE}" alt="">', encoding="utf-8")
