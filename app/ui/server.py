@@ -226,7 +226,7 @@ CHECKING: Counter = Counter()  # 문항마다 지금 뒤에서 도는 대조(준
 CHECK_LOCK = threading.Lock()
 GEN: Counter = Counter()  # 문항마다 가이드를 지운 횟수(글·케이스 수정, 언어 바꾸기, 지우기). 잠금 없이 도는 대조가 옛 가이드의 결과를 남기지 않게 본다
 TOOLS: dict[str, bool] = {}  # 언어 → 이 기기에 실행 도구가 있는가. 한 번 세어 두고, 화면이 '다시 확인'하면 다시 센다
-FILE_LOCK = threading.Lock()
+FILE_LOCK = threading.Lock()  # 자료 파일 읽기와 바꿔 쓰기(Windows는 다른 쪽이 연 파일을 바꿔 넣지 못하고, 바꿔 넣는 중인 파일을 열지 못한다). 쥔 채 read_json을 부르지 않는다
 
 
 class Refuse(Exception):
@@ -238,9 +238,11 @@ class Refuse(Exception):
 
 
 def read_json(path: Path, default):
-    """없으면 기본값. 깨졌거나 형이 다르면 <이름>.broken-<때>로 옮겨 두고(사용자가 되살릴 수 있게) 기본값."""
+    """없으면 기본값. 깨졌거나 형이 다르면 <이름>.broken-<때>로 옮겨 두고(사용자가 되살릴 수 있게) 기본값.
+    파일 읽기만 바꿔 쓰기와 같은 잠금 안에서 한다(해석은 밖에서)."""
     try:
-        raw = path.read_bytes()
+        with FILE_LOCK:
+            raw = path.read_bytes()
     except OSError:
         return default
     try:
