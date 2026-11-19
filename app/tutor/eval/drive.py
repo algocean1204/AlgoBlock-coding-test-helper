@@ -1,7 +1,7 @@
 """시나리오 하나를 실제 그래프(Tutor)로 끝까지 돈다. 사용자 쪽은 초보자 시뮬레이터(모델)가 말한다.
 
 흐름(화면에서 초보자가 하는 순서): 의자나 가이드 시작 → 블록마다 대화 → 튜터가 코드로 적으라 하면 그 블록 코드를 적어 확인받기(통과해야 다음 블록)
-→ 막히면 꼬리질문(3번째) → 그래도 막히면 이 블록 채우기(5번째) → 마지막 블록까지 열리면 전체 코드 작성 → 채점기 제출 → 피드백 → 해설.
+→ 막히면 튜터 말을 되묻는 말(3번째. 메인 대화로 보낸다) → 그래도 막히면 이 블록 채우기(5번째) → 마지막 블록까지 열리면 전체 코드 작성 → 채점기 제출 → 피드백 → 해설.
 기록 한 줄 = 요청 하나. 평가기(checks, judge)가 읽을 숨은 정보(hidden: 블록 목표·신호·참고 코드)를 같이 남긴다.
 """
 
@@ -32,7 +32,7 @@ _talk_log.addHandler(_WhyHandler())
 _talk_log.setLevel(logging.INFO)
 _talk_log.propagate = False
 
-FOLLOWUP_AT = 3  # 한 블록에서 넘어가지 못한 말이 이만큼이면 꼬리질문
+ASK_AT = 3  # 한 블록에서 넘어가지 못한 말이 이만큼이면 튜터 말을 되묻는다
 FILL_AT = 5  # 이만큼이면 이 블록 채우기
 MAX_USER_TURNS = 24
 # 채점기 위치. 설치 파일로 묶였을 때는 ALGOBLOCK_JUDGE_DIR로 받는다
@@ -203,17 +203,6 @@ class Session:
             row["judged"] = judged
         return row
 
-    def followup(self, text: str) -> dict:
-        ctx = self.ctx()
-        quote = [m for m in self.chat(ctx) if m.role == "service"][-1]
-        out, row = self.call("followup", lambda: self.tutor.followup(self.scenario.id, self.mode, quote.id, text), user=text)
-        if out.status == 200:
-            answer = out.body["messages"][-1]["text"] if out.body.get("messages") else ""
-            row.update(reply=answer, move="followup", hidden=self.hidden(ctx, ctx.open_count - 1),
-                       context=[f"인용: {quote.text}"], quote=quote.text)
-            self.visible.append(f"(꼬리질문) 나: {text} / 튜터: {answer}")
-        return row
-
     def fill(self) -> dict:
         ctx = self.ctx()
         block = ctx.plan.blocks[ctx.open_count - 1]
@@ -310,12 +299,14 @@ def play(scenario: Scenario, mode: str = "chair") -> Session:
                 break  # 마지막 블록을 채웠으면 코드 쓰기로
             s.next()
             continue
-        if stuck == FOLLOWUP_AT and not asked:
+        ask = stuck == ASK_AT and not asked  # 되묻는 말도 메인 대화 턴이라 결과는 보통 턴처럼 본다. 턴 수와 막힘 수에는 넣지 않는다
+        if ask:
             asked = True
-            s.followup(novice_say(scenario, s.visible, "방금 튜터 말에서 이해가 안 되는 부분을 꼬리질문으로 한 문장 묻는다."))
-            continue
-        turns += 1
-        row = s.say(novice_say(scenario, s.visible, "튜터의 마지막 질문에 학생으로서 답한다."))
+        else:
+            turns += 1
+        row = s.say(novice_say(scenario, s.visible, "방금 튜터 말에서 이해가 안 되는 부분을 한 문장으로 되묻는다." if ask else "튜터의 마지막 질문에 학생으로서 답한다."))
+        if ask:
+            row["ask"] = True  # 지표(checks)가 사용자 턴과 막힘에서 뺀다
         if row["status"] != 200 or closing:
             break  # 정리 질문에 한 번 답했으면 끝
         found = row.get("decision") == "찾음"
@@ -325,7 +316,7 @@ def play(scenario: Scenario, mode: str = "chair") -> Session:
                 break  # 마지막 블록을 통과했다(정리 질문이 없으면 바로 코드 쓰기로)
             found = row["passed"]
         closing = row.get("move") in LAST_MOVES
-        stuck = 0 if found else stuck + 1
+        stuck = 0 if found else stuck + (0 if ask else 1)
         if found:
             asked = False
     source = novice_code(scenario, s.visible, s.filled)

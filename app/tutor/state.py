@@ -10,7 +10,7 @@ BLOCK_KINDS = ("var_from_problem", "var_during", "loop", "condition", "branch")
 
 EXPLAIN_TITLES = ("문제에서 읽을 것", "흐름", "블록이 놓이는 순서", "블록별 설명")
 
-KINDS = ("explain", "turn", "followup", "fill", "feedback", "debug", "prepare")
+KINDS = ("explain", "turn", "fill", "feedback", "debug", "prepare")
 
 
 @dataclass
@@ -99,6 +99,8 @@ class ChatMessage:
 
 @dataclass
 class FollowupThread:
+    """옛 꼬리질문 기록(인용한 말 id로 묶음). 새로 쓰지 않고 읽기만 한다"""
+
     quote_id: str
     messages: list[ChatMessage] = field(default_factory=list)
 
@@ -141,7 +143,6 @@ class TutorRequest:
     text: str | None = None
     block_id: str | None = None
     code: str | None = None
-    quote_id: str | None = None
     filled: list[FilledBlock] = field(default_factory=list)
     report: dict | None = None  # 디버그: 채점 결과 {status, cases[{id, input, expected, got, error, status}], compile}
     quiet: bool = False  # 블록 코드를 사용자의 말로 대화에 넣지 않는다(채운 마지막 블록의 확인)

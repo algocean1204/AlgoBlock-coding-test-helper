@@ -4192,6 +4192,51 @@ def own_ready(code: str) -> dict:
                                  "hints": ["무엇을 돌려줘야 할까요?", "'합'은 무엇일까요?", "1과 2라면 무엇을 돌려주나요?"]}]}}
 
 
+def followup_route_gone() -> None:
+    """꼬리질문 요청 경로는 없다: 다른 없는 경로와 같은 404 응답 꼴이고, 모델을 부르지 않으며, 대화에 아무것도 남기지 않는다."""
+    pid = server.register(GOOD)["id"]
+    fake = FakeLlm({})
+    with use_llm(fake):
+        with server.tutor() as t:
+            t.adopt(pid, own_ready("def solution(a, b):\n    return a + b"))
+        call("/api/turn", id=pid, mode="chair", event="start")
+        asked = len(fake.calls)
+        with server.tutor() as t:
+            quote = t.store.conn.execute("SELECT MIN(id) FROM message WHERE problem_id=?", (pid,)).fetchone()[0]
+        before = talk_of(pid)
+        seen = []
+        for path in ("/api/followup", "/api/nonexistent"):
+            try:
+                call(path, id=pid, mode="chair", quote_id=str(quote), text="왜 그래요?")
+            except server.Refuse as exc:
+                seen.append((exc.status, str(exc), exc.args and exc.field))
+            else:
+                raise AssertionError(f"{path} 는 없는 경로여야 한다")
+        assert seen[0] == seen[1] and seen[0][0] == 404, seen
+        assert len(fake.calls) == asked and talk_of(pid) == before  # 모델 호출 0, 저장 변화 0
+
+
+def old_followup_kept() -> None:
+    """옛 꼬리질문 기록(thread가 quote:<말 id>인 줄)은 상태 응답에 그대로 나온다. 읽기만 하는 길이라 요청 경로 없이도 남는다."""
+    pid = server.register(GOOD)["id"]
+    with use_llm(FakeLlm({})):
+        with server.tutor() as t:
+            t.adopt(pid, own_ready("def solution(a, b):\n    return a + b"))
+        call("/api/turn", id=pid, mode="chair", event="start")
+        with server.tutor() as t:
+            first = t.store.conn.execute("SELECT MIN(id) FROM message WHERE problem_id=?", (pid,)).fetchone()[0]
+            thread = f"quote:{first}"
+            for role, text, move in (("user", "옛 꼬리질문이에요?", None), ("service", "옛 꼬리질문의 답이에요. 그럴 때 무엇을 놓칠까요?", "followup")):
+                t.store.conn.execute("INSERT INTO message(problem_id, mode, thread, quote_id, role, text, move, at) VALUES(?, 'chair', ?, ?, ?, ?, ?, 't')",
+                                     (pid, thread, str(first), role, text, move))
+            t.store.conn.commit()
+        sent = call("/api/state", id=pid)[1]["session"]["followups"]
+        assert len(sent) == 1 and sent[0]["quote_id"] == str(first), sent
+        assert [(m["role"], m["text"], m["move"]) for m in sent[0]["messages"]] == [
+            ("user", "옛 꼬리질문이에요?", None), ("service", "옛 꼬리질문의 답이에요. 그럴 때 무엇을 놓칠까요?", "followup")], sent
+        assert all(m["id"] for m in sent[0]["messages"]) and all(m["text"] != "옛 꼬리질문이에요?" for m in call("/api/state", id=pid)[1]["session"]["chair"])  # 주 대화에는 섞이지 않는다
+
+
 def edit_changes() -> None:
     """등록 문제를 고치면 바뀐 만큼만 다시 준비한다(모델 0회인 길): 공백만 다른 글과 케이스만 바꾼 저장은 준비를 그대로 두고,
     케이스가 가이드 코드를 떨어뜨리면 가이드·계획만 지우고(뼈대는 남김), 글을 고치면 처음부터 다시 준비한다."""
@@ -4900,6 +4945,8 @@ def main() -> None:
         guessed_level()
         kept_languages()
         language_round_trip_keeps_talk()
+        followup_route_gone()
+        old_followup_kept()
         language_switch_faults()
         edit_changes()
         explicit_mode()

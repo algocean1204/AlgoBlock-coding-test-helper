@@ -13,7 +13,7 @@ from ..explain.rules import check_sections
 from ..feedback.rules import check_feedback, mark_claims
 from ..output_check.nodes import guard, progress, strip_fence
 from ..plan.rules import check_blocks, clean_blocks
-from ..state import EXPLAIN_TITLES, ChatMessage, Explain, Section
+from ..state import EXPLAIN_TITLES, Explain, Section
 
 
 class StrategyTest(unittest.TestCase):
@@ -150,9 +150,6 @@ class OutputCheckTest(unittest.TestCase):
         empty = self.state("fill", block_id="b1")
         empty["result"] = {"code": "```\n```"}
         self.assertEqual(guard(empty)["error"].message, "블록 코드가 비었습니다.")
-        follow = self.state("followup", mode="chair", quote_id="m1", text="왜")
-        follow["result"] = {"reply": "이유?", "advance": True}
-        self.assertNotIn("advance", guard(follow)["result"])
 
     def test_progress(self):
         plan = fakes.planned(fakes.two())
@@ -251,7 +248,6 @@ class FeedbackRuleTest(unittest.TestCase):
 class RequestCheckTest(unittest.TestCase):
     def test_rejections_do_not_call_llm(self):
         plan = fakes.planned(fakes.two())
-        user_line = ChatMessage(id="user1", role="user", text="사용자말", at="t", block_index=0)
         cases = [
             (fakes.make_state("turn", fakes.context(plan=plan, open_count=1), mode="explain", event="start"), "validation"),
             (fakes.make_state("turn", fakes.context(plan=plan, open_count=1), mode="chair", event="nope"), "validation"),
@@ -259,14 +255,12 @@ class RequestCheckTest(unittest.TestCase):
             (fakes.make_state("turn", fakes.context(plan=plan, open_count=1), mode="chair", event="block_filled", block_id="b2", code="x"), "validation"),
             (fakes.make_state("turn", fakes.context(plan=plan, open_count=1), mode="chair", event="block_filled", block_id="b1", code=" "), "validation"),
             (fakes.make_state("turn", fakes.context(plan=plan, open_count=1, chair=[fakes.service("이미?", 0)]), mode="chair", event="start"), "already_started"),
-            (fakes.make_state("followup", fakes.context(plan=plan, open_count=1, chair=[fakes.service("말?", 0)]), mode="chair", quote_id="없는", text="왜"), "not_found"),
-            (fakes.make_state("followup", fakes.context(plan=plan, open_count=1, chair=[user_line]), mode="chair", quote_id="user1", text="왜"), "not_found"),
-            (fakes.make_state("followup", fakes.context(plan=plan, open_count=1), mode="chair", quote_id="", text="왜"), "validation"),
             (fakes.make_state("fill", fakes.context(), block_id="b1"), "block_not_found"),
             (fakes.make_state("fill", fakes.context(plan=plan, open_count=1), block_id="없는"), "block_not_found"),
             (fakes.make_state("fill", fakes.context(plan=plan, open_count=1), block_id="b2"), "block_closed"),
             (fakes.make_state("feedback", fakes.context(plan=plan, open_count=1)), "not_submitted"),
             (fakes.make_state("nope", fakes.context()), "validation"),
+            (fakes.make_state("followup", fakes.context(plan=plan, open_count=1)), "validation"),  # 꼬리질문 요청은 없다
         ]
         for state, code in cases:
             with self.subTest(code=code, request=state["request"]):
@@ -1023,10 +1017,9 @@ class UnsaidCreditTest(unittest.TestCase):
         from ..common.talk_prompts import NOT_SAID
         from ..chair.prompts import SYSTEM as CHAIR
         from ..debug.prompts import SPEAK_SYSTEM
-        from ..followup.prompts import SYSTEM as FOLLOWUP
         from ..guide.prompts import SYSTEM as GUIDE
 
-        for text in (CHAIR, GUIDE, FOLLOWUP, SPEAK_SYSTEM):
+        for text in (CHAIR, GUIDE, SPEAK_SYSTEM):
             self.assertIn(NOT_SAID, text)
 
     def test_debug_reply_with_unsaid_credit_falls_back(self):

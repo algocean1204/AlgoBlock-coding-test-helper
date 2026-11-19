@@ -1,6 +1,6 @@
 """평가기 1층: 규칙 검사. 모델을 부르지 않아 같은 입력이면 늘 같은 결과다(신뢰의 바닥).
 
-기록(transcript)의 한 줄 = 요청 하나. 튜터 말이 있는 줄(turn, followup)마다 말풍선 검사를 하고,
+기록(transcript)의 한 줄 = 요청 하나. 튜터 말이 있는 줄(turn, debug)마다 말풍선 검사를 하고,
 세션 전체로 진행·막힘·대체 질문·반복·오류·시간·캐시 지표를 낸다.
 """
 
@@ -9,7 +9,7 @@ import statistics
 
 from ..common.talk_rules import _ENGLISH, _NOTE, FALLBACK, KIND_LABEL, banned_in, quotes_ok, sentence_count, without_problem_quotes
 
-CHAT_KINDS = ("turn", "followup", "debug")
+CHAT_KINDS = ("turn", "debug")
 
 
 def _norm(text: str) -> str:
@@ -46,7 +46,7 @@ def reply_flags(row: dict, previous_reply: str | None) -> list[str]:
             break
     if any(name and name in reply for name in hidden.get("later_names") or []):
         flags.append("뒤 블록 이름")
-    said = "\n".join([problem, row.get("user") or "", *(row.get("context") or []), row.get("quote") or "", row.get("code") or "", *KIND_LABEL.values()])
+    said = "\n".join([problem, row.get("user") or "", *(row.get("context") or []), row.get("code") or "", *KIND_LABEL.values()])
     if not quotes_ok(reply, problem, said):  # 문제 글이나 사용자 말·앞 대화에 있는 구절만 인용할 수 있다
         flags.append("문항에 없는 인용")
     plain = without_problem_quotes(reply, said)
@@ -81,7 +81,7 @@ def stuck_streak(rows: list[dict]) -> int:
             continue
         if row.get("advance"):
             streak = 0
-        else:
+        elif not row.get("ask"):  # 막힌 블록에서 튜터 말을 되묻는 말은 막힘으로 세지 않는다
             streak += 1
             best = max(best, streak)
     return best
@@ -117,7 +117,7 @@ def session_metrics(rows: list[dict], calls: list[dict]) -> dict:
         "banned": count("금지 표현"),
         "blocks_total": final.get("blocks_total"),
         "blocks_open": final.get("open_count"),
-        "user_turns": sum(1 for r in rows if r["kind"] == "turn" and r.get("event") == "message"),
+        "user_turns": sum(1 for r in rows if r["kind"] == "turn" and r.get("event") == "message" and not r.get("ask")),
         "max_stuck": stuck_streak(rows),
         "fills": sum(1 for r in rows if r["kind"] == "fill" and r.get("status") == 200),
         "submits": sum(1 for r in rows if r["kind"] == "submit"),
