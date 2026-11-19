@@ -2652,6 +2652,7 @@ function renderDebug() {
   const d = S.debug, open = !!(d && d.open);
   $("debug-sheet").hidden = !open;
   if (!open) return;
+  const t0 = performance.now(), perf = perfBox();
   const said = (m) => { const f = foldLong(m.text); return tutorBubble(f.text) + (f.longs.length ? `<details class="old-talk long-in"><summary>전체 입력 보기</summary>${f.longs.map((x) => `<pre class="code"><code>${esc(x)}</code></pre>`).join("")}</details>` : ""); };
   let html = d.messages.map((m) => (m.role === "service" ? said(m) : m.role === "regrade" ? `<p class="regrade" role="separator">${esc(m.text)}</p>` : meMsg(m.text))).join("");
   if (d.passed && html) html = `<details class="old-talk"><summary>풀던 대화 보기</summary>${html}</details>`; // 통과한 뒤에는 옛 질문이 맨 아래에 남지 않게 접는다
@@ -2662,6 +2663,7 @@ function renderDebug() {
   setHtml(log, html);
   if (log._key !== key) { log._key = key; log.scrollTop = log.scrollHeight; }
   $("debug-composer").hidden = !!d.passed;
+  if (perf) perf.debug_rerender_ms = Math.round(performance.now() - t0);
 }
 
 /** 다시 채점한 결과 한 줄(결과 상자의 제목과 같은 말). */
