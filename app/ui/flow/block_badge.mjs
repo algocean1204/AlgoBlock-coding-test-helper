@@ -79,7 +79,7 @@ async function flow(way, viewport, scenario) {
   let stuck = false
   const need = async (what, fn) => { if (stuck) return; try { await fn() } catch (e) { stuck = true; problems.push(`${what}: ${String(e.message).split('\n')[0]}`) } }
   const check = async (what, fn) => { if (stuck) return; try { await fn() } catch (e) { problems.push(`${what}: ${String(e.message).split('\n')[0]}`) } } // 확인은 서로 막지 않는다(어느 것이 실패하는지 모두 본다). 화면이 열리지 않았으면 이미 실패라 건너뛴다
-  const r = await context.request.post(`${base}/api/reset`, { data: { id: PID } })
+  const r = await context.request.post(`${base}/api/reset`, { data: { id: PID }, timeout: 30000 }) // 준비 요청: 화면을 기다리는 4초 기본값과 따로(느린 러너)
   if (!r.ok()) problems.push(`reset ${r.status()}`)
   await page.goto(`${base}/#/p/${PID}`)
   await need('문제 제목이 그려진다', () => page.waitForFunction(() => document.getElementById('p-title')?.textContent.trim().length > 0, null, { timeout: 15000 }))

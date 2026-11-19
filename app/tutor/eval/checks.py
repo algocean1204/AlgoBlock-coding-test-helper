@@ -1,15 +1,17 @@
 """평가기 1층: 규칙 검사. 모델을 부르지 않아 같은 입력이면 늘 같은 결과다(신뢰의 바닥).
 
 기록(transcript)의 한 줄 = 요청 하나. 튜터 말이 있는 줄(turn, debug)마다 말풍선 검사를 하고,
-세션 전체로 진행·막힘·대체 질문·반복·오류·시간·캐시 지표를 낸다.
+칸(parts)이 남은 줄은 질문·근거 칸을 칸마다 잰다(엔진의 칸 검사 field_problems를 그대로 쓴다). 세션 전체로 진행·막힘·대체 질문·반복·오류·시간·캐시 지표를 낸다.
 """
 
 import re
 import statistics
 
-from ..common.talk_rules import _ENGLISH, _NOTE, FALLBACK, KIND_LABEL, banned_in, quotes_ok, sentence_count, without_problem_quotes
+from ..common.talk_rules import (_ENGLISH, _NOTE, FALLBACK, KIND_LABEL, NOTE_CHARS, QUESTION_CHARS, banned_in, field_problems, quotes_ok,
+                                 sentence_count, without_problem_quotes)
 
 CHAT_KINDS = ("turn", "debug")
+SLOTS = (("question", "질문 칸", QUESTION_CHARS), ("note", "근거 칸", NOTE_CHARS))  # 칸 이름, 위반 앞말, 길이 한도
 
 
 def _norm(text: str) -> str:
@@ -29,6 +31,7 @@ def reply_flags(row: dict, previous_reply: str | None) -> list[str]:
     reply = row.get("reply") or ""
     hidden = row.get("hidden") or {}
     problem = row.get("problem", "")
+    parts = row.get("parts") or {}
     flags = []
     if not reply.strip():
         return ["빈 말"]
@@ -36,7 +39,7 @@ def reply_flags(row: dict, previous_reply: str | None) -> list[str]:
         flags.append("코드 펜스")
     if banned_in(reply, problem):
         flags.append("금지 표현")
-    if sentence_count(reply) > 3:
+    if not parts and sentence_count(reply) > 3:  # 칸이 없는 옛 기록만 말 전체로 센다
         flags.append("3문장 초과")
     if row["kind"] in ("turn", "debug") and not any(line.rstrip().endswith(("?", "？")) for line in reply.split("\n")):  # 질문 아래에 근거·길 안내 줄이 올 수 있다
         flags.append("질문으로 안 끝남")
@@ -49,6 +52,8 @@ def reply_flags(row: dict, previous_reply: str | None) -> list[str]:
     said = "\n".join([problem, row.get("user") or "", *(row.get("context") or []), row.get("code") or "", *KIND_LABEL.values()])
     if not quotes_ok(reply, problem, said):  # 문제 글이나 사용자 말·앞 대화에 있는 구절만 인용할 수 있다
         flags.append("문항에 없는 인용")
+    for slot, label, limit in SLOTS:  # 결과·길 안내 줄은 질문·근거 칸에 넣지 않는다
+        flags += [f"{label} {found}" for found in field_problems(parts.get(slot) or "", limit, said)]
     plain = without_problem_quotes(reply, said)
     if _NOTE.search(plain) or _ENGLISH.search(plain):
         flags.append("모델 메모 유출")
@@ -98,6 +103,8 @@ def session_metrics(rows: list[dict], calls: list[dict]) -> dict:
     """세션 하나의 지표. calls는 app.llm.usage 기록(모델 호출 단위)."""
     chat = [r for r in rows if r["kind"] in CHAT_KINDS and r.get("status") == 200]
     flagged = [r for r in chat if r.get("flags")]
+    slotted = [r for r in chat if {"question", "note"} & set(r.get("parts") or {})]  # 질문·근거 칸이 남은 말(옛 기록에는 없다)
+    slot_bad = [r for r in slotted if any(f.startswith(tuple(label for _, label, _ in SLOTS)) for f in r.get("flags", []))]
     count = lambda name: sum(name in r.get("flags", []) for r in chat)  # noqa: E731
     seconds = [r["seconds"] for r in rows if "seconds" in r]
     final = next((r for r in reversed(rows) if r.get("open_count") is not None), {})
@@ -110,6 +117,7 @@ def session_metrics(rows: list[dict], calls: list[dict]) -> dict:
         "errors": [f"{r['kind']}:{r.get('status')}:{r.get('error_code')}" for r in rows if r.get("status") not in (None, 200)],
         "tutor_replies": len(chat),
         "clean_reply_rate": round(1 - len(flagged) / len(chat), 3) if chat else None,
+        "slot_clean_rate": round(1 - len(slot_bad) / len(slotted), 3) if slotted else None,
         "fallback": count("대체 질문"),
         "repeat": count("직전과 같은 말"),
         "leak": count("참고 코드 유출") + count("뒤 블록 이름"),
