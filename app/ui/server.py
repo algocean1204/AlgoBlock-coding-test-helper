@@ -48,8 +48,8 @@ from tutor import Tutor  # noqa: E402
 from tutor.eval.cli_client import ClaudeCli  # noqa: E402
 from tutor.eval.drive import check_judge  # noqa: E402
 from tutor.common.scope import ALGORITHMS, algorithm_name  # noqa: E402
-from tutor.common.solution import composed_parts  # noqa: E402
-from tutor.common.talk_rules import MANY_ANSWERS  # noqa: E402
+from tutor.common.solution import body_lines, bound_names, composed_parts  # noqa: E402
+from tutor.common.talk_rules import MANY_ANSWERS, told_sentences  # noqa: E402
 from tutor.debug.rules import out_key  # noqa: E402
 from tutor.turn.code_check import compile_easy  # noqa: E402
 from tutor.save.respond import blocks_body, shown_count  # noqa: E402
@@ -2344,7 +2344,21 @@ def state_body(t, p, body: dict) -> dict:
                         "tools": tools(), "preparing": pid in PREPARING, "checking": pid in CHECKING, "better": better_of(p, ctx.language) is not None,
                         "prepare_failed": pid in PREP_FAILED and ctx.plan is None, "assets": assets(pid), "checkpoint_at": (checkpoint(pid, ctx.language) or {}).get("at"), **mine},
             "session": t.session(pid, body.get("mode")).body, "blocks": read_json(BLOCKS_FILE, {}).get(pid, {}), "own_way": pid in read_json(OWN_FILE, {}),
-            "way": way_of(t, pid), "has_feedback": t.store.get_feedback(pid) is not None}
+            "way": way_of(t, pid), "has_feedback": t.store.get_feedback(pid) is not None, "block_facts": block_facts(ctx, p, body.get("mode"))}
+
+
+def block_facts(ctx, p, mode) -> dict | None:
+    """지금 블록의 사실(모델 0회). 화면이 가장 최근 튜터 말의 근거 목록에 더한다. 계획이 없으면 None.
+    names: 통과한 내 블록 코드가 만든 이름(블록 차례). goal: 가이드에서만 지금 블록의 할 일. 블록의 답을 말하면 블록 이름만. 의자는 찾을 답이라 늘 빈 글이다."""
+    blocks = ctx.plan.blocks if ctx.plan is not None else []
+    if not blocks:
+        return None
+    index, program = min(max(ctx.open_count, 1), len(blocks)) - 1, p.mode == "program"
+    passed = [ctx.block_states[b.id].code for b in blocks[:ctx.open_count] if getattr(ctx.block_states.get(b.id), "verdict", None) == "Y"]
+    names = dict.fromkeys(name for code in passed for name in sorted(bound_names(body_lines(code, ctx.language, program))))
+    block = blocks[index]
+    goal = "" if mode != "guide" else block.name if told_sentences(block.goal, block.reference, ctx.language, ctx.problem_text) else block.goal
+    return {"index": index, "names": list(names), "goal": goal}
 
 
 def attend() -> None:

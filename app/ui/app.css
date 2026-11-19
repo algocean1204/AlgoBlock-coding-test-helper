@@ -771,6 +771,19 @@ details.solution > * + * { margin-top: 8px; }
 .msg.me.sending .bubble { opacity: 0.6; }
 /* 튜터 말이 겨눈 블록(블록 N/전체 · 종류): 누르면 그 블록 칸으로 간다 */
 .btn.block-badge { min-height: 24px; padding: 0 8px; font-size: 12.5px; white-space: normal; text-align: start; }
+/* 칸이 있는 튜터 말: 결과 → 질문 → 근거 → 단추. 칸 이름 글자 대신 모양이 다른 작은 표와 색으로 가른다 */
+.reply-parts { display: grid; gap: 8px; min-width: 0; overflow-wrap: anywhere; }
+.slot-result, .slot-question, .slot-evidence li { display: grid; grid-template-columns: 16px minmax(0, 1fr); gap: 8px; align-items: start; }
+.slot-result > div > * + *, .slot-question > div > * + * { margin-top: 6px; }
+.slot-mark { display: flex; height: 1.6em; align-items: center; }
+.slot-result .slot-mark, .slot-evidence .slot-mark { color: var(--muted); }
+.slot-question { font-weight: 600; }
+.slot-question .slot-mark { color: var(--accent-text); }
+.slot-evidence { display: grid; gap: 4px; font-size: 14px; color: var(--muted); }
+.slot-evidence code { color: var(--text); } /* 흐린 글자는 코드 바탕(--fill-2) 위에서 대비가 4.5:1에 못 미친다 */
+.slot-buttons { display: flex; flex-wrap: wrap; gap: 6px; }
+.slot-buttons .btn { background: var(--surface); box-shadow: var(--shadow-line); white-space: normal; text-align: start; } /* 말풍선 바탕(--fill) 위에서도 단추로 보이게 */
+.slot-buttons .btn:not(:disabled):hover { background: var(--fill-2); }
 .thread { display: grid; gap: 8px; margin: 2px 0 4px 14px; padding: 2px 0 2px 12px; border-left: 2px solid var(--fill-2); }
 .thread-title { font-size: 12px; font-weight: 700; color: var(--muted); }
 .thread .msg { max-width: 100%; }

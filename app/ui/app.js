@@ -90,7 +90,7 @@ const ERR = {
 };
 
 const S = {
-  view: "", pid: null, problem: null, session: null, hasFeedback: false,
+  view: "", pid: null, problem: null, session: null, facts: {}, hasFeedback: false,
   mode: null, // 오른쪽 칸: solo, guide, chair, explain(튜터의 해설). 문제를 받기 전에만 null
   tried: null, // 이 문제에서 스스로 시작해 본 튜터 방식(같은 방식을 다시 스스로 시작하지 않는다. 탭을 누르면 다시 한다)
   startAfter: false, // 다른 일을 기다리느라 시작하지 못했다(그 일이 끝나면 시작한다)
@@ -1311,7 +1311,7 @@ const closeAsset = () => { const box = $("asset"); box.close ? box.close() : box
 
 /* ── 05–08 코드 화면 ── */
 function clearProblem(pid) {
-  Object.assign(S, { pid, problem: null, session: null, hasFeedback: false, mode: null, tried: null, startAfter: false, soloOpen: null, talk: "chair", codeTab: "direct", blockCode: {}, result: null,
+  Object.assign(S, { pid, problem: null, session: null, facts: {}, hasFeedback: false, mode: null, tried: null, startAfter: false, soloOpen: null, talk: "chair", codeTab: "direct", blockCode: {}, result: null,
     sending: null, debug: null, note: {}, codeNote: "", fb: null, solo: null, codeAsk: null, fillAsk: null, ownAsk: null, prepAt: 0, keptNote: false, keptSeen: false, nextUp: null, pullThenRun: false, tagsOpen: false });
   for (const id of ["code", ...DRAFTS]) $(id).value = "";
   for (const id of ["p-title", "p-text", "explain-box", "tutor-note", "result", "solo-box"]) $(id).innerHTML = "";
@@ -1355,16 +1355,17 @@ async function loadState(open) {
     return void (location.hash = "#/list");
   }
   if (!r.ok) return void ($("code-error").textContent = errorNote(r.error).text);
-  applyState(r.data);
+  applyState(r.data, asked);
   if (S.talk !== asked && S.pid === pid) return loadState(); // 처음 열며 그 문제의 방식이 정해졌다: 서버가 이름을 가리는 것은 방식마다 달라, 정해진 방식으로 다시 받는다
 }
 
-/** 서버가 준 문제 상태를 화면 상태로 옮긴다. 처음 받았을 때만 코드 칸과 문제 글을 채운다(적던 글을 덮지 않게). */
-function applyState(data) {
+/** 서버가 준 문제 상태를 화면 상태로 옮긴다. 처음 받았을 때만 코드 칸과 문제 글을 채운다(적던 글을 덮지 않게). mode: 상태를 받을 때 보낸 방식 */
+function applyState(data, mode = S.talk) {
   const first = !S.problem;
   S.problem = data.problem;
   TOOLS = data.problem.tools;
   S.session = data.session;
+  S.facts[mode] = data.block_facts || null; // 지금 블록의 사실(만든 이름, 가이드의 할 일): 가장 최근 튜터 말의 근거 목록에 더한다. 할 일은 방식마다 달라 방식마다 둔다(탭을 오갈 때 글이 바뀌었다 돌아오지 않게)
   S.hasFeedback = data.has_feedback;
   S.ownWay = data.own_way === true; // '끝까지 내 방식으로 쓰기'(서버가 문항마다 남긴다: 다시 열어도 그대로)
   if (first) {
@@ -1987,13 +1988,13 @@ async function restoreCheckpoint() {
   const pid = S.pid;
   S.codeAsk = null;
   clearTimeout(codeTimer); clearTimeout(blocksTimer); codeTimer = blocksTimer = null;
-  const r = await work("체크포인트로 되돌리는 중…", "code", () => api("/api/checkpoint/restore", { id: pid, mode: S.talk }));
+  const talk = S.talk, r = await work("체크포인트로 되돌리는 중…", "code", () => api("/api/checkpoint/restore", { id: pid, mode: talk }));
   if (!r || S.pid !== pid) return;
   if (!r.ok) return codeError(r.error);
   $("code").value = $("code")._seen = r.data.problem.code || r.data.problem.starter || "";
   S.blockCode = r.data.blocks || {};
   if (S.result && !S.result.alert) S.result.stale = true;
-  applyState(r.data);
+  applyState(r.data, talk); // 요청에 실은 방식(기다리는 사이 탭을 바꿨어도 그 방식의 사실로 둔다)
   say("체크포인트로 되돌렸어요.");
   $("cp-restore").focus();
 }
@@ -2286,6 +2287,36 @@ const badgeTexts = (chat, blocks) => {
 };
 /* badge-pure:end */
 
+/* slots-pure:start 튜터 말의 칸(엔진이 남긴 parts. 없는 말은 null이라 글로 그린다). node로도 시험한다.
+   결과 줄 → 질문 하나 → 근거 목록 → 단추. 근거는 엔진의 되받기(note)에, facts(상태 응답의 block_facts)가 같은 블록이면 만든 이름과 할 일을 한 줄씩 더한다.
+   엔진이 준 글 칸이 하나도 없고 단추만 있으면 단추가 덩그러니 남지 않게 말 글을 결과 자리에 한 번 둔다 */
+const replySlots = (m, facts) => {
+  const p = m.parts;
+  if (m.role !== "service" || !p) return null;
+  const lines = (x) => (x ? String(x).split("\n") : []); // 결과 줄에는 실행에서 본 여러 줄 출력(코드 울타리)이 들 수 있어 빈 줄도 남긴다
+  const result = lines(p.result), question = p.question || "", evidence = lines(p.note), buttons = p.buttons || [];
+  if (!result.length && !question && !evidence.length && buttons.length && m.text) result.push(m.text);
+  if (facts && facts.index === p.block_index) {
+    if (facts.names.length) evidence.push(`지금까지 만든 이름: ${facts.names.map((name) => `\`${name}\``).join(", ")}`);
+    if (facts.goal) evidence.push(`이 블록에서 할 일: ${facts.goal}`);
+  }
+  return { result, question, evidence, buttons };
+};
+/* slots-pure:end */
+
+const SLOT_ACTS = { fill: "이 블록 채우기", skip: "이대로 넘어가기", run: "모아서 실행" }; // 블록 칸의 같은 단추와 이름도 일도 같다(엔진의 안내 글이 이 이름을 부른다)
+/** 칸으로 나눈 튜터 말. 칸 이름 글자 대신 모양이 다른 작은 표(.slot-mark)와 색으로 가르고, 읽어 주는 도구에는 칸 이름(aria-label)을 준다.
+    live: 가장 최근 튜터 말. 단추는 그 말에서만 켠다(앞의 말은 disabled. data-model을 달지 않아 기다림이 끝나도 다시 켜지지 않는다). */
+function slotsHtml(x, index, live) {
+  const mark = (name) => `<span class="slot-mark" aria-hidden="true">${ico(name)}</span>`;
+  const acts = x.buttons.filter((act) => Object.prototype.hasOwnProperty.call(SLOT_ACTS, act)); // 상속한 이름(constructor 같은)은 거른다. macOS 12 웹뷰가 모르는 새 함수 대신 쓴다
+  return `<div class="reply-parts">${x.result.length ? `<div class="slot-result" role="group" aria-label="결과">${mark("i-info")}<div>${rich(x.result.join("\n"))}</div></div>` : ""}${
+    x.question ? `<div class="slot-question" role="group" aria-label="질문">${mark("i-ask")}<div>${rich(x.question)}</div></div>` : ""}${
+    x.evidence.length ? `<ul class="slot-evidence" role="list" aria-label="근거">${x.evidence.map((row) => `<li>${mark("i-bulb")}<span>${inline(row)}</span></li>`).join("")}</ul>` : ""}${
+    acts.length ? `<div class="slot-buttons" role="group" aria-label="할 수 있는 일">${acts.map((act) => `<button type="button" class="btn small" data-act="${act}" data-act-block="${index}"${
+      !live ? " disabled" : act === "fill" ? " data-model" : act === "run" ? ' data-model="run"' : ""}>${SLOT_ACTS[act]}</button>`).join("")}</div>` : ""}</div>`;
+}
+
 function renderTutor() {
   const s = S.session, mode = S.mode, finding = !!(S.debug && S.debug.open);
   const solo = mode === "solo", railed = solo && !S.soloOpen && !finding;
@@ -2318,14 +2349,16 @@ function renderTutor() {
   if (!live) return void ($("tutor-note").innerHTML = tutorNote(mode));
 
   let n = 0, html = "";
-  const badges = badgeTexts(chat, s.blocks);
+  const badges = badgeTexts(chat, s.blocks), latest = chat.map((m) => m.role).lastIndexOf("service");
+  const facts = S.facts[mode];
   chat.forEach((m, k) => {
     if (m.role !== "service") return void (html += meMsg(m.text));
     n += 1;
-    const no = m.block_index + 1; // 표를 누르면 그 블록 칸으로 간다
+    const no = m.block_index + 1, slots = replySlots(m, k === latest ? facts : null); // 표를 누르면 그 블록 칸으로 간다
+    const body = slots ? slotsHtml(slots, m.block_index, k === latest) : rich(m.text);
     html += badges[k] ? `<div class="msg tutor" data-msg="${esc(m.id)}" role="group" aria-label="블록 ${no}에 대한 튜터 말"><span class="who">튜터</span>
-      <button type="button" class="btn quiet small block-badge" data-goto-block="${m.block_index}" title="이 블록 칸으로 가기">${esc(badges[k])}</button><div class="bubble">${rich(m.text)}</div></div>`
-      : `<div class="msg tutor" data-msg="${esc(m.id)}"><span class="who">튜터</span><div class="bubble">${rich(m.text)}</div></div>`;
+      <button type="button" class="btn quiet small block-badge" data-goto-block="${m.block_index}" title="이 블록 칸으로 가기">${esc(badges[k])}</button><div class="bubble">${body}</div></div>`
+      : `<div class="msg tutor" data-msg="${esc(m.id)}"><span class="who">튜터</span><div class="bubble">${body}</div></div>`;
     const thread = (s.followups.find((t) => t.quote_id === m.id) || { messages: [] }).messages; // 꼬리질문 단추가 있던 때의 기록: 읽기만 한다
     if (thread.length) html += `<div class="thread" role="group" aria-label="${n}번째 튜터 말의 꼬리질문"><span class="thread-title">꼬리질문</span>${thread.map((x) => (x.role === "service" ? tutorBubble(x.text) : meMsg(x.text))).join("")}</div>`;
   });
@@ -2433,18 +2466,18 @@ async function loadSolution(force) {
 /** 언어를 바꾼다. 대화·블록 진행은 서버가 언어마다 보관하고 돌아오면 되살린다(묻지 않는다). */
 async function changeLanguage(language) {
   harvest();
-  const pid = S.pid, code = $("code").value, blocks = S.blockCode; // 아직 저장하지 않은 블록 칸도 예전 언어의 것으로 함께 보낸다
+  const pid = S.pid, code = $("code").value, blocks = S.blockCode, talk = S.talk; // 아직 저장하지 않은 블록 칸도 예전 언어의 것으로 함께 보낸다
   clearTimeout(codeTimer); clearTimeout(blocksTimer); codeTimer = blocksTimer = null;
   $("code").readOnly = true; // 바꾸는 동안 적은 옛 언어의 코드가 새 언어 칸에 저장되지 않게 잠근다. 다 바꾸면 서버가 준 새 언어의 코드로 채운다
   // 열어 둔 해설 칸·받은 해설·펼친 정답 코드는 새 언어로 다시 받아 그대로 둔다. 기다리는 동안 다시 그리기 전에 적어 둔다
   const kept = { mode: S.mode, open: S.soloOpen, sol: !!(S.solo && S.solo.sol), code: S.solo ? S.solo.codeOpen : undefined };
   // 튜터가 뒤에서 이 문제의 계획을 만드는 중이면 그것이 끝날 때까지 기다린다(길면 30초쯤). 그동안 무엇을 하는지 보여 준다
-  const r = await work(`언어를 바꾸는 중: ${LANG[language] || language}…`, "lang", () => api("/api/language", { id: pid, language, blocks, ...(codeEmpty() ? {} : { code }) })) // 시작 코드뿐이면 저장하지 않는다
+  const r = await work(`언어를 바꾸는 중: ${LANG[language] || language}…`, "lang", () => api("/api/language", { id: pid, language, blocks, mode: talk, ...(codeEmpty() ? {} : { code }) })) // 시작 코드뿐이면 저장하지 않는다
     .finally(() => { $("code").readOnly = false; });
   if (!r || S.pid !== pid) return;
   if (!r.ok) { $("code-error").textContent = errorNote(r.error).text; $("code-error").hidden = false; return render(); }
   clearProblem(pid);
-  applyState(r.data);
+  applyState(r.data, talk);
   if (kept.mode === "solo" && kept.open) S.mode = "solo"; // 기억하지 않은 방식(결과에서 연 해설)이어도 그 칸에 머문다
   S.soloOpen = kept.open;
   S.solo.codeOpen = kept.code;
@@ -2505,6 +2538,15 @@ async function sendAnswer(given) {
 
 /** 결과의 '이 블록 힌트 받기': 튜터 방식 안에서 지금 블록의 다음 힌트를 청한다(‘힌트 주세요’는 튜터가 규칙으로 힌트를 주는 말). */
 const tutorHint = () => sendAnswer("힌트 주세요");
+
+/** '이 블록 채우기': 칸에 적은 것이 있으면 바꿀지 먼저 묻는다. 의자에서 찾기 전 블록도 먼저 묻는다. */
+function askFill(id) {
+  harvest();
+  if (!((S.blockCode[id] || {}).code || "").trim() && !unfoundBlock(id)) return void fillBlock(id);
+  S.fillAsk = id;
+  render();
+  document.querySelector(`[data-fill-no="${CSS.escape(id)}"]`).focus();
+}
 
 async function fillBlock(blockId) {
   harvest();
@@ -3420,13 +3462,14 @@ document.addEventListener("click", (e) => {
   }
   if (el.dataset.gotoBlock) return void gotoBlock(Number(el.dataset.gotoBlock));
   if (el.dataset.hintBlock) return void loadHints(false, Number(el.dataset.hintBlock));
-  if (el.dataset.fill) { // 칸에 적은 것이 있으면 바꿀지 먼저 묻는다
-    harvest();
-    if (!((S.blockCode[el.dataset.fill] || {}).code || "").trim() && !unfoundBlock(el.dataset.fill)) return void fillBlock(el.dataset.fill); // 의자에서 찾기 전 블록도 먼저 묻는다
-    S.fillAsk = el.dataset.fill;
-    render();
-    return void document.querySelector(`[data-fill-no="${CSS.escape(S.fillAsk)}"]`).focus();
+  if (el.dataset.act) { // 튜터 말의 단추: 블록 칸의 같은 단추와 같은 처리기를 부른다(묻는 말과 확인 결과는 블록 칸에 보인다)
+    const b = S.session.blocks[Number(el.dataset.actBlock)];
+    if (el.dataset.act === "run") return void composeRun();
+    if (!b) return;
+    S.codeTab = "blocks";
+    return void (el.dataset.act === "skip" ? skipBlock(b.id) : askFill(b.id));
   }
+  if (el.dataset.fill) return void askFill(el.dataset.fill);
   if (el.dataset.fillYes) { S.fillAsk = null; return void fillBlock(el.dataset.fillYes); }
   if (el.dataset.fillNo) { S.fillAsk = null; render(); return void document.querySelector(`[data-fill="${CSS.escape(el.dataset.fillNo)}"]`).focus(); }
   if (el.dataset.check) return void checkBlock(el.dataset.check);
@@ -3671,8 +3714,9 @@ const focusable = (x) => !!x && !x.disabled && !x.closest("[hidden]") && !!x.off
 /** 키보드로 누른 단추가 다시 그리며 사라지거나 새로 그려져 초점이 문서 맨 위(body)로 떨어지면, 같은 단추나 그 일이 이어지는 자리로 돌려 놓는다.
     기다림(모델·채점)이 끝난 뒤에 한 번 본다. 그 사이 사용자가 초점을 옮겼으면 건드리지 않는다. */
 function focusAfter(el) {
-  const own = [...el.attributes].filter((a) => a.name.startsWith("data-") && a.name !== "data-model").map((a) => `[${a.name}="${CSS.escape(a.value)}"]`)[0];
-  const block = el.dataset.check || el.dataset.fill || el.dataset.skip || el.dataset.own;
+  // 튜터 말의 단추는 켜진 것(가장 최근 튜터 말)만 고른다. 앞의 말에도 같은 단추가 꺼진 채 남아 있다
+  const own = el.dataset.act ? `[data-act="${CSS.escape(el.dataset.act)}"]:not(:disabled)` : [...el.attributes].filter((a) => a.name.startsWith("data-") && a.name !== "data-model").map((a) => `[${a.name}="${CSS.escape(a.value)}"]`)[0];
+  const block = el.dataset.check || el.dataset.fill || el.dataset.skip || el.dataset.own || (el.dataset.actBlock && (S.session.blocks[Number(el.dataset.actBlock)] || {}).id);
   const next = [el.id ? `#${el.id}` : own, el.id === "start-again" && "#say", block && `textarea[data-block="${CSS.escape(block)}"]`, "#p-title"].filter(Boolean); // 같은 단추 → 이어서 할 칸 → 문제 제목
   const t0 = Date.now();
   let waited = false, end = 0, placed = null;
