@@ -14,8 +14,6 @@ const KIND = {
   condition: ["조건", "'이럴 때만'을 가려내는 자리"],
   branch: ["분기", "경우에 따라 다른 길로 갈라지는 자리"],
 };
-const KIND_BY_LABEL = Object.fromEntries(Object.entries(KIND).map(([key, [label]]) => [label, key]));
-const NEXT_BLOCK = /^다음은 '([^']+)' 블[록럭]이에요\./; // 새 블록의 첫 말은 종류를 알리며 시작한다
 const LANG = { python: "Python", java: "Java", javascript: "JavaScript", cpp: "C++", rust: "Rust", go: "Go", kotlin: "Kotlin" }; // 이름 표시용. go·kotlin은 지원을 접어 예전 제출 기록의 이름을 보이려고만 둔다(고르는 목록은 CHOICES)
 const TOOL = { python: "Python 3", java: "JDK(javac와 java)", javascript: "Node.js", cpp: "g++ 또는 clang++", rust: "Rust(rustc)" };
 const CHOICES = Object.keys(TOOL); // 고를 수 있는 풀이 언어
@@ -106,7 +104,6 @@ const S = {
   fillAsk: null, // '이 블록 채우기'로 적은 코드를 바꿀지 묻는 블록 id
   ownAsk: null, // 의자에서 '끝까지 내 방식으로 쓰기'를 묻는 블록 id(찾지 않은 뒤 블록의 이름이 보인다)
   casesOpen: null, // 케이스 목록을 사용자가 펼쳤는지(null이면 기본값)
-  quote: null, // 꼬리질문을 열어 둔 튜터 말 id
   sending: null, // 보내는 중인 내 말 {where, text}
   debug: null, // {open, messages, line, code, passed, note}
   note: {}, // 자리별 알림 {chat, start, blocks}
@@ -118,7 +115,7 @@ const S = {
 
 /* ── 서버 ── */
 let leaving = false; // 창을 닫는 중이면 저장 요청이 끊기지 않게 한다
-const MODEL_PATHS = ["/api/turn", "/api/followup", "/api/fill", "/api/explain", "/api/feedback", "/api/debug", "/api/problems/read"]; // 모델을 부를 수 있는 요청
+const MODEL_PATHS = ["/api/turn", "/api/fill", "/api/explain", "/api/feedback", "/api/debug", "/api/problems/read"]; // 모델을 부를 수 있는 요청
 let keyBad = false; // 모델 키가 맞지 않다는 답을 받았다(다음 모델 요청이 성공하거나 키를 다시 넣으면 걷는다)
 async function api(path, body) {
   try {
@@ -1315,11 +1312,11 @@ const closeAsset = () => { const box = $("asset"); box.close ? box.close() : box
 /* ── 05–08 코드 화면 ── */
 function clearProblem(pid) {
   Object.assign(S, { pid, problem: null, session: null, hasFeedback: false, mode: null, tried: null, startAfter: false, soloOpen: null, talk: "chair", codeTab: "direct", blockCode: {}, result: null,
-    quote: null, sending: null, debug: null, note: {}, codeNote: "", fb: null, solo: null, codeAsk: null, fillAsk: null, ownAsk: null, prepAt: 0, keptNote: false, keptSeen: false, nextUp: null, pullThenRun: false, tagsOpen: false });
+    sending: null, debug: null, note: {}, codeNote: "", fb: null, solo: null, codeAsk: null, fillAsk: null, ownAsk: null, prepAt: 0, keptNote: false, keptSeen: false, nextUp: null, pullThenRun: false, tagsOpen: false });
   for (const id of ["code", ...DRAFTS]) $(id).value = "";
   for (const id of ["p-title", "p-text", "explain-box", "tutor-note", "result", "solo-box"]) $(id).innerHTML = "";
   for (const id of ["blocks", "chat-log"]) setHtml($(id), "");
-  for (const id of ["result", "sep-result", "result-big", "debug-sheet", "composer", "fq-composer", "chat-log", "explain-box", "old-feedback", "solo-box"]) $(id).hidden = true;
+  for (const id of ["result", "sep-result", "result-big", "debug-sheet", "composer", "chat-log", "explain-box", "old-feedback", "solo-box"]) $(id).hidden = true;
   splitBig = false; // '결과 크게 보기'는 그 문제의 결과에만
   splitShow();
   $("code")._seen = "";
@@ -1332,7 +1329,7 @@ function clearProblem(pid) {
 
 const tutorWay = (mode) => mode === "chair" || mode === "guide";
 /* 문제마다 보내지 않은 글과 마지막 결과. 앱이 켜진 동안만 둔다(다른 문제를 열었다 돌아와도 남게). 고른 방식은 서버가 문제마다 남긴다(/api/way) */
-const DRAFTS = ["say", "fq-text", "debug-say", "run-input"], KEPT = {};
+const DRAFTS = ["say", "debug-say", "run-input"], KEPT = {};
 
 async function showCode(pid) {
   show("code");
@@ -1484,7 +1481,7 @@ async function swapGuide() {
   try {
     const r = await api("/api/swap", { id: pid });
     if (S.pid !== pid) return;
-    if (r.ok) { Object.assign(S, { blockCode: {}, debug: null, quote: null, prepAt: 0, tried: null }); S.note.start = null; } // 대화가 지워졌으니 준비가 끝나면 다시 시작한다
+    if (r.ok) { Object.assign(S, { blockCode: {}, debug: null, prepAt: 0, tried: null }); S.note.start = null; } // 대화가 지워졌으니 준비가 끝나면 다시 시작한다
     await loadState();
     say(r.ok && S.problem.preparing ? "튜터가 새 풀이로 풀이 순서를 다시 준비해요." : "");
   } finally { prepAsking = false; }
@@ -1514,7 +1511,7 @@ function renderCheckLine(p) {
 }
 
 /** 상태마다 주 동작 하나(파란 채움): 그 단추에만 primary를 붙이고 나머지에서는 뗀다. 붙인 단추를 돌려준다. */
-const PRIMARY = { run: "#run", submit: "#submit", compose: "#compose-run", start: "#explain-start", talk: "#send", follow: "#fq-send",
+const PRIMARY = { run: "#run", submit: "#submit", compose: "#compose-run", start: "#explain-start", talk: "#send",
   check: ".block.is-current [data-check]", debug: "#debug-send", find: "#debug-start", hint: "#result-hint", next: "#result-next", review: "#result-next", feedback: "#to-feedback" };
 function applyPrimary(stage) {
   document.querySelectorAll("#view-code .primary").forEach((el) => el.classList.remove("primary"));
@@ -1526,7 +1523,7 @@ function applyPrimary(stage) {
 
 /** 풀이 순서 네 걸음 중 지금 어디인지만 짚고, 그 걸음의 주 동작 이름을 곁에 쓴다(앞 걸음을 끝냈다고 표시하지 않는다: 건너뛰고 올 수도 있다). */
 const STEPS = ["생각하기", "코드 쓰기", "제출·고치기", "돌아보기"];
-const STEP_OF = { check: 1, start: 0, talk: 0, follow: 0, compose: 1, run: 1, submit: 2, find: 2, hint: 2, debug: 2, feedback: 3, next: 3, review: 3 };
+const STEP_OF = { check: 1, start: 0, talk: 0, compose: 1, run: 1, submit: 2, find: 2, hint: 2, debug: 2, feedback: 3, next: 3, review: 3 };
 function renderSteps(stage, el) {
   const at = STEP_OF[stage] ?? 1, doing = stage === "review" ? "통과한 문제" : el ? el.textContent.trim() : "";
   $("steps").innerHTML = STEPS.map((name, i) => `<li${i === at ? ' class="now" aria-current="step"' : ""}><span class="step-no" aria-hidden="true">${i + 1}</span>${name}${i === at && doing ? `<span class="step-do"> · ${esc(doing)}</span>` : ""}</li>`).join("");
@@ -1547,7 +1544,6 @@ const blocksReady = () => S.session.blocks.length > 0 && (S.mode === "chair" ? a
 function nextAction() {
   const s = S.session, r = S.result, ai = connected();
   if (S.debug && S.debug.open && !S.debug.passed) return "debug";
-  if (S.quote) return "follow";
   if (r && r.run && !r.own && !r.ok && !r.alert && !r.stale && r.cases.length && ai && tutorWay(S.mode) && !slowOnlyOf(r)) return "find"; // 튜터 방식에서 예시가 틀렸다
   if (r && !r.alert && !r.stale && !r.run && !r.own && r.cases.length) { // 제출 결과 바로 아래의 다음 할 일
     if (r.ok) return "next";
@@ -1762,6 +1758,15 @@ function warnGaps() {
   const ta = document.querySelector(`#blocks textarea[data-block="${CSS.escape(S.session.blocks[gaps[0]].id)}"]`);
   if (ta) { ta.scrollIntoView({ block: "center" }); ta.focus(); }
   return true;
+}
+
+/** 튜터 말의 블록 번호 표를 눌렀다: 블록 탭으로 옮겨 그 블록 칸을 보이고 코드 칸에 초점을 둔다(잠긴 블록은 칸이 없어 자리만 보인다). */
+function gotoBlock(i) {
+  S.codeTab = "blocks";
+  render();
+  const li = $("blocks").children[i], ta = li && li.querySelector("textarea");
+  if (li) li.scrollIntoView({ block: "nearest" });
+  if (ta) ta.focus({ preventScroll: true });
 }
 
 /** 코드 전체 칸이 비어 있으면(시작 코드뿐이어도) 지금까지의 블록을 한 파일로 보여 준다. 열린 블록에 빈 칸이 있으면 모으지 않고 블록 탭에서 알린다(알렸으면 true).
@@ -2238,7 +2243,6 @@ function setMode(mode, remember) {
   S.note.start = null; // 앞 방식의 시작 실패 글을 옮기지 않는다
   if (mode === S.mode && !(S.debug && S.debug.open)) { render(); return maybeStart(); }
   S.mode = mode;
-  S.quote = null;
   if (S.debug) S.debug.open = false;
   const tutor = tutorWay(mode);
   if (tutor) S.talk = mode;
@@ -2271,6 +2275,18 @@ function tutorNote(mode) {
   return S.tried === mode ? `${about}<button type="button" class="btn small" id="start-again" data-model>다시 시작</button>` : ""; // 시작한 뒤 대화가 지워졌다: 스스로 다시 시작하지 않으니 단추를 둔다
 }
 
+/* badge-pure:start 튜터 말마다 붙일 블록 번호 표의 글('블록 2/5 · 반복', 붙이지 않으면 null). node로도 시험한다.
+   그 말이 겨눈 블록(엔진이 준다)의 번호와 종류만 쓴다. 이름은 쓰지 않는다(의자에서는 찾을 답이다).
+   번호가 없는 예전 말, 지금 계획에 없는 번호, 다시 짠 계획의 첫 말(replan)보다 앞의 말(옛 계획의 번호)에는 붙이지 않는다 */
+const badgeTexts = (chat, blocks) => {
+  const cut = chat.map((m) => m.role === "service" && m.move === "replan").lastIndexOf(true);
+  return chat.map((m, k) => {
+    const b = m.role === "service" && k >= cut && Number.isInteger(m.block_index) && blocks[m.block_index];
+    return b ? `블록 ${m.block_index + 1}/${blocks.length}${KIND[b.kind] ? ` · ${KIND[b.kind][0]}` : ""}` : null;
+  });
+};
+/* badge-pure:end */
+
 function renderTutor() {
   const s = S.session, mode = S.mode, finding = !!(S.debug && S.debug.open);
   const solo = mode === "solo", railed = solo && !S.soloOpen && !finding;
@@ -2292,8 +2308,7 @@ function renderTutor() {
   $("tutor-note").hidden = finding || !tutor || live;
   $("explain-box").hidden = finding || mode !== "explain";
   $("chat-log").hidden = finding || !tutor || !live;
-  $("composer").hidden = finding || !tutor || !live || !!S.quote;
-  $("fq-composer").hidden = finding || !tutor || !live || !S.quote;
+  $("composer").hidden = finding || !tutor || !live;
   if (mode === "explain") {
     const w = WAY_INFO.explain;
     $("explain-box").innerHTML = started ? s.explain.sections.map((x, i) => `<section class="section"><h3><span class="no">${i + 1}</span>${esc(x.title)}</h3>${rich(x.body)}</section>`).join("")
@@ -2303,30 +2318,17 @@ function renderTutor() {
   if (!tutor) return;
   if (!live) return void ($("tutor-note").innerHTML = tutorNote(mode));
 
-  let n = 0, html = "", aimed = null; // aimed: 앞 튜터 말이 겨눈 블록 번호
-  chat.forEach((m, i) => {
+  let n = 0, html = "";
+  const badges = badgeTexts(chat, s.blocks);
+  chat.forEach((m, k) => {
     if (m.role !== "service") return void (html += meMsg(m.text));
     n += 1;
-    let kind = null, no = "";
-    if (Number.isInteger(m.block_index)) { // 그 말이 겨눈 블록(엔진이 준다)의 종류와 순번. 블록이 바뀌는 말 위에만
-      const b = s.blocks[m.block_index];
-      if (b && m.block_index !== aimed) [kind, no] = [b.kind, ` ${m.block_index + 1}`];
-      aimed = m.block_index;
-    } else { // block_index가 없는 예전 기록: 새 블록을 알리는 말, 또는 첫 말이면 첫 블록
-      const next = NEXT_BLOCK.exec(m.text);
-      kind = next ? KIND_BY_LABEL[next[1]] : i === 0 && s.blocks[0] ? s.blocks[0].kind : null;
-    }
-    const thread = (s.followups.find((t) => t.quote_id === m.id) || { messages: [] }).messages;
-    const quoted = S.quote === m.id;
-    if (kind) html += `<div class="turn">${kindChip(kind)}<span>블록${no}</span></div>`;
-    html += `<div class="msg tutor${quoted ? " is-quoted" : ""}" data-msg="${esc(m.id)}"><span class="who">튜터</span><div class="bubble">${rich(m.text)}</div>
-      <div class="msg-tools"><button type="button" class="btn quiet small" data-quote="${esc(m.id)}" aria-label="${n}번째 튜터 말에 꼬리질문"${quoted ? ' aria-pressed="true"' : ""}>꼬리질문</button></div></div>`;
-    const waiting = quoted && S.busy && S.busy.where === "thread";
-    if (thread.length || waiting) {
-      html += `<div class="thread" role="group" aria-label="${n}번째 튜터 말의 꼬리질문"><span class="thread-title">꼬리질문</span>
-        ${thread.map((x) => (x.role === "service" ? tutorBubble(x.text) : meMsg(x.text))).join("")}
-        ${waiting && S.sending ? meMsg(S.sending.text, true) : ""}${waiting ? pending("thread") : ""}</div>`;
-    }
+    const no = m.block_index + 1; // 표를 누르면 그 블록 칸으로 간다
+    html += badges[k] ? `<div class="msg tutor" data-msg="${esc(m.id)}" role="group" aria-label="블록 ${no}에 대한 튜터 말"><span class="who">튜터</span>
+      <button type="button" class="btn quiet small block-badge" data-goto-block="${m.block_index}" title="이 블록 칸으로 가기">${esc(badges[k])}</button><div class="bubble">${rich(m.text)}</div></div>`
+      : `<div class="msg tutor" data-msg="${esc(m.id)}"><span class="who">튜터</span><div class="bubble">${rich(m.text)}</div></div>`;
+    const thread = (s.followups.find((t) => t.quote_id === m.id) || { messages: [] }).messages; // 꼬리질문 단추가 있던 때의 기록: 읽기만 한다
+    if (thread.length) html += `<div class="thread" role="group" aria-label="${n}번째 튜터 말의 꼬리질문"><span class="thread-title">꼬리질문</span>${thread.map((x) => (x.role === "service" ? tutorBubble(x.text) : meMsg(x.text))).join("")}</div>`;
   });
   const last = chat[chat.length - 1], gaps = last && last.role === "service" && /^블[록럭]을 모두 채웠어요/.test(last.text) ? emptyBlocks() : [];
   if (passedNow()) html += '<p class="notice" role="status">이번 풀이는 통과했어요. 위 대화는 풀던 중의 기록이에요.</p>'; // 맨 아래 말이 옛 실패 말이어도 지금 상태로 읽히지 않게
@@ -2334,15 +2336,12 @@ function renderTutor() {
   if (S.busy && S.busy.where === "chat") html += (S.sending ? meMsg(S.sending.text, true) : "") + pending("chat");
   else if (allFound()) html += '<p class="notice" role="status">블록을 모두 찾았어요. 블록 칸을 채우고 ‘모아서 실행’을 눌러 보세요.</p>';
   html += noteHtml(S.note.chat);
-  const log = $("chat-log"), key = `${mode}:${chat.length}:${s.followups.reduce((sum, t) => sum + t.messages.length, 0)}:${S.busy ? S.busy.where : ""}:${S.quote}:${(S.note.chat || {}).text}`;
+  const log = $("chat-log"), key = `${mode}:${chat.length}:${s.followups.reduce((sum, t) => sum + t.messages.length, 0)}:${S.busy ? S.busy.where : ""}:${(S.note.chat || {}).text}`;
   setHtml(log, html);
   if (log._key !== key) { // 새 말이 오면 그 말이 보이게
     log._key = key;
-    const target = S.quote && log.querySelector(`[data-msg="${CSS.escape(S.quote)}"]`);
-    if (target) (target.nextElementSibling && target.nextElementSibling.classList.contains("thread") ? target.nextElementSibling : target).scrollIntoView({ block: "nearest" });
-    else log.scrollTop = log.scrollHeight;
+    log.scrollTop = log.scrollHeight;
   }
-  if (S.quote) $("fq-quote").textContent = (chat.find((m) => m.id === S.quote) || { text: "" }).text;
 }
 
 /* ── 혼자 풀기: 미리 만들어 둔 힌트와 해설(모델 0회) ── */
@@ -2507,25 +2506,6 @@ async function sendAnswer(given) {
 
 /** 결과의 '이 블록 힌트 받기': 튜터 방식 안에서 지금 블록의 다음 힌트를 청한다(‘힌트 주세요’는 튜터가 규칙으로 힌트를 주는 말). */
 const tutorHint = () => sendAnswer("힌트 주세요");
-
-async function sendFollowup() {
-  const pid = S.pid, mode = S.mode, quote = S.quote, text = $("fq-text").value.trim();
-  if (!text) { S.note.chat = { type: "warn", text: "꼬리질문을 적은 뒤 보내 주세요." }; render(); return $("fq-text").focus(); }
-  S.note.chat = null;
-  S.sending = { text };
-  takeText($("fq-text"));
-  const r = await work("튜터가 꼬리질문에 답하는 중…", "thread", () => api("/api/followup", { id: pid, mode, quote_id: quote, text }));
-  if (!(r && r.ok)) giveBack("fq-text", pid, text);
-  if (!r || S.pid !== pid) return;
-  if (r.ok) { if (S.quote === quote) S.quote = null; } // 답이 오면 '내 답' 칸으로 돌아온다(꼬리질문 칸에 본 답을 적으면 블록 찾기 판정을 하지 않았다)
-  else S.note.chat = errorNote(r.error);
-  say(r.ok ? "튜터가 꼬리질문에 답했어요. 본 대화의 답은 ‘내 답’ 칸에 적어요." : "");
-  await loadState();
-  if (!r.ok || S.pid !== pid || S.quote) return;
-  const asked = document.querySelector(`#chat-log [data-msg="${CSS.escape(quote)}"]`), thread = asked && asked.nextElementSibling;
-  if (thread && thread.classList.contains("thread")) thread.scrollIntoView({ block: "nearest" }); // 방금 받은 꼬리질문의 답이 보이게
-  $("say").focus();
-}
 
 async function fillBlock(blockId) {
   harvest();
@@ -2787,7 +2767,7 @@ const THEME_HELP = {
   guide: ["문제의 뼈대와 정답 풀이를 만들어요. 뒤의 모든 대화가 이 결과를 따라요. 어려운 문제에서 풀이 확인이 자주 실패하면 급을 올려 보세요.", "많음"],
   verify: ["단순한 풀이를 만들어 정답 풀이와 견줘요. 문제를 넣은 뒤 뒤에서 한 번 써요.", "보통"],
   blocks: ["풀이를 블록으로 나누고 블록마다 힌트 질문을 만들어요.", "많음"],
-  talk: ["튜터가 건네는 질문, 꼬리질문 답, 블록 채우기.", "적음 × 횟수"],
+  talk: ["튜터가 건네는 질문, 되묻는 말의 답, 블록 채우기.", "적음 × 횟수"],
   judge: ["내 답과 블록 코드가 맞는지 보는 짧은 판정.", "적음 × 횟수"],
   explain: ["튜터의 해설. 문제와 언어마다 한 번 써요.", "적음"],
   feedback: ["제출 뒤의 피드백.", "보통"],
@@ -3439,7 +3419,7 @@ document.addEventListener("click", (e) => {
     document.querySelectorAll("#list-body [data-lang]").forEach((li) => { li.hidden = !!LIST_LANG && li.dataset.lang !== LIST_LANG; });
     return void document.querySelectorAll("[data-lang-filter]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.langFilter === LIST_LANG)));
   }
-  if (el.dataset.quote) { S.quote = S.quote === el.dataset.quote ? null : el.dataset.quote; S.note.chat = null; render(); return void (S.quote && $("fq-text").focus()); }
+  if (el.dataset.gotoBlock) return void gotoBlock(Number(el.dataset.gotoBlock));
   if (el.dataset.hintBlock) return void loadHints(false, Number(el.dataset.hintBlock));
   if (el.dataset.fill) { // 칸에 적은 것이 있으면 바꿀지 먼저 묻는다
     harvest();
@@ -3528,7 +3508,6 @@ document.addEventListener("click", (e) => {
       if (!Object.values(S.blockCode).some((b) => (b.code || "").trim())) { S.codeNote = "블록 칸에 적은 코드가 아직 없어요"; return render(); }
       return codeEmpty() ? pullBlocks() : askCode("pull");
     },
-    "fq-close": () => { S.quote = null; render(); $("say").focus(); },
     "debug-close": () => { S.debug.open = false; render(); },
     "problem-fold": () => {
       const folded = $("panes").classList.toggle("folded");
@@ -3601,7 +3580,7 @@ document.addEventListener("click", (e) => {
 document.addEventListener("submit", (e) => {
   e.preventDefault();
   if (S.busy) return;
-  ({ "composer": sendAnswer, "fq-composer": sendFollowup, "debug-composer": debugSend, "new-form": registerProblem }[e.target.id] || (() => {}))();
+  ({ "composer": sendAnswer, "debug-composer": debugSend, "new-form": registerProblem }[e.target.id] || (() => {}))();
 });
 
 document.addEventListener("change", (e) => {

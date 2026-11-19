@@ -16,7 +16,7 @@ const PID = 'hash_1_popular_shelf' // 미리 만든 풀이 순서(계획)가 실
 const builtin = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'builtin.json'), 'utf8'))
 const FRESH = builtin.filter((p) => p.id !== PID && p.ready && p.solutions && p.solutions.python)
 const within = (promise, ms, what) => Promise.race([promise, new Promise((_, no) => setTimeout(() => no(new Error(`${what}: ${ms}ms 넘음`)), ms))])
-const DRAFT_IDS = ['say', 'fq-text', 'debug-say', 'run-input'] // 문제마다 담아 두는 보내지 않은 글 칸
+const DRAFT_IDS = ['say', 'debug-say', 'run-input'] // 문제마다 담아 두는 보내지 않은 글 칸
 const chatShown = (p) => p.waitForFunction(() => { const el = document.getElementById('chat-log'); return el && !el.hidden && el.innerText.trim().length > 0 }, null, { timeout: 15000 })
 const TAB = (way) => `#way-tabs [role="tab"][data-way="${way}"]`
 // 문제 상태를 받아 그린 뒤(제목이 보인다)에야 누른다. 혼자 풀기 탭은 상태를 받기 전에도 골라져 보여, 그것으로 기다리면 처음 상태 요청과 엇갈린다
