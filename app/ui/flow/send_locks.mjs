@@ -633,8 +633,9 @@ for (const viewport of VIEWPORTS) {
   await flow('state-speed', viewport, async (t) => {
     const { need, page } = t
     await need('/api/state 중앙값이 250ms 이하다', async () => {
+      // 중앙값으로 판정해 한 번 튄 응답은 견딘다. 요청마다 4초 기본값을 두면 튄 응답 하나에 판정 전에 끊긴다
       const ms = []
-      for (let i = 0; i < 7; i++) { const s = Date.now(); const r = await page.request.post(`${base}/api/state`, { data: { id: problem.id } }); if (!r.ok()) throw new Error(`상태 ${r.status()}`); ms.push(Date.now() - s) }
+      for (let i = 0; i < 7; i++) { const s = Date.now(); const r = await page.request.post(`${base}/api/state`, { data: { id: problem.id }, timeout: 30000 }); if (!r.ok()) throw new Error(`상태 ${r.status()}`); ms.push(Date.now() - s) }
       ms.sort((a, b) => a - b)
       if (ms[3] > 250) throw new Error(`중앙값 ${ms[3]}ms`)
     })
