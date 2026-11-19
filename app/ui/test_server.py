@@ -2975,7 +2975,7 @@ def http() -> None:
         for body in (b"{", b'{"id": "\xff"}', b"[" * 100_000, b"[]"):
             status, payload = send("/api/problems", body)
             assert (status, payload["detail"]["message"]) == (400, "요청을 읽지 못했어요."), (body[:10], status, payload)
-        assert send("/api/problems", headers={"Content-Length": "twelve"})[0] == 400
+        assert send("/api/problems", b"", headers={"Content-Length": "twelve"})[0] == 400  # 본문 없이 보낸다: 길이를 모르면 서버가 남은 본문을 읽지 않아, 본문이 있으면 Windows가 연결을 끊을 수 있다
         for method in ("PUT", "DELETE", "PATCH", "OPTIONS"):
             assert send("/api/problems", method=method)[0] == 405
         handle = server.handle
@@ -2985,6 +2985,44 @@ def http() -> None:
         finally:
             server.handle = handle
     assert status == 500 and "ZeroDivision" not in json.dumps(payload) and payload["detail"]["message"].startswith("앱 안에서 문제가 생겼어요") and "ZeroDivisionError" in err.getvalue()
+    httpd.shutdown()
+    httpd.server_close()
+
+
+def reject_drain() -> None:
+    """본문을 읽기 전에 거절해도 응답을 쓴 뒤 상한 안의 남은 본문은 읽어 버린다(읽지 않은 채 닫으면 Windows는 연결을 끊어
+    보낸 쪽이 거절 응답을 읽지 못한다). 길이가 깨졌거나 상한보다 큰 본문은 읽지 않는다."""
+    import socket
+    import threading
+
+    left = []
+
+    class Seen(server.Handler):
+        def finish(self):  # 서버가 읽지 않고 남긴 본문(보낸 쪽이 쓰기를 닫았으니 끝까지 읽어도 막히지 않는다)
+            left.append(self.rfile.read())
+            super().finish()
+
+    httpd = server.ThreadingHTTPServer(("127.0.0.1", 0), Seen)
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+
+    def send(headers: str, body: bytes, method: str = "POST") -> tuple[int, str, bytes]:
+        with socket.create_connection(("127.0.0.1", httpd.server_port), timeout=60) as conn:
+            conn.sendall(f"{method} /api/problems HTTP/1.1\r\nHost: 127.0.0.1\r\n{headers}\r\n\r\n".encode())
+            conn.sendall(body)
+            conn.shutdown(socket.SHUT_WR)
+            reply = b""
+            while chunk := conn.recv(65536):
+                reply += chunk
+        head, _, payload = reply.partition(b"\r\n\r\n")
+        return int(head.split()[1]), json.loads(payload)["detail"]["code"], left.pop()
+
+    body = b'{"id": "x"}'
+    size = f"Content-Length: {len(body)}"
+    assert send(f"{size}\r\nContent-Type: text/plain", body) == (415, "unsupported_media_type", b"")
+    assert send(f"{size}\r\nContent-Type: application/json\r\nOrigin: null", body) == (403, "forbidden", b"")
+    assert send(f"{size}\r\nContent-Type: application/json", body, "PUT") == (405, "method_not_allowed", b"")
+    assert send(f"Content-Length: {server.MAX_BODY + 1}\r\nContent-Type: text/plain", body) == (415, "unsupported_media_type", body)  # 상한보다 크면 읽지 않는다
+    assert send("Content-Length: twelve\r\nContent-Type: application/json", body) == (400, "validation", body)  # 길이를 모르면 읽지 않는다
     httpd.shutdown()
     httpd.server_close()
 
@@ -5156,6 +5194,7 @@ def main() -> None:
         assert not fake.calls, fake.calls  # 고치기·지우기도 모델을 부르지 않는다
         checks()
         http()
+        reject_drain()
         upload()
         assert not fake.calls, fake.calls  # 파일 읽기와 원본 보관도 모델을 부르지 않는다
     try:
