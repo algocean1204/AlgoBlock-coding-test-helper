@@ -109,7 +109,7 @@ async function flow(name, viewport, steps, opts = {}) {
   let stuck = false
   t.need = async (what, fn) => { if (stuck) return; try { await fn() } catch (e) { stuck = true; problems.push(`${what}: ${String(e.message).split('\n')[0]}`) } }
   try {
-    const r = await context.request.post(`${base}/api/reset`, { data: { id: problem.id } })
+    const r = await context.request.post(`${base}/api/reset`, { data: { id: problem.id }, timeout: 30000 }) // 준비 요청: 화면을 기다리는 4초 기본값과 따로(느린 러너)
     if (!r.ok()) problems.push(`reset ${r.status()}`)
   } catch (e) { problems.push(`reset: ${String(e.message).split('\n')[0]}`) }
   if (opts.prepOn) t.prepOn = true
@@ -432,7 +432,7 @@ for (const viewport of VIEWPORTS) {
     const { need, page } = t
     let wrongResult
     await need('틀린 코드의 채점 결과(실패)를 얻어 둔다', async () => {
-      const r = await page.request.post(`${base}/api/run`, { data: { id: problem.id, code: WRONG } })
+      const r = await page.request.post(`${base}/api/run`, { data: { id: problem.id, code: WRONG }, timeout: 30000 }) // 준비 요청(채점은 느린 러너에서 4초를 넘을 수 있다)
       wrongResult = await r.json()
       if (wrongResult.ok) throw new Error('틀린 코드가 통과했다')
     })
@@ -543,7 +543,7 @@ for (const viewport of VIEWPORTS.slice(0, 1)) {
       if (t.count(isPrep) !== polls || t.count(isState) !== baseState + 1) throw new Error('끝난 뒤에도 요청이 계속 나간다')
     })
     await need('실제 /api/prep은 1KB 이하의 가벼운 응답이다', async () => {
-      const r = await page.request.post(`${base}/api/prep`, { data: { id: problem.id } })
+      const r = await page.request.post(`${base}/api/prep`, { data: { id: problem.id }, timeout: 30000 }) // 응답 크기를 본다(시간은 보지 않는다)
       if (!r.ok()) throw new Error(`상태 ${r.status()}`)
       const text = await r.text()
       const j = JSON.parse(text)
