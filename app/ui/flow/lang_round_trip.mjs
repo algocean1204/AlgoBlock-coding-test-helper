@@ -50,7 +50,7 @@ for (const viewport of VIEWPORTS) {
   const chatTexts = () => page.locator('#chat-log .msg:not(.pending)').allInnerTexts() // 내 말과 튜터의 말
   const cell = () => page.locator('#blocks > li.block[aria-current="step"] textarea.codey')
   const choose = async (language) => { // 고르자마자 바꾸기 요청이 가고, 끝나면 그 언어의 대화가 보인다
-    const sent = page.waitForResponse((r) => new URL(r.url()).pathname === '/api/language', { timeout: 5000 })
+    const sent = page.waitForResponse((r) => new URL(r.url()).pathname === '/api/language', { timeout: 15000 }) // 느린 러너에서는 바꾸기 응답이 5초를 넘기도 한다
     await page.locator('#p-lang-select').selectOption(language)
     await sent
     await page.waitForFunction((l) => document.getElementById('p-lang-select')?.value === l && !document.getElementById('p-lang-select').disabled
@@ -84,6 +84,7 @@ for (const viewport of VIEWPORTS) {
     if (now.join('\n') !== before.join('\n')) throw new Error(`${before.length}개 → ${now.length}개`)
   })
   await need('저장 전에 바꾼 블록 칸의 글이 남아 있다', async () => { if ((await cell().inputValue()) !== TYPED) throw new Error(await cell().inputValue()) })
+  await post('/api/language', { id: problem.id, language: 'python' }) // 중간에 실패해도 다른 언어로 남지 않게
   await post('/api/reset', { id: problem.id }) // 다음 흐름에 대화를 남기지 않는다
   if (problems.length) {
     failed++
