@@ -54,7 +54,7 @@ async function flow(name, viewport, steps) {
     if (url.pathname === '/api/debug') return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ message: '어디서 값이 사라질까요?', passed: false, line: null }) })
     return route.continue()
   })
-  const post = async (path, data) => { const r = await context.request.post(`${base}${path}`, { data }); if (!r.ok()) problems.push(`${path} ${r.status()}`) }
+  const post = async (path, data) => { const r = await context.request.post(`${base}${path}`, { data, timeout: 30000 }); if (!r.ok()) problems.push(`${path} ${r.status()}`) }
   for (const p of [problem, second]) { await post('/api/language', { id: p.id, language: 'python' }); await post('/api/reset', { id: p.id }) }
   await page.goto(`${base}/#/p/${problem.id}`)
   const t = {
