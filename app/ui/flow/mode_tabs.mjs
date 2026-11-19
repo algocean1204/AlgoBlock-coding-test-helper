@@ -25,11 +25,29 @@ const opened = async (p) => {
   if ((await p.locator(TAB('solo')).getAttribute('aria-selected')) !== 'true') throw new Error('처음 연 문제가 혼자 풀기가 아니다')
 }
 const startsOf = (p) => p.evaluate(() => window.__flow.starts) // 화면이 보낸 튜터 시작 요청 수(화면 안에서 센다)
+const titled = (p, pid) => p.waitForFunction((id) => location.hash.endsWith(id) && document.getElementById('p-title')?.textContent.trim().length > 0, pid, { timeout: 5000 })
+const wayIs = async (p, way) => { // 세 탭 가운데 그 방식 하나만 골라져 있다
+  const got = (await Promise.all(['solo', 'chair', 'guide'].map((w) => p.locator(TAB(w)).getAttribute('aria-selected')))).join()
+  if (got !== ['solo', 'chair', 'guide'].map((w) => String(w === way)).join()) throw new Error(`${way}가 아니다: ${got}`)
+}
+// 한 문제의 상태 응답을 release()까지 붙잡는다(요청은 곧바로 서버가 처리한다). got: 서버가 처음 요청을 처리했다. 붙잡았던 응답에는 x-held를 단다
+const holdState = async (p, pid) => {
+  let asked, release
+  const got = new Promise((r) => { asked = r }), gate = new Promise((r) => { release = r })
+  await p.route('**/api/state', async (route) => {
+    if (route.request().postDataJSON()?.id !== pid) return route.fallback()
+    const res = await route.fetch()
+    asked()
+    await gate
+    return route.fulfill({ response: res, headers: { ...res.headers(), 'x-held': '1' } }).catch(() => {})
+  })
+  return { got, release }
+}
 const VIEWPORTS = [{ width: 1366, height: 689 }, { width: 1093, height: 551 }]
 const browser = await launch()
 let failed = 0
 
-async function open(context, viewport, connected, problems, pid = PID) {
+async function open(context, viewport, connected, problems, pid = PID, before = null) {
   const page = await context.newPage()
   await page.setViewportSize(viewport)
   page.on('pageerror', (e) => problems.push(`pageerror: ${e.message}`))
@@ -54,6 +72,7 @@ async function open(context, viewport, connected, problems, pid = PID) {
     const json = Response.prototype.json
     Response.prototype.json = function () { const read = json.call(this); if (this.headers.get('x-held')) read.then(() => { window.__flow.heldRead = true }); return read }
   })
+  if (before) await before(page) // 처음 상태 요청보다 먼저 걸 길(문제를 열기 전에)
   await page.goto(`${base}/#/p/${pid}`)
   return page
 }
@@ -335,6 +354,107 @@ for (const viewport of VIEWPORTS) {
     await saved
   })
   await need('연결이 없을 때 누른 튜터 탭은 방식으로 남지 않는다', async () => { if (kept.some((w) => w !== 'solo')) throw new Error(`남긴 방식: ${kept.join()}`) })
+
+  // 12. 처음 상태를 받기 전에(느린 기기에서 열자마자) 누른 방식 탭은 남는다. 처음 상태 응답은 붙잡아 둔다
+  const wayOf = async (pid) => { const r = await context.request.post(`${base}/api/state`, { data: { id: pid } }); if (!r.ok()) throw new Error(`상태 ${r.status()}`); return (await r.json()).way }
+  const saving = (p) => p.waitForResponse((r) => r.url().endsWith('/api/way'), { timeout: 10000 }).catch(() => null)
+  let hold
+  const early = await take()
+  const quick = await open(await browser.newContext(), viewport, true, problems, early.id, async (p) => { hold = await holdState(p, early.id) })
+  await need('처음 상태 응답을 붙잡은 채 의자 탭을 누르고 응답을 풀면 의자가 골라져 있고 첫 질문이 나온다', async () => {
+    await within(hold.got, 5000, '처음 상태 요청')
+    const saved = saving(quick)
+    await quick.locator(TAB('chair')).click()
+    hold.release()
+    await titled(quick, early.id)
+    await wayIs(quick, 'chair')
+    await chatShown(quick)
+    if (!(await saved)?.ok()) throw new Error('방식 저장 응답이 없다')
+  })
+  await need('서버에도 의자로 남는다', async () => { const way = await wayOf(early.id); if (way !== 'chair') throw new Error(way) })
+  hold.release()
+  await quick.context().close()
+
+  // 13. 방식 저장(/api/way)이 늦어 서버가 상태 요청을 먼저 처리해도 누른 방식이 남는다
+  const slow = await take()
+  let letWay
+  const wayGate = new Promise((r) => { letWay = r })
+  const lag = await open(await browser.newContext(), viewport, true, problems, slow.id, async (p) => {
+    hold = await holdState(p, slow.id)
+    await p.route('**/api/way', async (route) => { await wayGate; return route.fallback() })
+  })
+  await need('방식 저장보다 먼저 처리한 상태를 받아도 의자가 골라져 있다', async () => {
+    await within(hold.got, 5000, '처음 상태 요청')
+    await lag.locator(TAB('chair')).click()
+    hold.release()
+    await titled(lag, slow.id) // 이 상태는 서버가 방식 저장을 받기 전에 만들었다
+    await wayIs(lag, 'chair')
+  })
+  await need('방식 저장이 끝나면 첫 질문이 나오고 서버에도 의자로 남는다', async () => {
+    const saved = saving(lag)
+    letWay()
+    if (!(await saved)?.ok()) throw new Error('방식 저장 응답이 없다')
+    await chatShown(lag)
+    const way = await wayOf(slow.id)
+    if (way !== 'chair') throw new Error(way)
+  })
+  letWay(); hold.release()
+  await lag.context().close()
+
+  // 14. 앞 문제에서 상태를 받기 전에 누른 방식이 다른 문제로 새지 않는다(앞 문제의 상태 응답은 붙잡아 둔다)
+  const from = await take(), to = await take()
+  const startIds = [] // 튜터 시작 요청을 보낸 문제
+  const move = await open(await browser.newContext(), viewport, true, problems, from.id, async (p) => {
+    hold = await holdState(p, from.id)
+    p.on('request', (r) => { if (r.url().endsWith('/api/turn') && r.postDataJSON()?.event === 'start') startIds.push(r.postDataJSON().id) })
+  })
+  await need('앞 문제에서 의자 탭을 누르고 상태를 받기 전에 다른 문제로 옮긴다', async () => {
+    await within(hold.got, 5000, '처음 상태 요청')
+    const saved = saving(move)
+    await move.locator(TAB('chair')).click()
+    if (!(await saved)?.ok()) throw new Error('앞 문제의 방식 저장 응답이 없다')
+    await move.evaluate((h) => { location.hash = h }, `#/p/${to.id}`)
+    await titled(move, to.id)
+  })
+  const stayed = async () => {
+    await wayIs(move, 'solo')
+    if (await move.locator('#chat-log').isVisible()) throw new Error('대화 칸이 보인다')
+    if (startIds.length) throw new Error(`튜터를 시작했다: ${startIds.join()}`)
+  }
+  await need('옮긴 문제는 혼자 풀기로 열리고 튜터를 시작하지 않는다', async () => {
+    await stayed()
+    const way = await wayOf(to.id)
+    if (way !== 'solo') throw new Error(`서버의 방식: ${way}`)
+  })
+  hold.release()
+  await need('앞 문제의 늦은 상태 응답이 와도 그대로다', async () => {
+    await move.waitForFunction(() => window.__flow.heldRead, null, { timeout: 5000 })
+    await titled(move, to.id)
+    await stayed()
+  })
+  await move.context().close()
+
+  // 15. 연결이 없을 때 상태를 받기 전에 누른 튜터 탭: 연 뒤에 누른 것처럼 그 탭의 연결 안내가 보이고, 방식으로 남지 않는다
+  const bare = await take()
+  const sent = [] // 보낸 방식 저장 요청
+  const offEarly = await open(await browser.newContext(), viewport, false, problems, bare.id, async (p) => {
+    hold = await holdState(p, bare.id)
+    p.on('request', (r) => { if (r.url().endsWith('/api/way')) sent.push(r.postDataJSON()?.way) })
+  })
+  await need('연결이 없을 때 상태를 받기 전에 누른 의자 탭은 연결 안내를 보이고 방식으로 남지 않는다', async () => {
+    await within(hold.got, 5000, '처음 상태 요청')
+    await offEarly.locator(TAB('chair')).click()
+    hold.release()
+    await titled(offEarly, bare.id)
+    await wayIs(offEarly, 'chair')
+    await offEarly.locator('#pane-tutor a[href^="#/settings"]').first().waitFor({ state: 'visible', timeout: 3000 })
+    if (await offEarly.locator('#chat-log').isVisible()) throw new Error('연결이 없는데 대화 칸이 보인다')
+    if (sent.length) throw new Error(`남긴 방식: ${sent.join()}`)
+    const way = await wayOf(bare.id)
+    if (way !== 'solo') throw new Error(`서버의 방식: ${way}`)
+  })
+  hold.release()
+  await offEarly.context().close()
 
   if (problems.length) {
     failed++
