@@ -1345,7 +1345,7 @@ async function showCode(pid) {
   await loadState(true);
 }
 
-let stateAsked = 0; // 마지막으로 보낸 상태 요청의 번호
+let stateAsked = 0; // 마지막으로 보내거나 화면에 적용한 상태의 번호(이보다 작은 번호의 늦은 응답은 버린다)
 async function loadState(open) {
   const pid = S.pid, asked = S.talk, n = ++stateAsked;
   const r = await api("/api/state", { id: pid, mode: asked, open: !!open });
