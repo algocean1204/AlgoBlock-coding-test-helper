@@ -18,11 +18,12 @@ fn solution(floor: Vec<String>) -> i32 {
     distance[start_r][start_c] = 0;
     let mut queue = VecDeque::new();
     queue.push_back((start_r as i32, start_c as i32));
+    let moves = [(-1, 0), (1, 0), (0, -1), (0, 1)];
     while let Some((r, c)) = queue.pop_front() {
         if grid[r as usize][c as usize] == b'E' {
             return distance[r as usize][c as usize];
         }
-        for (dr, dc) in [(-1, 0), (1, 0), (0, -1), (0, 1)] {
+        for (dr, dc) in moves {
             let nr = r + dr;
             let nc = c + dc;
             if nr < 0 || nr >= rows || nc < 0 || nc >= cols {

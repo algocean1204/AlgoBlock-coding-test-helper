@@ -3,6 +3,7 @@ import java.util.*;
 class Solution {
     public long solution(String[] board) {
         int rows = board.length, cols = board[0].length();
+        Map<Character, int[]> step = Map.of('U', new int[]{-1, 0}, 'D', new int[]{1, 0}, 'L', new int[]{0, -1}, 'R', new int[]{0, 1});
         final int NEW = 0, ON_PATH = 1, DONE = 2; // 아직 안 감 / 지금 걷는 길 위 / 점수가 정해짐
         int[][] state = new int[rows][cols];
         int[][] order = new int[rows][cols]; // 지금 길에서 몇 번째로 밟은 칸인가
@@ -20,11 +21,9 @@ class Solution {
                     state[r][c] = ON_PATH;
                     order[r][c] = size;
                     path[size++] = r * cols + c;
-                    char arrow = board[r].charAt(c);
-                    if (arrow == 'U') r--;
-                    else if (arrow == 'D') r++;
-                    else if (arrow == 'L') c--;
-                    else c++;
+                    int[] d = step.get(board[r].charAt(c));
+                    r += d[0];
+                    c += d[1];
                     if (r < 0 || r >= rows || c < 0 || c >= cols) {
                         nextScore = 0; // 밖이다: 더 밟을 칸이 없다
                         break;

@@ -2,6 +2,7 @@ import java.util.*;
 
 class Solution {
     public int solution(String expr) {
+        Map<Character, Character> partner = Map.of(')', '(', ']', '[', '}', '{');
         Deque<Character> stack = new ArrayDeque<>();
         int deepest = 0;
         for (int k = 0; k < expr.length(); k++) {
@@ -9,8 +10,8 @@ class Solution {
             if (ch == '(' || ch == '[' || ch == '{') {
                 stack.push(ch);
                 deepest = Math.max(deepest, stack.size());
-            } else if (ch == ')' || ch == ']' || ch == '}') {
-                char open = ch == ')' ? '(' : (ch == ']' ? '[' : '{');
+            } else if (partner.containsKey(ch)) {
+                char open = partner.get(ch);
                 if (stack.isEmpty() || stack.peek() != open) {
                     return -1;
                 }

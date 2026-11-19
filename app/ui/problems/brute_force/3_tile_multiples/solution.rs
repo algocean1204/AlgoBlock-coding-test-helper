@@ -1,27 +1,33 @@
 use std::collections::HashSet;
 
-// 순열 도구가 없어서 재귀로 직접 만든다: 안 쓴 타일을 하나씩 뒤에 붙여 가며 모든 순서를 본다
-fn build(tiles: &[u8], used: &mut Vec<bool>, number: i32, length: usize, numbers: &mut HashSet<i32>) {
-    if length >= 2 {
-        numbers.insert(number); // 같은 수는 집합이 한 번만 남긴다
-    }
-    for i in 0..tiles.len() {
-        if used[i] {
-            continue;
-        }
-        if length == 0 && tiles[i] == b'0' {
-            continue; // 맨 앞에 0 타일은 놓을 수 없다
-        }
-        used[i] = true;
-        // 최대 8자리라 i32로 충분하다
-        build(tiles, used, number * 10 + (tiles[i] - b'0') as i32, length + 1, numbers);
-        used[i] = false;
-    }
-}
-
 fn solution(tiles: String, m: i32) -> i32 {
     let mut numbers = HashSet::new();
-    let mut used = vec![false; tiles.len()];
-    build(tiles.as_bytes(), &mut used, 0, 0, &mut numbers);
-    numbers.iter().filter(|&&x| x % m == 0).count() as i32
+    // 순열 도구가 없어서 직접 만든다: rest에서 length장을 골라 늘어놓는 모든 줄(숫자 글자뿐이라 바이트 위치로 자른다)
+    fn permutations(rest: &str, length: usize) -> Vec<String> {
+        if length == 0 {
+            return vec![String::new()];
+        }
+        let mut out = Vec::new();
+        for i in 0..rest.len() {
+            for tail in permutations(&format!("{}{}", &rest[..i], &rest[i + 1..]), length - 1) {
+                out.push(format!("{}{}", &rest[i..i + 1], tail));
+            }
+        }
+        out
+    }
+    for length in 2..=tiles.len() { // 두 장 이상
+        for order in permutations(&tiles, length) {
+            if order.starts_with('0') { // 맨 앞에 0 타일은 놓을 수 없다
+                continue;
+            }
+            numbers.insert(order.parse::<i32>().unwrap()); // 같은 수는 집합이 한 번만 남긴다(최대 8자리라 i32로 충분하다)
+        }
+    }
+    let mut count = 0;
+    for x in &numbers {
+        if x % m == 0 {
+            count += 1;
+        }
+    }
+    count
 }
