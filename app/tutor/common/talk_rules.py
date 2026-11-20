@@ -11,7 +11,7 @@ import re
 import sys
 from difflib import SequenceMatcher
 
-from .solution import body_lines, bound_names, frame_flags
+from .solution import _TOKEN, body_lines, bound_names, created_names, entry_params, frame_flags
 
 BANNED = (
     "정답", "맞아요", "맞습니다", "틀렸어요", "완벽", "훌륭", "잘했어요", "좋아요", "좋은 질문", "좋은 생각",
@@ -99,12 +99,12 @@ def asks_ignored(text: str, user: str) -> bool:
 DEFER_TAIL = "다른 물음은 다음 차례에 이어 봐요."
 
 
-def defer_ask(text: str, user: str) -> str:
-    """물음이 여럿인데 답이 하나도 받지 않았으면 답 앞에 미룸 문장을 붙인다(답 본문은 그대로, 못 받은 물음은 다음 차례에 many_asks_line이 잇는다)."""
-    if not asks_ignored(text, user):
+def defer_ask(text: str, user: str, seen: str | None = None) -> str:
+    """물음이 여럿인데 답(seen. 없으면 text)이 하나도 받지 않았으면 답 위에 미룸 줄을 둔다(답 본문은 그대로, 못 받은 물음은 다음 차례에 many_asks_line이 잇는다)."""
+    if not asks_ignored(text if seen is None else seen, user):
         return text
     many = "여럿이라" if asked_count(user) > 2 else "둘이라"
-    return f"물음이 {many} 하나씩 볼게요. {DEFER_TAIL} {text}"
+    return f"물음이 {many} 하나씩 볼게요. {DEFER_TAIL}\n{text}"
 
 
 def deferred_user(said) -> list[str]:
@@ -184,7 +184,8 @@ def unrun_why(status: str) -> str:
 
 UNRUN_FIX = {"toolchain_missing": " 그 도구를 설치하면 실행으로 확인할 수 있어요."}  # 사용자가 고칠 수 있는 까닭만
 EXAMPLES_ONLY = "공개 예시로만 확인했어요."  # 문제에 숨은 테스트가 없다: 통과가 약하다는 것을 말한다
-ANSWER_LEAD = "답 코드는 드리지 않아요. 지금 블록만 보고 싶다면 블록 칸의 '이 블록 채우기'를 쓸 수 있어요. "  # 답을 달라고 할 때 앞말
+ANSWER_NO = "답 코드는 드리지 않아요."  # 답을 주지 않는다는 말. 칸으로는 결과 칸이다(길 안내는 단추)
+ANSWER_LEAD = ANSWER_NO + " 지금 블록만 보고 싶다면 블록 칸의 '이 블록 채우기'를 쓸 수 있어요. "  # 답을 달라고 할 때 앞말
 FILL_TIP = "막히면 블록 칸의 '이 블록 채우기'로 이 블록만 볼 수 있어요. "  # 같은 블록에서 내용 없는 답이 두 번 이어졌을 때 앞말(한 블록에 한 번)
 BACK_LEAD = "지금 문제로 돌아갈게요. "  # 문제와 무관한 말일 때 앞말
 HARD_LEAD = "한 걸음 더 작게 나눠 볼게요. "  # 어렵다는 짧은 말 뒤 앞말(다음 저장 힌트가 더 작은 질문이다)
@@ -219,9 +220,8 @@ FALLBACK = {
     "shape": "이 빈칸을 말로 한 줄 써 보면 어떤 모양일까요?",
     "run": "채운 블록을 이어 예제 하나로 돌리면 무엇이 나올까요?",
     "verify": "그 생각대로 문제 예시의 첫 입력을 손으로 따라가 보면 무엇이 나오나요?",
-    "followup": "이 인용에서 어느 부분이 막혔는지 한 문장으로 말해 줄 수 있을까요?",
-    "term": "어느 낱말이 낯선지 하나만 짚어 주면, 그 뜻부터 같이 볼까요?",
-    "close": "막히는 줄이 생기면 제출한 뒤 틀린 곳을 같이 찾을 수 있어요. 이제 찾은 순서대로 코드 칸에 옮겨 적고 제출해 볼까요?",
+    "term": "어느 부분이 낯선지 하나만 짚어 주면, 그것부터 같이 볼까요?",
+    "close": "막히는 줄이 생기면 제출한 뒤 틀린 곳을 같이 찾을 수 있어요. 이제 블록 칸의 코드를 모아서 실행해 보고 제출해 볼까요?",
 }
 
 _QUOTES = re.compile(r"'([^']+)'|‘([^’]+)’|\"([^\"]+)\"|“([^”]+)”")
@@ -230,7 +230,7 @@ _HANGUL = re.compile(r"[가-힣]")
 _ENGLISH = re.compile(r"[A-Za-z]+(?:[ ,]+[A-Za-z]+){4,}")  # 영어 다섯 낱말 이상 = 모델의 지시문·메모가 샌 것
 _NOTE = re.compile(r"(하자|보자|묻자|이끌자|시키자)[.。]?(\s|$)")  # '…따라가 보게 하자' 같은 모델의 계획 메모
 # '…라고 물었어요.', '…된다"고 했어요.', '…제대로 짚었네요.'
-_ECHO = re.compile(r"((이)?시군요|계시군요|(말해|알려|짚어) 주셨(어요|네요|습니다)|짚었(어요|네요)|짚으셨(네요|어요|군요)|물으셨(어요|네요|군요)|말씀이(시)?군요"
+_ECHO = re.compile(r"((이)?시군요|계시군요|(말해|알려|짚어) 주셨(어요|네요|습니다)|짚었(어요|네요)|짚으셨(네요|어요|군요)|물으셨(어요|네요|군요)|보셨(네요|군요)|말씀이(시)?군요"
                    r"|라고 물었어요|고 (했|하셨)어요)[.!]?$")  # 사용자 말을 되받는 첫 문장
 _CODE_SPAN = re.compile(r"```.*?```|`[^`\n]*`", re.S)
 _CODE_LINE = re.compile(r"[\w)\]]\s*=[^=]|[(\[]\s*['‘\"]")  # 대입, 또는 괄호 바로 뒤 따옴표가 있는 줄은 코드 모양이다
@@ -471,6 +471,90 @@ def drop_echo(text: str) -> str:
     return _CONNECTIVE.sub("", " ".join(parts))
 
 
+QUESTION_CHARS = 120  # 의자·가이드 말의 질문 칸 길이 한도
+NOTE_CHARS = 80  # 근거 칸 길이 한도
+_JAMO = re.compile(r"[\u3131-\u318e]+")  # 낱자모(ㄱ, ㅏ …): 글자를 치다 만 것이다
+_DASH = re.compile(r"\s*[—―]+\s*")
+
+
+def stray_jamo(text: str, known: str = "") -> list[str]:
+    """코드 구간 밖의 낱자모 가운데 문제 글·사용자 말(known)에 없는 것('ㄱ밧', '값ㅏ은')."""
+    return [run for run in _JAMO.findall(without_code(text or "")) if run not in (known or "")]
+
+
+def field_problems(text: str, limit: int, known: str = "") -> list[str]:
+    """두 칸 말(질문, 근거)의 칸 하나 검사: 문제 글·사용자 말에 없는 낱자모, 한 문장 넘음, 길이. 고치지 않는다."""
+    found = []
+    if stray_jamo(text, known):
+        found.append("낱자모")
+    plain = without_code(text)
+    if sentence_count(plain) > 1 or len(re.findall(r"[?？]", _QUOTES.sub("", plain))) > 1:  # 띄어 쓰지 않고 붙인 물음 둘('…인가요?…인가요?')도 여럿이다
+        found.append("여러 문장")
+    if len((text or "").strip()) > limit:
+        found.append("길이")
+    return found
+
+
+def note_problems(note: str, known: str = "", **check) -> list[str]:
+    """근거 칸 검사. 한 문장·NOTE_CHARS자 이하의 평서문이고, 말풍선 검사(금지 표현, 동의로 시작, 답을 말함, 참고 코드, 뒤 블록 이름, 인용)를 지난다. 비면 통과."""
+    if not (note or "").strip():
+        return []
+    found = field_problems(note, NOTE_CHARS, known)
+    if note.rstrip().endswith(("?", "？")):
+        found.append("물음")
+    return found + [item for item in reply_problems(note, **check) if item not in ("질문으로 끝나지 않음", "3문장 초과")]
+
+
+def _undash(part: str) -> str:
+    """줄표를 쉼표로. 숫자가 낀 식·범위 사이 줄표('1—3', 'n — 1')는 뜻이 달라지니 그대로 둔다."""
+
+    def swap(found) -> str:
+        left, right = part[found.start() - 1:found.start()], part[found.end():found.end() + 1]
+        if (left.isdigit() or right.isdigit()) and re.match(r"[\w)\]]", left, re.A) and re.match(r"[\w(\[+-]", right, re.A):
+            return found.group(0)
+        if right and right in ",.?!？":  # 문장 부호 바로 앞의 줄표는 지운다
+            return ""
+        return " " if left and left in ",.?!？" else ", "
+
+    return _DASH.sub(swap, part)
+
+
+def _plain_fix(part: str) -> str:
+    part = _undash(part).replace("되어지", "되").replace("하였", "했")
+    part = re.sub(r"(?<=\S)[ \t]{2,}(?=\S)", " ", part)
+    return re.sub(r"([?!？,])\1+", r"\1", part)
+
+
+def _unquoted(line: str, fix) -> str:
+    """따옴표 구간(문제 글·사용자 말 인용, 예시 값)은 그대로 두고 나머지에 fix."""
+    out, at = [], 0
+    for found in _QUOTES.finditer(line):
+        out += [fix(line[at:found.start()]), found.group(0)]
+        at = found.end()
+    return "".join(out) + fix(line[at:])
+
+
+def tidy(text: str) -> str:
+    """뜻이 바뀌지 않는 손질: 줄표 → 쉼표, '되어지' → '되', '하였' → '했', 겹친 공백·문장 부호를 하나로.
+    따옴표 구간과 코드 구간(백틱·펜스)은 그대로 둔다. 코드 모양 줄('count=0으로 둔다 — …')은 줄표만 고친다(줄표는 코드에 쓰이지 않는다). 줄은 그대로다."""
+    return outside_code(text or "", lambda line: _unquoted(line, _plain_fix),
+                        lambda piece: piece if piece.startswith("`") else _unquoted(piece, _undash))
+
+
+def shape_problems(text: str) -> list[str]:
+    """긴 글(해설·피드백)의 꼴: 첫 줄은 결론 한 문장(70자 이하), 목록 항목은 5개 이하·항목마다 90자 이하. 고치지 않고 까닭만 돌려준다(기록용)."""
+    rows = [row.strip() for row in re.sub(r"```.*?```", "", text or "", flags=re.S).splitlines() if row.strip()]
+    items = [re.sub(r"^(?:[-•]|\d{1,2}[.)])\s+", "", row) for row in rows if re.match(r"(?:[-•]|\d{1,2}[.)])\s", row)]
+    found = []
+    if rows and (sentence_count(rows[0]) > 1 or len(rows[0]) > 70):
+        found.append("첫 줄")
+    if len(items) > 5:
+        found.append("항목 수")
+    if any(len(item) > 90 for item in items):
+        found.append("항목 길이")
+    return found
+
+
 def drop_told(text: str, reference: str, language: str, problem: str) -> str:
     """지금 블록의 답을 말한 평서문을 지운다. 남는 글에 질문이 있을 때만. 지운 문장은 표준 오류에 남긴다(지나치게 지우는지 보려고)."""
     told = told_sentences(text, reference, language, problem) if reference else []
@@ -481,9 +565,11 @@ def drop_told(text: str, reference: str, language: str, problem: str) -> str:
     return " ".join(rest)
 
 
-def repair(text: str, problem: str, said: str = "", move: str = "", reference: str = "", language: str = "python", user: str = "") -> str:
+def repair(text: str, problem: str, said: str = "", move: str = "", reference: str = "", language: str = "python", user: str = "",
+           first: bool = False) -> str:
     """모델을 다시 부르지 않고 고칠 수 있는 위반을 고친다. 되받는 첫 절·문장, 블록의 답을 말한 평서문, 근거 없는 따옴표는 지우고,
-    마지막 물음표 뒤 글은 자르고, 뒤 세 문장만 남긴다. 근거 질문(basis)은 사용자 말을 인용해 묻는 것이 설계라 되받기를 지우지 않는다."""
+    마지막 물음표 뒤 글은 자르고, 뒤 세 문장만 남긴다. first면 첫 문장(결론)과 뒤 두 문장을 남긴다(가운데 근거를 줄인다).
+    근거 질문(basis)은 사용자 말을 인용해 묻는 것이 설계라 되받기를 지우지 않는다."""
 
     def unquote(match):
         phrase = next(group for group in match.groups() if group is not None)
@@ -502,7 +588,8 @@ def repair(text: str, problem: str, said: str = "", move: str = "", reference: s
     last = max(body.rfind("?"), body.rfind("？"))
     if last >= 0:
         body = body[: last + 1]
-    return " ".join(sentences(one_question(body))[-3:])
+    parts = sentences(one_question(body))
+    return " ".join(parts[:1] + parts[-2:] if first and len(parts) > 3 else parts[-3:])
 
 
 def note_fallback(where: str, problems: list[str], text: str) -> None:
@@ -517,6 +604,62 @@ def code_names(text: str, code: str, problem: str) -> list[str]:
     """말에 나온 코드 이름 가운데 문제 글에 없는 것('day일까지 점검이 몇 번인지': day는 참고 코드의 인자 이름이다). 코드 구간(백틱)은 보지 않는다."""
     names = set(_NAME.findall(code or "")) - set(_NAME.findall(problem or ""))
     return sorted(set(_NAME.findall(without_code(text or ""))) & names)
+
+
+_OWN_NAME = re.compile(r"(?:(?<=\.\.)|(?<![\w.]))[A-Za-z_]\w*")  # 점 하나 뒤(메서드·속성)는 아닌 이름. 범위(0..n) 뒤는 이름이다
+
+
+def problem_names(pieces: list[str], language: str, program: bool = False) -> set[str]:
+    """이 문제 코드가 만든 이름: 대입·선언한 변수, 반복 변수, 매개변수(created_names)와 진입 함수의 인자(entry_params).
+    주석·틀 줄(가져오기, 진입 함수 머리)은 보지 않는다. 예약어·형·표준 함수는 만든 이름이 아니라 언어마다 늘어놓지 않아도 빠진다."""
+    return {name for code in pieces for name in [*(item[0] for item in created_names(code, language, program)), *(entry_params(code, language) or [])]}
+
+
+def statements(code: str, language: str) -> list[list[str]]:
+    """코드를 문장 조각의 낱말 목록으로 나눈다. 주석을 떼고, 괄호 밖의 ';'와 줄바꿈에서 끊는다.
+    파이썬은 ':'에서도(조건·반복 머리 뒤), 그 밖의 언어는 '{'·'}'와 if·while·for 머리 괄호가 닫히는 곳에서도 끊는다
+    ('if (x > 0) total += x;'는 머리와 몸 두 조각). 'for (let i = 0; i < n; i++)'의 ';'는 괄호 안이라 끊지 않는다.
+    조각 맨 앞의 else는 떼고 파이썬 elif는 if로 읽는다('} else if (x > 0) {', 'elif x > 0:'도 'if' 머리로 견준다)."""
+    mark, cuts, opens, closes = ("#", ";:", "([{", ")]}") if language == "python" else ("//", ";{}", "([", ")]")
+    out = []
+    for line in (code or "").splitlines():
+        part, depth = [], 0
+        for tok in _TOKEN.findall(re.sub(rf"(^|\s){re.escape(mark)}.*", "", line)):
+            if depth == 0 and tok in cuts:
+                out.append(part)
+                part = []
+                continue
+            if not part and tok in ("else", "elif"):
+                if tok == "else":
+                    continue
+                tok = "if"
+            depth += (tok in opens) - (tok in closes)
+            part.append(tok)
+            if language != "python" and depth == 0 and tok == ")" and part[0] in ("if", "while", "for") and part[1:2] == ["("]:
+                out.append(part)  # 머리 괄호가 닫혔다: 중괄호 없는 몸과 나눈다
+                part = []
+        out.append(part)
+    return [part for part in out if part]
+
+
+def code_leaks(text: str, pieces: list[str], language: str, program: bool = False) -> bool:
+    """말의 코드 구간·코드 모양 줄이 이 문제의 코드를 옮겼는가. 되묻기 답(term)의 문법 예가 이 문제의 변수와 답 줄을 썼다.
+    이 문제 코드가 만든 두 글자 이상의 이름(problem_names)을 쓰거나, 문장 조각(statements)이 이 문제 코드의 문장 조각과 같거나 그것으로 시작하면 참.
+    견주는 조각은 주석·틀 줄을 뺀 줄에서 나온, 만든 이름이 있고 공백을 빼고 5자 이상인 조각이다. 낱말 단위로 견주므로 'if xs > 0'은 'if x > 0'으로 시작하지 않는다.
+    한 글자 이름만 같은 예('for x in fruits:')는 거짓이다.
+    백틱 없이 말 속에 쓴 코드('if x > 0: 처럼', 'if (x > 0) {처럼')는 코드 모양 줄로 잡히지 않는다: 말 줄의 낱말 사이에 이 문제의 문장 조각(낱말 둘 이상)이 그대로 있으면 참.
+    말 줄에서는 이름만 보지 않는다(이름을 말로 가리키는 것은 된다). 이름과 ', ( ) [ ] { }'만으로 된 조각('most, seconds')도 보지 않는다(이름을 늘어놓은 말과 같다)."""
+    parts, prose = [], []
+    outside_code(text or "", lambda line: prose.append(line) or line, lambda span: parts.append(span.strip("`")) or span)
+    made = problem_names(pieces, language, program)
+    names = {name for name in made if len(name) >= 2}
+    rows = [row for code in pieces for row in statements("\n".join(body_lines(code, language, program)), language)
+            if made & set(row) and len("".join(row)) >= 5]
+    if any(names & set(_OWN_NAME.findall(part)) or any(said[:len(row)] == row for said in statements(part, language) for row in rows) for part in parts):
+        return True
+    words = [_TOKEN.findall(line) for line in prose]
+    rows = [row for row in rows if len(row) >= 2 and any(word not in made and word not in ",()[]{}" for word in row)]  # 키워드·연산자·대입 같은 낱말이 있는 조각만
+    return any(said[at:at + len(row)] == row for said in words for row in rows for at in range(len(said)))
 
 
 SAME_HINT = 0.8  # 공백을 뺀 두 질문이 이만큼 같으면 같은 질문을 되풀이한 것이다

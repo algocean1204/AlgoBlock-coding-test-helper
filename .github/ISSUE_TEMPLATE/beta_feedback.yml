@@ -1,0 +1,51 @@
+name: 베타 피드백
+description: 베타로 써 보며 느낀 점, 헷갈린 화면, 튜터의 말이 이상했던 순간
+title: "[베타] "
+labels: [needs-triage]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        써 보는 법은 Docs/guide/beta.md에 있다. 한국어와 영어 모두 받는다. 화면이나 로그를 붙일 때 API 키와 토큰은 지운다. 앱이 멈추거나 틀리게 움직이면 버그 신고 양식을, 보안 문제는 Security 탭의 비공개 신고를 쓴다.
+  - type: dropdown
+    id: os
+    attributes:
+      label: 운영체제
+      options: [macOS, Windows, 그 밖]
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: 앱 버전
+      placeholder: "예: 0.2.2"
+  - type: dropdown
+    id: tutor
+    attributes:
+      label: 튜터 연결
+      options: [연결 안 함, Claude API 키, OpenAI API 키, ChatGPT 로그인]
+    validations:
+      required: true
+  - type: textarea
+    id: did
+    attributes:
+      label: 한 일
+      description: 어떤 문제를 어떤 방식(혼자 풀기, 튜터와 차례로, 튜터의 질문으로 등)으로 풀었나
+    validations:
+      required: true
+  - type: textarea
+    id: hard
+    attributes:
+      label: 헷갈리거나 불편했던 것
+      description: 어느 화면에서 무엇을 기대했고 실제로는 어땠나. 화면을 붙여도 된다
+    validations:
+      required: true
+  - type: textarea
+    id: tutor-talk
+    attributes:
+      label: 튜터의 말
+      description: 답을 먼저 말했거나, 질문이 엉뚱했거나, 도움이 됐던 말이 있으면 그 말을 옮겨 적는다
+  - type: textarea
+    id: good
+    attributes:
+      label: 좋았던 것

@@ -1,14 +1,16 @@
 // 언어 함정: rust.i32_wrap @ "기다림의 합"
 fn solution(fix: Vec<i32>, line: Vec<i32>, walk: i32) -> i64 {
-    let n = fix.len();
-    let mut order: Vec<usize> = (0..n).collect();
     // a 다음에 b를 고치면 b의 손님이 (fix[a] + walk) × line[b]만큼 더 기다리고,
     // b 다음에 a를 고치면 a의 손님이 (fix[b] + walk) × line[a]만큼 더 기다린다 → 작은 쪽 차례가 앞
-    order.sort_by(|&a, &b| {
+    let compare = |&a: &usize, &b: &usize| {
         let ab = (fix[a] + walk) as i64 * line[b] as i64;
         let ba = (fix[b] + walk) as i64 * line[a] as i64;
         ab.cmp(&ba)
-    });
+    };
+
+    let n = fix.len();
+    let mut order: Vec<usize> = (0..n).collect();
+    order.sort_by(compare);
 
     let mut now: i64 = 0; // 지금 시각
     let mut total: i32 = 0; // 기다림의 합

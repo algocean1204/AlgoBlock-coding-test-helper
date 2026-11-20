@@ -1,6 +1,7 @@
 """평가기 시험: 규칙 검사, 모델 평가기 표 세기(근거 검증·다수결), 보정 지표, 캐시 경계 표시."""
 
 import unittest
+from types import SimpleNamespace
 
 from ..eval import checks
 from ..eval.calibrate import kappa, score
@@ -46,6 +47,144 @@ class ChecksTest(unittest.TestCase):
         self.assertEqual((got["repeat"], got["max_stuck"], got["blocks_open"], got["submitted_ok"]), (1, 1, 2, True))
         self.assertEqual(got["cache_hit_rate"], 0.9)
         self.assertEqual(got["latency_p50"], 2.0)
+
+
+RESULT = "이 코드로는 아직 넘어가지 않아요. 공개 예시로만 확인했어요."
+QUESTION = "loans를 처음부터 훑을 때 같은 제목이 한 번 더 나오면 기록해 둔 무엇을 바꿔야 할까요?"
+NOTE = "제목이 같으면 같은 책으로 보셨어요."
+WAY = "막혔다면 이 블록 채우기로 코드를 받아 보고 넘어가도 돼요."
+
+
+def parted(question=QUESTION, note=NOTE):
+    """결과 → 질문 → 근거 → 길 안내 줄로 된 튜터 말과 그 칸(길 안내 줄은 칸에 넣지 않는다)."""
+    parts = {"block_index": 0, "result": RESULT, "question": question, **({"note": note} if note else {})}
+    return row("\n".join(x for x in (RESULT, question, note, WAY) if x), parts=parts)
+
+
+class PartsTest(unittest.TestCase):
+    """기록에 튜터 말의 칸이 있으면 질문·근거 기준을 칸마다 잰다. 칸이 없는 옛 기록은 말 전체로 잰다."""
+
+    def test_record_keeps_reply_parts(self):
+        from ..eval import drive
+        from ..state import ChatMessage
+
+        parts = {"block_index": 0, "result": RESULT, "question": QUESTION, "buttons": ["fill"]}
+        said = ChatMessage(id="m1", role="service", text=f"{RESULT}\n{QUESTION}\n{WAY}", at="", block_index=0, move="clue", parts=parts)
+        ctx = SimpleNamespace(chair=[said], guide=[], plan=None, open_count=1)
+        s = drive.Session.__new__(drive.Session)
+        s.scenario, s.mode, s.rows, s.visible, s.filled = SimpleNamespace(id="p1", text=PROBLEM), "chair", [], [], {}
+        s.tutor = SimpleNamespace(store=SimpleNamespace(load=lambda _pid: ctx), turn=lambda *a, **k: SimpleNamespace(status=200, body={}))
+        s.start()
+        self.assertEqual(s.rows[-1]["parts"], parts)
+        self.assertEqual(s.rows[-1]["reply"], said.text)
+
+    def test_parts_keep_result_and_way_lines_out_of_question(self):
+        got = parted()
+        self.assertGreater(len(got["reply"]), 120)  # 말 전체는 길고 네 문장을 넘지만 질문 칸은 한 문장이다
+        flags = checks.reply_flags(got, None)
+        self.assertNotIn("3문장 초과", flags)
+        self.assertEqual([f for f in flags if "칸" in f], [], flags)
+
+    def test_parts_measure_question_and_note(self):
+        self.assertIn("질문 칸 여러 문장", checks.reply_flags(parted("제목을 세면 어떨까요? 그 값은 어디에 둘까요?"), None))
+        self.assertIn("질문 칸 길이", checks.reply_flags(parted("책 제목을 " * 25 + "셀까요?"), None))
+        self.assertIn("근거 칸 길이", checks.reply_flags(parted(note="같은 제목은 같은 책으로 보고 " * 6 + "센다."), None))
+        self.assertIn("근거 칸 여러 문장", checks.reply_flags(parted(note="같은 책이에요. 한 번만 꽂아요."), None))
+
+    def test_old_rows_without_parts_are_measured_as_before(self):
+        old = parted()
+        old.pop("parts")
+        flags = checks.reply_flags(old, None)
+        self.assertIn("3문장 초과", flags)
+        self.assertEqual([f for f in flags if "칸" in f], [])
+        self.assertIsNone(checks.session_metrics(checks.annotate([old]), [])["slot_clean_rate"])
+
+    def test_slot_result_in_metrics_report_and_compare_with_mixed_rows(self):
+        import copy
+
+        from ..eval import compare, qa
+
+        old = parted()
+        old.pop("parts")
+        rows = [parted(), parted("제목을 세면 어떨까요? 그 값은 어디에 둘까요?"), old]
+        got = checks.session_metrics(checks.annotate(copy.deepcopy(rows)), [])
+        self.assertEqual(got["slot_clean_rate"], 0.5)  # 칸이 있는 두 말 가운데 하나만 칸 기준을 지켰다
+        text = qa.report([{**got, "session": "s1"}], {}, {})
+        self.assertEqual(sum(line.startswith("| slot_clean_rate") for line in text.splitlines()), 1)
+        self.assertEqual(compare.numbers(copy.deepcopy(rows))["slot_clean_rate"], 0.5)  # 칸 있는 줄과 없는 줄이 섞인 기록
+        self.assertIsNone(compare.numbers([copy.deepcopy(old)])["slot_clean_rate"])
+
+
+MISS = {"decision": "못 찾음", "move": "clue", "advance": False}
+
+
+class FakeSession:
+    """play()가 부르는 Session의 자리(모델·저장소 없음). say는 대본대로 답하고, 부른 차례를 log에 남긴다."""
+
+    def __init__(self, script):
+        self.script, self.log, self.rows, self.visible, self.filled = list(script), [], [], [], {}
+
+    def __call__(self, scenario, mode):
+        return self
+
+    def start(self):
+        self.rows.append({"kind": "turn", "event": "start", "status": 200})
+
+    def ctx(self):
+        return SimpleNamespace(plan=SimpleNamespace(blocks=["b1", "b2", "b3"]))
+
+    def say(self, text):
+        self.log.append(text)
+        row = {"kind": "turn", "event": "message", "status": 200, **(self.script.pop(0) if self.script else MISS)}
+        self.rows.append(row)
+        return row
+
+    def check(self):
+        self.log.append("check")
+        return {"status": 200, "passed": True, "last": True, "move": None}
+
+    def fill(self):
+        self.log.append("fill")
+        return {"status": 200, "hidden": {"index": 2}}  # 마지막 블록을 채웠다: 코드 쓰기로
+
+    def next(self):
+        self.log.append("next")
+
+    def submit(self, code):
+        return {"ok": True}
+
+    def feedback(self):
+        pass
+
+    def explain(self):
+        pass
+
+
+class PlayAskTest(unittest.TestCase):
+    """같은 블록에서 3번 막히면 한 번 튜터 말을 되묻는다. 그 말도 메인 대화 턴이라 결과(넘김·write)를 보통 턴처럼 따른다."""
+
+    def play(self, script):
+        from unittest import mock
+
+        from ..eval import drive
+
+        fake = FakeSession(script)
+        said = lambda scenario, visible, what: "ASK" if "되묻" in what else "ANSWER"  # noqa: E731
+        with mock.patch.multiple(drive, Session=fake, novice_say=said, novice_code=lambda *a: ""):
+            drive.play(SimpleNamespace(id="p1"))
+        return fake
+
+    def test_block_passed_on_ask_counts_again_in_the_new_block(self):
+        fake = self.play([MISS] * 3 + [{"decision": "찾음", "move": "open", "advance": True}])
+        # 새 블록에서는 처음부터 다시 센다: 3번 막히면 되묻고, 되묻기를 빼고 5번째 막힘에서 채운다
+        self.assertEqual(fake.log, ["ANSWER"] * 3 + ["ASK"] + ["ANSWER"] * 3 + ["ASK"] + ["ANSWER"] * 2 + ["fill"])
+        self.assertEqual([r.get("ask", False) for r in fake.rows[1:]], [False] * 3 + [True] + [False] * 3 + [True] + [False] * 2)
+        got = checks.session_metrics(fake.rows, [])
+        self.assertEqual((got["user_turns"], got["max_stuck"]), (8, 5))  # 되묻는 말은 사용자 턴과 막힘에 넣지 않는다
+
+    def test_write_on_ask_goes_to_block_check(self):
+        fake = self.play([MISS] * 3 + [{"decision": "찾음", "move": "write", "advance": False}])
+        self.assertEqual(fake.log, ["ANSWER"] * 3 + ["ASK", "check"])
 
 
 ITEM = {"user": "returned에 있는지만 보면 돼요", "reply": "dict로 이름마다 세면 어떨까요?"}

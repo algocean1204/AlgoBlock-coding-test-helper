@@ -26,7 +26,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-VERSION = "0.2.2"  # 앱의 버전은 여기 한 곳에 둔다(algoblock.spec과 build_mac.sh가 이 줄을 읽는다)
+VERSION = "0.3.0"  # 앱의 버전은 여기 한 곳에 둔다(algoblock.spec과 build_mac.sh가 이 줄을 읽는다)
 REPO = "algocean1204/AlgoBlock-coding-test-helper"
 LATEST = f"https://api.github.com/repos/{REPO}/releases/latest"
 DOWNLOADS = f"https://github.com/{REPO}/releases/download/"  # 받는 주소는 이 저장소의 릴리스 파일만
@@ -371,6 +371,22 @@ def settings(saved: dict | None = None) -> dict:
             "release": saved["release"] if isinstance(saved.get("release"), dict) else None}
 
 
+def replace_file(tmp: Path, path: Path) -> None:
+    """임시 파일을 path로 바꿔 넣는다. Windows에서 백신·색인 프로그램이 파일을 잠깐 열고 있으면 PermissionError가 나므로
+    1초 안팎 간격을 늘려 가며 다시 한다. 끝내 못 하거나 다른 오류면 임시 파일을 지우고 그 오류를 낸다(원래 파일은 그대로)."""
+    try:
+        for wait in (0.05, 0.1, 0.2, 0.4):
+            try:
+                tmp.replace(path)
+                return
+            except PermissionError:
+                time.sleep(wait)
+        tmp.replace(path)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
+
+
 def save(**changes) -> None:
     """설정 파일을 바꾼다. 확인 스레드와 화면 요청이 함께 쓰므로 잠근다(Windows는 읽는 중인 파일을 바꿔 넣지 못한다)."""
     with FILE_LOCK:
@@ -378,7 +394,7 @@ def save(**changes) -> None:
         DIR.mkdir(parents=True, exist_ok=True)
         tmp = DIR / "settings.tmp"
         tmp.write_text(json.dumps({**current, **changes}, ensure_ascii=False), encoding="utf-8")
-        tmp.replace(DIR / "settings.json")
+        replace_file(tmp, DIR / "settings.json")
 
 
 def view() -> dict:
@@ -521,7 +537,7 @@ def fetch_file(found: dict) -> None:
                     NOW["progress"] = done * 100 // asset["size"]
         if done != asset["size"] or any(value != digest.hexdigest() for value in expected):
             raise Refused("받은 파일이 릴리스에 적힌 것과 달라 지웠어요. 설치하지 않았어요. 다시 받아 보세요.")
-        part.replace(folder / asset["name"])
+        replace_file(part, folder / asset["name"])  # 막 받은 파일은 백신이 검사하느라 잠깐 열고 있을 수 있다
         with LOCK:
             NOW["sha256"] = digest.hexdigest()  # 설치 직전에 다시 견준다(받은 뒤 파일이 바뀌었으면 설치하지 않는다)
     except Refused as exc:
@@ -868,6 +884,8 @@ def handle(body: dict, stop) -> dict:
     """/api/update. action: status(지금 상태), check(지금 확인), auto(자동 확인 켜고 끄기, on), skip(이 버전 건너뛰기),
     download(받기), install(바꾸고 다시 켜기, 묶인 macOS·Windows 앱), reveal(받은 파일 보기)."""
     action = body.get("action")
+    if dev() and action in ("check", "download", "install"):
+        raise Refused("개발용 앱은 업데이트를 확인하지도 받지도 않아요. 개발용 빌드를 다시 만들어 주세요.")
     if action == "check":  # 일정과 상관없이 바로 묻는다. 성공하면 다음 자동 확인은 24시간 뒤
         record(check_in_time(), time.time(), auto=False)
     elif action == "auto":

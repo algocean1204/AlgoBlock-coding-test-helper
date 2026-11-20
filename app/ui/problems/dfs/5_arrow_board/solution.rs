@@ -1,7 +1,10 @@
+use std::collections::HashMap;
+
 fn solution(board: Vec<String>) -> i64 {
     let grid: Vec<Vec<u8>> = board.iter().map(|line| line.bytes().collect()).collect();
     let rows = grid.len() as i32;
     let cols = grid[0].len() as i32;
+    let step = HashMap::from([(b'U', (-1, 0)), (b'D', (1, 0)), (b'L', (0, -1)), (b'R', (0, 1))]);
     const NEW: u8 = 0; // 아직 안 감
     const ON_PATH: u8 = 1; // 지금 걷는 길 위
     const DONE: u8 = 2; // 점수가 정해짐
@@ -21,12 +24,9 @@ fn solution(board: Vec<String>) -> i64 {
                 state[r as usize][c as usize] = ON_PATH;
                 order[r as usize][c as usize] = path.len();
                 path.push((r as usize, c as usize));
-                match grid[r as usize][c as usize] {
-                    b'U' => r -= 1,
-                    b'D' => r += 1,
-                    b'L' => c -= 1,
-                    _ => c += 1,
-                }
+                let (dr, dc) = step[&grid[r as usize][c as usize]];
+                r += dr;
+                c += dc;
                 if r < 0 || r >= rows || c < 0 || c >= cols {
                     next_score = 0; // 밖이다: 더 밟을 칸이 없다
                     break;

@@ -3,9 +3,11 @@
 실행: cd app && python3 -B ui/test_single.py     (test_server.py도 이것을 부른다)
 """
 
+import atexit
 import contextlib
 import io
 import os
+import shutil
 import signal
 import socket
 import subprocess
@@ -108,5 +110,8 @@ def body(server) -> None:
 
 
 if __name__ == "__main__":
-    os.environ.setdefault("ALGOBLOCK_UI_DATA", tempfile.mkdtemp(prefix="algoblock-ui-test-"))
+    if "ALGOBLOCK_UI_DATA" not in os.environ:  # 자료 폴더를 받지 않았으면 만들고, 끝나면(실패해도) 지운다
+        data = tempfile.mkdtemp(prefix="algoblock-ui-test-")
+        atexit.register(shutil.rmtree, data, ignore_errors=True)
+        os.environ["ALGOBLOCK_UI_DATA"] = data
     run()

@@ -19,19 +19,27 @@ def blocks_body(plan, open_count: int | None = None, language: str = "python") -
 DONE_MOVES = ("recap", "run", "close")  # 마지막 블록까지 찾은 뒤의 말
 
 
+def chair_said(ctx, moves, index: int | None = None) -> bool:
+    """의자의 튜터가 지금 계획에서(마지막 다시 짜기 뒤) 그 차례의 말을 했는가. index를 주면 그 블록의 말만 본다."""
+    cut = max((i for i, m in enumerate(ctx.chair) if m.role == "service" and m.move == "replan"), default=0)
+    return any(m.role == "service" and m.move in moves and (index is None or m.block_index == index) for m in ctx.chair[cut:])
+
+
 def shown_count(ctx, mode: str | None) -> int:
-    """이름을 보여 줄 블록 수. 가이드는 지금 블록까지(빈칸을 채우는 모드), 의자는 이미 찾은 블록까지(지금 블록 이름은 사용자가 찾을 답이다)."""
+    """이름을 보여 줄 블록 수. 가이드는 지금 블록까지(빈칸을 채우는 모드), 의자는 이미 찾은 블록까지(지금 블록 이름은 사용자가 찾을 답이다).
+    의자에서 지금 블록을 말로 찾았거나(코드로 적으라는 말 write) 끝냈으면(마지막 블록을 내 방식으로 넘긴 done) 그 블록 이름까지 보인다."""
     if mode != "chair":
         return ctx.open_count
-    done = any(m.role == "service" and m.move in DONE_MOVES for m in ctx.chair)
-    return ctx.open_count if done else max(ctx.open_count - 1, 0)
+    named = chair_said(ctx, DONE_MOVES) or chair_said(ctx, ("write", "done"), ctx.open_count - 1)
+    return ctx.open_count if named else max(ctx.open_count - 1, 0)
 
 
 def messages_body(items) -> list[dict]:
     """block_index: 그 말이 겨눈 블록 번호(0부터, 없으면 null). 화면이 말 위 블록 종류 구분선을 그 블록 것으로 그린다.
-    move: 튜터 말의 차례 이름(사용자 말은 null). 화면이 다음 할 일을 고른다(write면 블록 코드 확인)."""
+    move: 튜터 말의 차례 이름(사용자 말은 null). 화면이 다음 할 일을 고른다(write면 블록 코드 확인).
+    parts: 칸을 남긴 튜터 말에만 있다(칸 꼴은 turn/graph.py의 check_reply). 없는 말은 text만으로 그린다."""
     return [{"id": item.id, "role": item.role, "text": item.text, "at": item.at, "block_index": item.block_index,
-             "move": item.move if item.role == "service" else None} for item in items]
+             "move": item.move if item.role == "service" else None, **({"parts": item.parts} if item.parts else {})} for item in items]
 
 
 def explain_json(explain: Explain | None):
@@ -90,9 +98,6 @@ def body_for(request, result: dict, ctx) -> dict:
             body["repeated"] = bool(result.get("repeated"))  # 바뀌지 않은 코드를 다시 확인해 같은 말이 나와 대화에 더하지 않았다(화면이 그 사실을 한 번 알린다)
             body["unsure"] = bool(result.get("unsure"))  # 실행이 뒷받침하지 못했다(실행하지 못하고 코드를 읽어 판정했거나, 확인 전으로 넘어왔거나, 내 블록 탓이라 할 수 없다. 화면이 그 칸을 '확인 전'으로 보인다)
         return body
-    if kind == "followup":
-        thread = next((t for t in ctx.followups if t.quote_id == request.quote_id), None)
-        return {"quote_id": request.quote_id, "messages": messages_body(thread.messages if thread else [])}
     if kind == "fill":
         # 내 이름에 맞춰 채우지 못하면 그 알림(화면이 블록 칸 아래 알림 줄에 보인다)
         return {"block_id": request.block_id, "code": result.get("code", ""), "open_count": ctx.open_count, **({"note": result["note"]} if result.get("note") else {})}

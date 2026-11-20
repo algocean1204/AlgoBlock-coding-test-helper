@@ -302,6 +302,7 @@ class Store:
         return [_message(row) for row in rows]
 
     def _followups(self, problem_id: str) -> list[FollowupThread]:
+        """옛 꼬리질문 기록(thread가 quote:<말 id>). 새로 쓰지 않고 읽기만 한다."""
         rows = self.conn.execute(
             "SELECT * FROM message WHERE problem_id=? AND thread LIKE 'quote:%' ORDER BY id",
             (problem_id,),
@@ -358,8 +359,8 @@ class Store:
             )
             for item in messages:
                 self.conn.execute(
-                    "INSERT INTO message(problem_id, mode, thread, quote_id, block_index, role, text, at, move) "
-                    "VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO message(problem_id, mode, thread, quote_id, block_index, role, text, at, move, parts_json) "
+                    "VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (
                         ctx.problem_id,
                         item["mode"],
@@ -370,6 +371,7 @@ class Store:
                         item["text"],
                         item["at"],
                         item.get("move"),
+                        json.dumps(item["parts"], ensure_ascii=False) if item.get("parts") else None,
                     ),
                 )
             if new_plan:  # 새 계획이 사용자 방법을 따르면 그 가이드를 계획 옆에 두고, 정석 계획이면 비운다(정석 가이드를 본다)
@@ -437,4 +439,5 @@ def _message(row: sqlite3.Row) -> ChatMessage:
         block_index=row["block_index"],
         quote_id=row["quote_id"],
         move=row["move"],
+        parts=json.loads(row["parts_json"]) if row["parts_json"] else None,
     )

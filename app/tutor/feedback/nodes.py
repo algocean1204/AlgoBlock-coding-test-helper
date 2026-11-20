@@ -1,5 +1,7 @@
 """피드백 노드: assess → pick_strategy → analyze → check_feedback(graph.py). 채점·전략은 블록 계획(plan)과 같이 쓴다."""
 
+import logging
+
 from ..common.assess import assess_node, pick_strategy_node
 from ..common.progress_view import active_plan
 from ..common.scope import algorithm_name
@@ -7,7 +9,10 @@ from ..debug.rules import trap_in_code, trap_of
 from ..llm import llm, model_name
 from ..state import Analysis, MainState
 from .prompts import analyze_messages, record_lines, used_blocks
+from ..common.talk_rules import sentences, shape_problems, tidy
 from .rules import check_feedback as check_rule
+
+LOG = logging.getLogger("graph.shape")  # 긴 글의 꼴을 어긴 곳(평가기가 모은다. 다시 부르지 않는다)
 
 
 def submitted_code(state: MainState) -> str:
@@ -25,6 +30,10 @@ def analyze(state: MainState) -> dict:
 
 def check_feedback(state: MainState) -> dict:
     written: Analysis = state["draft"]
+    written = Analysis(tidy(written.analysis), tidy(written.similar_hint), tidy(written.advice))
+    found = shape_problems("\n- ".join(sentences(written.analysis)))  # 화면은 문장마다 한 항목이다
+    if found:
+        LOG.info("긴 글 꼴", extra={"where": "feedback.analysis", "problems": found})
     plan = active_plan(state)
     record = "\n".join(record_lines(state["ctx"], plan))
     fields, error = check_rule(written.analysis, written.similar_hint, written.advice, algorithm_name(plan.algorithm if plan else ""), record,

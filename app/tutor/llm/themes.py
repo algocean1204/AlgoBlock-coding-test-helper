@@ -3,10 +3,12 @@
 과정은 사용자가 고르는 단위다(화면 '과정별 모델'). 과정마다 급(작음·가운데·큼)과 추론 정도를 고르고,
 모델 이름은 부를 때 지금 연결의 그 시리즈에서 가장 최신 이름으로 푼다(Claude: Haiku·Sonnet·Opus, OpenAI: Luna·Terra·Sol).
 그래서 연결을 바꿔도 고른 급이 그대로 간다.
+- split    문제 나누기(붙여 넣은 글에서 문제·예시 구간 짚기).
 - read     문제 읽기(이미지에서 글).
 - guide    풀이 가이드(뼈대, 채점 기준, 풀이).
+- verify   검증 풀이(단순 풀이로 정답 풀이를 대조).
 - blocks   블록 설계와 힌트(같은 구조 판정 포함). 평가기 eval.judge의 추론 정도도 여기서 온다(모델은 따로 정하지 않으면 '가운데' 급. tutor/eval/judge.py).
-- talk     대화. 매 턴 나가는 말(질문, 꼬리질문, 블록 채우기, 디버그 질문). 빠른 응답이 먼저다.
+- talk     대화. 매 턴 나가는 말(질문, 되묻는 말의 답, 블록 채우기, 디버그 질문). 빠른 응답이 먼저다.
 - judge    판정. 한 줄 [check].
 - explain  해설.
 - feedback 피드백.
@@ -38,8 +40,10 @@ NEWEST: dict[str, dict[str, str]] = {}  # 공급자 목록에서 고른 시리�
 # 과정 → (화면 이름, 기본 급, 기본 추론 정도). 문제 읽기는 정확도를 먼저 보아 '가운데'·high다. 풀이 가이드·블록 설계는 '작음'·high다:
 # 풀이 가이드는 채점과 대조로 확인되고, 다르면 가운데 급과 큰 급으로 다시 푼다(plan/nodes.py의 cross_check). 나머지는 측정으로 정했다. '큼'은 기본값으로 쓰지 않는다
 THEMES = {
+    "split": ("문제 나누기", "small", "low"),
     "read": ("문제 읽기", "middle", "high"),
     "guide": ("풀이 가이드", "small", "high"),
+    "verify": ("검증 풀이", "middle", "low"),
     "blocks": ("블록 설계와 힌트", "small", "high"),
     "talk": ("대화", "small", "low"),
     "judge": ("판정", "small", "low"),
@@ -47,12 +51,12 @@ THEMES = {
     "feedback": ("피드백", "small", "medium"),
     "debug": ("디버그 진단", "small", "medium"),
 }
-TASKS = {"ingest.transcribe": "read", "plan.abstract": "guide", "plan.assess": "guide", "plan.solve": "guide", "plan.brute": "guide", "plan.cases": "guide",
+TASKS = {"ingest.outline": "split", "ingest.transcribe": "read", "plan.abstract": "guide", "plan.assess": "guide", "plan.solve": "guide", "plan.brute": "verify", "plan.cases": "guide",
          "plan.gate": "blocks", "plan.draft_blocks": "blocks", "plan.hints": "blocks", "eval.judge": "blocks",
          "explain.write": "explain", "feedback.assess": "feedback", "feedback.analyze": "feedback", "debug.locate": "debug"}
 JUDGE_SUFFIX = (".judge", ".check_code")
 # 예전 테마 다섯 → 새 과정. 저장된 설정을 옮기고, 측정용 환경 변수의 예전 이름(ALGOBLOCK_THEME_INGEST 등)을 받는 데 쓴다
-OLD = {"ingest": ("read", "guide", "blocks"), "explain": ("explain", "feedback"), "talk": ("talk",), "judge": ("judge",), "debug": ("debug",)}
+OLD = {"ingest": ("split", "read", "guide", "verify", "blocks"), "explain": ("explain", "feedback"), "talk": ("talk",), "judge": ("judge",), "debug": ("debug",)}
 
 CHOSEN: dict[str, dict] = {}  # 사용자가 고른 값 {과정: {"tier": 급 또는 빈 글, "effort": 정도 또는 빈 글}}. 프로세스에 하나
 

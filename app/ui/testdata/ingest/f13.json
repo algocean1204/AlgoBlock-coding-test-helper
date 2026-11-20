@@ -1,0 +1,79 @@
+{
+ "id": "F13",
+ "note": "영문 머리(Problem, Constraints, Input, Output, Sample Input/Output)",
+ "raw": [
+  "Lantern Row",
+  "",
+  "Problem",
+  "There are N lanterns in a row. Lantern i has brightness b_i. Count the pairs (i, j) with i < j and b_i = b_j.",
+  "",
+  "Constraints",
+  "1 ≤ N ≤ 200000",
+  "1 ≤ b_i ≤ 10^9",
+  "",
+  "Input",
+  "The first line contains N. The second line contains b_1, ..., b_N.",
+  "",
+  "Output",
+  "Print the number of equal pairs.",
+  "",
+  "Sample Input 1",
+  "4",
+  "3 1 3 3",
+  "",
+  "Sample Output 1",
+  "3",
+  "",
+  "Sample Input 2",
+  "2",
+  "5 6",
+  "",
+  "Sample Output 2",
+  "0"
+ ],
+ "expect": {
+  "verdict": "problem",
+  "mode": "program",
+  "title": "Lantern Row",
+  "names": [],
+  "cases": [
+   {
+    "input": "4\n3 1 3 3\n",
+    "expected": "3\n"
+   },
+   {
+    "input": "2\n5 6\n",
+    "expected": "0\n"
+   }
+  ],
+  "sections": {
+   "title": [
+    "Lantern Row"
+   ],
+   "body": [
+    "There are N lanterns"
+   ],
+   "limits": [
+    "1 ≤ N ≤ 200000"
+   ],
+   "input": [
+    "The first line contains N."
+   ],
+   "output": [
+    "Print the number of equal pairs."
+   ],
+   "sample": [
+    "3 1 3 3"
+   ]
+  },
+  "absent": [],
+  "bounds": [
+   "1 ≤ N ≤ 200000",
+   "1 ≤ b_i ≤ 10^9"
+  ],
+  "flags": {
+   "many_answers": false,
+   "float_output": false
+  }
+ }
+}

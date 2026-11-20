@@ -17,12 +17,12 @@
   "solution": {
    "approach": "rides가 시작 시각 순으로 주어지므로 앞에서부터 한 번만 훑으면 됩니다. 회원마다 '요금 합'과 '직전 기록의 끝 시각(분)'을 해시 표에 적어 둡니다. 기록 하나마다 탄 분 수에 1분 요금을 곱하고, 할증 시간과 겹친 분만큼 1분 요금을 한 번 더 더합니다. 첫 기록이거나 직전 기록이 끝난 지 gap분을 넘었으면 잠금 해제 요금을 더합니다. 다 훑은 뒤 회원별 합에 하루 최대 요금 상한을 한 번 씌우고, 요금 큰 순, 같으면 회원번호 작은 순으로 정렬합니다.",
    "steps": [
-    "할증 시간 두 구간을 분 단위 상수로 두고, 'HH:MM'을 자정부터 몇 분째인지로 바꾸는 함수를 만든다 — 시각끼리 빼고 비교하기 쉽게 하려는 것이다",
-    "요금 계산 함수에서 (끝-시작)×1분 요금을 구하고, 각 할증 구간과 겹친 분 수만큼 1분 요금을 더 더한다 — 할증 분은 두 배를 내므로 한 번 더 내면 된다",
-    "solution에서 price를 풀어 두고, 회원별 요금 합 total과 직전 끝 시각 해시 표를 만든다 — 회원마다 따로 기억해야 하기 때문이다",
-    "기록을 한 줄씩 쪼개 회원번호와 시작·끝 분을 얻고 그 함수로 이번 기록의 요금을 구한다 — 이 값이 이번 기록의 1분 요금 부분이다",
-    "첫 기록이거나 시작-직전 끝이 gap보다 크면 잠금 해제 요금을 더하고, total에 합산한 뒤 직전 끝 시각을 이번 끝 시각으로 갱신한다 — 이어 탄 경우에만 잠금 해제 요금이 없고, 다음 기록이 비교할 기준을 남기기 위해서다",
-    "모든 회원에 대해 [정수로 바꾼 회원번호, min(합, 하루 최대 요금)]을 answer에 담고, (-요금, 회원번호) 기준으로 정렬해 return 한다 — 상한은 하루 합에 한 번만 씌우고, 정렬 기준은 요금 큰 순 다음 번호 작은 순이다"
+    "할증 시간 두 구간을 분 단위 상수로 두고, 'HH:MM'을 자정부터 몇 분째인지로 바꾸는 함수를 만든다, 시각끼리 빼고 비교하기 쉽게 하려는 것이다",
+    "요금 계산 함수에서 (끝-시작)×1분 요금을 구하고, 각 할증 구간과 겹친 분 수만큼 1분 요금을 더 더한다, 할증 분은 두 배를 내므로 한 번 더 내면 된다",
+    "solution에서 price를 풀어 두고, 회원별 요금 합 total과 직전 끝 시각 해시 표를 만든다, 회원마다 따로 기억해야 하기 때문이다",
+    "기록을 한 줄씩 쪼개 회원번호와 시작·끝 분을 얻고 그 함수로 이번 기록의 요금을 구한다, 이 값이 이번 기록의 1분 요금 부분이다",
+    "첫 기록이거나 시작-직전 끝이 gap보다 크면 잠금 해제 요금을 더하고, total에 합산한 뒤 직전 끝 시각을 이번 끝 시각으로 갱신한다, 이어 탄 경우에만 잠금 해제 요금이 없고, 다음 기록이 비교할 기준을 남기기 위해서다",
+    "모든 회원에 대해 [정수로 바꾼 회원번호, min(합, 하루 최대 요금)]을 answer에 담고, (-요금, 회원번호) 기준으로 정렬해 return 한다, 상한은 하루 합에 한 번만 씌우고, 정렬 기준은 요금 큰 순 다음 번호 작은 순이다"
    ],
    "code": "RUSH = [(7 * 60 + 30, 9 * 60 + 30), (17 * 60, 19 * 60)]  # 할증 시간: 07:30 이상 09:30 미만, 17:00 이상 19:00 미만(분)\n\n\ndef to_minutes(clock):\n    # \"HH:MM\" → 자정부터 몇 분째인가\n    hour, minute = clock.split(\":\")\n    return int(hour) * 60 + int(minute)\n\n\ndef ride_fee(start, end, per_minute):\n    # start분부터 end분 바로 전까지: 탄 분마다 1분 요금, 할증 시간과 겹친 분은 1분 요금을 한 번 더\n    fee = (end - start) * per_minute\n    for rush_start, rush_end in RUSH:\n        overlap = min(end, rush_end) - max(start, rush_start)\n        if overlap > 0:\n            fee += overlap * per_minute\n    return fee\n\n\ndef solution(rides, price, gap):\n    unlock, per_minute, day_max = price\n\n    total = {}  # 회원 → 그날 요금 합\n    last_end = {}  # 회원 → 바로 앞 기록의 끝 시각(분)\n    for ride in rides:\n        member, start_clock, end_clock = ride.split(\" \")\n        start = to_minutes(start_clock)\n        end = to_minutes(end_clock)\n        fee = ride_fee(start, end, per_minute)\n        # 같은 회원의 바로 앞 기록이 끝난 지 gap분 이하이면 이어 탄 것: 잠금 해제 요금이 없다\n        if member not in last_end or start - last_end[member] > gap:\n            fee += unlock\n        total[member] = total.get(member, 0) + fee\n        last_end[member] = end\n\n    answer = []\n    for member in total:\n        answer.append([int(member), min(total[member], day_max)])  # 상한은 하루 합에 한 번\n    answer.sort(key=lambda pair: (-pair[1], pair[0]))  # 요금이 많은 회원부터, 같으면 번호가 작은 회원부터\n    return answer",
    "verified": true,
@@ -186,6 +186,140 @@
    "algorithm": "implementation",
    "out_of_scope": false,
    "link": ""
+  }
+ },
+ "langs": {
+  "java": {
+   "source": 31248217,
+   "lines": [
+    [
+     1,
+     6
+    ],
+    [
+     7,
+     10
+    ],
+    [
+     11,
+     22
+    ],
+    [
+     23,
+     27
+    ],
+    [
+     28,
+     33
+    ],
+    [
+     34,
+     40
+    ],
+    [
+     41,
+     50
+    ]
+   ]
+  },
+  "javascript": {
+   "source": 81400810,
+   "lines": [
+    [
+     1,
+     3
+    ],
+    [
+     4,
+     7
+    ],
+    [
+     8,
+     19
+    ],
+    [
+     20,
+     24
+    ],
+    [
+     25,
+     29
+    ],
+    [
+     30,
+     36
+    ],
+    [
+     37,
+     45
+    ]
+   ]
+  },
+  "cpp": {
+   "source": 3654954190,
+   "lines": [
+    [
+     1,
+     10
+    ],
+    [
+     11,
+     14
+    ],
+    [
+     15,
+     26
+    ],
+    [
+     27,
+     31
+    ],
+    [
+     32,
+     37
+    ],
+    [
+     38,
+     44
+    ],
+    [
+     45,
+     55
+    ]
+   ]
+  },
+  "rust": {
+   "source": 2996132187,
+   "lines": [
+    [
+     1,
+     5
+    ],
+    [
+     6,
+     9
+    ],
+    [
+     10,
+     21
+    ],
+    [
+     22,
+     26
+    ],
+    [
+     27,
+     32
+    ],
+    [
+     33,
+     41
+    ],
+    [
+     42,
+     49
+    ]
+   ]
   }
  }
 }

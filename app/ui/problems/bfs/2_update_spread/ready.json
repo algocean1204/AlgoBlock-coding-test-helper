@@ -17,11 +17,11 @@
   "solution": {
    "approach": "케이블을 양쪽 방향으로 저장하고, 꺼진 서버는 표시해 둡니다. start번 서버에서 BFS를 시작해, 아직 파일이 없고 켜져 있는 이웃에게만 '현재 시각 + 1'을 적고 큐에 넣습니다. BFS는 가까운 서버부터 차례로 보기 때문에 처음 닿은 시각이 곧 파일을 받는 시각이고, 한 서버에 여러 쪽에서 와도 한 번만 세어집니다. 끝나면 시각 표에서 가장 큰 값과 그 값이 나온 횟수를 돌려줍니다.",
    "steps": [
-    "서버마다 이웃 목록을 만들고 케이블 [a, b]를 a와 b 양쪽에 넣는다 — 케이블은 양방향이라서",
-    "꺼진 서버를 표시하는 배열 off를 만든다 — BFS 중에 꺼진 서버인지 바로 확인하려고",
-    "받은 시각 배열 minute를 -1로 채우고 minute[start]를 0으로 둔 뒤 start를 큐에 넣는다 — -1은 아직 못 받았다는 뜻이고 BFS의 출발점이 된다",
-    "큐에서 서버를 꺼내 이웃을 보고, 아직 못 받았고 켜져 있는 이웃에게 minute[server] + 1을 적어 큐에 넣는다 — 꺼진 서버는 받지도 보내지도 못하고, 이미 받은 서버를 건너뛰어 처음 받은 시각만 남긴다",
-    "minute의 최댓값 latest와 그 값이 나온 횟수를 [latest, 횟수]로 돌려준다 — 못 받은 서버는 -1이라 최댓값이 될 수 없고, start만 받았다면 [0, 1]이 자연스럽게 나온다"
+    "서버마다 이웃 목록을 만들고 케이블 [a, b]를 a와 b 양쪽에 넣는다, 케이블은 양방향이라서",
+    "꺼진 서버를 표시하는 배열 off를 만든다, BFS 중에 꺼진 서버인지 바로 확인하려고",
+    "받은 시각 배열 minute를 -1로 채우고 minute[start]를 0으로 둔 뒤 start를 큐에 넣는다, -1은 아직 못 받았다는 뜻이고 BFS의 출발점이 된다",
+    "큐에서 서버를 꺼내 이웃을 보고, 아직 못 받았고 켜져 있는 이웃에게 minute[server] + 1을 적어 큐에 넣는다, 꺼진 서버는 받지도 보내지도 못하고, 이미 받은 서버를 건너뛰어 처음 받은 시각만 남긴다",
+    "minute의 최댓값 latest와 그 값이 나온 횟수를 [latest, 횟수]로 돌려준다, 못 받은 서버는 -1이라 최댓값이 될 수 없고, start만 받았다면 [0, 1]이 자연스럽게 나온다"
    ],
    "code": "from collections import deque\n\n\ndef solution(n, cables, start, offline):\n    neighbors = [[] for _ in range(n + 1)]\n    for a, b in cables:\n        neighbors[a].append(b)  # 케이블은 양쪽 방향이다\n        neighbors[b].append(a)\n    off = [False] * (n + 1)  # off[v]: v번 서버가 꺼져 있는가\n    for server in offline:\n        off[server] = True\n\n    # minute[v]: v번 서버가 파일을 받는 시각. -1은 아직(또는 끝내) 받지 못한 서버\n    minute = [-1] * (n + 1)\n    minute[start] = 0\n    queue = deque([start])\n    while queue:\n        server = queue.popleft()\n        for nxt in neighbors[server]:\n            if minute[nxt] == -1 and not off[nxt]:  # 꺼진 서버는 받지도 보내지도 않는다\n                minute[nxt] = minute[server] + 1\n                queue.append(nxt)\n\n    latest = max(minute)  # start번 서버가 0분이라 받지 못한 서버(-1)는 가장 큰 값이 되지 않는다\n    return [latest, minute.count(latest)]",
    "verified": true,
@@ -182,6 +182,140 @@
    "algorithm": "bfs",
    "out_of_scope": false,
    "link": ""
+  }
+ },
+ "langs": {
+  "java": {
+   "source": 2395912785,
+   "lines": [
+    [
+     1,
+     6
+    ],
+    [
+     7,
+     10
+    ],
+    [
+     11,
+     13
+    ],
+    [
+     14,
+     19
+    ],
+    [
+     20,
+     22
+    ],
+    [
+     23,
+     28
+    ],
+    [
+     29,
+     35
+    ]
+   ]
+  },
+  "javascript": {
+   "source": 3487501339,
+   "lines": [
+    [
+     1,
+     2
+    ],
+    [
+     3,
+     6
+    ],
+    [
+     7,
+     9
+    ],
+    [
+     10,
+     14
+    ],
+    [
+     15,
+     17
+    ],
+    [
+     18,
+     23
+    ],
+    [
+     24,
+     27
+    ]
+   ]
+  },
+  "cpp": {
+   "source": 3806128189,
+   "lines": [
+    [
+     1,
+     8
+    ],
+    [
+     9,
+     12
+    ],
+    [
+     13,
+     15
+    ],
+    [
+     16,
+     20
+    ],
+    [
+     21,
+     24
+    ],
+    [
+     25,
+     29
+    ],
+    [
+     30,
+     34
+    ]
+   ]
+  },
+  "rust": {
+   "source": 987479489,
+   "lines": [
+    [
+     1,
+     5
+    ],
+    [
+     6,
+     10
+    ],
+    [
+     11,
+     14
+    ],
+    [
+     15,
+     21
+    ],
+    [
+     22,
+     23
+    ],
+    [
+     24,
+     30
+    ],
+    [
+     31,
+     34
+    ]
+   ]
   }
  }
 }

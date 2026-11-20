@@ -13,7 +13,7 @@ SQLite 저장소다. 파일: `schema.py`(표, 버전), `codec.py`(계획·해설
 | 고아 줄 없음 | `problem(id)` 외래 키, `ON DELETE CASCADE`, 연결마다 `PRAGMA foreign_keys=ON`. 문항을 지우면 그 문항의 줄이 같이 지워진다 |
 | 요청 하나 = 트랜잭션 하나 | `save_success`가 한 트랜잭션으로 쓴다. 중간에 실패하면 모두 되돌린다. 오류로 끝난 요청은 아예 부르지 않는다 |
 | 계획이 바뀌면 블록 상태를 지움 | 새 계획을 저장하는 트랜잭션에서 그 문항의 `block_state`를 지운다. 블록 id는 계획마다 `b1`부터 다시 쓰기 때문이다 |
-| 스키마 버전 | `PRAGMA user_version`과 `MIGRATIONS` 목록. 지금 버전은 11이다. 앱이 열릴 때 남은 것만 차례로 돈다. 한 트랜잭션이고 쓰기 잠금(`BEGIN IMMEDIATE`)을 먼저 잡으므로, 두 연결이 새 파일을 동시에 열어도 한쪽만 옮긴다. 바꿀 때는 목록 뒤에 붙이고 앞의 것은 고치지 않는다 |
+| 스키마 버전 | `PRAGMA user_version`과 `MIGRATIONS` 목록. 지금 버전은 12다. 앱이 열릴 때 남은 것만 차례로 돈다. 한 트랜잭션이고 쓰기 잠금(`BEGIN IMMEDIATE`)을 먼저 잡으므로, 두 연결이 새 파일을 동시에 열어도 한쪽만 옮긴다. 바꿀 때는 목록 뒤에 붙이고 앞의 것은 고치지 않는다 |
 
 버전마다 더한 것:
 
@@ -30,13 +30,14 @@ SQLite 저장소다. 파일: `schema.py`(표, 버전), `codec.py`(계획·해설
 | 9 | `problem_fact`의 `level`, `tags_json` 칸 |
 | 10 | `study`의 `help_first_at`, `help_after_reset_at`, `reset_at`, `hints_at_reset` 칸. 옛 행은 남은 대화·해설·힌트 기록으로 채운다 |
 | 11 | `debug_state.trap` 칸(디버그 진단이 고른 언어 함정) |
+| 12 | `message.parts_json` 칸(튜터 말의 칸. 옛 말은 NULL) |
 
 ## 표
 
 ```mermaid
 erDiagram
   problem ||--o| tutor_session : "계획, 열린 수, 해설"
-  problem ||--o{ message : "대화, 꼬리질문"
+  problem ||--o{ message : "대화, 옛 꼬리질문"
   problem ||--o{ submission : "제출"
   problem ||--o| feedback : "최근 피드백"
   problem ||--o{ block_state : "블록 코드와 판정"
@@ -52,7 +53,7 @@ erDiagram
 | `setting` | `key` | 앱 설정 |
 | `problem` | `id` | 제목, 언어, 본문, 직접 풀기 코드 |
 | `tutor_session` | `problem_id` | `plan_json`(블록 계획 전체), `open_count`, `explain_json`, `solution_json`(사용자 방법으로 다시 짠 계획이 따르는 가이드) |
-| `message` | `id` 자동 증가, 색인 (`problem_id`, `mode`, `thread`, `id`) | 모드, 스레드(`main` 또는 `quote:<id>`), 블록 위치, 역할, 글, 질문 유형(`move`, 튜터 말만) |
+| `message` | `id` 자동 증가, 색인 (`problem_id`, `mode`, `thread`, `id`) | 모드, 스레드(`main`, `debug`, 또는 옛 꼬리질문의 `quote:<id>`. `quote:`는 읽기만 한다), 블록 위치, 역할, 글, 질문 유형(`move`, 튜터 말만) |
 | `submission` | `id`, 색인 `problem_id` | 제출 코드, 통과 여부, 언어, 결과 종류(`status`), 세부(`detail_json`) |
 | `feedback` | `problem_id` | 최근 제출의 피드백 |
 | `block_state` | (`problem_id`, `block_id`) | 사용자가 낸 블록 코드, `code_hash`, 판정 `verdict`(`Y`/`N`/`?`), 빠진 신호 `miss`, 낸 횟수 `tries`, 그 블록이 이름 바꾸기 표에 더한 짝 `renames_json`(`[[내 이름, 계획 이름], …]`) |

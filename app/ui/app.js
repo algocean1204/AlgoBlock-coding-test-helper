@@ -14,12 +14,10 @@ const KIND = {
   condition: ["조건", "'이럴 때만'을 가려내는 자리"],
   branch: ["분기", "경우에 따라 다른 길로 갈라지는 자리"],
 };
-const KIND_BY_LABEL = Object.fromEntries(Object.entries(KIND).map(([key, [label]]) => [label, key]));
-const NEXT_BLOCK = /^다음은 '([^']+)' 블[록럭]이에요\./; // 새 블록의 첫 말은 종류를 알리며 시작한다
 const LANG = { python: "Python", java: "Java", javascript: "JavaScript", cpp: "C++", rust: "Rust", go: "Go", kotlin: "Kotlin" }; // 이름 표시용. go·kotlin은 지원을 접어 예전 제출 기록의 이름을 보이려고만 둔다(고르는 목록은 CHOICES)
 const TOOL = { python: "Python 3", java: "JDK(javac와 java)", javascript: "Node.js", cpp: "g++ 또는 clang++", rust: "Rust(rustc)" };
 const CHOICES = Object.keys(TOOL); // 고를 수 있는 풀이 언어
-// 푸는 방식 넷의 설명 한 곳. 방식 카드, ⓘ로 펴는 설명, 튜터 시작 칸이 모두 여기서 읽는다.
+// 푸는 방식 넷의 설명 한 곳. 방식 탭 곁의 ⓘ로 펴는 설명, 연결 안내, 해설 시작 칸이 모두 여기서 읽는다.
 // 엔진의 이름은 solo·guide(가이드)·chair(생각하는 의자). explain은 튜터의 해설(혼자 풀기의 해설 칸에서 간다)
 const WAY_INFO = {
   solo: { name: "혼자 풀기", line: "튜터 없이 풀어요. 막히면 힌트를 하나씩 봐요.", needsAi: false,
@@ -28,7 +26,7 @@ const WAY_INFO = {
     ai: "없음 — 힌트와 해설은 미리 만든 글이에요.",
     ready: "힌트와 해설을 열지 않고 제출 3번 안에 통과하면 ‘도움 없이 통과’로 세요." },
   chair: { name: "튜터의 질문으로", line: "튜터가 질문만 해요. 풀이 순서를 내가 찾아요.", needsAi: true,
-    does: "튜터가 한 번에 질문 하나를 던져요. 답을 알려 주지 않고, 풀이를 이루는 블록을 내가 하나씩 찾아내게 이끌어요. 찾은 블록마다 코드를 적어요.",
+    does: "튜터가 한 번에 질문 하나를 던져요. 답을 알려 주지 않고, 풀이를 이루는 블록을 내가 하나씩 찾아내게 이끌어요. 지금 블록의 코드를 적어 ‘블록 코드 확인’을 통과하면 다음 블록이 열려요.",
     when: "어디서부터 시작할지 모르겠지만, 풀이는 스스로 떠올리고 싶을 때.",
     ai: "보통 — 내가 답할 때마다 튜터가 읽고 다음 질문을 해요.",
     ready: "‘그 밖의 통과’로 남아요." },
@@ -43,22 +41,18 @@ const WAY_INFO = {
     ai: "적음 — 문제와 언어마다 한 번만 써요.",
     ready: "통과하기 전에 받으면 ‘그 밖의 통과’로 남아요." },
 };
-const WAYS = Object.fromEntries(["solo", "guide", "chair"].map((k) => [k, [WAY_INFO[k].name, WAY_INFO[k].line]]));
-const START = {
-  chair: [WAY_INFO.chair.name, WAY_INFO.chair.does, "첫 질문 받기", "튜터가 문제를 읽고 첫 질문을 준비하는 중…"],
-  guide: [WAY_INFO.guide.name, WAY_INFO.guide.does, "첫 블록 열기", "튜터가 문제를 읽고 첫 블록을 준비하는 중…"],
-  explain: [WAY_INFO.explain.name, WAY_INFO.explain.does, "해설 받기", "해설을 쓰는 중…"],
-};
+// 시작하는 동안의 말. 튜터 둘은 탭을 누르면 바로 시작하고, 해설은 단추로 시작한다(유료 호출이고 답을 보는 일이라)
+const START = { chair: "튜터가 문제를 읽고 첫 질문을 준비하는 중…", guide: "튜터가 문제를 읽고 첫 블록을 준비하는 중…", explain: "해설을 쓰는 중…" };
 /** 방식 하나의 설명(무엇을 해요 · 이럴 때 · AI 사용량 · 준비도). ⓘ로 펴는 칸이 쓴다. */
 const wayInfoHtml = (k) => { const w = WAY_INFO[k]; return `<dl><dt>무엇을 해요</dt><dd>${w.does}</dd><dt>이럴 때</dt><dd>${w.when}</dd><dt>AI 사용량</dt><dd>${w.ai}</dd><dt>준비도</dt><dd>${w.ready}</dd></dl>`; };
-/** ⓘ 단추와 그 설명 칸. where는 같은 방식이 한 화면에 둘 나올 때 구분한다(카드·머리·해설 단추). */
+/** ⓘ 단추와 그 설명 칸. where는 같은 방식이 한 화면에 둘 나올 때 구분한다(머리·해설 단추). */
 const infoBtn = (k, where) => `<button type="button" class="info-btn" data-way-info="${k}:${where}" aria-expanded="${S.wayInfo === `${k}:${where}`}" aria-controls="wayinfo-${k}-${where}" aria-label="${WAY_INFO[k].name} 설명">${ico("i-info")}</button>`;
 const infoBox = (k, where) => `<div class="info" id="wayinfo-${k}-${where}" role="region" aria-label="${WAY_INFO[k].name} 설명"${S.wayInfo === `${k}:${where}` ? "" : " hidden"}>${wayInfoHtml(k)}</div>`;
 /* 색 이름표(7번): 단계 1~5, 주제 다섯 갈래, 쓰는 방법(태그. 색 없음), 검증. 색만으로 뜻을 전하지 않게 글자와 같이 쓴다 */
 const GROUP = { hash: "ds", stack_queue: "ds", heap: "ds", brute_force: "search", dfs: "search", bfs: "search", binary_search: "search",
   graph: "graph", dijkstra: "graph", greedy: "design", dp: "design", two_pointer: "design", sort: "impl", simulation: "impl", implementation: "impl" };
 const GROUP_NAME = { ds: "자료구조", search: "탐색", graph: "그래프", design: "설계", impl: "구현" };
-const lvBadge = (n, guess) => (n ? `<span class="lvb l${n}"${guess ? ' title="문제 글을 보고 어림한 단계예요"' : ""}>${n}단계${guess ? " · 어림" : ""}</span>` : "");
+const lvBadge = (n) => (n ? `<span class="lvb l${n}">${n}단계</span>` : "");
 const themeChip = (key, name) => (name ? `<span class="theme-chip g-${GROUP[key] || "none"}"${GROUP[key] ? ` title="${GROUP_NAME[GROUP[key]]} 갈래"` : ""}>${esc(name)}</span>` : "");
 /** 문제 화면의 풀이법 태그: 풀기 전에는 가리고 '풀이법 태그 보기'로 연다. 통과했거나 힌트·해설을 봤으면 이미 보인다.
     연 것은 화면에서만 바뀌고 도움으로 세지 않는다(준비도·기록에 영향 없음). 목록은 통과한 문제의 태그만 보인다. */
@@ -96,31 +90,33 @@ const ERR = {
 };
 
 const S = {
-  view: "", pid: null, problem: null, session: null, hasFeedback: false,
-  mode: null, // 오른쪽 칸: null(아직 고르지 않음), solo, guide, chair, explain(튜터의 해설)
-  choosing: false, // '방식 바꾸기'로 고르는 중
+  view: "", pid: null, problem: null, session: null, facts: {}, hasFeedback: false,
+  mode: null, // 오른쪽 칸: solo, guide, chair, explain(튜터의 해설). 문제를 받기 전에만 null
+  tried: null, // 이 문제에서 스스로 시작해 본 튜터 방식(같은 방식을 다시 스스로 시작하지 않는다. 탭을 누르면 다시 한다)
+  startAfter: false, // 다른 일을 기다리느라 시작하지 못했다(그 일이 끝나면 시작한다)
   soloOpen: null, // 혼자 풀기에서 펼친 칸: null(접힘), hint, sol
   talk: "chair", // 블록 이름을 어느 대화 기준으로 볼지(해설을 보는 동안에도 직전 대화 기준)
   codeTab: "direct",
   blockCode: {}, // 블록 id → {code, by: "me" | "tutor"}
   result: null, // 마지막 채점 결과 또는 {alert: 알림}. 예시 실행이면 run: true, 직접 입력이면 own: true(서버의 error는 오류 글이라 알림과 이름을 나눈다)
   solo: null, // 혼자 풀기: {shown: 본 힌트들, seen, total, sol: 해설, ask: 포기 확인 중, note}
-  langWant: null, // 바꾸려는 언어(확인을 기다리는 중)
   codeAsk: null, // 코드 칸 확인을 기다리는 일: restore(체크포인트로 되돌리기), clear(초기화), pull(블록 코드 가져오기로 바꾸기)
   fillAsk: null, // '이 블록 채우기'로 적은 코드를 바꿀지 묻는 블록 id
+  ownAsk: null, // 의자에서 '끝까지 내 방식으로 쓰기'를 묻는 블록 id(찾지 않은 뒤 블록의 이름이 보인다)
   casesOpen: null, // 케이스 목록을 사용자가 펼쳤는지(null이면 기본값)
-  quote: null, // 꼬리질문을 열어 둔 튜터 말 id
   sending: null, // 보내는 중인 내 말 {where, text}
   debug: null, // {open, messages, line, code, passed, note}
   note: {}, // 자리별 알림 {chat, start, blocks}
   codeNote: "",
   fb: null, wantFeedback: false,
-  busy: null, // {label, where, t0}
+  busy: null, // AI 줄의 기다림 {label, where, t0}: 대화·시작·채우기·해설·피드백·디버그와 그 밖의 일
+  running: null, // 실행 줄의 기다림(예시 실행·제출). AI 줄과 서로 기다리지 않는다
+  skipping: false, // '이대로 넘어가기'·'끝까지 내 방식으로 쓰기' 요청이 끝나지 않았다(두 줄과 따로. 그동안 두 단추를 잠근다)
 };
 
 /* ── 서버 ── */
 let leaving = false; // 창을 닫는 중이면 저장 요청이 끊기지 않게 한다
-const MODEL_PATHS = ["/api/turn", "/api/followup", "/api/fill", "/api/explain", "/api/feedback", "/api/debug", "/api/problems/read"]; // 모델을 부를 수 있는 요청
+const MODEL_PATHS = ["/api/turn", "/api/fill", "/api/explain", "/api/feedback", "/api/debug", "/api/problems/read"]; // 모델을 부를 수 있는 요청
 let keyBad = false; // 모델 키가 맞지 않다는 답을 받았다(다음 모델 요청이 성공하거나 키를 다시 넣으면 걷는다)
 async function api(path, body) {
   try {
@@ -151,15 +147,18 @@ function errorNote(error) {
 const talkedWith = () => !!S.session && ((S.session.chair || []).length > 0 || (S.session.guide || []).length > 0 || !!S.session.explain);
 const aidOpen = () => !!S.problem && S.problem.builtin && S.problem.study.unaided_open && !(S.solo && S.solo.seen) && !talkedWith();
 const aidNote = () => (aidOpen() ? '<p class="aid-note hint">힌트·튜터·해설을 쓰고 통과하면 ‘그 밖의 통과’로 남아요. 준비도는 도움 없이 통과한 문제만 세요.</p>' : "");
-const noteHtml = (n) => !n ? "" : `<div class="note ${n.type || ""}" role="${n.type === "error" ? "alert" : "status"}"><span>${esc(n.text)}</span>${n.conn ? '<button type="button" class="btn small" id="note-conn">연결하기</button>' : ""}${n.again ? '<button type="button" class="btn small" id="prep-again" data-model>다시 준비</button>' : ""}</div>`;
+const noteHtml = (n) => !n ? "" : `<div class="note ${n.type || ""}" role="${n.type === "error" ? "alert" : "status"}"><span>${esc(n.text)}</span>${n.conn ? '<button type="button" class="btn small" id="note-conn">연결하기</button>' : ""}${n.again ? '<button type="button" class="btn small" id="prep-again" data-model>다시 준비</button>' : ""}${n.retry ? '<button type="button" class="btn small" id="start-again" data-model>다시 시작</button>' : ""}</div>`;
 const PREP_FAILED = { type: "error", text: "튜터가 풀이 순서를 준비하지 못했어요.", again: true }; // 보낸 것이 없으니 '한 번 더 보내 주세요'라고 하지 않는다
 const say = (text) => { $("status").textContent = text || ""; };
 let carried = ""; // 다음 화면에서 보여 줄 상태 문구(화면을 옮기면 상태 문구를 지우므로, 옮기며 남길 말은 여기에)
 const sayNext = (text) => { carried = text; };
 
-/* ── 기다림: 무엇을 하는지와 지난 초를 보여 주고, 모델을 부르는 단추를 잠근다 ── */
-let ticker = null;
-const secs = () => (S.busy ? Math.round((Date.now() - S.busy.t0) / 1000) : 0);
+/* ── 기다림: 무엇을 하는지와 지난 초를 보여 주고, 모델을 부르는 단추를 잠근다.
+   줄이 둘이다: AI 줄(S.busy)과 실행 줄(S.running, 예시 실행·제출). AI가 답하는 동안에도 실행·제출이 되고, 같은 줄 안에서는 겹치지 않는다.
+   언어 바꾸기는 두 줄을 다 잡는다(코드와 대화가 함께 바뀐다). 실행 줄의 단추는 data-model="run" ── */
+const laneOf = (where) => (where === "result" ? "running" : "busy");
+const langBusy = () => !!(S.busy && S.busy.where === "lang");
+const secs = (b = S.busy) => (b ? Math.round((Date.now() - b.t0) / 1000) : 0);
 const since = (t0) => Math.round((Date.now() - (t0 || Date.now())) / 1000);
 const LATE = "조금 더 걸리고 있어요.";
 const late = (n, text) => (n > 30 ? LATE : text); // 걸린다고 말한 시간(30초)을 넘기면 말을 바꾼다
@@ -171,44 +170,80 @@ setInterval(() => {
 
 function applyBusy() {
   // 기다리는 동안 단추를 disabled로 잠그면 초점이 문서 맨 위로 떨어진다. aria-disabled로 두어 초점을 지키고, 누름은 막는다(아래 click)
-  document.querySelectorAll("[data-model]").forEach((el) => { el.disabled = false; if (S.busy) el.setAttribute("aria-disabled", "true"); else el.removeAttribute("aria-disabled"); });
+  document.querySelectorAll("[data-model]").forEach((el) => { el.disabled = false; if (el.dataset.model === "run" ? S.running || langBusy() : S.busy) el.setAttribute("aria-disabled", "true"); else el.removeAttribute("aria-disabled"); });
   if (S.view === "code" && noTool()) $("run").disabled = $("submit").disabled = $("run-own-go").disabled = true; // 이 기기에 언어 도구가 없으면 실행·제출을 못 한다
-  $("timer").textContent = S.busy ? `${secs()}초` : "";
-  document.querySelectorAll("[data-secs]").forEach((el) => { el.textContent = `${secs()}초`; });
+  $("timer").textContent = S.busy || S.running ? `${secs(S.busy || S.running)}초` : "";
+  document.querySelectorAll("[data-secs]").forEach((el) => { el.textContent = `${secs(S[el.dataset.secs])}초`; });
 }
 
 async function work(label, where, fn, slow) { // slow: 10초를 넘기면 덧붙일 말(모델이 아니라 코드를 돌리는 기다림)
-  if (S.busy) return null;
-  S.busy = { label, where, t0: Date.now(), slow, pid: S.pid }; // pid: 이 기다림을 시작한 문제(다른 문제 화면에서 진행 글을 그 문제의 것으로 보이지 않게)
+  const lane = laneOf(where);
+  if (S[lane] || (lane === "running" ? langBusy() : where === "lang" && S.running)) return null;
+  S[lane] = { label, where, t0: Date.now(), slow, pid: S.pid }; // pid: 이 기다림을 시작한 문제(다른 문제 화면에서 진행 글을 그 문제의 것으로 보이지 않게)
   say(label);
   render();
-  ticker = setInterval(applyBusy, 1000);
+  const ticker = setInterval(applyBusy, 1000);
   try {
     return await fn();
   } finally {
     clearInterval(ticker);
-    S.busy = null;
-    S.sending = null;
+    S[lane] = null;
+    if (lane === "busy") S.sending = null;
     render();
+    perfDone();
+    if (S.startAfter && !S.busy && !S.running) { S.startAfter = false; maybeStart(); } // 기다리는 동안 누른 튜터 탭
   }
 }
 
 const DOTS = '<span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>';
-const waitLine = (where) => (S.busy && S.busy.where === where // 문구가 걸리는 시간을 말하면(…걸려요) 따로 붙이지 않는다
-  ? `${DOTS}<span>${esc(S.busy.label)} <span class="secs" data-secs>${secs()}초</span>${S.busy.slow ? `<span data-slow="${esc(S.busy.slow)}"></span>` : /걸려요$/.test(S.busy.label) ? "" : " · 보통 5~25초 걸려요"}</span>` : "");
+const waitLine = (where) => { // 문구가 걸리는 시간을 말하면(…걸려요) 따로 붙이지 않는다
+  const lane = laneOf(where), b = S[lane];
+  return b && b.where === where ? `${DOTS}<span>${esc(b.label)} <span class="secs" data-secs="${lane}">${secs(b)}초</span>${b.slow ? `<span data-slow="${esc(b.slow)}"></span>` : /걸려요$/.test(b.label) ? "" : " · 보통 5~25초 걸려요"}</span>` : "";
+};
+
+/* ── 반응 속도(개발용 연결로 띄웠을 때만): 누름 → 첫 화면 변화 → 끝을 performance.mark로 찍고 window.__ab.perf에 둔다. 기기 밖으로 보내지 않는다 ── */
+const perfBox = () => (ACCOUNTS && ACCOUNTS.dev ? (window.__ab ??= { perf: {} }).perf : null);
+let pressed = null; // 마지막 누름 {key, t0}
+/** key: 남길 이름(press_to_paint_ms, send_to_clear_ms, tab_to_change_ms). 첫 화면 변화는 누른 뒤 처음 그려진 때다. */
+function perfPress(e, key) {
+  const perf = perfBox();
+  if (!perf) return;
+  const at = pressed = { key, t0: e.timeStamp };
+  performance.mark("ab-press", { startTime: at.t0, detail: key });
+  requestAnimationFrame(() => setTimeout(() => { // 다음 그림이 그려진 뒤
+    performance.mark("ab-paint", { detail: key });
+    perf.press_to_paint_ms = perf[key] = Math.round(performance.now() - at.t0);
+  }));
+}
+function perfDone() {
+  const perf = perfBox();
+  if (!perf || !pressed) return;
+  performance.mark("ab-done", { detail: pressed.key });
+  perf.press_to_done_ms = Math.round(performance.now() - pressed.t0);
+  pressed = null;
+}
 const pending = (where) => (S.busy && S.busy.where === where ? `<div class="msg tutor pending"><span class="who">튜터</span><div class="bubble">${waitLine(where)}</div></div>` : "");
 
 /* ── 글 꾸미기: 코드 울타리, 표(| a | b |), 목록(- ), 소제목, `코드`, **굵게**, 표준 입출력 문제의 예제 구역 ── */
+/* rich-pure:start 글 꾸미기 전체(esc 말고는 다른 것에 기대지 않는다). node로도 시험한다 */
+/* inline-pure:start 코드와 수식 구간은 먼저 떼어 두고 나머지만 굵게·위첨자를 바꾼 뒤 되돌린다(코드·수식 속 **나 ^가 바뀌지 않는다). 수식은 $…$, $$…$$, \(…\), \[…\]: 여는 $ 뒤나 닫는 $ 앞이 공백이거나 닫는 $ 뒤가 숫자면 수식이 아니다(금액). 줄 단위라 여러 줄에 걸친 수식은 보지 않는다 */
+function inline(t) {
+  const kept = [], raws = [];
+  const hold = (html, raw) => `\u0000${kept.push(html) && raws.push(raw ?? html) - 1}\u0000`;
+  const back = (x) => x.replace(/\u0000(\d+)\u0000/g, (_, n) => raws[n]); // 수식 안에 든 코드 자리는 쓴 그대로
+  const text = String(t ?? "").replace(/\u0000/g, "").replace(/`([^`\n]+)`/g, (_, code) => hold(`<code>${esc(code)}</code>`, `\`${code}\``))
+    .replace(/\$\$(.+?)\$\$|\\\[((?:(?!\\\[).)+?)\\\]|\\\(((?:(?!\\\().)+?)\\\)|\$(?=[^\s$])([^$\n]*?\S)\$(?![\d$])/g, (all, d1, d2, i1, i2, at, whole) => {
+      const tex = back(d1 ?? d2 ?? i1 ?? i2);
+      // 받은 수식만 코드 자리를 쓴 그대로 되돌린다. 거절한 구간(앞에 \$나 $$가 붙은 $…$)은 코드 자리를 그대로 두어 코드로 보인다
+      return tex.trim() && !(i2 !== undefined && /[\\$]/.test(whole[at - 1] || "")) ? hold(`<span class="math" data-tex="${esc(tex)}"${i1 === undefined && i2 === undefined ? ' data-display="1"' : ""}>${esc(back(all))}</span>`) : all;
+    });
+  return esc(text).replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>").replace(/(^|[^\w.^])(\d+)\^(\d+)(?![\w^])/g, "$1$2<sup>$3</sup>")
+    .replace(/\u0000(\d+)\u0000/g, (_, n) => kept[n]);
+}
+/* inline-pure:end */
 const HEADING = /^(문제 설명|제한 ?사항|입출력 예( 설명)?|입출력 예 ?#\d+|입력|출력|예시)$/;
 // 예제 구역의 머리(서버 sample_cases와 같은 규칙): 머리 다음부터 다음 머리나 빈 줄 둘 전까지가 그 예제의 글이다
 const SAMPLE_HEAD = /^(?:#+\s*)?(예제\s*입력|입력\s*예|sample\s+input|예제\s*출력|출력\s*예|sample\s+output)\s*(\d+)\s*(?:복사)?\s*:?$/i;
-/* inline-pure:start 백틱 안은 코드 그대로 둔다: 먼저 코드를 떼어 두고 굵게를 바꾼 뒤 되돌린다(코드 속 **가 굵게가 되지 않는다). node로도 시험한다 */
-function inline(t) {
-  const codes = [];
-  return esc(t).replace(/\u0000/g, "").replace(/`([^`\n]+)`/g, (_, code) => `\u0000${codes.push(code) - 1}\u0000`)
-    .replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>").replace(/\u0000(\d+)\u0000/g, (_, n) => `<code>${codes[n]}</code>`);
-}
-/* inline-pure:end */
 
 /** program: 표준 입출력 문제. 예제 구역은 글 그대로 <pre>에 담고, 같은 번호의 입력·출력은 두 칸으로 나란히 둔다. */
 // 탭·공백으로 나눈 입출력 예 표(서버 table_cases·flat_table과 같은 규칙의 가장 작은 판정): 머리 줄의 마지막 칸이 결과 낱말이고 뒤 줄들의 칸 수가 맞을 때만 표다
@@ -265,7 +300,7 @@ function rich(text, headings, program) {
   String(text || "").split(/```[a-zA-Z0-9]*\n?/).forEach((part, i) => {
     if (i % 2) return out.push(`<pre class="code"><code>${esc(part.replace(/\s+$/, ""))}</code></pre>`);
     if (headings && !program) part = plainTables(part); // 문제 글(함수 방식)의 탭·공백 표
-    let para = [], list = [], table = [], sample = null;
+    let para = [], list = [], numbered = [], table = [], sample = null;
     const endSample = () => {
       if (!sample) return;
       const rows = sample.rows.join("\n").replace(/^\s*\n|\n\s*$/g, ""); // 앞뒤 빈 줄만 뗀다(줄 앞 공백은 답이다)
@@ -279,6 +314,7 @@ function rich(text, headings, program) {
       const what = (name) => keep.includes(name);
       if (para.length && !what("para")) { out.push(`<p>${para.map(inline).join("<br>")}</p>`); para = []; }
       if (list.length && !what("list")) { out.push(`<ul>${list.map((x) => `<li>${inline(x)}</li>`).join("")}</ul>`); list = []; }
+      if (numbered.length && !what("numbered")) { out.push(`<ol${numbered[0][0] === 1 ? "" : ` start="${numbered[0][0]}"`}>${numbered.map(([, x]) => `<li>${inline(x)}</li>`).join("")}</ol>`); numbered = []; }
       if (table.length && !what("table")) {
         const rows = table.map((row) => row.replace(/^\||\|$/g, "").split("|").map((cell) => cell.trim())).filter((cells) => !cells.every((cell) => /^[-: ]*$/.test(cell)));
         out.push(`<div class="table-wrap"><table>${rows.map((cells, n) => `<tr>${cells.map((cell) => (n ? `<td>${inline(cell)}</td>` : `<th scope="col">${inline(cell)}</th>`)).join("")}</tr>`).join("")}</table></div>`);
@@ -294,9 +330,11 @@ function rich(text, headings, program) {
         endSample();
         continue;
       }
-      if (!t) { flush("table", "list"); continue; } // 빈 줄은 문단만 끊는다. 표와 목록은 다른 글이 올 때까지 잇는다
+      if (!t) { flush("table", "list", "numbered"); continue; } // 빈 줄은 문단만 끊는다. 표와 목록은 다른 글이 올 때까지 잇는다
       if (t.startsWith("|") && t.length > 1) { flush("table"); table.push(t); continue; }
       if (/^[-•]\s+/.test(t)) { flush("list"); list.push(t.replace(/^[-•]\s+/, "")); continue; }
+      const num = /^(\d{1,2})[.)]\s+(\S.*)$/.exec(t);
+      if (num) { flush("numbered"); numbered.push([+num[1], num[2]]); continue; }
       const title = /^#{1,4}\s+(.+)$/.exec(t);
       if (title || (headings && HEADING.test(t))) { flush(); out.push(`<h3>${inline(title ? title[1] : t)}</h3>`); continue; }
       flush("para");
@@ -307,8 +345,41 @@ function rich(text, headings, program) {
   });
   return out.join("");
 }
+/* rich-pure:end */
+
+/* 수식: 글에 수식 구간(.math)이 생길 때만 KaTeX를 이 앱 안에서 불러온다(원격 주소 없음). 실패하면 원문 글이 그대로 남는다 */
+let katexReady = null;
+function loadKatex() {
+  katexReady ??= new Promise((ok, fail) => {
+    const css = document.createElement("link"), js = document.createElement("script");
+    css.rel = "stylesheet"; css.href = "/katex/katex.min.css"; js.src = "/katex/katex.min.js";
+    js.onload = () => ok(window.katex); js.onerror = () => { css.remove(); js.remove(); fail(); };
+    document.head.append(css, js);
+  }).catch(() => { katexReady = null; return null; }); // 받지 못하면 다음 수식에서 다시 받는다
+  return katexReady;
+}
+async function renderMath() {
+  const todo = [...document.querySelectorAll(".math[data-tex]:not([data-done])")];
+  if (!todo.length) return;
+  todo.forEach((el) => el.setAttribute("data-done", "1"));
+  const katex = await loadKatex();
+  if (!katex) return todo.forEach((el) => el.removeAttribute("data-done")); // 받지 못했으면 원문 그대로, 다음 글에서 다시 시도
+  for (const el of todo) {
+    if (!el.isConnected) continue;
+    const original = el.textContent;
+    try { katex.render(el.dataset.tex, el, { throwOnError: false, displayMode: "display" in el.dataset }); } catch { el.textContent = original; }
+    if (el.querySelector(".katex-error")) el.textContent = original; // 깨진 수식은 KaTeX의 빨간 글 대신 쓴 그대로
+  }
+}
+new MutationObserver(() => renderMath()).observe(document.body, { childList: true, subtree: true });
 
 const kindChip = (kind) => (kind ? `<span class="kind kind-${esc(kind)}">${KIND[kind] ? ico("k-" + kind) : ""}${esc((KIND[kind] || [kind])[0])}</span>` : ""); // 종류가 없으면(코드와 맞지 않아 서버가 비웠다) 꼬리표를 그리지 않는다
+/** 같은 HTML이면 다시 그리지 않는다(노드·초점·선택 범위가 그대로). 다시 그렸으면 참. 이 도우미로 그리는 칸은 다른 곳에서 innerHTML을 바꾸지 않는다. */
+function setHtml(el, html) {
+  if (el._html === html) return false;
+  el.innerHTML = el._html = html;
+  return true;
+}
 const meMsg = (text, sending) => `<div class="msg me${sending ? " sending" : ""}"><span class="who">나</span><div class="bubble">${esc(text)}</div></div>`;
 /* long-pure:start 튜터 말 속의 긴 입력(대괄호 목록이나 `…` 안의 글)이 max자를 넘으면 앞부분만 남기고 전체는 따로 돌려준다(node로도 시험한다) */
 function foldLong(text, max = 80) {
@@ -369,7 +440,7 @@ function showSettings(part, from) {
 function route() {
   flushSaves();
   // 화면을 옮기면(뒤로 가기 포함) 코드 칸·블록·문제의 확인 줄과 원본 보기 창을 닫는다(돌아왔을 때 남은 확인 줄을 눌러 코드를 잃지 않게)
-  S.codeAsk = S.fillAsk = null;
+  S.codeAsk = S.fillAsk = S.ownAsk = null;
   $("reset-confirm").hidden = $("del-confirm").hidden = true;
   $("reset").hidden = $("p-edit").hidden = $("p-delete").hidden = false;
   if ($("asset").open) closeAsset();
@@ -386,9 +457,11 @@ function route() {
 }
 
 function render() {
+  const t0 = performance.now(), perf = perfBox();
   if (S.view === "code") renderCode();
   if (S.view === "feedback") renderFeedback();
   applyBusy();
+  if (perf) perf.rerender_ms = Math.round(performance.now() - t0);
 }
 
 /* ── 02 문제 목록(홈): 입구 셋(문제 풀기 · 내 문제 넣기 · 내 기록) → 내 문제 → 기본 문제 단계(주제마다 한 줄, 단계마다 한 칸) ── */
@@ -462,7 +535,7 @@ async function showList() {
   const group = (id, title, list, filter) => (!list.length ? "" : `<div class="list-head"><h2 class="list-label" id="${id}">${title} ${list.length}개</h2>${filter ? chips(list) : ""}</div>
     <ul class="rows" aria-labelledby="${id}">${list.map((p) => `<li${filter ? ` data-lang="${esc(p.language)}"${LIST_LANG && p.language !== LIST_LANG && list.length >= 6 ? " hidden" : ""}` : ""}><a class="row" href="#/p/${esc(p.id)}">
       <span><span class="row-title">${esc(p.title)}</span>
-        <span class="badges">${lvBadge(p.level, p.level_by === "analysis")}${themeChip(p.theme, p.theme_name)}${verifiedBadge(p)}${p.passed > 0 ? tagChips(p.tags) : ""}</span>
+        <span class="badges">${lvBadge(p.level)}${themeChip(p.theme, p.theme_name)}${verifiedBadge(p)}${p.passed > 0 ? tagChips(p.tags) : ""}</span>
         <span class="row-meta">${esc(LANG[p.language] || p.language)} · ${p.submitted ? `통과 ${p.passed} · 제출 ${p.submitted}` : "아직 풀지 않았어요"}</span></span>
       <span></span>${ico("i-caret")}<span class="sr-only">열기</span></a></li>`).join("")}</ul>`);
   let html = group("list-own", "내 문제", all.filter((p) => !p.sample), true);
@@ -586,30 +659,31 @@ function addCaseRow() {
 
 /** 케이스 줄의 [넣을 값(입력), 기대 결과(기대 출력), 숨김]. 함수 방식은 한 줄 칸, 표준 입출력은 여러 줄 칸이다. */
 const caseCells = (row) => [...row.querySelectorAll(".case-val"), row.querySelector("input[type=checkbox]")];
+/** 케이스 줄을 rows로 다시 그린다(빈 목록이면 빈 줄 하나). 지금 방식의 꼴로 그린다. */
+function putRows(rows) {
+  $("case-rows").innerHTML = "";
+  for (const x of rows.length ? rows : [{ input: "", expected: "" }]) {
+    addCaseRow();
+    const [a, b, h] = caseCells($("case-rows").lastElementChild);
+    a.value = x.input || "";
+    b.value = x.expected || "";
+    h.checked = !!x.hidden;
+    showCall(a);
+  }
+}
 
-/** 푸는 방식에 맞춘 케이스 안내. 방식을 바꾸면 적던 값은 그대로 새 꼴의 줄로 옮긴다. */
+/** 푸는 방식에 맞춘 케이스 안내. */
 function caseHelp() {
   const stdin = $("new-mode").value === "program";
   $("case-help").textContent = stdin ? "입력은 프로그램의 표준 입력에 그대로 넣어요." : "넣을 값은 인자 목록 전체를 대괄호로 감싸 적어요. 인자가 둘이면 [1, 2], 배열 하나가 인자면 [[1, 2, 3]]처럼 한 번 더 감싸요.";
-  $("case-fill-ask").textContent = stdin ? "지금 적힌 케이스를 예제의 것으로 바꿀까요?" : "지금 적힌 케이스를 표의 것으로 바꿀까요?";
 }
 
+/** 방식을 바꾸면 적던 값은 그대로 새 꼴의 줄로 옮긴다. */
 function setCaseMode() {
-  const rows = formCases();
-  $("case-rows").innerHTML = "";
-  for (const x of rows) {
-    addCaseRow();
-    const [a, b, h] = caseCells($("case-rows").lastElementChild);
-    a.value = x.input;
-    b.value = x.expected;
-    h.checked = x.hidden;
-    showCall(a);
-  }
-  $("case-fill-confirm").hidden = $("case-note").hidden = true;
+  putRows(formCases());
   caseHelp();
   syncForm();
   markTableDiff();
-  findTable();
 }
 
 /** 케이스 줄의 '넣을 값'이 풀이 함수에 어떻게 넘어가는지 그 아래에 보여 준다(JSON 목록으로 읽힐 때만). */
@@ -640,51 +714,72 @@ function showCall(input) {
 /** 모든 줄의 안내를 다시 맞춘다(인자 이름이나 다른 줄이 바뀌면 이 줄의 기대 수도 바뀐다). */
 const showCalls = () => document.querySelectorAll("#case-rows .case-row").forEach((r) => { const first = r.querySelector(".case-val"); if (first) showCall(first); });
 
-/* 입출력 예 표에서 케이스 채우기: 표 찾기는 서버가 규칙으로 한다(모델 0회). 글이 바뀌면 잠깐 멈췄을 때 다시 찾아 단추를 보이거나 숨긴다.
-   NAMES: 표 머리의 인자 이름(채웠을 때만 등록·수정에 같이 보내 시작 코드의 인자 이름이 된다) */
-let tableTimer = null, NAMES = null, TABLE = null, readOcr = false; // TABLE: 표에서 채운 케이스(고친 값을 견준다), readOcr: 글자 읽기로 읽은 글
+/* NAMES: 표 머리의 인자 이름(감지가 채웠을 때만 등록·수정에 같이 보내 시작 코드의 인자 이름이 된다). TABLE: 감지가 채운 케이스(고친 값을 견준다), readOcr: 글자 읽기로 읽은 글 */
+let NAMES = null, TABLE = null, readOcr = false;
 const sameVal = (a, b) => { try { return JSON.stringify(JSON.parse(a)) === JSON.stringify(JSON.parse(b)); } catch (e) { return a.trim() === b.trim(); } };
-/** 표에서 채운 케이스를 표와 다르게 고친 줄에 '글의 표와 달라요'(막지는 않는다). */
+/** 감지가 채운 케이스를 글과 다르게 고친 줄에 '글의 표와 달라요'(막지는 않는다). */
 function markTableDiff() {
   [...$("case-rows").children].forEach((row, i) => {
     const t = TABLE && TABLE[i], [a, b] = caseCells(row), note = row.querySelector(".case-diff");
     if (note) note.hidden = !t || !(a.value.trim() || b.value.trim()) || (sameVal(a.value, t.input) && sameVal(b.value, t.expected));
   });
 }
-const findTableSoon = () => { clearTimeout(tableTimer); tableTimer = setTimeout(findTable, 400); };
-async function findTable() {
-  const text = $("new-text").value, mode = $("new-mode").value, r = await api("/api/problems/cases", { text, mode });
-  if (S.view !== "new" || text !== $("new-text").value || mode !== $("new-mode").value) return;
-  $("case-fill").hidden = !(r.ok && (r.data.cases.length || r.data.skipped));
-  // 다른 방식(함수 ↔ 표준 입출력)으로 찾은 케이스가 있으면 방식을 바꾸자고 한다. 수정에서는 방식을 바꾸지 않는다
-  const program = mode === "program", other = r.ok && r.data.other > 0 && !EDIT;
-  $("mode-guess").hidden = !other;
-  $("mode-guess-text").textContent = program ? "함수(solution) 문제처럼 보여요." : "표준 입출력 문제처럼 보여요.";
-  $("mode-switch").textContent = program ? "함수로 바꾸기" : "표준 입출력으로 바꾸기";
+
+/* 입출력 예 칸: 처음에는 읽기 전용 카드로 보이고 [고치기]를 누르면 케이스 칸(#case-rows)이 열린다 */
+const MODE_NAME = { function: "함수(solution)", program: "표준 입출력" };
+function openCases(on) {
+  $("case-box").hidden = !on;
+  $("case-cards").hidden = on;
+  $("case-edit").setAttribute("aria-expanded", String(on));
+  $("case-edit").textContent = on ? "접기" : "고치기";
+}
+function renderCards() {
+  const stdin = $("new-mode").value === "program", rows = formCases().filter((x) => x.input.trim() || x.expected.trim());
+  const block = (label, v) => `<div><span class="muted">${label}</span><pre>${esc(String(v).replace(/\n$/, ""))}</pre></div>`;
+  $("case-cards").innerHTML = rows.length ? rows.map((x, i) => `<li class="case-card"><span class="no">예시 ${i + 1}${x.hidden ? " · 숨김" : ""}</span>${stdin
+    ? `<div class="io-pair">${block("입력", x.input)}${block("출력", x.expected)}</div>` : `<code>${esc(callText(x.input))} → ${esc(x.expected)}</code>`}</li>`).join("")
+    : '<li class="hint">아직 예시가 없어요. ‘고치기’를 눌러 넣어 주세요.</li>';
 }
 
 /** 등록 화면의 작은 안내: 실수 허용 오차(함수 방식에서 케이스에 실수가 있을 때), '새로 쓰기'(적은 것이 있을 때. 수정 화면은 아니다). */
 const hasFloat = (t) => /\d\.\d|\d[eE][-+]?\d/.test(String(t).replace(/"(?:\\.|[^"\\])*"/g, "")); // 문자열 안은 보지 않는다
-/** 제목 칸 아래 안내: 정말 첫 줄에서 채웠을 때만 그렇게 말한다. 채우지 못했거나(첫 줄이 문장이면 제목으로 쓰지 않는다) 내가 적었으면 그에 맞게. */
+/** 제목 칸 아래 안내: 정말 글에서 찾아 채웠을 때만 그렇게 말한다. 찾지 못했거나 내가 적었으면 그에 맞게. */
 function titleNote() {
   const title = $("new-title").value.trim();
   $("new-title-note").textContent = !title ? "제목을 찾지 못했어요. 문제 이름을 직접 적어 주세요."
-    : autoTitle && title === autoTitle.trim() ? "글의 첫 줄에서 채웠어요. 고쳐도 돼요." : "문제 목록에 보이는 이름이에요.";
+    : autoTitle && title === autoTitle.trim() ? "글에서 찾은 제목이에요. 고쳐도 돼요." : "문제 목록에 보이는 이름이에요.";
 }
 function syncForm() {
   titleNote();
   showCalls();
-  const rows = formCases();
-  $("case-float").hidden = $("new-mode").value === "program" || !rows.some((x) => hasFloat(x.input) || hasFloat(x.expected));
-  $("case-names-field").hidden = $("new-mode").value === "program" || !!NAMES; // 표 머리에서 이름을 얻지 못한 함수 문제만: 글의 이름을 직접 적을 수 있다
-  $("case-flags").hidden = $("new-mode").value !== "program"; // 답 비교 표시(실수 답·답이 여럿)는 표준 입출력 문제에만
+  const rows = formCases(), stdin = $("new-mode").value === "program";
+  $("case-float").hidden = stdin || !rows.some((x) => hasFloat(x.input) || hasFloat(x.expected));
+  $("case-names-field").hidden = stdin || !!NAMES; // 표 머리에서 이름을 얻지 못한 함수 문제만: 글의 이름을 직접 적을 수 있다
+  $("case-flags").hidden = !stdin; // 답 비교 표시(실수 답·답이 여럿)는 표준 입출력 문제에만
+  const filled = !!$("new-text").value.trim() || !!EDIT;
+  $("title-field").hidden = $("new-split").hidden = !filled; // 글을 넣기 전에는 붙여 넣을 자리만
+  $("new-form").classList.toggle("filled", filled);
+  $("mode-chip").textContent = MODE_NAME[$("new-mode").value];
+  renderCards();
   const draft = !!($("new-title").value.trim() || $("new-text").value.trim() || $("new-theme").value || FILES.length || rows.some((x) => x.input.trim() || x.expected.trim()));
   $("new-clear").hidden = !!EDIT || !draft || !$("new-clear-confirm").hidden;
   if (!draft) $("new-clear-confirm").hidden = true;
+  newNote();
+  renderLine();
   saveDraft();
 }
 
-/* 적던 글(#115): 새로고침해도 남게 이 탭의 sessionStorage에 둔다. 개인 문제 글이 이 기기 밖(서버 포함)으로 나가지 않고, 탭을 닫으면 사라진다.
+/** 등록 단추 옆 한 줄: 등록하면 생기는 일. */
+function newNote() {
+  $("new-submit").toggleAttribute("data-ai", !EDIT && connected()); // 새로 등록하면 AI가 풀이를 준비한다(연결했을 때). 고쳐 저장하는 것은 아니다
+  const ai = connected(), many = $("new-mode").value === "program" && $("new-many").checked, hold = DET && DET.text === $("new-text").value && DET.problem === false;
+  $("new-note").textContent = EDIT ? (editRedo() && ai ? "글이나 케이스, 답 비교가 바뀌어 튜터가 풀이를 다시 준비할 수 있어요. 모델을 쓰고 1분 안팎 걸려요." : "저장하면 바로 바뀌어요.")
+    : !ai ? `AI가 연결되지 않아 적은 예시만으로 채점해요.${many ? "" : " 연결하면 튜터가 숨은 테스트를 만들어 줘요."}`
+    : hold ? "등록해도 풀이 준비는 문제 화면에서 ‘준비 시작’을 누를 때까지 미뤄요."
+    : `등록하면 튜터가 풀이${many ? "를" : "와 숨은 테스트를"} 준비해요. 모델을 쓰고 1분 안팎 걸려요. 그동안 풀기 시작해도 돼요.`;
+}
+
+/* 적던 글(#115): 새로고침해도 남게 이 탭의 sessionStorage에 둔다. 초안을 서버에 저장하지 않고, 탭을 닫으면 사라진다.
    파일 목록은 남기지 않는다(글로 읽어 온 것만 남는다). 등록하거나 비우면 지운다(emptyForm). 수정 화면은 남기지 않는다 */
 const DRAFT = "algoblock.draft";
 let restoring = false, draftTried = false;
@@ -694,7 +789,7 @@ function saveDraft() {
     const cases = formCases();
     if (!$("new-title").value.trim() && !$("new-text").value.trim() && !$("new-theme").value && !cases.some((x) => x.input.trim() || x.expected.trim())) return sessionStorage.removeItem(DRAFT);
     sessionStorage.setItem(DRAFT, JSON.stringify({ title: $("new-title").value, text: $("new-text").value, theme: $("new-theme").value, level: $("new-level").value, lang: $("new-lang").value,
-      mode: $("new-mode").value, cases, float: $("new-float").checked, many: $("new-many").checked, typed: $("case-names").value, names: NAMES, autoTitle, step: WSTEP }));
+      mode: $("new-mode").value, cases, float: $("new-float").checked, many: $("new-many").checked, typed: $("case-names").value, names: NAMES, autoTitle, touched: [...TOUCHED], keep: [...KEEP], det: DET }));
   } catch (e) { /* 저장하지 못해도 화면은 그대로 */ }
 }
 function restoreDraft() {
@@ -713,61 +808,201 @@ function restoreDraft() {
     $("new-many").checked = !!d.many;
     $("case-names").value = d.typed || "";
     autoTitle = d.autoTitle || "";
-    $("case-rows").innerHTML = "";
-    for (const x of d.cases.length ? d.cases : [{ input: "", expected: "" }]) {
-      addCaseRow();
-      const [a, b, h] = caseCells($("case-rows").lastElementChild);
-      a.value = x.input || "";
-      b.value = x.expected || "";
-      h.checked = !!x.hidden;
-      showCall(a);
-    }
+    putRows(d.cases);
     caseHelp();
-    NAMES = Array.isArray(d.names) ? d.names : null;
-    WSTEP = [1, 2, 3].includes(d.step) && d.text ? d.step : 1;
+    NAMES = Array.isArray(d.names) && d.names.length ? d.names : null;
+    TOUCHED.clear();
+    (Array.isArray(d.touched) ? d.touched : []).filter((k) => TOUCH_KEYS.includes(k)).forEach((k) => TOUCHED.add(k));
+    KEEP.clear();
+    (Array.isArray(d.keep) ? d.keep : []).filter((x) => typeof x === "string").forEach((x) => KEEP.add(x));
+    DET = d.det && typeof d.det === "object" && d.det.text === d.text && Array.isArray(d.det.kinds) ? d.det : null; // 감지가 끝난 글이면 다시 묻지 않는다
+    modelText = DET && DET.model ? DET.text : "";
   } finally { restoring = false; }
 }
 
-async function fillCases(sure, quiet) {
-  $("case-fill-confirm").hidden = true;
-  const stdin = $("new-mode").value === "program", r = await api("/api/problems/cases", { text: $("new-text").value, mode: $("new-mode").value });
-  if (!r.ok) return newError(errorNote(r.error).text);
-  const { cases, skipped, names } = r.data;
-  const missed = (!skipped ? "" : stdin ? `예제 ${skipped}개는 출력을 찾지 못해 넣지 않았어요. 직접 넣어 주세요. ` : `표의 ${skipped}줄은 읽지 못했어요. 직접 넣어 주세요. `)
-    + (r.data.spill || []).join(" "); // 기대 출력에 빈 줄 뒤로 글이 더 있다(힌트·출처 글이 섞였을 수 있다)
-  if (cases.length && !sure && formCases().some((x) => x.input.trim() || x.expected.trim())) { // 이미 적힌 케이스가 있으면 먼저 묻는다
-    $("case-note").hidden = true; // 묻는 동안에는 '채웠어요'를 보이지 않는다(답한 뒤에)
-    $("case-fill-confirm").hidden = false;
-    return $("case-fill-no").focus();
+/* 감지(/api/problems/detect): 글이 바뀌면 규칙만으로(fast, 모델 0회) 곧바로 제목·방식·예시를 채우고, AI가 연결돼 있으면 잠시 뒤 한 번 더 본다(모델 1회).
+   사용자가 고친 칸(TOUCHED)은 덮지 않는다. 모델이 그 칸을 다르게 봤으면 제안으로만 보인다(SUGGEST). 케이스를 고쳤으면 방식도 그대로 둔다(방식이 바뀌면 케이스 꼴이 바뀐다).
+   수정 화면은 모든 칸을 고친 것으로 보고, 모델을 부르지 않는다(미리보기의 구역만 나눈다) */
+const TOUCH_KEYS = ["title", "mode", "cases", "many"];
+const TOUCHED = new Set();
+const KEEP = new Set(); // 문제 밖으로 본 줄 가운데 사용자가 남긴 줄(줄 글 그대로. 다시 감지해도 남는다)
+let DET = null; // 반영한 감지 {응답…, text: 그 글, model: 모델이 끼었나}
+let SUGGEST = {}, detectTimer = null, modelTimer = null, modelText = "", modelBusy = false, detectSaid = ""; // modelText: 모델에게 보낸 마지막 글(같은 글은 다시 보내지 않는다)
+const LINE_BREAK = /\r\n|[\n\v\f\r\x1c-\x1e\x85\u2028\u2029]/; // 서버(str.splitlines)와 같은 줄 나눔이라 kinds의 줄 번호가 맞는다
+/** 줄마다의 구역. 문제 밖으로 본 줄이어도 사용자가 남겼으면 빈 구역(문제 글)으로 본다. */
+const kindAt = (d, lines, i) => (d.kinds[i] === "noise" && KEEP.has(lines[i]) ? "" : d.kinds[i] || "");
+/** 저장할 글: 감지가 문제 밖으로 본 줄을 뺀다(남긴 줄은 둔다). 지금 글의 감지가 아직이면 그대로. */
+function keptText() {
+  const text = $("new-text").value, d = DET && DET.text === text ? DET : null;
+  if (!d || !d.kinds.includes("noise")) return text;
+  const lines = text.split(LINE_BREAK);
+  return lines.filter((_, i) => kindAt(d, lines, i) !== "noise").join("\n");
+}
+const detectSoon = () => { clearTimeout(detectTimer); clearTimeout(modelTimer); detectTimer = setTimeout(() => detect(true), 250); };
+/** 감지 한 번. fast: 규칙만. remode: 방식을 바꿔 예시만 그 방식으로 다시 읽는다(모델이 이미 본 글이면 모델이 본 구역·제목은 둔다). */
+async function detect(fast, remode) {
+  const text = $("new-text").value;
+  clearTimeout(detectTimer);
+  if (!text.trim()) { DET = null; SUGGEST = {}; return void renderDetect(); }
+  if (!fast && text === modelText) return; // 같은 글은 모델에게 다시 보내지 않는다(모델 감지는 방식과 상관없다)
+  if (!fast) { modelText = text; modelBusy = true; renderLine(); }
+  const r = await api("/api/problems/detect", { text, mode: $("new-mode").value, touched: EDIT ? TOUCH_KEYS : [...TOUCHED], ...(fast ? { fast: true } : {}) });
+  if (!fast) modelBusy = false;
+  if (S.view !== "new" || text !== $("new-text").value) return void renderLine(); // 그사이 글이 바뀌었다(새 감지가 뒤따른다)
+  const seen = DET && DET.text === text && DET.model; // 같은 글을 모델이 이미 봤다
+  if (!r.ok) { // 감지를 못 해도 글은 그대로 미리 본다. 모델 요청만 실패했으면 규칙 결과를 그대로 둔다
+    if (fast ? !seen : !(DET && DET.text === text)) DET = { text, kinds: [], problem: true, failed: true };
+    return void renderDetect();
   }
-  // 글자 읽기로 읽은 글은 줄이 깨져 빠질 수 있다. 채운 수를 원본과 견주게 한다
-  $("case-note").textContent = (cases.length ? `글의 입출력 예에서 케이스 ${cases.length}개를 채웠어요. ${readOcr ? "원본의 예시 수와 견줘 주세요. " : ""}` : "") + missed
-    || (r.data.other > 0 && !EDIT ? `${stdin ? "함수(solution)" : "표준 입출력"} 꼴의 예시 ${r.data.other}개를 찾았어요. 입출력 방식을 바꾸면 채워요.` // 다른 방식으로는 찾았다: 위 알림과 어긋나지 않게 한 가지로 말한다
-      : "글에서 입출력 예를 찾지 못했어요. 아래에 직접 넣어 주세요."); // 문장으로만 적힌 예시는 읽지 못한다: 조용히 넘어가지 않고 알린다
-  $("case-note").hidden = false;
-  if (!cases.length) return void ($("case-fill").hidden = !skipped);
-  TABLE = cases;
-  $("case-rows").innerHTML = "";
-  for (const x of cases) {
-    addCaseRow();
-    const [a, b] = caseCells($("case-rows").lastElementChild);
-    a.value = x.input;
-    b.value = x.expected;
-    showCall(a);
-  }
-  NAMES = names;
+  if (fast && seen && !remode) return;
+  const { cases: oldCases, names: oldNames, mode: oldMode, ...rest } = (seen && DET.suggest) || {}; // 예전 방식으로 읽은 예시 제안은 버린다
+  const d = fast && seen ? { ...DET, suggest: rest, mode: r.data.mode, names: r.data.names, cases: r.data.cases, skipped: r.data.skipped, missed: r.data.missed, spill: r.data.spill } : r.data;
+  applyDetect(d, text, !fast || seen);
+  if (fast && connected() && !EDIT && text !== modelText) { clearTimeout(modelTimer); modelTimer = setTimeout(() => detect(false), 800); }
+}
+function applyDetect(d, text, model) {
+  const got = { ...d, ...(d.suggest || {}) }, offer = {}; // got: 감지가 본 값(고친 칸은 서버가 suggest에 싣는다)
+  const held = (key) => !!EDIT || TOUCHED.has(key) || (key === "mode" && TOUCHED.has("cases"));
+  const now = { title: $("new-title").value.trim(), mode: $("new-mode").value, cases: caseKey(formCases()) };
+  if (!held("title")) $("new-title").value = autoTitle = got.title || "";
+  else if (got.title && got.title !== now.title) offer.title = got.title;
+  if (!held("mode")) $("new-mode").value = got.mode;
+  if (!held("cases") && got.mode === $("new-mode").value) {
+    putRows(got.cases);
+    NAMES = got.names && got.names.length ? got.names : null;
+    TABLE = got.cases.length ? got.cases : null;
+    openCases(!got.cases.length); // 찾지 못했으면 바로 적을 수 있게 연다
+    const stdin = got.mode === "program", notes = [d.skipped ? (stdin ? `예제 ${d.skipped}개는 출력을 찾지 못해 넣지 않았어요.` : `표의 ${d.skipped}줄은 읽지 못했어요.`) : "",
+      (d.missed || []).length ? `예시처럼 보이는 줄 ${d.missed.length}개를 읽지 못했어요.` : "", ...(d.spill || []), readOcr && got.cases.length ? "글자 읽기로 읽은 글이라 원본의 예시 수와 견줘 주세요." : ""].filter(Boolean);
+    $("case-note").textContent = notes.join(" ");
+    $("case-note").hidden = !notes.length;
+  } else if (got.cases.length && (got.mode !== $("new-mode").value || caseKey(got.cases) !== now.cases)) Object.assign(offer, { cases: got.cases, names: got.names, mode: got.mode });
+  if (!held("many")) $("new-many").checked = !!got.many;
+  else if (!!got.many !== $("new-many").checked) offer.many = !!got.many;
+  SUGGEST = model && !EDIT ? offer : {}; // 규칙 결과는 제안하지 않는다(내가 고친 칸이 규칙보다 앞선다)
+  DET = { ...d, text, model };
+  caseHelp();
   syncForm();
   markTableDiff();
-  say(`입출력 예에서 케이스 ${cases.length}개를 채웠어요.`);
-  if (!quiet) $("case-input-1").focus();
+  renderDetect();
+}
+/** 제안(모델이 다르게 본 칸)을 받아들인다. 받아들인 칸은 다시 감지가 채운다. */
+function useSuggest() {
+  const s = SUGGEST;
+  SUGGEST = {};
+  if (s.title) { $("new-title").value = autoTitle = s.title; TOUCHED.delete("title"); }
+  if (s.mode) { $("new-mode").value = s.mode; TOUCHED.delete("mode"); }
+  if (s.cases) { putRows(s.cases); NAMES = s.names && s.names.length ? s.names : null; TABLE = s.cases; TOUCHED.delete("cases"); openCases(false); }
+  if (s.many !== undefined) { $("new-many").checked = s.many; TOUCHED.delete("many"); }
+  caseHelp();
+  syncForm();
+  markTableDiff();
+  renderDetect();
+  say("AI가 읽은 대로 바꿨어요.");
+  $("new-title").focus();
+}
+/** 감지 줄과 두 칸 미리보기. 감지가 아직이면(글이 막 바뀌었으면) 앞 미리보기를 둔다. */
+function renderDetect() {
+  renderPreview(DET && DET.text === $("new-text").value ? DET : null);
+  renderLine();
+}
+/** 감지 줄: 채운 것, 문제 밖 줄(빈 줄은 세지 않는다), 제안. 칸을 고칠 때마다(syncForm) 맞춘다. 감지가 아직이면 앞 줄을 둔다. */
+function renderLine() {
+  const text = $("new-text").value, d = DET && DET.text === text ? DET : null, line = $("detect-line");
+  if (!d) return void (line.hidden = line.hidden || !text.trim() || !DET);
+  line.hidden = !!d.failed;
+  if (line.hidden) return;
+  const lines = text.split(LINE_BREAK), noise = lines.filter((x, i) => d.kinds[i] === "noise" && x.trim()), cut = noise.filter((x) => !KEEP.has(x)).length;
+  const n = formCases().filter((x) => x.expected.trim()).length, warn = !d.problem && !EDIT; // 수정은 이미 등록한 문제라 문제 아님 경고를 띄우지 않는다
+  const said = [warn ? d.notice : "", EDIT || TOUCHED.has("cases") ? `예시 ${n}개` : n ? `예시 ${n}개를 채웠어요` : "입출력 예를 찾지 못했어요. ‘입출력 예’ 칸에 직접 넣어 주세요",
+    cut ? `문제 밖 글 ${cut}줄을 뺐어요` : noise.length ? "문제 밖으로 본 줄을 모두 남겼어요" : ""].filter(Boolean).join(" · ");
+  $("detect-text").textContent = said + (modelBusy ? " · AI가 한 번 더 보는 중…" : "");
+  line.classList.toggle("warn", warn);
+  $("noise-show").hidden = !noise.length;
+  if (!noise.length) { $("noise-lines").hidden = true; $("noise-show").setAttribute("aria-expanded", "false"); $("noise-show").textContent = "보기"; }
+  $("noise-lines").innerHTML = `<p class="hint">되돌린 줄은 문제 글에 남겨요.</p><ul>${noise.map((x) => `<li${KEEP.has(x) ? ' class="kept"' : ""}><span>${esc(x)}</span>
+    <button type="button" class="btn quiet small" data-noise-restore="${esc(x)}" aria-pressed="${KEEP.has(x)}">${KEEP.has(x) ? "다시 빼기" : "되돌리기"}</button></li>`).join("")}</ul>`;
+  const s = SUGGEST, offer = [s.title && `제목 ‘${s.title}’`, s.mode && MODE_NAME[s.mode], s.cases && `예시 ${s.cases.length}개`, s.many !== undefined && (s.many ? "답이 여럿일 수 있음" : "답이 하나")].filter(Boolean);
+  $("detect-suggest").hidden = !offer.length;
+  $("detect-suggest-text").textContent = offer.length ? `AI는 다르게 읽었어요: ${offer.join(" · ")}.` : "";
+  if (said !== detectSaid) { detectSaid = said; say(said); } // 읽어 주는 도구에 감지 결과를 한 번 알린다
+}
+/** 두 칸: 문제(구역 제목과 설명. 제목·입출력 예·문제 밖 줄은 뺀다) | 입출력 예(읽기 전용 카드와 글의 입출력 예). 문제 화면과 같은 꾸미기(rich)라 수식도 같게 보인다. */
+function renderPreview(d) {
+  const text = $("new-text").value;
+  if (!text.trim()) { $("preview").innerHTML = $("io-raw").innerHTML = ""; return void ($("io-raw-box").hidden = true); }
+  if (!d) return;
+  const lines = text.split(LINE_BREAK), program = $("new-mode").value === "program", out = EDIT ? ["sample", "noise"] : ["title", "sample", "noise"];
+  const part = (keep) => lines.filter((_, i) => keep(kindAt(d, lines, i))).join("\n");
+  $("preview").innerHTML = rich(part((k) => !out.includes(k)), true, program);
+  const io = part((k) => k === "sample");
+  $("io-raw").innerHTML = io.trim() ? rich(io, true, program) : "";
+  $("io-raw-box").hidden = !io.trim();
 }
 
-/** 등록 화면의 케이스 칸을 처음으로(케이스 한 줄, 표 단추·확인·알림 숨김). */
+/* 웹 페이지에서 복사한 글(text/html)을 글로: 메뉴·머리글·바닥글·옆 칸·단추·스크립트·숨긴 것은 빼고, 위첨자는 ^, 아래첨자는 _, TeX가 달린 수식은 $…$로 둔다.
+   DOMParser로 읽기만 하고 화면에 HTML로 넣지 않는다(스크립트가 돌거나 그림을 부르지 않는다). 사이트를 가리지 않는 일반 태그·역할만 본다 */
+const PAGE_JUNK = "nav, aside, form, button, select, input, script, style, noscript, template, iframe, object, embed, svg, canvas, img, picture, video, audio, [hidden], [aria-hidden=true], [role=navigation], [role=banner], [role=contentinfo], [role=complementary], [role=search]";
+const PAGE_BLOCK = /^(ADDRESS|ARTICLE|BLOCKQUOTE|CAPTION|DD|DETAILS|DIV|DL|DT|FIELDSET|FIGCAPTION|FIGURE|FOOTER|H[1-6]|HEADER|HR|LI|MAIN|OL|P|PRE|SECTION|SUMMARY|TABLE|TBODY|TFOOT|THEAD|TR|UL)$/;
+function pageText(html) {
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  for (const el of doc.querySelectorAll('annotation[encoding="application/x-tex"]')) (el.closest("math") || el).replaceWith(`$${el.textContent.trim()}$`);
+  for (const el of doc.querySelectorAll('script[type^="math/tex"]')) el.replaceWith(/mode=display/.test(el.type) ? `$$${el.textContent.trim()}$$` : `$${el.textContent.trim()}$`);
+  for (const el of [...doc.querySelectorAll("msup, msub, msubsup")].reverse()) { // TeX가 없는 MathML: 안쪽부터 a^b, a_b
+    const [a, b, c] = [...el.children].map((x) => x.textContent.trim());
+    el.replaceWith(el.localName === "msup" ? `${a}^${b}` : el.localName === "msub" ? `${a}_${b}` : `${a}_${b}^${c}`);
+  }
+  for (const el of doc.querySelectorAll("header, footer")) if (!el.parentElement.closest("article, main, section")) el.remove(); // 쪽 전체의 머리글·바닥글만(글 안의 머리글은 문제 제목일 수 있다)
+  doc.querySelectorAll(PAGE_JUNK).forEach((el) => el.remove());
+  doc.querySelectorAll("[style]").forEach((el) => { if (el.style.display === "none" || el.style.visibility === "hidden") el.remove(); });
+  for (const el of doc.querySelectorAll("sup, sub")) el.replaceWith(`${el.localName === "sup" ? "^" : "_"}${el.textContent.trim()}`);
+  let out = "", gap = 0; // gap: 다음 글 앞에 와야 할 줄바꿈 수(덩어리는 1, 문단은 2)
+  const put = (s) => {
+    if (!s) return;
+    if (gap && out) { out = out.replace(/ +$/, ""); out += "\n".repeat(Math.max(0, gap - /\n*$/.exec(out)[0].length)); }
+    gap = 0;
+    out += s;
+  };
+  const walk = (node, pre) => node.childNodes.forEach((n) => {
+    if (n.nodeType === 3) {
+      const s = pre ? n.data : n.data.replace(/\s+/g, " ");
+      return put(!pre && (gap || !out || out.endsWith("\n")) ? s.replace(/^ /, "") : s);
+    }
+    if (n.nodeType !== 1) return;
+    const tag = n.tagName, block = tag === "P" ? 2 : PAGE_BLOCK.test(tag) ? 1 : 0;
+    if (tag === "BR") return put("\n");
+    if ((tag === "TD" || tag === "TH") && n.previousElementSibling) put("\t"); // 표의 칸은 탭(입출력 예 표를 그대로 읽는다)
+    gap = Math.max(gap, block);
+    if (tag === "LI") put(n.parentElement.tagName === "OL" ? `${[...n.parentElement.children].indexOf(n) + 1}. ` : "- ");
+    walk(n, pre || tag === "PRE" || tag === "TEXTAREA" || /^pre/.test(n.style.whiteSpace || ""));
+    gap = Math.max(gap, block);
+  });
+  walk(doc.body, false);
+  return out.replace(/ +$/gm, "").replace(/\n{3,}/g, "\n\n").replace(/^\n+|\s+$/g, "");
+}
+/** 문제 글 칸에 붙여 넣기: HTML이 있으면 글로 바꿔 넣는다. 바꾼 글이 글만 복사한 것의 절반보다 짧으면 브라우저에 맡긴다. 넣은 뒤 input이 감지를 부른다. */
+document.addEventListener("paste", (e) => {
+  const ta = e.target;
+  if (!ta || ta.id !== "new-text" || !e.clipboardData) return;
+  const html = e.clipboardData.getData("text/html"), plain = e.clipboardData.getData("text/plain");
+  if (!html) return;
+  let text = "";
+  try { text = pageText(html); } catch (err) { return; }
+  if (!text.trim() || text.trim().length * 2 < plain.trim().length) return;
+  e.preventDefault();
+  ta.focus();
+  if (!document.execCommand("insertText", false, text)) { // 되돌리기(Ctrl+Z)가 되는 길. 안 되면 직접 넣는다
+    ta.setRangeText(text, ta.selectionStart, ta.selectionEnd, "end");
+    ta.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+});
+
+/** 등록 화면의 케이스 칸을 처음으로(케이스 한 줄, 카드 보기, 알림 숨김). */
 function resetCases() {
-  $("case-rows").innerHTML = "";
-  addCaseRow();
+  putRows([]);
   NAMES = TABLE = null;
-  $("case-fill").hidden = $("case-fill-confirm").hidden = $("case-note").hidden = $("mode-guess").hidden = true;
+  $("case-note").hidden = true;
+  openCases(false);
   caseHelp();
   syncForm();
 }
@@ -779,8 +1014,16 @@ function emptyForm() {
   readOcr = false;
   autoTitle = "";
   $("new-lang")._filled = false;
+  clearTimeout(detectTimer);
+  clearTimeout(modelTimer);
+  DET = null;
+  SUGGEST = {};
+  TOUCHED.clear();
+  KEEP.clear();
+  modelText = detectSaid = "";
   resetCases();
   setFiles([]);
+  renderDetect();
   try { sessionStorage.removeItem(DRAFT); } catch (e) { /* 없어도 된다 */ }
 }
 
@@ -817,61 +1060,8 @@ function clearError() {
   document.querySelectorAll("#new-form [aria-invalid]").forEach((el) => el.removeAttribute("aria-invalid"));
 }
 
-/* 세 걸음: 1 글 넣기 → 2 확인하기 → 3 등록. 칸마다 data-in으로 보일 걸음을 적어 두고 CSS가 가린다 */
-let WSTEP = 1;
-const WSTEP_TITLE = { 1: "문제 글을 넣어요", 2: "읽은 글과 예시를 확인해요", 3: "등록해요" };
-function setStep(n, focus = true) {
-  WSTEP = n;
-  $("new-form").dataset.step = n;
-  document.querySelectorAll("#wsteps li").forEach((li) => { const k = Number(li.dataset.wstep); li.className = k === n ? "now" : k < n ? "done" : ""; k === n ? li.setAttribute("aria-current", "step") : li.removeAttribute("aria-current"); });
-  $("wstep-title").textContent = `${n}. ${n === 3 && EDIT ? "저장해요" : WSTEP_TITLE[n]}`;
-  $("new-back").hidden = n === 1 || (!!EDIT && n === 2);
-  $("new-next").hidden = n === 3;
-  $("new-submit").hidden = n !== 3;
-  $("edit-confirm").hidden = true;
-  clearError();
-  saveDraft();
-  if (n === 3) renderSummary();
-  titleNote();
-  if (focus) $("wstep-title").focus();
-}
-
-/** 걸음마다의 '다음': 1에서는 파일을 읽고(필요하면) 제목과 케이스를 채운다. 2에서는 빠진 것을 그 칸 아래에 알린다. */
-async function nextStep() {
-  if (WSTEP === 1) {
-    if (FILES.length && !filesRead && !(await readFiles())) return; // 사진·PDF는 여기서 읽는다
-    if (!$("new-text").value.trim()) return newError("문제 글을 붙여 넣거나 파일을 넣어 주세요.", false, "new-text");
-    if (!$("new-title").value.trim()) $("new-title").value = autoTitle = titleOf($("new-text").value);
-    if (!formCases().some((x) => x.input.trim() || x.expected.trim())) await fillCases(true, true); // 비어 있을 때만 입출력 예에서 채운다
-    return forward(2);
-  }
-  if (!$("new-title").value.trim()) return newError("제목을 적어 주세요.", false, "new-title");
-  if (!formCases().some((x) => x.input.trim() && x.expected.trim())) return newError("테스트 케이스를 하나 이상 적어 주세요." + ($("case-fill").hidden ? "" : " 글에 입출력 예 표가 있으면 ‘입출력 예에서 채우기’를 눌러요."), false, "case-input-1");
-  forward(3);
-}
-
-/** 앞 걸음으로 간다. 걸음마다 기록을 하나 쌓아 브라우저의 뒤로 가기가 앞 걸음으로 가게 한다(popstate가 걸음을 맞춘다). */
-function forward(n) {
-  setStep(n);
-  history.pushState({ wstep: n }, "");
-}
-
 /** 수정에서 글(공백 차이는 빼고)이나 케이스를 바꿨다: 서버가 풀이를 다시 준비할 수 있다(edit). */
-const editRedo = () => !!EDIT && (EDIT.text.split(/\s+/).join(" ") !== $("new-text").value.trim().split(/\s+/).join(" ") || EDIT.cases !== caseKey(formCases()) || EDIT.flags !== flagKey());
-/** 3 등록: 요약과 등록하면 생기는 일. */
-function renderSummary() {
-  $("new-submit").toggleAttribute("data-ai", !EDIT && connected()); // 새로 등록하면 AI가 풀이를 준비한다(연결했을 때). 고쳐 저장하는 것은 아니다
-  const rows = formCases().filter((x) => x.input.trim() || x.expected.trim()), hidden = rows.filter((x) => x.hidden).length, ai = connected();
-  const lang = $("new-lang").selectedOptions[0], mode = $("new-mode").selectedOptions[0];
-  const flags = answerFlags(), many = !!flags.many_answers, marks = [flags.float_output && "실수 답", many && "답이 여럿일 수 있음"].filter(Boolean);
-  $("new-summary").innerHTML = `<dl class="sum-list"><dt>제목</dt><dd>${esc($("new-title").value)}</dd>
-    <dt>예시</dt><dd>${rows.length - hidden}개${hidden ? ` · 숨은 케이스 ${hidden}개` : ""}</dd>
-    <dt>푸는 방식</dt><dd>${esc(EDIT ? mode.textContent : `${lang ? lang.textContent : ""} · ${mode.textContent}`)}</dd>
-    <dt>주제 · 단계</dt><dd>${esc($("new-theme").value ? $("new-theme").selectedOptions[0].textContent : "자동")} · ${esc($("new-level").value ? `${$("new-level").value}단계` : "자동")}</dd>
-    ${marks.length ? `<dt>답 비교</dt><dd>${esc(marks.join(" · "))}</dd>` : ""}</dl>
-    ${EDIT ? `<p class="note">${editRedo() && ai ? "글이나 케이스, 답 비교가 바뀌어 튜터가 풀이를 다시 준비할 수 있어요. 모델을 쓰고 1분 안팎 걸려요." : "저장하면 바로 바뀌어요."}</p>` : `<p class="note${ai ? "" : " warn"}">${ai ? `등록하면 튜터가 풀이${many ? "를" : "와 숨은 테스트를"} 준비해요. 모델을 쓰고 1분 안팎 걸려요. 그동안 문제를 읽고 풀기 시작해도 돼요.`
-    : `AI가 연결되지 않아 적은 예시만으로 채점해요.${many ? "" : " 연결하면 튜터가 숨은 테스트를 만들어 줘요."}`}${many ? " 답이 여럿일 수 있는 문제라 숨은 테스트는 만들지 않아요." : ""}</p>`}`;
-}
+const editRedo = () => !!EDIT && (EDIT.text.split(/\s+/).join(" ") !== keptText().trim().split(/\s+/).join(" ") || EDIT.cases !== caseKey(formCases()) || EDIT.flags !== flagKey());
 
 function renderFiles() {
   $("file-list").hidden = !FILES.length;
@@ -925,9 +1115,7 @@ async function filesBody() { // 보관된 원본은 서버에서 다시 받아 �
   }));
 }
 
-/** 읽어 온 글에서 제목으로 쓸 줄. 머리말(문제, 문제 설명, Problem, 제한사항 …)은 건너뛰고 첫 줄을 본다:
-    마크다운 제목(# …)이면 그것, 아니면 40자 이하이고 문장이 아닐 때(. ? 로 끝나거나 '입니다·합니다·주어집니다'로 끝나지 않을 때)만. 아니면 빈 글. */
-let autoTitle = ""; // 본문 첫 줄에서 채운 제목(사용자가 고치지 않았으면 등록할 때 본문에서 그 줄을 뺀다)
+let autoTitle = ""; // 감지가 글에서 찾은 제목(사용자가 고치지 않았으면 등록할 때 본문에서 그 줄을 뺀다)
 /** 본문에서 제목으로 쓴 줄(과 바로 뒤 빈 줄)을 뺀다. */
 function dropTitleLine(text, title) {
   const lines = String(text).split("\n"), at = lines.findIndex((raw) => raw.trim().replace(/^#{1,6}\s+/, "") === title);
@@ -935,16 +1123,7 @@ function dropTitleLine(text, title) {
   lines.splice(at, lines[at + 1] !== undefined && !lines[at + 1].trim() ? 2 : 1);
   return lines.join("\n").trim() ? lines.join("\n") : text;
 }
-function titleOf(text) {
-  for (const raw of String(text).split("\n")) {
-    const md = /^#{1,6}\s+(.+)$/.exec(raw.trim()), line = (md ? md[1] : raw).trim();
-    if (!line || /^(문제|problem( description)?)$/i.test(line) || HEADING.test(line)) continue;
-    return md || (line.length <= 40 && !/[.?]$/.test(line) && !/(입니다|합니다|주어집니다)$/.test(line)) ? line : "";
-  }
-  return "";
-}
-
-/** 읽은 글을 대조해 어긋난 곳(서버가 한 번 다시 읽고도 남은 것). 2걸음의 글 칸 바로 위에 목록으로. */
+/** 읽은 글을 대조해 어긋난 곳(서버가 한 번 다시 읽고도 남은 것). 글 칸 바로 위에 목록으로. */
 function showDoubts(list) {
   const rows = (list || []).map((d) => (d.note ? `${d.where}: ${d.note}` : `${d.where}: AI는 ${d.ai}, 글자 읽기는 ${d.ocr}`));
   $("doubts").innerHTML = rows.length ? `<span><strong>확인이 필요한 곳 ${rows.length}개</strong><ul>${rows.map((x) => `<li>${esc(x)}</li>`).join("")}</ul></span>` : "";
@@ -976,7 +1155,6 @@ async function readFiles(keep) {
   $("new-text").value = r.data.text;
   filesRead = true;
   renderFiles();
-  if (!$("new-title").value.trim()) $("new-title").value = autoTitle = titleOf(r.data.text); // 제목 칸이 비었을 때만
   $("read-note").textContent = r.data.ocr === "ai_failed" ? "AI로 읽지 못한 장이 있어 이 기기의 글자 읽기로 읽었어요. 틀린 글자가 많을 수 있으니 원본과 견줘 고쳐 주세요." // 엔진이 주는 표시를 서버가 그대로 넘긴다
     : r.data.ocr ? "이 기기의 글자 읽기로 읽었어요. 틀린 글자가 많을 수 있으니 원본과 견줘 고쳐 주세요. AI를 연결하면 더 정확하게 읽어요."
     : "읽어 온 글이에요. 틀린 곳이 없는지 확인하고 고쳐 주세요.";
@@ -985,21 +1163,20 @@ async function readFiles(keep) {
   $("read-note").hidden = false;
   say("파일에서 글을 읽어 왔어요.");
   $("new-text").focus();
-  findTable();
+  detect(true); // 읽어 온 글로 제목·예시를 채운다
   return true;
 }
 
 function formMode(editing) {
   $("new-title-h").textContent = editing ? "문제 수정" : "내 문제 넣기";
   // 수정은 준비 없이 바로 저장한다. 등록 화면의 글을 그대로 쓰지 않는다
-  $("new-lead").textContent = editing ? "바꿀 곳을 고친 뒤 저장해요." : "가진 문제를 글이나 사진으로 넣어 같은 방식으로 풀어요.";
+  $("new-lead").textContent = editing ? "바꿀 곳을 고친 뒤 저장해요." : "문제 글을 붙여 넣으면 제목과 입출력 예를 스스로 채워요. 확인하고 등록하면 바로 풀어요.";
   $("new-submit").textContent = editing ? "바꿔서 저장" : "등록하고 풀러 가기";
-  document.querySelector('#wsteps li[data-wstep="3"]').lastChild.textContent = editing ? "저장" : "등록";
-  $("new-title-note").hidden = editing; // '글의 첫 줄에서 채웠어요'는 새로 넣을 때만(수정의 제목은 저장해 둔 것이다)
+  $("new-title-note").hidden = editing; // '글에서 찾은 제목이에요'는 새로 넣을 때만(수정의 제목은 저장해 둔 것이다)
   $("new-lang-field").hidden = editing; // 언어는 코드 화면에서 바꾼다
   $("new-mode").disabled = editing; // 입출력 방식은 등록할 때만 고른다(바꾸면 케이스와 코드가 모두 달라진다)
   $("new-mode-note").hidden = !editing;
-  $("edit-confirm").hidden = $("case-fill-confirm").hidden = true;
+  $("edit-confirm").hidden = true;
   clearError();
 }
 
@@ -1023,8 +1200,8 @@ function showNew() {
   fillLangs();
   if (!draftTried) { draftTried = true; restoreDraft(); } // 새로고침 뒤 처음 열 때만 적던 글을 되살린다
   syncForm();
-  findTable();
-  setStep(WSTEP, false);
+  renderDetect();
+  if ($("new-text").value.trim() && !(DET && DET.text === $("new-text").value)) detect(true);
   if (!TOOLS) loadTools(false);
 }
 
@@ -1048,68 +1225,71 @@ async function showEdit(pid) {
   $("new-mode").value = p.mode || "function";
   $("new-title").value = p.title;
   $("new-theme").value = p.theme || "";
-  $("new-level").value = p.level_by === "user" ? String(p.level) : ""; // 분석이 어림한 단계는 내가 고른 것이 아니다: 그대로 저장하면 고른 단계로 굳는다
+  $("new-level").value = p.level_by === "user" ? String(p.level) : ""; // 분석이 붙인 단계는 내가 고른 것이 아니다: 그대로 저장하면 고른 단계로 굳는다
   $("new-text").value = p.text;
+  DET = null;
+  SUGGEST = {};
+  KEEP.clear();
   resetCases();
-  findTable();
   setFiles(p.assets.map((a) => ({ name: a.name, kind: a.type, image: IMAGE_KINDS.includes(a.type), url: `/asset/${pid}/${a.n}`, asset: a }))); // 새로 올리지 않으면 그대로 둔다
-  $("case-rows").innerHTML = "";
-  for (const x of own) {
-    addCaseRow();
-    const [a, b, h] = caseCells($("case-rows").lastElementChild);
-    a.value = x.input;
-    b.value = x.expected;
-    h.checked = !!x.hidden;
-    showCall(a);
-  }
+  putRows(own);
   syncForm();
-  setStep(2, false);
+  renderDetect();
+  detect(true); // 미리보기의 구역만 나눈다(수정은 칸을 덮지 않는다)
   $("new-title").focus();
 }
 
 let dupText = null; // 같은 글을 이미 넣었다고 알린 글. 그대로 한 번 더 누르면 넣는다
 async function registerProblem(sure) {
-  const cases = formCases(), editing = EDIT;
+  const cases = formCases(), editing = EDIT, stdin = $("new-mode").value === "program", saved = keptText(); // saved: 문제 밖 줄을 뺀 글
   formMode(!!editing);
-  if (WSTEP !== 3) return void nextStep(); // 등록은 3걸음에서만(Ctrl+Enter로 앞 걸음에서 보내도 다음 걸음으로)
-  if (editing && !sure && ($("new-text").value.trim() !== editing.text || caseKey(cases) !== editing.cases || flagKey() !== editing.flags)) { // 글이나 케이스(답 비교 표시 포함)를 바꾸면 지워질 것을 먼저 알린다
-    const what = [$("new-text").value.trim() !== editing.text && "문제 글", caseKey(cases) !== editing.cases && "케이스", flagKey() !== editing.flags && "답 비교 표시"].filter(Boolean);
+  if (!editing && FILES.length && !filesRead) return void readFiles(); // 올린 파일을 아직 읽지 않았다: 먼저 읽고 채운 것을 본 뒤 다시 누른다
+  if (!$("new-text").value.trim()) return newError("문제 글을 붙여 넣거나 파일을 넣어 주세요.", false, "new-text");
+  if (!$("new-title").value.trim()) return newError("제목을 적어 주세요.", false, "new-title");
+  if (!cases.some((x) => x.expected.trim() && (stdin || x.input.trim()))) { // 표준 입출력은 입력 없는 문제도 있다
+    openCases(true);
+    return newError("테스트 케이스를 하나 이상 적어 주세요.", false, "case-input-1");
+  }
+  if (editing && !sure && (saved.trim() !== editing.text || caseKey(cases) !== editing.cases || flagKey() !== editing.flags)) { // 글이나 케이스(답 비교 표시 포함)를 바꾸면 지워질 것을 먼저 알린다
+    const what = [saved.trim() !== editing.text && "문제 글", caseKey(cases) !== editing.cases && "케이스", flagKey() !== editing.flags && "답 비교 표시"].filter(Boolean);
     const textOnly = what.length === 1 && what[0] === "문제 글"; // 글이 바뀌면 늘 지운다. 케이스·답 비교만 바뀌면 튜터의 풀이가 새 케이스로 통과하지 못할 때만
     $("edit-confirm-text").textContent = `${what.join(", ")}${textOnly ? "을" : "를"} 바꾸면 튜터와 나눈 대화와 블록 진행이 ${what[0] === "문제 글" ? "지워져요" : "지워질 수 있어요"}. 제출 기록과 코드는 남아요.`;
     $("edit-confirm").hidden = false;
     return $("edit-no").focus();
   }
-  const text = !editing && autoTitle && $("new-title").value === autoTitle ? dropTitleLine($("new-text").value, autoTitle) : $("new-text").value;
+  const text = !editing && autoTitle && $("new-title").value === autoTitle ? dropTitleLine(saved, autoTitle) : saved;
   const typed = $("case-names-field").hidden ? [] : $("case-names").value.split(",").map((x) => x.trim()).filter(Boolean);
   if (typed.length) { // 직접 적은 인자 이름: 이름 꼴이고 서로 다르고 넣을 값의 수와 같아야 한다(어긋나면 말없이 버리지 않고 알린다)
     let count = null;
     try { count = JSON.parse((cases.find((x) => x.input.trim()) || {}).input).length; } catch (e) { /* 넣을 값이 틀렸으면 서버가 그 칸을 짚는다 */ }
     const wrong = typed.some((x) => !/^[A-Za-z_][A-Za-z0-9_]*$/.test(x)) || new Set(typed).size !== typed.length, uneven = count !== null && count !== typed.length;
-    if (wrong || uneven) setStep(2, false); // 그 칸이 있는 걸음으로 돌아가 칸 아래에 알린다
+    if (wrong || uneven) openCases(true); // 그 칸이 있는 케이스 칸을 열어 칸 아래에 알린다
     if (wrong) return newError("인자 이름은 영문자·숫자·밑줄로, 서로 다르게 적어 주세요. 예: numbers, k", false, "case-names");
     if (uneven) return newError(`인자 이름이 ${typed.length}개인데 넣을 값은 ${count}개예요. 수를 맞춰 주세요.`, false, "case-names");
   }
   const names = NAMES || (typed.length ? typed : null);
+  const hold = !editing && DET && DET.text === $("new-text").value && DET.problem === false; // 문제 글로 보이지 않았다: 등록은 하고 뒤 준비는 미룬다
   const body = { title: $("new-title").value, text, theme: $("new-theme").value, level: Number($("new-level").value) || 0, cases, ...(names ? { names } : {}), ...answerFlags() };
   const r = await work(editing ? "고친 내용을 저장하는 중…" : "문제를 등록하는 중…", "new", async () => {
     try {
       if (editing ? filesTouched : FILES.length) body.files = await filesBody(); // 수정에서 파일을 건드리지 않았으면 보내지 않는다(원본 그대로)
     } catch (e) { return { ok: false, error: { code: "files", message: "올린 파일을 불러오지 못했어요. 빼고 다시 올려 주세요." } }; }
-    return editing ? api("/api/problems/edit", { ...body, id: editing.id }) : api("/api/problems/new", { ...body, language: $("new-lang").value, mode: $("new-mode").value, ...(dupText === text ? { again: true } : {}) });
+    return editing ? api("/api/problems/edit", { ...body, id: editing.id })
+      : api("/api/problems/new", { ...body, language: $("new-lang").value, mode: $("new-mode").value, ...(hold ? { problem: false } : {}), ...(dupText === text ? { again: true } : {}) });
   });
   if (!r) return;
   dupText = !r.ok && r.error.code === "duplicate" ? text : null;
-  if (!r.ok) { // 서버가 짚은 칸이 있는 걸음으로 돌아가 그 칸 아래에 알린다
+  if (!r.ok) { // 서버가 짚은 칸을 열어 그 칸 아래에 알린다
     const n = errorNote(r.error);
     const field = { title: "new-title", text: "new-text", language: "new-lang", theme: "new-theme", mode: "new-mode", level: "new-level", cases: "case-input-1" }[r.error.field] || r.error.field;
-    if (field && $(field)) { setStep(2, false); if ($("new-more").contains($(field))) $("new-more").open = true; }
+    if (field && $(field)) { if ($("case-box").contains($(field))) openCases(true); if ($("new-more").contains($(field))) $("new-more").open = true; }
     newError(n.text, n.conn, field && $(field) ? field : null);
     return say("");
   }
   sayNext(editing ? "고친 내용을 저장했어요." : "문제를 등록했어요.");
   EDIT = null;
   emptyForm(); // 등록하면 초안은 비운다
-  WSTEP = 1;
+  delete KEPT[r.data.id]; // 고치기 전에 담아 둔 보내지 않은 글과 결과도 버린다(예전 케이스로 받은 결과다)
   S.pid = null; // 고친 문항을 다시 열 때 예전 글을 쓰지 않게 새로 받는다
   location.hash = `#/p/${r.data.id}`;
 }
@@ -1132,11 +1312,14 @@ const closeAsset = () => { const box = $("asset"); box.close ? box.close() : box
 
 /* ── 05–08 코드 화면 ── */
 function clearProblem(pid) {
-  Object.assign(S, { pid, problem: null, session: null, hasFeedback: false, mode: null, choosing: false, soloOpen: null, talk: "chair", codeTab: "direct", blockCode: {}, result: null,
-    quote: null, sending: null, debug: null, note: {}, codeNote: "", fb: null, solo: null, langWant: null, codeAsk: null, fillAsk: null, prepAt: 0, keptNote: false, keptSeen: false, nextUp: null, pullThenRun: false, tagsOpen: false });
-  for (const id of ["code", "say", "fq-text", "debug-say", "run-input"]) $(id).value = "";
-  for (const id of ["p-title", "p-text", "blocks", "chat-log", "explain-box", "start-box", "result", "solo-box"]) $(id).innerHTML = "";
-  for (const id of ["result", "debug-sheet", "composer", "fq-composer", "chat-log", "explain-box", "old-feedback", "solo-box", "lang-confirm"]) $(id).hidden = true;
+  Object.assign(S, { pid, problem: null, session: null, facts: {}, hasFeedback: false, mode: null, tried: null, startAfter: false, soloOpen: null, talk: "chair", codeTab: "direct", blockCode: {}, result: null,
+    sending: null, debug: null, note: {}, codeNote: "", fb: null, solo: null, codeAsk: null, fillAsk: null, ownAsk: null, prepAt: 0, keptNote: false, keptSeen: false, nextUp: null, pullThenRun: false, tagsOpen: false });
+  for (const id of ["code", ...DRAFTS]) $(id).value = "";
+  for (const id of ["p-title", "p-text", "explain-box", "tutor-note", "result", "solo-box"]) $(id).innerHTML = "";
+  for (const id of ["blocks", "chat-log"]) setHtml($(id), "");
+  for (const id of ["result", "sep-result", "result-big", "debug-sheet", "composer", "chat-log", "explain-box", "old-feedback", "solo-box"]) $(id).hidden = true;
+  splitBig = false; // '결과 크게 보기'는 그 문제의 결과에만
+  splitShow();
   $("code")._seen = "";
   say(""); // 앞 문제의 상태 문구('튜터가 블록 코드를 봤어요')를 남기지 않는다
   $("reset-confirm").hidden = $("del-confirm").hidden = true;
@@ -1145,24 +1328,28 @@ function clearProblem(pid) {
   $("more").open = false;
 }
 
-/* 고른 방식은 문제마다 이 기기에 기억한다(서버 세션에는 방식이 따로 없다) */
-const wayKey = (pid) => `algoblock.way.${pid}`;
-const savedWay = (pid) => { try { return localStorage.getItem(wayKey(pid)); } catch (e) { return null; } };
-const saveWay = (pid, way) => { try { localStorage.setItem(wayKey(pid), way); } catch (e) { /* 저장하지 못해도 이번에는 그 방식으로 */ } };
 const tutorWay = (mode) => mode === "chair" || mode === "guide";
+/* 문제마다 보내지 않은 글과 마지막 결과. 앱이 켜진 동안만 둔다(다른 문제를 열었다 돌아와도 남게). 고른 방식은 서버가 문제마다 남긴다(/api/way)
+   langs: 다른 언어에 두고 온 대화·디버그 칸의 글(언어를 바꿀 때 담고, 그 언어로 돌아오면 꺼낸다) */
+const DRAFTS = ["say", "debug-say", "run-input"], TALKS = ["say", "debug-say"], KEPT = {};
 
 async function showCode(pid) {
   show("code");
-  if (S.pid !== pid) clearProblem(pid);
+  if (S.pid !== pid) {
+    if (S.pid && S.problem) KEPT[S.pid] = { ...KEPT[S.pid], result: S.result, ...Object.fromEntries(DRAFTS.map((id) => [id, $(id).value])) };
+    clearProblem(pid);
+    const kept = KEPT[pid];
+    if (kept) { S.result = kept.result; for (const id of DRAFTS) $(id).value = kept[id] || ""; }
+  }
   render();
   await loadState(true);
-  if (S.view === "code" && !S.mode && document.querySelector('[data-way="solo"]')) document.querySelector('[data-way="solo"]').focus(); // 고르기 전: 혼자 풀기에 초점
 }
 
+let stateAsked = 0; // 마지막으로 보내거나 화면에 적용한 상태의 번호(이보다 작은 번호의 늦은 응답은 버린다)
 async function loadState(open) {
-  const pid = S.pid, asked = S.talk;
+  const pid = S.pid, asked = S.talk, n = ++stateAsked;
   const r = await api("/api/state", { id: pid, mode: asked, open: !!open });
-  if (S.pid !== pid) return;
+  if (S.pid !== pid || n !== stateAsked) return; // 뒤에 보낸 요청이 있으면 버린다(늦게 온 앞 응답이 시작한 대화를 옛 상태로 덮지 않게)
   $("code-error").hidden = r.ok;
   if (!r.ok && r.error.code === "not_found") { // 지워진(없는) 문제: 목록으로 보낸다
     S.pid = null;
@@ -1170,16 +1357,18 @@ async function loadState(open) {
     return void (location.hash = "#/list");
   }
   if (!r.ok) return void ($("code-error").textContent = errorNote(r.error).text);
-  applyState(r.data);
+  applyState(r.data, asked);
   if (S.talk !== asked && S.pid === pid) return loadState(); // 처음 열며 그 문제의 방식이 정해졌다: 서버가 이름을 가리는 것은 방식마다 달라, 정해진 방식으로 다시 받는다
 }
 
-/** 서버가 준 문제 상태를 화면 상태로 옮긴다. 처음 받았을 때만 코드 칸과 문제 글을 채운다(적던 글을 덮지 않게). */
-function applyState(data) {
+/** 서버가 준 문제 상태를 화면 상태로 옮긴다. 처음 받았을 때만 코드 칸과 문제 글을 채운다(적던 글을 덮지 않게). mode: 상태를 받을 때 보낸 방식 */
+function applyState(data, mode = S.talk) {
+  stateAsked++; // 이보다 먼저 보낸 상태 요청의 늦은 응답은 버린다(언어 바꾸기·체크포인트 되돌리기의 응답을 그 전 상태로 덮지 않게)
   const first = !S.problem;
   S.problem = data.problem;
   TOOLS = data.problem.tools;
   S.session = data.session;
+  S.facts[mode] = data.block_facts || null; // 지금 블록의 사실(만든 이름, 가이드의 할 일): 가장 최근 튜터 말의 근거 목록에 더한다. 할 일은 방식마다 달라 방식마다 둔다(탭을 오갈 때 글이 바뀌었다 돌아오지 않게)
   S.hasFeedback = data.has_feedback;
   S.ownWay = data.own_way === true; // '끝까지 내 방식으로 쓰기'(서버가 문항마다 남긴다: 다시 열어도 그대로)
   if (first) {
@@ -1192,23 +1381,32 @@ function applyState(data) {
     if (p.study.hints_seen) loadHints(true); // 전에 본 힌트와 블록 목차를 다시 보여 준다(새 힌트를 열지 않는다. 처음 보면 힌트 칸을 열 때 목차를 받는다)
     if (p.passed > 0) loadNextUp(); // 통과한 문제를 다시 열어도 '다음 문제'로 갈 수 있게
     if (p.study.has_guide && p.study.passed_now) loadSolution(false); // 이번 풀이에서 통과한 문제는 실전 신호를 준비해 둔다('처음부터' 뒤에는 열 때만 보인다)
-    // 방식: 기억한 것, 없으면 대화가 있는 쪽(마지막 말이 늦은 쪽), 없으면 고르기 전(어떻게 풀까요?)
-    const lastAt = (chat) => (chat[chat.length - 1] || {}).at || "", sess = data.session;
-    let way = savedWay(S.pid) || (sess.guide.length || sess.chair.length ? (lastAt(sess.guide) > lastAt(sess.chair) ? "guide" : "chair") : null);
+    // 방식: 서버가 문제마다 남긴 것(고른 적이 없으면 대화가 있는 쪽, 없으면 혼자 풀기). 연결이 없으면 혼자 풀기로 연다
+    // 이 상태를 받기 전에 탭을 눌렀으면 그 방식(서버가 저장보다 이 요청을 먼저 처리했을 수 있다. 연결이 없을 때 누른 튜터 탭은 연 뒤에 누른 것처럼 연결 안내를 보인다)
+    let way = data.way || "solo";
     if (tutorWay(way) && !connected()) way = "solo";
-    S.mode = way;
+    S.mode = way = S.mode || way;
     if (tutorWay(way)) { S.talk = way; S.codeTab = "blocks"; if (!codeEmpty()) S.keptNote = S.keptSeen = true; }
   }
   S.solo.total = S.problem.study.hints_total; // 튜터가 뒤에서 계획을 다 만들면 힌트가 생긴다(새로 고침하지 않아도)
   S.prepAt = S.problem.preparing ? S.prepAt || Date.now() : 0; // 준비 진행 줄에 지난 초를 보여 준다(새 준비는 0초부터)
   render();
   clearTimeout(prepTimer);
-  if (S.problem.preparing && connected()) { // 튜터가 뒤에서 풀이 순서를 준비하는 중: 3초마다 다시 보고, 끝나면 표시를 걷는다(문제 화면을 떠나면 멈춘다)
-    const pid = S.pid;
-    prepTimer = setTimeout(() => { if (S.view === "code" && S.pid === pid) loadState(); }, 3000);
-  }
+  prepTimer = null;
+  if ((S.problem.preparing || S.problem.checking) && connected()) prepWatch(S.pid); // 튜터가 뒤에서 풀이 순서나 숨은 테스트를 준비하는 중: 끝나면 표시를 걷는다
+  maybeStart(); // 튜터 탭에 대화가 없으면 바로 시작한다(준비가 끝나 다시 받은 상태에서도)
 }
 let prepTimer = null;
+/** 준비 중에는 3초마다 가벼운 /api/prep(준비·대조 표시)만 묻고, 값이 바뀌면 전체 상태를 한 번 받는다(문제 화면을 떠나면 멈춘다). */
+function prepWatch(pid) {
+  const id = prepTimer = setTimeout(async () => {
+    if (S.view !== "code" || S.pid !== pid) return;
+    const r = await api("/api/prep", { id: pid });
+    if (prepTimer !== id || S.view !== "code" || S.pid !== pid) return; // 그사이 상태를 다시 받았다(그쪽이 다시 건다)
+    if (r.ok && r.data.preparing === !!S.problem.preparing && r.data.checking === !!S.problem.checking) prepWatch(pid);
+    else loadState();
+  }, 3000);
+}
 
 /** 코드 전체 칸이 비었는가(시작 코드만 있는 것도 빈 것으로 본다). */
 const codeEmpty = () => { const text = $("code").value.trim(); return !text || text === ((S.problem && S.problem.starter) || "").trim(); };
@@ -1217,9 +1415,9 @@ function renderCode() {
   const p = S.problem;
   if (!p || !S.session) return;
   $("p-title").textContent = p.title;
-  if (!connected() && S.mode && S.mode !== "solo") S.mode = "solo"; // 모델이 없으면 혼자 풀기뿐이다(고르기 전이면 고르는 칸에서 까닭을 말한다)
+  if (!connected() && S.mode === "explain") S.mode = "solo"; // 모델이 없으면 해설을 쓸 수 없다(튜터 탭은 그 안에서 연결하는 길을 보인다)
   if (!connected()) S.codeTab = "direct"; // 블록은 튜터와 쌓는 것이라, 모델이 없으면 코드 전체만 보여 준다
-  $("p-badges").innerHTML = lvBadge(p.level, p.level_by === "analysis") + themeChip(p.theme, p.theme_name) + (p.sample ? "" : verifiedBadge(p)) + tagsHtml(p);
+  $("p-badges").innerHTML = lvBadge(p.level) + themeChip(p.theme, p.theme_name) + (p.sample ? "" : verifiedBadge(p)) + tagsHtml(p);
   renderCheckLine(p);
   $("p-own").hidden = p.sample; // 내가 등록한 문제만 고치고 지운다
   const picker = $("p-lang-select"), many = p.languages.length > 1, key = p.languages.join(",") + JSON.stringify(TOOLS);
@@ -1227,9 +1425,8 @@ function renderCode() {
   picker.hidden = !many;
   $("p-lang").textContent = LANG[p.language] || p.language;
   if (picker._key !== key) { picker._key = key; picker.innerHTML = langOptions(p.languages); }
-  if (!S.langWant) picker.value = p.language;
-  picker.disabled = !!S.busy;
-  $("lang-confirm").hidden = !S.langWant;
+  picker.value = p.language;
+  picker.disabled = !!(S.busy || S.running); // 언어 바꾸기는 두 줄을 다 잡는다
   $("code-tools").hidden = !!S.codeAsk;
   $("code-confirm").hidden = !S.codeAsk;
   $("cp-save").disabled = $("code-clear").disabled = !!S.busy;
@@ -1259,34 +1456,80 @@ async function prepAgain() {
   if (prepAsking) return;
   prepAsking = true;
   document.querySelectorAll("#prep-again, #prep-again-top").forEach((el) => { el.disabled = true; });
-  try { S.note.start = null; S.problem.prepare_failed = false; S.prepAt = 0; await loadState(true); say(S.problem.preparing ? "튜터가 풀이 순서를 다시 준비해요." : ""); } finally { prepAsking = false; }
+  try { S.note.start = null; S.tried = null; S.problem.prepare_failed = false; S.prepAt = 0; await loadState(true); say(S.problem.preparing ? "튜터가 풀이 순서를 다시 준비해요." : ""); } finally { prepAsking = false; }
 }
 
-/** 등록한 문제의 준비·검증 한 줄: "풀이 준비 중 · 숨은 테스트 n개 만듦 · 검증: 예시와 대조 모두 통과" */
+/** 문제 글로 보이지 않아 미뤄 둔 준비를 시작한다(등록 화면이 문제 아님 경고를 띄운 문제). */
+async function prepHold() {
+  if (prepAsking) return;
+  const pid = S.pid;
+  prepAsking = true;
+  $("prep-hold").disabled = true;
+  try {
+    const r = await api("/api/problems/prepare", { id: pid });
+    if (S.pid !== pid) return;
+    if (!r.ok) { $("code-error").textContent = errorNote(r.error).text; $("code-error").hidden = false; }
+    S.prepAt = 0;
+    await loadState();
+    say(S.problem.preparing ? "튜터가 풀이 순서를 준비해요." : "");
+  } finally { prepAsking = false; }
+}
+
+/** 숨은 테스트를 만들며 찾은 더 정확한 풀이로 바꾼다(대화를 시작해 저절로 바꾸지 않은 것). 대화·블록 진행은 서버가 지우고 코드 칸은 그대로 둔다. */
+async function swapGuide() {
+  if (prepAsking) return;
+  const pid = S.pid;
+  prepAsking = true;
+  $("swap-guide").disabled = true;
+  clearTimeout(blocksTimer); blocksTimer = null; // 지워질 블록 칸을 다시 보내지 않는다
+  try {
+    const r = await api("/api/swap", { id: pid });
+    if (S.pid !== pid) return;
+    if (r.ok) { Object.assign(S, { blockCode: {}, debug: null, prepAt: 0, tried: null }); S.note.start = null; } // 대화가 지워졌으니 준비가 끝나면 다시 시작한다
+    await loadState();
+    say(r.ok && S.problem.preparing ? "튜터가 새 풀이로 풀이 순서를 다시 준비해요." : "");
+  } finally { prepAsking = false; }
+}
+
+/* made-pure:start 자동으로 만든 테스트의 머리 요약, 결과 칸의 '자동' 표시, 자동 테스트에서만 틀렸는지(node로도 시험한다) */
+const MADE_KINDS = [["edge", "경계"], ["tricky", "함정"], ["random", "무작위"]];
+/** 대조 결과(check)의 요약 "숨은 테스트 20개(경계 6 · 함정 5 · 무작위 9) · 효율성 3개". 종류별 수가 없는 예전 결과는 수만. 단순 풀이도 큰 입력을 끝냈으면(indistinct) 그렇다고 붙인다 */
+function madeLine(c) {
+  const hidden = Number(c.hidden) || 0, eff = Number(c.efficiency) || 0, n = c.counts || {};
+  const kinds = MADE_KINDS.filter(([k]) => n[k]).map(([k, word]) => `${word} ${n[k]}`).join(" · ");
+  return [hidden ? `숨은 테스트 ${hidden}개${kinds ? `(${kinds})` : ""}` : "", eff ? `효율성 ${eff}개${c.indistinct ? "(느린 풀이를 가리지 못함)" : ""}` : ""].filter(Boolean).join(" · ");
+}
+const autoMark = (c) => (c.made ? " <em>자동</em>" : "");
+/** 공개 예시는 다 맞고, 답이 다른 테스트가 있으며, 통과하지 못한 것이 모두 자동으로 만든 테스트다 */
+const madeOnly = (cases) => cases.some((c) => c.made && c.status === "failed") && cases.every((c) => c.status === "passed" || c.made);
+/* made-pure:end */
+
+/** 등록한 문제의 준비·검증 한 줄: "풀이 준비 중 · 숨은 테스트 n개(경계 · 함정 · 무작위) · 효율성 n개 · 검증: 예시와 대조 모두 통과". 준비는 두 걸음이다(풀이 순서 → 숨은 테스트) */
 function renderCheckLine(p) {
-  const c = p.check || {}, made = (Number(c.hidden) || 0) + (Number(c.efficiency) || 0);
-  const parts = p.sample ? [] : [p.preparing ? "풀이 준비 중" : "", made ? `숨은 테스트 ${made}개 만듦` : "", p.verified_name ? `검증: ${p.verified_name}` : "", c.why && p.verified !== "all" ? String(c.why) : "", p.prepare_failed && !p.preparing ? "튜터가 풀이 순서를 준비하지 못했어요." : ""].filter(Boolean).map(esc); // 준비가 실패로 끝났으면 말하고 다시 준비하는 길을 둔다
+  const c = p.check || {}, better = p.better && !p.preparing, hold = p.hold && !p.preparing && connected();
+  const parts = p.sample ? [] : [p.preparing ? "풀이 준비 중" : p.checking ? "숨은 테스트 만드는 중" : "", hold ? "문제 글로 보이지 않아 풀이 준비를 미뤘어요" : "", madeLine(c), p.verified_name ? `검증: ${p.verified_name}` : "", c.why && p.verified !== "all" ? String(c.why) : "", p.prepare_failed && !p.preparing ? "튜터가 풀이 순서를 준비하지 못했어요." : "",
+    better ? "튜터의 풀이를 더 정확한 것으로 바꿀 수 있어요" : "", better ? "다시 준비하면 대화·해설·블록 칸은 처음부터예요(코드 칸과 제출 기록은 남아요)" : ""].filter(Boolean).map(esc); // 준비가 실패로 끝났으면 말하고 다시 준비하는 길을 둔다
   if (p.preparing) parts[0] += ` <span class="secs" data-since="${S.prepAt}">${since(S.prepAt)}초</span> · 보통 1분 안팎`; // 다른 기다림 표시처럼 지난 초
-  $("p-check").innerHTML = parts.length ? `${p.preparing ? DOTS : ""}<span>${parts.join(" · ")}</span>${p.prepare_failed && !p.preparing ? ' <button type="button" class="btn small" id="prep-again-top" data-model>다시 준비</button>' : ""}` : "";
+  $("p-check").innerHTML = parts.length ? `${p.preparing || p.checking ? DOTS : ""}<span>${parts.join(" · ")}</span>${p.prepare_failed && !p.preparing ? ' <button type="button" class="btn small" id="prep-again-top" data-model>다시 준비</button>' : ""}${better ? ' <button type="button" class="btn small" id="swap-guide" data-model>다시 준비</button>' : ""}${hold ? ' <button type="button" class="btn small" id="prep-hold" data-model data-ai>준비 시작</button>' : ""}` : "";
   $("p-check").hidden = !parts.length;
 }
 
 /** 상태마다 주 동작 하나(파란 채움): 그 단추에만 primary를 붙이고 나머지에서는 뗀다. 붙인 단추를 돌려준다. */
-const PRIMARY = { run: "#run", submit: "#submit", compose: "#compose-run", start: "#start", talk: "#send", follow: "#fq-send",
+const PRIMARY = { run: "#run", submit: "#submit", compose: "#compose-run", start: "#explain-start", talk: "#send",
   check: ".block.is-current [data-check]", debug: "#debug-send", find: "#debug-start", hint: "#result-hint", next: "#result-next", review: "#result-next", feedback: "#to-feedback" };
 function applyPrimary(stage) {
   document.querySelectorAll("#view-code .primary").forEach((el) => el.classList.remove("primary"));
   const shown = (sel) => { const el = document.querySelector(`#view-code ${sel}`); return el && !el.closest("[hidden]") && !el.disabled && el.getAttribute("aria-disabled") !== "true" ? el : null; };
-  const el = stage === "choose" ? null : shown(PRIMARY[stage]) || shown("#run") || shown("#submit"); // 방식을 고르기 전에는 어느 것도 고른 것처럼 칠하지 않는다
+  const el = shown(PRIMARY[stage]) || shown("#run") || shown("#submit");
   if (el) el.classList.add("primary");
   return el;
 }
 
 /** 풀이 순서 네 걸음 중 지금 어디인지만 짚고, 그 걸음의 주 동작 이름을 곁에 쓴다(앞 걸음을 끝냈다고 표시하지 않는다: 건너뛰고 올 수도 있다). */
 const STEPS = ["생각하기", "코드 쓰기", "제출·고치기", "돌아보기"];
-const STEP_OF = { check: 1, choose: 0, start: 0, talk: 0, follow: 0, compose: 1, run: 1, submit: 2, find: 2, hint: 2, debug: 2, feedback: 3, next: 3, review: 3 };
+const STEP_OF = { check: 1, start: 0, talk: 0, compose: 1, run: 1, submit: 2, find: 2, hint: 2, debug: 2, feedback: 3, next: 3, review: 3 };
 function renderSteps(stage, el) {
-  const at = STEP_OF[stage] ?? 1, doing = stage === "choose" ? "어떻게 풀지 고르기" : stage === "review" ? "통과한 문제" : el ? el.textContent.trim() : "";
+  const at = STEP_OF[stage] ?? 1, doing = stage === "review" ? "통과한 문제" : el ? el.textContent.trim() : "";
   $("steps").innerHTML = STEPS.map((name, i) => `<li${i === at ? ' class="now" aria-current="step"' : ""}><span class="step-no" aria-hidden="true">${i + 1}</span>${name}${i === at && doing ? `<span class="step-do"> · ${esc(doing)}</span>` : ""}</li>`).join("");
 }
 
@@ -1294,10 +1537,10 @@ function renderSteps(stage, el) {
 const effCrash = (r) => r.cases.find((c) => c.kind === "efficiency" && c.status === "runtime_error");
 /** 답은 맞고 큰 입력에서 시간만 모자랐다(돌리지 않은 테스트는 앞선 시간 초과 탓). 큰 입력에서 답이 다르거나 오류가 났으면 틀린 곳이 있다. */
 const slowOnlyOf = (r) => !r.ok && !r.run && r.cases.length > 0 && r.cases.every((c) => c.status === "passed" || (c.kind === "efficiency" && (c.status === "timeout" || c.status === "skipped")));
-/** '끝까지 내 방식으로 쓰기'가 지금 보이는 튜터 차례(가이드)에 켜져 있다. */
 /** 이번 풀이에서 이미 통과했다: 풀던 중의 실패 말과 '끝까지 쓰는 중' 안내를 지금 상태처럼 보이지 않는다. */
 const passedNow = () => !!(S.problem && S.problem.study.passed_now);
-const ownWayOn = () => !!S.ownWay && S.mode === "guide" && S.talk === "guide";
+/** '끝까지 내 방식으로 쓰기'가 지금 보이는 튜터 방식(의자·가이드)에 켜져 있다. */
+const ownWayOn = () => !!S.ownWay && tutorWay(S.mode) && S.talk === S.mode;
 /** 튜터 블록을 다 열고(의자는 다 찾고) 빈 칸이 없다: 모아서 실행할 때. */
 const blocksReady = () => S.session.blocks.length > 0 && (S.mode === "chair" ? allFound() : S.session.open_count >= S.session.blocks.length || passedAloneAt() >= 0) && !emptyBlocks().length;
 
@@ -1305,8 +1548,6 @@ const blocksReady = () => S.session.blocks.length > 0 && (S.mode === "chair" ? a
 function nextAction() {
   const s = S.session, r = S.result, ai = connected();
   if (S.debug && S.debug.open && !S.debug.passed) return "debug";
-  if (S.quote) return "follow";
-  if (!S.mode || S.choosing) return "choose";
   if (r && r.run && !r.own && !r.ok && !r.alert && !r.stale && r.cases.length && ai && tutorWay(S.mode) && !slowOnlyOf(r)) return "find"; // 튜터 방식에서 예시가 틀렸다
   if (r && !r.alert && !r.stale && !r.run && !r.own && r.cases.length) { // 제출 결과 바로 아래의 다음 할 일
     if (r.ok) return "next";
@@ -1317,8 +1558,8 @@ function nextAction() {
   if (!r && S.problem.passed > 0) return "review"; // 통과한 문제를 다시 열었다: 쓰는 걸음이 아니라 돌아보는 걸음이다
   if (tutorWay(S.mode) || S.mode === "explain") {
     if (S.mode === "explain" ? !s.explain : !s[S.mode].length) return "start";
-    if (S.mode === "guide" && ownWayOn()) return "compose"; // 끝까지 내 방식으로 쓰기: 블록마다 확인하지 않고 모아서 실행으로 확인한다
-    if (S.mode === "guide" && (s.guide.filter((m) => m.role === "service").pop() || {}).move === "write") return "check"; // 튜터의 마지막 말이 코드를 적으라는 것: 다음은 다시 보내기가 아니라 그 블록의 코드 확인
+    if (ownWayOn()) return "compose"; // 끝까지 내 방식으로 쓰기: 블록마다 확인하지 않고 모아서 실행으로 확인한다
+    if (tutorWay(S.mode) && (s[S.mode].filter((m) => m.role === "service").pop() || {}).move === "write") return "check"; // 튜터의 마지막 말이 코드를 적으라는 것(두 방식): 다음은 다시 보내기가 아니라 그 블록의 코드 확인
     if (tutorWay(S.mode) && !blocksReady()) return "talk";
     if (tutorWay(S.mode) && (S.codeTab === "blocks" || codeEmpty())) return "compose";
   }
@@ -1326,17 +1567,23 @@ function nextAction() {
   return S.problem.cases && S.problem.cases.example ? "run" : "submit";
 }
 
-const allFound = () => S.mode === "chair" && S.session.blocks.length > 0 && S.session.blocks.every((b) => b.name);
+/** 의자에서 블록을 모두 찾았다: 이름이 다 보이고, 튜터가 지금 계획에서 마지막 블록까지 찾은 뒤의 말(정리 질문·마침)을 했다.
+    마지막 블록 이름은 코드로 적으라는 말에도 드러난다. 그때는 아직 그 블록의 확인이 남았다. */
+const allFound = () => {
+  const s = S.session;
+  if (S.mode !== "chair" || !s.blocks.length || !s.blocks.every((b) => b.name)) return false;
+  const said = s.chair.filter((m) => m.role === "service").map((m) => m.move);
+  return said.slice(said.lastIndexOf("replan") + 1).some((m) => ["recap", "run", "close"].includes(m));
+};
 
+/** 블록 자리: 잠김(아직 안 열림), 지나옴(지금 블록보다 앞), 지금. 의자의 지금 블록도 이름이 드러나기 전부터 코드 칸과 확인이 있다. */
 function blockState(b, i) {
   const current = S.session.open_count - 1;
-  if (i > current) return "locked";
-  if (i < current) return "found";
-  return S.talk === "chair" && b.name ? "found" : "current"; // 의자는 지금 블록 이름이 답이라 찾기 전에는 가린다
+  return i > current ? "locked" : i < current ? "found" : "current";
 }
 
-/** 의자에서 아직 찾지 못한 지금 블록인가(채우면 찾을 답인 이름과 코드가 드러난다). */
-const unfoundBlock = (id) => { const i = S.session.blocks.findIndex((b) => b.id === id); return i >= 0 && S.talk === "chair" && blockState(S.session.blocks[i], i) === "current"; };
+/** 의자에서 아직 찾지 못한 지금 블록인가(이름이 가려져 있다. 채우면 찾을 답인 이름과 코드가 드러난다). */
+const unfoundBlock = (id) => S.talk === "chair" && S.session.blocks.some((b, i) => b.id === id && !b.name && blockState(b, i) === "current");
 
 /** 블록 칸에 사람이(또는 도구가) 넣은 값을 상태로 옮긴다. 그리기 전에 부르면 적던 글이 남는다. */
 function harvest() {
@@ -1369,58 +1616,62 @@ function renderBlocks() {
   harvest();
   const s = S.session, list = $("blocks");
   if (!s.blocks.length) {
-    list.innerHTML = '<li class="empty"><strong>아직 블록이 없어요</strong><span>튜터와 시작하면 풀이 순서대로 블록이 하나씩 놓여요.</span></li>';
-  } else if (!s[S.talk].length) { // 시작 전에는 블록 칸을 열어 두지 않는다(오른쪽 시작 단추와 시선이 갈렸다)
-    list.innerHTML = '<li class="empty"><span>튜터를 시작하면 블록이 하나씩 열려요</span></li>';
+    setHtml(list, '<li class="empty"><strong>아직 블록이 없어요</strong><span>튜터와 시작하면 풀이 순서대로 블록이 하나씩 놓여요.</span></li>');
+  } else if (!s[S.talk].length) { // 튜터의 첫 말 전에는 블록 칸을 열어 두지 않는다
+    setHtml(list, '<li class="empty"><span>튜터를 시작하면 블록이 하나씩 열려요</span></li>');
   } else {
-    list.innerHTML = s.blocks.map((b, i) => {
+    const html = s.blocks.map((b, i) => {
       const state = blockState(b, i), n = i + 1;
       if (state === "locked") {
         return `<li class="block is-locked"><span class="no" aria-hidden="true">${n}</span><div class="block-head"><span class="sr-only">블록 ${n}, 아직 열리지 않음.</span>${kindChip(b.kind) || '<span class="kind" aria-hidden="true">아직 열리지 않았어요</span>'}<span class="lock">${ico("i-lock")}</span></div></li>`;
       }
       const saved = S.blockCode[b.id] || { code: "", by: "" };
       const current = state === "current";
-      const empty = !saved.code.trim();
-      const cell = !current || !empty || S.talk === "guide";
+      const empty = !saved.code.trim(), unfound = unfoundBlock(b.id);
       const check = showCheck(b, state, current), st = empty ? "" : blockStatus(b, saved), line = saved.line || {};
       const result = !passedNow() && st && st !== "pass" && sameCode(b, saved) && line.text ? `<p class="block-result is-${line.ok === false ? "fail" : "wait"}">${inline(line.text)}${line.skipped ? "" : ' <span class="muted">자세한 말은 오른쪽 튜터의 말에 있어요.</span>'}</p>` : "";
-      const skip = current && S.talk === "guide" && (st === "fail" || st === "wait") && sameCode(b, saved) && !!line.text; // 마지막 확인이 통과가 아니면 갇히지 않게 넘어갈 길을 준다
+      const skip = current && (st === "fail" || st === "wait") && sameCode(b, saved) && !!line.text; // 마지막 확인이 통과가 아니면 갇히지 않게 넘어갈 길을 준다
       return `<li class="block is-${state}${st ? ` st-${st}` : ""}"${current ? ' aria-current="step"' : ""}>
         <span class="no" aria-hidden="true">${n}</span>
         <div class="block-head"><span class="sr-only">블록 ${n}.</span>${kindChip(b.kind)}<span class="block-name">${esc(b.name || "지금 찾는 블록")}</span>
           ${st ? `<span class="st">${saved.by === "tutor" ? '<span class="by">튜터가 채움</span>' : ""}<span class="st-chip">${STATUS[st]}</span></span>` : ""}</div>
         ${current && KIND[b.kind] ? `<p class="kind-desc">${esc(KIND[b.kind][1])}</p>` : ""}
-        ${cell ? `<div class="code-stack codey-box"><pre class="hl" aria-hidden="true"></pre><textarea class="codey" data-block="${esc(b.id)}" aria-label="블록 ${n} 코드" spellcheck="false" autocapitalize="off" wrap="off" placeholder="이 블록의 코드 (들여쓰기는 쓴 그대로 모여요)">${esc(saved.code)}</textarea></div>` : ""}
+        <div class="code-stack codey-box"><pre class="hl" aria-hidden="true"></pre><textarea class="codey" data-block="${esc(b.id)}" aria-label="블록 ${n} 코드" spellcheck="false" autocapitalize="off" wrap="off" placeholder="${unfound ? "찾은 생각을 이 블록의 코드로 적어 보세요. 이름은 찾으면 보여요" : "이 블록의 코드 (들여쓰기는 쓴 그대로 모여요)"}">${esc(saved.code)}</textarea></div>
         ${result}
         <div class="block-actions">
           ${check ? `<button type="button" class="btn small" data-check="${esc(b.id)}" data-model${current ? "" : ` aria-label="블록 ${n} 코드 확인"`}>블록 코드 확인</button>` : ""}
-          ${skip ? `<button type="button" class="btn quiet small" data-skip="${esc(b.id)}">이대로 넘어가기</button>` : ""}
-          ${skip && !S.ownWay ? `<button type="button" class="btn quiet small" data-own="${esc(b.id)}" title="이 블록은 넘어가고 남은 블록을 모두 열어요. 블록마다 확인하지 않고, 다 쓴 뒤 ‘모아서 실행’으로 확인해요">끝까지 내 방식으로 쓰기</button>` : ""}
-          ${S.fillAsk === b.id ? (current && S.talk === "chair" ? `<span class="confirm"><span>아직 찾지 못한 블록이에요. 채우면 이 블록의 이름과 튜터의 코드가 보여요.</span><button type="button" class="btn danger small" data-fill-yes="${esc(b.id)}" data-model>그래도 채우기</button><button type="button" class="btn quiet small" data-fill-no="${esc(b.id)}">더 생각해 보기</button></span>`
+          ${skip ? `<button type="button" class="btn quiet small" data-skip="${esc(b.id)}"${S.skipping ? ' aria-disabled="true"' : ""}>이대로 넘어가기</button>` : ""}
+          ${skip && !S.ownWay ? (S.ownAsk === b.id ? `<span class="confirm"><span>아직 찾지 않은 뒤 블록이 모두 열려요. 마지막 블록을 뺀 블록은 이름도 보여요.</span><button type="button" class="btn danger small" data-own-yes="${esc(b.id)}"${S.skipping ? ' aria-disabled="true"' : ""}>그래도 열기</button><button type="button" class="btn quiet small" data-own-no="${esc(b.id)}">더 생각해 보기</button></span>`
+            : `<button type="button" class="btn quiet small" data-own="${esc(b.id)}"${S.skipping ? ' aria-disabled="true"' : ""} title="이 블록은 넘어가고 남은 블록을 모두 열어요. 블록마다 확인하지 않고, 다 쓴 뒤 ‘모아서 실행’으로 확인해요">끝까지 내 방식으로 쓰기</button>`) : ""}
+          ${S.fillAsk === b.id ? (unfound ? `<span class="confirm"><span>아직 찾지 못한 블록이에요. 채우면 ${i < s.blocks.length - 1 ? "이 블록의 이름과 " : ""}튜터의 코드가 보여요.</span><button type="button" class="btn danger small" data-fill-yes="${esc(b.id)}" data-model>그래도 채우기</button><button type="button" class="btn quiet small" data-fill-no="${esc(b.id)}">더 생각해 보기</button></span>`
       : `<span class="confirm"><span>적은 코드를 튜터의 코드로 바꿀까요?</span><button type="button" class="btn danger small" data-fill-yes="${esc(b.id)}" data-model>바꾸기</button><button type="button" class="btn quiet small" data-fill-no="${esc(b.id)}">그대로 두기</button></span>`)
     : `<button type="button" class="btn quiet small" data-fill="${esc(b.id)}" data-model${current ? "" : ` aria-label="블록 ${n} 채우기"`}>이 블록 채우기</button>`}
         </div>
       </li>`;
     }).join("");
-    list.querySelectorAll("textarea").forEach((ta) => { ta._seen = ta.value; paintCode(ta); }); // 새로 그린 칸은 바로 칠한다(한 프레임 동안 글이 비어 보이지 않게)
+    // 같은 HTML이면 다시 그리지 않는다(쓰던 칸의 커서가 그대로). 다시 그리면 초점이 있던 블록 칸과 선택 범위를 되살린다
+    const a = document.activeElement, was = a && a.dataset && a.dataset.block && list.contains(a) ? { id: a.dataset.block, from: a.selectionStart, to: a.selectionEnd, dir: a.selectionDirection, top: a.scrollTop, left: a.scrollLeft } : null;
+    if (setHtml(list, html)) {
+      list.querySelectorAll("textarea").forEach((ta) => { ta._seen = ta.value; paintCode(ta); }); // 새로 그린 칸은 바로 칠한다(한 프레임 동안 글이 비어 보이지 않게)
+      const ta = was && list.querySelector(`textarea[data-block="${CSS.escape(was.id)}"]`);
+      if (ta) { ta.focus({ preventScroll: true }); ta.setSelectionRange(was.from, was.to, was.dir); ta.scrollTop = was.top; ta.scrollLeft = was.left; }
+    }
     const at = `${S.pid}:${S.talk}`, opened = list._opened || {}; // 새 블록이 열리면 그 블록이 보이게 목록을 옮긴다(처음 그릴 때는 옮기지 않는다)
     if (opened.at === at && s.open_count > opened.n) { const now = list.querySelector('[aria-current="step"]') || list.querySelectorAll(".block:not(.is-locked)")[s.open_count - 1]; if (now) now.scrollIntoView({ block: "nearest" }); }
     list._opened = { at, n: s.open_count };
   }
-  // 튜터의 질문으로: 블록을 찾기 전에는 블록 칸이 없다. 코드를 먼저 쓰고 싶은 사람이 ‘코드 전체’ 탭을 찾아 헤매지 않게 길을 보인다
-  const nocell = S.talk === "chair" && !s.blocks.some((b, i) => blockState(b, i) === "found") ? '<div class="note" role="status">블록은 찾는 대로 하나씩 열려요. 먼저 코드를 써 보고 싶으면 ‘코드 전체’ 칸에 쓸 수 있어요. <button type="button" class="btn quiet small" data-tab="direct">코드 전체 칸 열기</button></div>' : "";
   const own = ownWayOn() && !passedNow() ? `<div class="note" role="status">내 방식으로 끝까지 쓰는 중이에요. 블록마다 확인하지 않고, 다 쓴 뒤 ‘모아서 실행’으로 확인해요. <button type="button" class="btn quiet small" data-own-off>튜터 차례로 돌아가기</button></div>` : "";
-  $("blocks-note").innerHTML = (S.busy && S.busy.where === "blocks" ? `<div class="note">${waitLine("blocks")}</div>` : "") + nocell + own + noteHtml(S.note.blocks);
+  $("blocks-note").innerHTML = (S.busy && S.busy.where === "blocks" ? `<div class="note">${waitLine("blocks")}</div>` : "") + own + noteHtml(S.note.blocks);
 }
 
-/** '블록 코드 확인' 단추를 보이는가: 가이드의 지금 블록, 의자에서 찾은 블록, 가이드의 앞 블록 가운데 칸 글이 저장된 글과 다르거나 '확인 전'(stale)인 것.
+/** '블록 코드 확인' 단추를 보이는가: 지금 블록(두 방식), 의자에서 지나온 블록, 가이드의 앞 블록 가운데 칸 글이 저장된 글과 다르거나 '확인 전'(stale)인 것.
     고쳐도 곧바로 단추가 보이지 않았고, 실패한 다시 확인 뒤에는 단추가 사라졌다. */
 function showCheck(b, state, current) {
   if (ownWayOn()) return false; // 끝까지 내 방식으로 쓰는 동안은 블록마다 확인하지 않는다
   const s = S.session, saved = S.blockCode[b.id] || { code: "" };
   // 대화로 찾은 앞 블록(확인 기록이 없다)도 코드를 적으면 단추가 보인다
   const edited = state === "found" && S.mode === "guide" && !!saved.code.trim() && (!sameCode(b, saved) || b.verdict !== "Y");
-  return (current && S.mode === "guide" && s.guide.length > 0) || edited || (state === "found" && S.mode === "chair" && S.talk === "chair" && s.chair.length > 0);
+  return (current && tutorWay(S.mode) && s[S.talk].length > 0) || edited || (state === "found" && S.mode === "chair" && S.talk === "chair" && s.chair.length > 0);
 }
 /** 입력 때 그 블록의 단추만 다시 그린다(칸을 다시 그리지 않아 커서가 그대로다). */
 function syncCheck(ta) {
@@ -1491,13 +1742,13 @@ function passedAloneAt() {
   return at;
 }
 
-/** 열린 블록 가운데 코드 칸이 빈 것의 순번(0부터). 잠긴 블록과, 의자에서 아직 찾지 못한 지금 블록(칸이 없다), 튜터가 건너뛰어도 된다고 한 블록(passedAloneAt 뒤)은 보지 않는다. */
+/** 열린 블록 가운데 코드 칸이 빈 것의 순번(0부터). 잠긴 블록과 튜터가 건너뛰어도 된다고 한 블록(passedAloneAt 뒤)은 보지 않는다. */
 function emptyBlocks() {
   harvest();
   if (!S.session) return [];
   const alone = passedAloneAt();
   return S.session.blocks.map((b, i) => [b, i, blockState(b, i)])
-    .filter(([b, i, state]) => state !== "locked" && !(state === "current" && S.talk === "chair") && !(alone >= 0 && i > alone) && !((S.blockCode[b.id] || {}).code || "").trim()).map(([, i]) => i);
+    .filter(([b, i, state]) => state !== "locked" && !(alone >= 0 && i > alone) && !((S.blockCode[b.id] || {}).code || "").trim()).map(([, i]) => i);
 }
 const gapText = (gaps) => `블록 ${gaps.map((i) => i + 1).join(", ")}의 코드 칸이 비어 있어요. 직접 적거나 ‘이 블록 채우기’를 눌러 주세요.`;
 
@@ -1511,6 +1762,15 @@ function warnGaps() {
   const ta = document.querySelector(`#blocks textarea[data-block="${CSS.escape(S.session.blocks[gaps[0]].id)}"]`);
   if (ta) { ta.scrollIntoView({ block: "center" }); ta.focus(); }
   return true;
+}
+
+/** 튜터 말의 블록 번호 표를 눌렀다: 블록 탭으로 옮겨 그 블록 칸을 보이고 코드 칸에 초점을 둔다(잠긴 블록은 칸이 없어 자리만 보인다). */
+function gotoBlock(i) {
+  S.codeTab = "blocks";
+  render();
+  const li = $("blocks").children[i], ta = li && li.querySelector("textarea");
+  if (li) li.scrollIntoView({ block: "nearest" });
+  if (ta) ta.focus({ preventScroll: true });
 }
 
 /** 코드 전체 칸이 비어 있으면(시작 코드뿐이어도) 지금까지의 블록을 한 파일로 보여 준다. 열린 블록에 빈 칸이 있으면 모으지 않고 블록 탭에서 알린다(알렸으면 true).
@@ -1555,7 +1815,7 @@ async function pullBlocks() {
 }
 
 function renderCodePane() {
-  const tutor = tutorWay(S.mode) && !S.choosing && connected();
+  const tutor = tutorWay(S.mode) && connected();
   $("code-tabs").hidden = !tutor; // 블록으로 쓰기는 튜터 방식에서만
   if (!tutor && S.codeTab !== "direct") setCodeTab("direct", "quiet");
   for (const tab of document.querySelectorAll("#code-tabs [role=tab]")) selectTab(tab, tab.dataset.tab === S.codeTab);
@@ -1568,7 +1828,7 @@ function renderCodePane() {
   $("pull-blocks").hidden = !direct || !S.session.blocks.length || !tutor;
   $("code-note").textContent = direct ? S.codeNote : "제출하면 ‘코드 전체’ 칸의 코드를 채점해요";
   $("run").hidden = !(S.problem.cases && S.problem.cases.example);
-  const away = S.busy && S.busy.where === "result" && S.busy.pid !== S.pid; // 다른 문제에서 실행·채점하는 중이면 실행·제출이 잠긴다
+  const away = S.running && S.running.pid !== S.pid; // 다른 문제에서 실행·채점하는 중이면 실행·제출이 잠긴다
   const why = noTool() ? `이 기기에 ${LANG[S.problem.language] || S.problem.language} 도구가 없어 실행과 제출을 할 수 없어요.` : "";
   $("tool-note").textContent = why || (away ? "다른 문제에서 실행·채점하는 중이에요. 끝나면 이 문제도 실행하고 제출할 수 있어요." : "");
   $("run").title = $("submit").title = $("run-own-go").title = why;
@@ -1732,13 +1992,13 @@ async function restoreCheckpoint() {
   const pid = S.pid;
   S.codeAsk = null;
   clearTimeout(codeTimer); clearTimeout(blocksTimer); codeTimer = blocksTimer = null;
-  const r = await work("체크포인트로 되돌리는 중…", "code", () => api("/api/checkpoint/restore", { id: pid, mode: S.talk }));
+  const talk = S.talk, r = await work("체크포인트로 되돌리는 중…", "code", () => api("/api/checkpoint/restore", { id: pid, mode: talk }));
   if (!r || S.pid !== pid) return;
   if (!r.ok) return codeError(r.error);
   $("code").value = $("code")._seen = r.data.problem.code || r.data.problem.starter || "";
   S.blockCode = r.data.blocks || {};
   if (S.result && !S.result.alert) S.result.stale = true;
-  applyState(r.data);
+  applyState(r.data, talk); // 요청에 실은 방식(기다리는 사이 탭을 바꿨어도 그 방식의 사실로 둔다)
   say("체크포인트로 되돌렸어요.");
   $("cp-restore").focus();
 }
@@ -1783,7 +2043,7 @@ function testsHtml(r) {
   const chip = (c, label) => {
     const cls = c.status === "passed" ? "pass" : c.status === "skipped" ? "skip" : "fail";
     const time = c.status === "skipped" ? "" : `<span class="ms">${took(c.ms || 0)}${c.status === "timeout" ? " 넘음" : ""}</span>`; // 시간 초과는 제한을 넘은 것
-    return `<span class="test ${cls}">${label}${c.kind === "example" ? " <em>예시</em>" : ""} <b>${esc(CASE_STATE[c.status] || c.status)}</b> ${time}</span>`;
+    return `<span class="test ${cls}">${label}${c.kind === "example" ? " <em>예시</em>" : autoMark(c)} <b>${esc(CASE_STATE[c.status] || c.status)}</b> ${time}</span>`;
   };
   const acc = r.cases.filter((c) => c.kind !== "efficiency"), eff = r.cases.filter((c) => c.kind === "efficiency");
   const rank = (c) => (c.status === "passed" ? 2 : c.status === "skipped" ? 1 : 0);
@@ -1856,7 +2116,8 @@ function failGuide(r, slowOnly) {
   if (r.cases.length && r.cases.every(stuck)) return "코드가 끝나지 않았어요. 반복이 끝나는 조건을 확인해 보세요.";
   if (r.run) return "";
   if (examplesOk && hidden.some(stuck)) return "숨은 테스트에서 시간 초과가 났어요. 어떤 입력에서 반복이 끝나지 않거나 아주 오래 도는지 확인해 보세요.";
-  if (examplesOk && hidden.some((c) => c.status !== "passed")) return "예시는 통과했지만 숨은 테스트에서 틀렸어요. 가장 작은 입력, 같은 값이 여러 개인 입력, 가장 큰 입력을 직접 만들어 확인해 보세요.";
+  if (examplesOk && hidden.some((c) => c.status !== "passed")) return "예시는 통과했지만 숨은 테스트에서 틀렸어요. 가장 작은 입력, 같은 값이 여러 개인 입력, 가장 큰 입력을 직접 만들어 확인해 보세요."
+    + (program() && madeOnly(r.cases) ? ` 답이 여럿인 문제라면 <a class="link" href="#/edit/${esc(S.pid)}">문제 고치기</a>에서 ‘답이 여럿일 수 있음’을 켜 주세요.` : ""); // 자동 테스트만 틀렸다: 정답 풀이의 답 하나와 달랐을 수 있다
   if (slowOnly) // 답은 맞고 큰 입력에서 시간만 모자랐다. 틀린 곳이 아니라 방법의 문제라 ‘틀린 곳 같이 찾기’는 없다
     return `답은 모두 맞아요. 입력이 아주 클 때 시간이 모자라요. 제한사항의 입력 크기를 보고, 같은 것을 되풀이해 세거나 찾는 곳이 없는지 살펴보세요.${connected() ? " 답이 맞아서 ‘틀린 곳 같이 찾기’는 열지 않아요." : ""}`;
   const crash = effCrash(r); // 작은 입력은 다 맞고 큰 입력에서 틀렸다: 시간 이야기가 아니다
@@ -1873,9 +2134,10 @@ function passActions(ai, learn) {
 }
 
 function renderResult() {
-  const box = $("result"), r = S.result, judging = S.busy && S.busy.where === "result", mine = judging && S.busy.pid === S.pid;
+  const box = $("result"), r = S.result, mine = !!S.running && S.running.pid === S.pid;
   const review = !r && !mine && !!S.problem && S.problem.passed > 0; // 통과한 문제를 다시 열었다: 마지막 결과는 없어도 갈 길은 남긴다
-  box.hidden = !r && !mine && !review;
+  box.hidden = $("sep-result").hidden = !r && !mine && !review;
+  $("result-big").hidden = box.hidden;
   if (mine) return void (box.innerHTML = `<div class="note">${waitLine("result").replace(" · 보통 5~25초 걸려요", "")}</div>`);
   if (review) return void (box.innerHTML = `<div class="result-actions">${passActions(connected(), S.problem.study.has_guide && S.problem.study.passed_now)}</div>`); // '처음부터' 뒤에는 해설을 여는 것이 도움이라, 단추 하나로 열지 않는다
   if (!r) return void (box.innerHTML = "");
@@ -1922,6 +2184,9 @@ function renderResult() {
   box.innerHTML = html + notice;
 }
 
+let judgeNo = 0; // 채점 요청의 순번(실행·제출, 디버그의 다시 채점). 결과에 붙여, 늦게 온 옛 요청의 결과가 더 새 결과를 덮지 않게 한다
+const newerThanShown = (no) => no > ((S.result && S.result.no) || 0);
+
 async function submitCode() {
   await judgeCode(false);
 }
@@ -1948,10 +2213,12 @@ async function judgeCode(run, input) {
   const code = $("code").value;
   const own = input !== undefined;
   if (own && input.length > MAX_OWN) { S.result = { alert: { type: "error", text: "직접 입력은 20,000자까지 넣을 수 있어요." } }; return render(); } // 서버의 본문 상한(1MB)보다 먼저 알린다
+  const no = ++judgeNo;
   const r = await work(own ? "직접 넣은 값으로 실행하는 중…" : run ? "예시를 실행하는 중…" : "채점하는 중…", "result", () => api(run ? "/api/run" : "/api/submit", { id: pid, code, ...(own ? { input } : {}) }));
   if (!r || S.pid !== pid) return;
   $("code")._seen = code;
-  S.result = r.ok ? { ...r.data, run, own, looks: looksLike(code) } : { alert: errorNote(r.error) };
+  if (!newerThanShown(no)) return void (run ? render() : loadState()); // 그사이 보낸 디버그의 다시 채점(더 새 코드)이 먼저 와 결과 칸에 있다
+  S.result = r.ok ? { ...r.data, run, own, looks: looksLike(code), no } : { alert: errorNote(r.error), no };
   S.casesOpen = null;
   if (r.ok && r.data.ok && !run && !own && S.debug) { S.debug.passed = true; S.debug.line = null; } // 제출로 통과했다: 틀린 곳 찾기의 옛 질문과 짚은 줄을 걷는다
   say(!r.ok ? "" : own ? "직접 넣은 값으로 실행했어요." : run ? (r.data.ok ? "예시를 모두 맞혔어요." : r.data.many ? `${MANY_HEAD}.` : "예시에서 틀려요.") : r.data.ok ? "채점 결과: 통과" : `채점 결과: ${r.data.many ? MANY_HEAD : "아직 틀려요"}`);
@@ -1968,104 +2235,136 @@ async function loadNextUp() {
   render();
 }
 
-/* ── 오른쪽 칸: 어떻게 풀까요(혼자 풀기 · 튜터와 차례로 · 튜터의 질문으로) ── */
+/* ── 오른쪽 칸: 푸는 방식 탭(혼자 풀기 · 튜터의 질문으로 · 튜터와 차례로) ── */
 function selectTab(tab, on) {
   tab.setAttribute("aria-selected", on ? "true" : "false");
   tab.tabIndex = on ? 0 : -1;
 }
 
-/** 방식을 바꾼다. remember: 사용자가 고른 것(이 문제에 기억한다). */
+/** 방식을 바꾼다. remember: 탭을 눌러 고른 것(서버가 이 문제에 남긴다). 대화는 지우지 않는다. 튜터 방식에 대화가 없으면 바로 시작한다(maybeStart). */
 function setMode(mode, remember) {
-  S.choosing = false;
-  if (remember) saveWay(S.pid, mode);
-  if (mode === S.mode && !(S.debug && S.debug.open)) return render();
+  if (remember) { if (connected() || !tutorWay(mode)) api("/api/way", { id: S.pid, way: mode }); S.tried = null; } // 누르면 실패한 시작도 다시 한다. 연결이 없으면 튜터 방식을 남기지 않는다(연결한 뒤 열자마자 시작해 도움으로 세지 않게)
+  S.note.start = null; // 앞 방식의 시작 실패 글을 옮기지 않는다
+  if (mode === S.mode && !(S.debug && S.debug.open)) { render(); return maybeStart(); }
   S.mode = mode;
-  S.quote = null;
   if (S.debug) S.debug.open = false;
   const tutor = tutorWay(mode);
   if (tutor) S.talk = mode;
   if (tutor && !codeEmpty() && !S.keptSeen) S.keptNote = S.keptSeen = true; // 적어 둔 코드가 있는 채 튜터를 시작: 한 번 알린다
   setCodeTab(tutor ? "blocks" : "direct", "quiet"); // 혼자 풀기·해설은 코드 전체, 튜터 둘은 블록이 먼저
   render();
-  return loadState();
+  const loaded = loadState(); // 서버가 블록 이름을 가리는 것이 방식마다 달라 다시 받는다
+  maybeStart(); // 다시 받기를 기다리지 않고 시작한다(대화는 이미 받아 두었다)
+  return loaded;
 }
 
-/** 고르는 칸: 카드 셋(도움이 적은 것부터). 연결이 없으면 튜터 둘은 잠그되 글은 그대로 읽히고, ⓘ는 열린다. */
-function renderWay() {
-  const ai = connected();
-  const card = (k) => { const w = WAY_INFO[k], locked = w.needsAi && !ai;
-    return `<div class="wayrow"><button type="button" class="way-card${k === "solo" ? " main" : ""}" data-way="${k}"${locked ? ' aria-disabled="true"' : ""} aria-describedby="way-${k}">
-      <strong>${w.name}${S.mode === k ? '<em class="tag">지금 방식</em>' : ""}${w.needsAi ? (locked ? `<em class="tag lock">${ico("i-lock")}AI 연결 필요</em>` : "<span data-ai></span>") : '<em class="tag">AI 없이</em>'}</strong><span id="way-${k}">${w.line}</span></button>${infoBtn(k, "card")}${infoBox(k, "card")}</div>`; };
-  $("way-box").innerHTML = `<div class="ways" role="group" aria-label="푸는 방식">${card("solo")}<p class="ways-gap">아래로 갈수록 튜터가 더 많이 도와줘요</p>${card("chair")}${card("guide")}</div>
-    ${ai ? '<p class="hint">고른 방식은 이 문제에 기억해요. 고른 뒤에도 ‘방식 바꾸기’로 언제든 바꿔요.</p>' : '<div class="note"><span>튜터 방식 둘은 AI를 연결하면 쓸 수 있어요.</span><button type="button" class="btn small" id="note-conn">연결하기</button></div>'}`;
+/** 튜터 방식인데 대화가 없으면 바로 시작한다(준비해 둔 계획이 있으면 모델 0회). 준비 중이면 준비가 끝나 다시 받은 상태에서,
+    다른 일을 기다리는 중이면 그 일이 끝난 뒤에 시작한다. 연결이 없거나 시작이 실패했으면 그 탭 안에서 알린다. */
+function maybeStart() {
+  const p = S.problem, mode = S.mode;
+  if (S.view !== "code" || !p || !S.session || !tutorWay(mode) || S.session[mode].length || S.tried === mode || !connected() || p.preparing || p.prepare_failed || S.note.start) return;
+  if (S.busy || S.running) { if (!S.startAfter) { S.startAfter = true; render(); } return; } // 스스로 시작은 실행·채점도 끝난 뒤에(누른 시작 단추는 기다리지 않는다)
+  startMode();
+}
+
+/** 튜터 탭에 아직 대화가 없을 때 그 탭 안의 글: 연결 안내, 준비 중, 시작하는 중, 실패. */
+function tutorNote(mode) {
+  const w = WAY_INFO[mode], about = `<h3>${w.name}</h3><p>${w.line}</p>`;
+  if (!connected()) return `${about}<div class="note"><span>튜터 방식은 AI를 연결하면 쓸 수 있어요. 연결하지 않아도 ‘혼자 풀기’로 풀 수 있어요.</span><a class="btn small" href="#/settings/ai">연결하기</a></div>`;
+  if (S.busy && S.busy.where === "start") return `<div class="note">${waitLine("start").replace("보통 5~25초 걸려요", `<span data-late="처음은 30초쯤 걸려요">${late(secs(), "처음은 30초쯤 걸려요")}</span>`)}</div>`;
+  if (S.problem.preparing) return `${about}<div class="note" role="status">${DOTS}<span>튜터가 이 문제의 풀이 순서를 준비하고 있어요. 끝나면 바로 시작해요. <span class="secs" data-since="${S.prepAt}">${since(S.prepAt)}초</span> · <span data-late="30초쯤 걸려요">${late(since(S.prepAt), "30초쯤 걸려요")}</span></span></div>`;
+  if (S.problem.prepare_failed && !S.note.start) return about + noteHtml(PREP_FAILED); // 뒤에서 준비하다 실패했다: 다시 준비(미리 만들기를 다시 탄다)
+  if (S.note.start) return about + noteHtml(S.note.start);
+  if (S.startAfter) return `${about}<p class="hint">지금 하는 일이 끝나면 바로 시작해요.</p>`;
+  return S.tried === mode ? `${about}<button type="button" class="btn small" id="start-again" data-model>다시 시작</button>` : ""; // 시작한 뒤 대화가 지워졌다: 스스로 다시 시작하지 않으니 단추를 둔다
+}
+
+/* badge-pure:start 튜터 말마다 붙일 블록 번호 표의 글('블록 2/5 · 반복', 붙이지 않으면 null). node로도 시험한다.
+   그 말이 겨눈 블록(엔진이 준다)의 번호와 종류만 쓴다. 이름은 쓰지 않는다(의자에서는 찾을 답이다).
+   번호가 없는 예전 말, 지금 계획에 없는 번호, 다시 짠 계획의 첫 말(replan)보다 앞의 말(옛 계획의 번호)에는 붙이지 않는다 */
+const badgeTexts = (chat, blocks) => {
+  const cut = chat.map((m) => m.role === "service" && m.move === "replan").lastIndexOf(true);
+  return chat.map((m, k) => {
+    const b = m.role === "service" && k >= cut && Number.isInteger(m.block_index) && blocks[m.block_index];
+    return b ? `블록 ${m.block_index + 1}/${blocks.length}${KIND[b.kind] ? ` · ${KIND[b.kind][0]}` : ""}` : null;
+  });
+};
+/* badge-pure:end */
+
+/* slots-pure:start 튜터 말의 칸(엔진이 남긴 parts. 없는 말은 null이라 글로 그린다). node로도 시험한다.
+   결과 줄 → 질문 하나 → 근거 목록 → 단추. 근거는 엔진의 되받기(note)에, facts(상태 응답의 block_facts)가 같은 블록이면 만든 이름과 할 일을 한 줄씩 더한다.
+   엔진이 준 글 칸이 하나도 없고 단추만 있으면 단추가 덩그러니 남지 않게 말 글을 결과 자리에 한 번 둔다 */
+const replySlots = (m, facts) => {
+  const p = m.parts;
+  if (m.role !== "service" || !p) return null;
+  const lines = (x) => (x ? String(x).split("\n") : []); // 결과 줄에는 실행에서 본 여러 줄 출력(코드 울타리)이 들 수 있어 빈 줄도 남긴다
+  const result = lines(p.result), question = p.question || "", evidence = lines(p.note), buttons = p.buttons || [];
+  if (!result.length && !question && !evidence.length && buttons.length && m.text) result.push(m.text);
+  if (facts && facts.index === p.block_index) {
+    if (facts.names.length) evidence.push(`지금까지 만든 이름: ${facts.names.map((name) => `\`${name}\``).join(", ")}`);
+    if (facts.goal) evidence.push(`이 블록에서 할 일: ${facts.goal}`);
+  }
+  return { result, question, evidence, buttons };
+};
+/* slots-pure:end */
+
+const SLOT_ACTS = { fill: "이 블록 채우기", skip: "이대로 넘어가기", run: "모아서 실행" }; // 블록 칸의 같은 단추와 이름도 일도 같다(엔진의 안내 글이 이 이름을 부른다)
+/** 칸으로 나눈 튜터 말. 칸 이름 글자 대신 모양이 다른 작은 표(.slot-mark)와 색으로 가르고, 읽어 주는 도구에는 칸 이름(aria-label)을 준다.
+    live: 가장 최근 튜터 말. 단추는 그 말에서만 켠다(앞의 말은 disabled. data-model을 달지 않아 기다림이 끝나도 다시 켜지지 않는다). */
+function slotsHtml(x, index, live) {
+  const mark = (name) => `<span class="slot-mark" aria-hidden="true">${ico(name)}</span>`;
+  const acts = x.buttons.filter((act) => Object.prototype.hasOwnProperty.call(SLOT_ACTS, act)); // 상속한 이름(constructor 같은)은 거른다. macOS 12 웹뷰가 모르는 새 함수 대신 쓴다
+  return `<div class="reply-parts">${x.result.length ? `<div class="slot-result" role="group" aria-label="결과">${mark("i-info")}<div>${rich(x.result.join("\n"))}</div></div>` : ""}${
+    x.question ? `<div class="slot-question" role="group" aria-label="질문">${mark("i-ask")}<div>${rich(x.question)}</div></div>` : ""}${
+    x.evidence.length ? `<ul class="slot-evidence" role="list" aria-label="근거">${x.evidence.map((row) => `<li>${mark("i-bulb")}<span>${inline(row)}</span></li>`).join("")}</ul>` : ""}${
+    acts.length ? `<div class="slot-buttons" role="group" aria-label="할 수 있는 일">${acts.map((act) => `<button type="button" class="btn small" data-act="${act}" data-act-block="${index}"${
+      !live ? " disabled" : act === "fill" ? " data-model" : act === "run" ? ' data-model="run"' : S.skipping ? ' aria-disabled="true"' : ""}>${SLOT_ACTS[act]}</button>`).join("")}</div>` : ""}</div>`;
 }
 
 function renderTutor() {
-  const s = S.session, mode = S.mode, finding = !!(S.debug && S.debug.open), choosing = !mode || S.choosing;
-  const solo = mode === "solo" && !choosing, railed = solo && !S.soloOpen && !finding;
+  const s = S.session, mode = S.mode, finding = !!(S.debug && S.debug.open);
+  const solo = mode === "solo", railed = solo && !S.soloOpen && !finding;
   $("panes").classList.toggle("railed", railed); // 혼자 풀기는 오른쪽 칸을 접어 '힌트'·'해설' 두 단추만 둔다
-  $("way-title").textContent = finding ? "튜터" : choosing ? "어떻게 풀까요?" : mode === "explain" ? START.explain[0] : WAYS[mode][0];
-  const headInfo = !choosing && !finding && mode && WAY_INFO[mode];
+  for (const tab of document.querySelectorAll("#way-tabs [role=tab]")) selectTab(tab, tab.dataset.way === (mode === "explain" ? "solo" : mode)); // 튜터의 해설은 혼자 풀기의 해설 칸에서 간다
+  $("way-title").textContent = finding ? "튜터" : WAY_INFO[mode].name;
+  const headInfo = !finding && WAY_INFO[mode];
   $("way-info").innerHTML = headInfo ? infoBtn(mode, "head") : "";
   $("way-info-box").innerHTML = headInfo ? infoBox(mode, "head") : "";
-  $("way-change").hidden = finding || (choosing && !mode);
-  $("way-change").textContent = choosing ? "그대로 두기" : "방식 바꾸기";
+  $("way-note").hidden = !(aidOpen() && connected()); // 튜터 탭은 누르면 바로 시작하니, 도움 없이 풀 수 있는 동안 미리 알린다
   $("solo-tabs").hidden = $("solo-fold").hidden = !solo || !S.soloOpen || finding;
   for (const tab of document.querySelectorAll("#solo-tabs [role=tab]")) selectTab(tab, tab.dataset.solo === S.soloOpen);
-  $("way-box").hidden = finding || !choosing;
-  if (choosing) { renderWay(); $("way-box").insertAdjacentHTML("beforeend", aidNote()); }
   $("rail").hidden = !railed;
   if (railed && S.solo) $("rail-hint").lastChild.textContent = S.solo.total ? `힌트 ${S.solo.seen}/${S.solo.total}` : "힌트";
   $("solo-box").hidden = finding || !solo || !S.soloOpen;
   if (solo && S.soloOpen) renderSolo();
-  const talking = !choosing && (tutorWay(mode) || mode === "explain");
-  const chat = tutorWay(mode) ? s[mode] : [];
-  const started = mode === "explain" ? !!s.explain : chat.length > 0;
-  $("start-box").hidden = finding || !talking || started;
-  $("explain-box").hidden = finding || !talking || mode !== "explain" || !started;
-  $("chat-log").hidden = finding || !talking || mode === "explain" || !started;
-  $("composer").hidden = finding || !talking || mode === "explain" || !started || !!S.quote;
-  $("fq-composer").hidden = finding || !talking || mode === "explain" || !started || !S.quote;
-  if (!talking) return;
-
-  if (!started) {
-    const [title, text, button] = START[mode];
-    const preparing = !connected() ? "" : S.problem.preparing ? `<div class="note" role="status">${DOTS}<span>튜터가 이 문제의 풀이 순서를 준비하고 있어요. <span class="secs" data-since="${S.prepAt}">${since(S.prepAt)}초</span> · <span data-late="30초쯤 걸려요">${late(since(S.prepAt), "30초쯤 걸려요")}</span></span></div>`
-      : S.problem.prepare_failed && !S.note.start ? noteHtml(PREP_FAILED) : ""; // 뒤에서 준비하다 실패했다: 다시 준비(미리 만들기를 다시 탄다)
-    $("start-box").innerHTML = `<h3>${title}</h3><p>${text}</p>
-      <button type="button" id="start" class="btn" data-model>${button}</button>${aidNote()}
-      ${S.busy && S.busy.where === "start" ? `<div class="note">${waitLine("start").replace("보통 5~25초 걸려요", `<span data-late="처음은 30초쯤 걸려요">${late(secs(), "처음은 30초쯤 걸려요")}</span>`)}</div>` : preparing}${noteHtml(S.note.start)}`;
-    return;
-  }
+  const tutor = tutorWay(mode), chat = tutor ? s[mode] : [];
+  const started = mode === "explain" ? !!s.explain : chat.length > 0, live = started && connected(); // 연결이 없으면 튜터 탭은 대화 대신 연결하는 길을 보인다(예전 대화는 그대로 남는다)
+  $("tutor-note").hidden = finding || !tutor || live;
+  $("explain-box").hidden = finding || mode !== "explain";
+  $("chat-log").hidden = finding || !tutor || !live;
+  $("composer").hidden = finding || !tutor || !live;
   if (mode === "explain") {
-    $("explain-box").innerHTML = s.explain.sections.map((x, i) => `<section class="section"><h3><span class="no">${i + 1}</span>${esc(x.title)}</h3>${rich(x.body)}</section>`).join("");
+    const w = WAY_INFO.explain;
+    $("explain-box").innerHTML = started ? s.explain.sections.map((x, i) => `<section class="section"><h3><span class="no">${i + 1}</span>${esc(x.title)}</h3>${rich(x.body)}</section>`).join("")
+      : `<div class="start"><h3>${w.name}</h3><p>${w.does}</p><button type="button" id="explain-start" class="btn" data-model data-ai>해설 받기</button>${aidNote()}${S.busy && S.busy.where === "start" ? `<div class="note">${waitLine("start")}</div>` : ""}${noteHtml(S.note.start)}</div>`;
     return;
   }
+  if (!tutor) return;
+  if (!live) return void ($("tutor-note").innerHTML = tutorNote(mode));
 
-  let n = 0, html = "", aimed = null; // aimed: 앞 튜터 말이 겨눈 블록 번호
-  chat.forEach((m, i) => {
+  let n = 0, html = "";
+  const badges = badgeTexts(chat, s.blocks), latest = chat.map((m) => m.role).lastIndexOf("service");
+  const facts = S.facts[mode];
+  chat.forEach((m, k) => {
     if (m.role !== "service") return void (html += meMsg(m.text));
     n += 1;
-    let kind = null, no = "";
-    if (Number.isInteger(m.block_index)) { // 그 말이 겨눈 블록(엔진이 준다)의 종류와 순번. 블록이 바뀌는 말 위에만
-      const b = s.blocks[m.block_index];
-      if (b && m.block_index !== aimed) [kind, no] = [b.kind, ` ${m.block_index + 1}`];
-      aimed = m.block_index;
-    } else { // block_index가 없는 예전 기록: 새 블록을 알리는 말, 또는 첫 말이면 첫 블록
-      const next = NEXT_BLOCK.exec(m.text);
-      kind = next ? KIND_BY_LABEL[next[1]] : i === 0 && s.blocks[0] ? s.blocks[0].kind : null;
-    }
-    const thread = (s.followups.find((t) => t.quote_id === m.id) || { messages: [] }).messages;
-    const quoted = S.quote === m.id;
-    if (kind) html += `<div class="turn">${kindChip(kind)}<span>블록${no}</span></div>`;
-    html += `<div class="msg tutor${quoted ? " is-quoted" : ""}" data-msg="${esc(m.id)}"><span class="who">튜터</span><div class="bubble">${rich(m.text)}</div>
-      <div class="msg-tools"><button type="button" class="btn quiet small" data-quote="${esc(m.id)}" aria-label="${n}번째 튜터 말에 꼬리질문"${quoted ? ' aria-pressed="true"' : ""}>꼬리질문</button></div></div>`;
-    const waiting = quoted && S.busy && S.busy.where === "thread";
-    if (thread.length || waiting) {
-      html += `<div class="thread" role="group" aria-label="${n}번째 튜터 말의 꼬리질문"><span class="thread-title">꼬리질문</span>
-        ${thread.map((x) => (x.role === "service" ? tutorBubble(x.text) : meMsg(x.text))).join("")}
-        ${waiting && S.sending ? meMsg(S.sending.text, true) : ""}${waiting ? pending("thread") : ""}</div>`;
-    }
+    const no = m.block_index + 1, slots = replySlots(m, k === latest ? facts : null); // 표를 누르면 그 블록 칸으로 간다
+    const body = slots ? slotsHtml(slots, m.block_index, k === latest) : rich(m.text);
+    html += badges[k] ? `<div class="msg tutor" data-msg="${esc(m.id)}" role="group" aria-label="블록 ${no}에 대한 튜터 말"><span class="who">튜터</span>
+      <button type="button" class="btn quiet small block-badge" data-goto-block="${m.block_index}" title="이 블록 칸으로 가기">${esc(badges[k])}</button><div class="bubble">${body}</div></div>`
+      : `<div class="msg tutor" data-msg="${esc(m.id)}"><span class="who">튜터</span><div class="bubble">${body}</div></div>`;
+    const thread = (s.followups.find((t) => t.quote_id === m.id) || { messages: [] }).messages; // 꼬리질문 단추가 있던 때의 기록: 읽기만 한다
+    if (thread.length) html += `<div class="thread" role="group" aria-label="${n}번째 튜터 말의 꼬리질문"><span class="thread-title">꼬리질문</span>${thread.map((x) => (x.role === "service" ? tutorBubble(x.text) : meMsg(x.text))).join("")}</div>`;
   });
   const last = chat[chat.length - 1], gaps = last && last.role === "service" && /^블[록럭]을 모두 채웠어요/.test(last.text) ? emptyBlocks() : [];
   if (passedNow()) html += '<p class="notice" role="status">이번 풀이는 통과했어요. 위 대화는 풀던 중의 기록이에요.</p>'; // 맨 아래 말이 옛 실패 말이어도 지금 상태로 읽히지 않게
@@ -2073,15 +2372,12 @@ function renderTutor() {
   if (S.busy && S.busy.where === "chat") html += (S.sending ? meMsg(S.sending.text, true) : "") + pending("chat");
   else if (allFound()) html += '<p class="notice" role="status">블록을 모두 찾았어요. 블록 칸을 채우고 ‘모아서 실행’을 눌러 보세요.</p>';
   html += noteHtml(S.note.chat);
-  const log = $("chat-log"), key = `${mode}:${chat.length}:${s.followups.reduce((sum, t) => sum + t.messages.length, 0)}:${S.busy ? S.busy.where : ""}:${S.quote}:${(S.note.chat || {}).text}`;
-  log.innerHTML = html;
+  const log = $("chat-log"), key = `${mode}:${chat.length}:${s.followups.reduce((sum, t) => sum + t.messages.length, 0)}:${S.busy ? S.busy.where : ""}:${(S.note.chat || {}).text}`;
+  setHtml(log, html);
   if (log._key !== key) { // 새 말이 오면 그 말이 보이게
     log._key = key;
-    const target = S.quote && log.querySelector(`[data-msg="${CSS.escape(S.quote)}"]`);
-    if (target) (target.nextElementSibling && target.nextElementSibling.classList.contains("thread") ? target.nextElementSibling : target).scrollIntoView({ block: "nearest" });
-    else log.scrollTop = log.scrollHeight;
+    log.scrollTop = log.scrollHeight;
   }
-  if (S.quote) $("fq-quote").textContent = (chat.find((m) => m.id === S.quote) || { text: "" }).text;
 }
 
 /* ── 혼자 풀기: 미리 만들어 둔 힌트와 해설(모델 0회) ── */
@@ -2113,7 +2409,7 @@ function renderSolo() {
   const p = S.problem, o = S.solo, ai = connected();
   if (S.soloOpen === "hint") {
     let hints = `<section class="solo-sec" aria-labelledby="solo-hints"><h3 id="solo-hints">${ico("i-bulb")}풀이 힌트${o.total ? ` <span class="muted">${o.seen} / ${o.total}</span>` : ""}</h3>`;
-    if (!o.total) hints += `<p class="hint">이 문제에는 미리 만들어 둔 힌트가 없어요. ${ai ? "‘방식 바꾸기’에서 ‘튜터의 질문으로’를 고르면 튜터가 질문으로 도와줘요." : "튜터를 연결하면 질문으로 도와줘요."}</p>`;
+    if (!o.total) hints += `<p class="hint">이 문제에는 미리 만들어 둔 힌트가 없어요. ${ai ? "위의 ‘튜터의 질문으로’를 누르면 튜터가 질문으로 도와줘요." : "튜터를 연결하면 질문으로 도와줘요."}</p>`;
     else if (!o.blocks) { hints += '<p class="hint">힌트 목차를 불러오는 중…</p>'; if (!o.loading) loadHints(true); }
     else {
       // 블록 목차: 막힌 블록의 힌트부터 연다. 머리는 블록 번호와 종류, 그 블록의 힌트를 모두 본 뒤에는 블록 이름(서버가 그때만 보낸다)
@@ -2171,20 +2467,27 @@ async function loadSolution(force) {
   if (r.ok && !S.nextUp) await loadNextUp(); // 해설 칸의 ‘다음 문제’
 }
 
+/** 언어를 바꾼다. 대화·블록 진행은 서버가 언어마다 보관하고 돌아오면 되살린다(묻지 않는다). */
 async function changeLanguage(language) {
-  const pid = S.pid, code = $("code").value;
+  harvest();
+  const pid = S.pid, from = S.problem.language, code = $("code").value, blocks = S.blockCode, talk = S.talk; // 아직 저장하지 않은 블록 칸도 예전 언어의 것으로 함께 보낸다
   clearTimeout(codeTimer); clearTimeout(blocksTimer); codeTimer = blocksTimer = null;
-  S.langWant = null;
   $("code").readOnly = true; // 바꾸는 동안 적은 옛 언어의 코드가 새 언어 칸에 저장되지 않게 잠근다. 다 바꾸면 서버가 준 새 언어의 코드로 채운다
   // 열어 둔 해설 칸·받은 해설·펼친 정답 코드는 새 언어로 다시 받아 그대로 둔다. 기다리는 동안 다시 그리기 전에 적어 둔다
   const kept = { mode: S.mode, open: S.soloOpen, sol: !!(S.solo && S.solo.sol), code: S.solo ? S.solo.codeOpen : undefined };
   // 튜터가 뒤에서 이 문제의 계획을 만드는 중이면 그것이 끝날 때까지 기다린다(길면 30초쯤). 그동안 무엇을 하는지 보여 준다
-  const r = await work(`언어를 바꾸는 중: ${LANG[language] || language}…`, "lang", () => api("/api/language", { id: pid, language, ...(codeEmpty() ? {} : { code }) })) // 시작 코드뿐이면 저장하지 않는다
+  const r = await work(`언어를 바꾸는 중: ${LANG[language] || language}…`, "lang", () => api("/api/language", { id: pid, language, blocks, mode: talk, ...(codeEmpty() ? {} : { code }) })) // 시작 코드뿐이면 저장하지 않는다
     .finally(() => { $("code").readOnly = false; });
-  if (!r || S.pid !== pid) return;
+  if (!r || (!r.ok && S.pid !== pid)) return;
   if (!r.ok) { $("code-error").textContent = errorNote(r.error).text; $("code-error").hidden = false; return render(); }
+  // 보내지 않은 대화·디버그 글은 서버에 보내지 않고 언어마다 여기 둔다. 기다리는 동안 다른 문제로 옮겼으면 떠나며 담아 둔 글(KEPT[pid])을 바꾼다
+  const away = S.pid !== pid, k = (KEPT[pid] ??= {}), langs = (k.langs ??= {}), back = langs[language] || {};
+  langs[from] = Object.fromEntries(TALKS.map((id) => [id, away ? k[id] || "" : $(id).value]));
+  delete langs[language];
+  if (away) { TALKS.forEach((id) => { k[id] = back[id] || ""; }); return void Object.assign(k, { "run-input": "", result: null }); } // 그 자리에서 바꿀 때(clearProblem)처럼 실행 입력 칸과 마지막 결과도 비운다
   clearProblem(pid);
-  applyState(r.data);
+  for (const id of TALKS) $(id).value = back[id] || "";
+  applyState(r.data, talk);
   if (kept.mode === "solo" && kept.open) S.mode = "solo"; // 기억하지 않은 방식(결과에서 연 해설)이어도 그 칸에 머문다
   S.soloOpen = kept.open;
   S.solo.codeOpen = kept.code;
@@ -2194,36 +2497,51 @@ async function changeLanguage(language) {
   say(`언어를 바꿨어요: ${LANG[language] || language}`);
 }
 
-function wantLanguage(language) {
-  const s = S.session;
-  harvest();
-  const progressed = s.chair.length || s.guide.length || s.explain || Object.values(S.blockCode).some((b) => (b.code || "").trim()); // 내가 한 것이 있을 때만 묻는다
-  if (!progressed) return void changeLanguage(language);
-  S.langWant = language; // 지워질 것이 있으면 먼저 묻는다
-  render();
-  $("lang-no").focus();
-}
-
 async function startMode() {
   const pid = S.pid, mode = S.mode;
   S.note.start = null;
+  if (tutorWay(mode)) S.tried = mode;
   const prep = S.problem.preparing || (S.problem.builtin && S.session.strategy == null); // 기본 문제는 열 때 준비하지 않아 계획이 없으면 시작이 준비부터 한다
-  const r = await work(prep ? "풀이 순서를 준비하는 중…" : START[mode][3], "start", () => (mode === "explain" ? api("/api/explain", { id: pid }) : api("/api/turn", { id: pid, mode, event: "start" })));
+  // 상태를 다시 받을 때까지 기다림 안에 둔다(받기 전에 그리면 대화가 없어 '다시 시작'이 잠깐 보였다)
+  const r = await work(prep ? "풀이 순서를 준비하는 중…" : START[mode], "start", async () => {
+    const out = await (mode === "explain" ? api("/api/explain", { id: pid }) : api("/api/turn", { id: pid, mode, event: "start" }));
+    if (S.pid !== pid) return out;
+    if (!out.ok && out.error.code !== "already_started") S.note.start = mode === "explain" ? errorNote(out.error) : out.error.code === "invalid_output" ? PREP_FAILED : { ...errorNote(out.error), retry: true }; // 튜터 탭에는 시작 단추가 없어 다시 시작하는 단추를 단다
+    await loadState();
+    return out;
+  });
   if (!r || S.pid !== pid) return;
-  if (!r.ok && r.error.code !== "already_started") S.note.start = mode !== "explain" && r.error.code === "invalid_output" ? PREP_FAILED : errorNote(r.error);
   say(r.ok ? (mode === "explain" ? "해설이 준비됐어요." : "튜터가 첫 질문을 했어요.") : "");
-  await loadState();
+}
+
+/* ── 대화 칸 보내기: 보내는 즉시 칸을 비우고 내 말을 올린다. 보내지 못하면 글을 칸에 되돌린다 ── */
+const talkBox = (el) => !!el && el.tagName === "TEXTAREA" && !!el.closest(".composer");
+/** 대화 칸에서 Enter로 보낸다. 빈 칸이면 아무것도 하지 않는다(조합을 확정한 뒤 한 번 더 오는 Enter가 '적은 뒤 보내 주세요'를 띄우지 않게). */
+function sendTalk(el, e) {
+  if (!el.value.trim()) return;
+  perfPress(e, "send_to_clear_ms");
+  $(el.dataset.send).click(); // 잠긴(기다리는 중) 단추면 click이 막는다
+}
+function takeText(ta) { ta.value = ""; ta.style.height = ""; }
+/** 보내지 못한 글을 칸에 되돌린다. 그사이 새로 쓴 글은 뒤에 남긴다. 다른 문제로 옮겼으면 그 문제의 보내지 않은 글에 넣는다. */
+function giveBack(id, pid, text) {
+  const join = (now) => (now ? `${text}\n${now}` : text);
+  if (S.pid !== pid) return void (KEPT[pid] && (KEPT[pid][id] = join(KEPT[pid][id])));
+  const ta = $(id);
+  ta.value = join(ta.value);
+  if (ta.offsetParent) grow(ta);
 }
 
 async function sendAnswer(given) {
-  const pid = S.pid, mode = S.mode, text = typeof given === "string" ? given : $("say").value.trim();
+  const pid = S.pid, mode = S.mode, typed = typeof given !== "string", text = typed ? $("say").value.trim() : given;
   if (!text) { S.note.chat = { type: "warn", text: "답을 적은 뒤 보내 주세요." }; render(); return $("say").focus(); }
   S.note.chat = null;
   S.sending = { text };
+  if (typed) takeText($("say"));
   const r = await work("튜터가 생각하는 중…", "chat", () => api("/api/turn", { id: pid, mode, event: "message", text }));
+  if (typed && !(r && r.ok)) giveBack("say", pid, text);
   if (!r || S.pid !== pid) return;
-  if (r.ok && typeof given !== "string") $("say").value = "";
-  else if (!r.ok) S.note.chat = errorNote(r.error);
+  if (!r.ok) S.note.chat = errorNote(r.error);
   say(r.ok ? "튜터가 답했어요." : "");
   await loadState();
 }
@@ -2231,21 +2549,13 @@ async function sendAnswer(given) {
 /** 결과의 '이 블록 힌트 받기': 튜터 방식 안에서 지금 블록의 다음 힌트를 청한다(‘힌트 주세요’는 튜터가 규칙으로 힌트를 주는 말). */
 const tutorHint = () => sendAnswer("힌트 주세요");
 
-async function sendFollowup() {
-  const pid = S.pid, mode = S.mode, quote = S.quote, text = $("fq-text").value.trim();
-  if (!text) { S.note.chat = { type: "warn", text: "꼬리질문을 적은 뒤 보내 주세요." }; render(); return $("fq-text").focus(); }
-  S.note.chat = null;
-  S.sending = { text };
-  const r = await work("튜터가 꼬리질문에 답하는 중…", "thread", () => api("/api/followup", { id: pid, mode, quote_id: quote, text }));
-  if (!r || S.pid !== pid) return;
-  if (r.ok) { $("fq-text").value = ""; if (S.quote === quote) S.quote = null; } // 답이 오면 '내 답' 칸으로 돌아온다(꼬리질문 칸에 본 답을 적으면 블록 찾기 판정을 하지 않았다)
-  else S.note.chat = errorNote(r.error);
-  say(r.ok ? "튜터가 꼬리질문에 답했어요. 본 대화의 답은 ‘내 답’ 칸에 적어요." : "");
-  await loadState();
-  if (!r.ok || S.pid !== pid || S.quote) return;
-  const asked = document.querySelector(`#chat-log [data-msg="${CSS.escape(quote)}"]`), thread = asked && asked.nextElementSibling;
-  if (thread && thread.classList.contains("thread")) thread.scrollIntoView({ block: "nearest" }); // 방금 받은 꼬리질문의 답이 보이게
-  $("say").focus();
+/** '이 블록 채우기': 칸에 적은 것이 있으면 바꿀지 먼저 묻는다. 의자에서 찾기 전 블록도 먼저 묻는다. */
+function askFill(id) {
+  harvest();
+  if (!((S.blockCode[id] || {}).code || "").trim() && !unfoundBlock(id)) return void fillBlock(id);
+  S.fillAsk = id;
+  render();
+  document.querySelector(`[data-fill-no="${CSS.escape(id)}"]`).focus();
 }
 
 async function fillBlock(blockId) {
@@ -2273,7 +2583,7 @@ async function fillBlock(blockId) {
 }
 
 const REPEATED = "코드가 그대로라 확인 결과도 같아서 대화에 다시 적지 않았어요. 튜터의 마지막 말을 보고 코드를 고친 뒤 다시 확인해 보세요.";
-/** 블록 코드 확인: 가이드는 지금 블록, 의자는 이미 찾은 블록(맞는지만 알려 주고 진행은 그대로). */
+/** 블록 코드 확인: 지금 블록은 통과하면 다음 블록이 열린다(두 방식). 앞 블록은 맞는지만 알려 주고 진행은 그대로다. */
 async function checkBlock(blockId) {
   harvest();
   const pid = S.pid, mode = S.talk, block = S.session.blocks.find((b) => b.id === blockId);
@@ -2290,34 +2600,27 @@ async function checkBlock(blockId) {
   if (r.ok && S.pid === pid) markChecked(block.id, code, r.data);
 }
 
-/** 이대로 넘어가기: 확인하지 않고 그 블록을 '확인 전'으로 둔 채 다음 블록을 연다(모델·실행 없이). 실패한 확인에 갇히지 않게 한다. */
-async function skipBlock(blockId) {
+/** 이대로 넘어가기: 확인하지 않고 그 블록을 '확인 전'으로 둔 채 다음 블록을 연다(모델·실행 없이). 실패한 확인에 갇히지 않게 한다.
+    ownWay: 끝까지 내 방식으로 쓰기. 이 블록은 넘어가기와 같게 두고 남은 블록을 모두 연다. 이 문제의 튜터 방식 동안 블록 코드 확인을 숨긴다. */
+async function skipBlock(blockId, ownWay = false) {
   harvest();
   const pid = S.pid, mode = S.talk, block = S.session.blocks.find((b) => b.id === blockId);
   const code = block ? (S.blockCode[block.id] || {}).code || "" : "";
-  if (!code.trim()) return;
+  if (!code.trim() || S.skipping) return; // 보낸 넘어가기·내 방식이 끝나기 전에는 둘 다 다시 보내지 않는다(같은 블록의 확인 말이 두 번 쌓인다)
   S.note.blocks = S.note.chat = null;
-  const r = await api("/api/turn", { id: pid, mode, event: "block_filled", block_id: block.id, code, skip: true, quiet: true });
-  if (S.pid !== pid) return;
-  if (!r.ok) S.note.chat = errorNote(r.error);
-  say(r.ok ? "확인 전으로 두고 다음 블록을 열었어요." : "");
-  await loadState();
-  if (r.ok && S.pid === pid) markChecked(block.id, code, r.data, true);
-}
-
-/** 끝까지 내 방식으로 쓰기: 이 블록은 넘어가기와 같게 '확인 전'으로 두고 남은 블록을 모두 연다(모델·실행 없이). 이 문제의 튜터 방식 동안 블록 코드 확인을 숨긴다. */
-async function ownWayBlock(blockId) {
-  harvest();
-  const pid = S.pid, block = S.session.blocks.find((b) => b.id === blockId);
-  const code = block ? (S.blockCode[block.id] || {}).code || "" : "";
-  if (!code.trim()) return;
-  S.note.blocks = S.note.chat = null;
-  const r = await api("/api/turn", { id: pid, mode: "guide", event: "block_filled", block_id: block.id, code, skip: true, quiet: true, own_way: true });
-  if (S.pid !== pid) return;
-  if (!r.ok) S.note.chat = errorNote(r.error);
-  say(r.ok ? "남은 블록을 모두 열었어요. 다 쓴 뒤 모아서 실행으로 확인해요." : "");
-  await loadState();
-  if (r.ok && S.pid === pid) markChecked(block.id, code, r.data, true);
+  S.skipping = true;
+  render();
+  try {
+    const r = await api("/api/turn", { id: pid, mode, event: "block_filled", block_id: block.id, code, skip: true, quiet: true, ...(ownWay ? { own_way: true } : {}) });
+    if (S.pid !== pid) return;
+    if (!r.ok) S.note.chat = errorNote(r.error);
+    say(!r.ok ? "" : ownWay ? "남은 블록을 모두 열었어요. 다 쓴 뒤 모아서 실행으로 확인해요." : "확인 전으로 두고 다음 블록을 열었어요.");
+    await loadState();
+    if (r.ok && S.pid === pid) markChecked(block.id, code, r.data, true);
+  } finally {
+    S.skipping = false; // 실패해도 다시 누를 수 있다
+    render();
+  }
 }
 
 /** 튜터 차례로 돌아가기: 블록 코드 확인을 다시 보인다(열린 블록과 칸의 글은 그대로). */
@@ -2350,6 +2653,7 @@ function renderDebug() {
   const d = S.debug, open = !!(d && d.open);
   $("debug-sheet").hidden = !open;
   if (!open) return;
+  const t0 = performance.now(), perf = perfBox();
   const said = (m) => { const f = foldLong(m.text); return tutorBubble(f.text) + (f.longs.length ? `<details class="old-talk long-in"><summary>전체 입력 보기</summary>${f.longs.map((x) => `<pre class="code"><code>${esc(x)}</code></pre>`).join("")}</details>` : ""); };
   let html = d.messages.map((m) => (m.role === "service" ? said(m) : m.role === "regrade" ? `<p class="regrade" role="separator">${esc(m.text)}</p>` : meMsg(m.text))).join("");
   if (d.passed && html) html = `<details class="old-talk"><summary>풀던 대화 보기</summary>${html}</details>`; // 통과한 뒤에는 옛 질문이 맨 아래에 남지 않게 접는다
@@ -2357,9 +2661,10 @@ function renderDebug() {
   if (d.passed) html += '<div class="note ok" role="status">고친 코드가 모든 케이스를 통과했어요. 채점 결과 칸에서 피드백을 받아 보세요.</div>';
   html += noteHtml(d.note);
   const log = $("debug-log"), key = `${d.messages.length}:${S.busy ? 1 : 0}:${d.passed}:${(d.note || {}).text}`;
-  log.innerHTML = html;
+  setHtml(log, html);
   if (log._key !== key) { log._key = key; log.scrollTop = log.scrollHeight; }
   $("debug-composer").hidden = !!d.passed;
+  if (perf) perf.debug_rerender_ms = Math.round(performance.now() - t0);
 }
 
 /** 다시 채점한 결과 한 줄(결과 상자의 제목과 같은 말). */
@@ -2374,23 +2679,26 @@ async function debugCall(text) {
   const pid = S.pid, code = $("code").value, d = S.debug;
   d.note = null;
   S.sending = text ? { text } : null;
+  if (text) takeText($("debug-say"));
+  const no = ++judgeNo; // 디버그는 고친 코드를 다시 채점한다. 기다리는 동안 실행·제출한 더 새 결과를 늦게 온 답이 덮지 않게
   const r = await work(text ? "튜터가 답을 읽는 중…" : "튜터가 코드를 보는 중…", "debug", () => api("/api/debug", { id: pid, code, text }));
+  if (text && !(r && r.ok)) giveBack("debug-say", pid, text); // 보낸 글이 사라지지 않게
   if (!r || S.pid !== pid) return;
   if (!r.ok) {
     d.note = errorNote(r.error);
-    if (text) { $("debug-say").value = text; d.note = { ...d.note, text: `${d.note.text} 쓴 글은 입력 칸에 그대로 있어요.` }; } // 보낸 글이 사라지지 않게
+    if (text) d.note = { ...d.note, text: `${d.note.text} 쓴 글은 입력 칸에 그대로 있어요.` };
   } else {
-    if (r.data.judged) S.result = r.data.judged;
+    const fresh = newerThanShown(no);
+    if (fresh && r.data.judged) S.result = { ...r.data.judged, no };
     d.code = code;
-    d.passed = !!r.data.passed;
+    if (fresh) d.passed = !!r.data.passed;
     // 대화를 바꿔 끼우지 않고 잇는다. 서버 기록(r.data.messages)은 쌓이기만 해서 새로 온 것만 더한다(d.seen: 이미 더한 수)
-    const fresh = r.data.messages ? r.data.messages.slice(d.seen || 0) : [...(text ? [{ role: "user", text }] : []), { role: "service", text: r.data.message }];
+    const said = r.data.messages ? r.data.messages.slice(d.seen || 0) : [...(text ? [{ role: "user", text }] : []), { role: "service", text: r.data.message }];
     if (r.data.messages) d.seen = r.data.messages.length;
-    const at = fresh.findIndex((m) => m.role === "service"), regraded = r.data.judged && d.messages.length && !d.passed;
-    if (regraded && at >= 0) fresh.splice(at, 0, { role: "regrade", text: `다시 채점했어요: ${judgedLine(r.data.judged)}` }); // 고친 코드를 다시 채점했다: 구분선 아래에 새 질문
-    d.messages = d.messages.concat(fresh);
-    if (!d.passed) d.line = r.data.efficiency_only ? null : r.data.line;
-    $("debug-say").value = "";
+    const at = said.findIndex((m) => m.role === "service"), regraded = r.data.judged && d.messages.length && !r.data.passed;
+    if (regraded && at >= 0) said.splice(at, 0, { role: "regrade", text: `다시 채점했어요: ${judgedLine(r.data.judged)}` }); // 고친 코드를 다시 채점했다: 구분선 아래에 새 질문
+    d.messages = d.messages.concat(said);
+    if (fresh && !d.passed) d.line = r.data.efficiency_only ? null : r.data.line;
     $("code")._seen = code;
   }
   say(!r.ok ? "" : d.passed ? "고친 코드가 통과했어요." : d.line ? `튜터가 ${d.line}번째 줄을 짚었어요.` : "튜터가 물었어요.");
@@ -2400,7 +2708,8 @@ async function debugCall(text) {
 
 function debugStart() {
   setCodeTab("direct", "quiet");
-  const code = $("code").value, d = S.debug || (S.debug = { messages: [], line: null, code: null, passed: false, note: null });
+  const kept = S.session.debug || []; // 앞서 나눈 디버그 대화(서버가 문제마다 남긴다). 다시 열어도 이어서 보인다
+  const code = $("code").value, d = S.debug || (S.debug = { messages: kept.slice(), seen: kept.length, line: null, code: null, passed: false, note: null });
   d.open = true;
   if (d.messages.length && d.code === code && !d.passed) { render(); return void $("debug-say").focus(); } // 하던 대화를 다시 연다
   d.passed = false;
@@ -2497,18 +2806,20 @@ async function loadTools(refresh) {
 }
 
 /* ── 과정별 모델 ── */
-// 과정 여덟을 언제 불리는지로 묶고, 상대 사용량을 적는다. 과정마다의 금액은 재지 않아 숫자를 쓰지 않는다(전체 흐름의 실측 값은 설정 화면의 글에 있다)
+// 과정 열을 언제 불리는지로 묶고, 상대 사용량을 적는다. 과정마다의 금액은 재지 않아 숫자를 쓰지 않는다(전체 흐름의 실측 값은 설정 화면의 글에 있다)
 const THEME_HELP = {
+  split: ["붙여 넣은 글에서 문제와 입출력 예시가 있는 줄 구간을 짚어요.", "적음"],
   read: ["사진·PDF에서 글을 읽어요. 글로 넣으면 쓰지 않아요.", "많음"],
   guide: ["문제의 뼈대와 정답 풀이를 만들어요. 뒤의 모든 대화가 이 결과를 따라요. 어려운 문제에서 풀이 확인이 자주 실패하면 급을 올려 보세요.", "많음"],
+  verify: ["단순한 풀이를 만들어 정답 풀이와 견줘요. 문제를 넣은 뒤 뒤에서 한 번 써요.", "보통"],
   blocks: ["풀이를 블록으로 나누고 블록마다 힌트 질문을 만들어요.", "많음"],
-  talk: ["튜터가 건네는 질문, 꼬리질문 답, 블록 채우기.", "적음 × 횟수"],
+  talk: ["튜터가 건네는 질문, 되묻는 말의 답, 블록 채우기.", "적음 × 횟수"],
   judge: ["내 답과 블록 코드가 맞는지 보는 짧은 판정.", "적음 × 횟수"],
   explain: ["튜터의 해설. 문제와 언어마다 한 번 써요.", "적음"],
   feedback: ["제출 뒤의 피드백.", "보통"],
   debug: ["틀린 곳 같이 찾기에서 원인이 있는 줄을 찾아요.", "보통"],
 };
-const THEME_GROUPS = [["문제를 넣을 때 한 번", ["read", "guide", "blocks"]], ["튜터와 풀 때 매번", ["talk", "judge"]], ["제출한 뒤, 누를 때만", ["explain", "feedback", "debug"]]];
+const THEME_GROUPS = [["문제를 넣을 때 한 번", ["split", "read", "guide", "verify", "blocks"]], ["튜터와 풀 때 매번", ["talk", "judge"]], ["제출한 뒤, 누를 때만", ["explain", "feedback", "debug"]]];
 const EFFORT = { low: "낮음", medium: "보통", high: "높음" };
 
 function renderModels() {
@@ -2544,7 +2855,7 @@ function renderAccounts(a) {
   const ready = a.client === "cli" || !!provider;
   CONN = { ready, name: a.client === "cli" ? "이 PC의 Claude Code" : provider };
   ACCOUNTS = a;
-  if (!paneTimer && !paneDrag) paneSet(a.panes || null, false); // 저장한 칸 너비를 첫 그림 전에(accounts를 기다린 뒤에 route()를 부른다)
+  if (!paneTimer && !paneDrag) { paneSet(a.panes || null, false); if ((a.rows ?? null) !== splitRows) splitSet(a.rows ?? null, false); } // 저장한 칸 너비·결과 높이를 첫 그림 전에(accounts를 기다린 뒤에 route()를 부른다). 같은 높이면 '결과 크게 보기'를 끄지 않는다
   if (S.view === "settings") renderModels();
   $("conn-now").textContent = keyBad ? "키 확인 필요" : a.client === "cli" ? "이 PC의 Claude Code" : provider || "AI 연결 안 됨";
   $("conn-dot").classList.toggle("off", !ready);
@@ -2740,9 +3051,9 @@ async function accounts(path, body, done) {
    못 불러오면 index.html의 정적 그림이 그대로 보인다 ── */
 const TOUR = [
   ["홈에서 시작해요", "홈 맨 위의 ‘오늘 할 일’이 지금 풀 문제 하나를 보여 줘요. 단추를 누르면 문제가 열려요. 풀다 보면 홈에 준비도와 더 공부할 주제가 쌓여요. 문제 목록, 내 문제 넣기, 학습 보고서는 위의 탭에서 열어요. AI를 연결하지 않아도 풀고 바로 채점받을 수 있어요."],
-  ["어떻게 풀지 골라요", "문제를 열면 오른쪽에서 푸는 방식을 골라요. ‘혼자 풀기’는 튜터 없이 풀고 막히면 힌트를 봐요. ‘튜터의 질문으로’는 답 대신 질문만 하고, ‘튜터와 차례로’는 풀이를 블록으로 나눠 하나씩 열어 줘요. 카드의 ⓘ를 누르면 자세한 설명이 나와요."],
+  ["어떻게 풀지 골라요", "문제를 열면 오른쪽 위의 탭에서 푸는 방식을 골라요. 처음은 ‘혼자 풀기’예요. 튜터 없이 풀고 막히면 힌트를 봐요. ‘튜터의 질문으로’는 답 대신 질문만 하고, ‘튜터와 차례로’는 풀이를 블록으로 나눠 하나씩 열어 줘요. 튜터 탭은 누르면 바로 시작해요. 탭 옆의 ⓘ를 누르면 자세한 설명이 나와요."],
   ["결과 바로 아래에 다음 할 일", "제출하면 결과 아래에 할 일이 하나 나와요. 틀리면 ‘틀린 곳 같이 찾기’나 ‘풀이 힌트 보기’, 통과하면 ‘다음 문제’예요. 통과한 문제는 실전 신호가 열려 비슷한 문제를 알아보는 눈을 길러요."],
-  ["내 문제 넣기는 세 걸음", "글을 붙여 넣거나 사진·PDF를 넣고(1 글 넣기), 읽은 글과 자동으로 채운 예시를 확인한 뒤(2 확인하기), 등록해요(3 등록). 등록한 문제도 같은 방식으로 채점해요."],
+  ["내 문제 넣기는 한 화면", "글을 붙여 넣거나 사진·PDF를 넣으면 제목과 입출력 예를 스스로 채워요. 문제와 예시를 나눠 보여 주니 확인하고 등록하면 돼요. 등록한 문제도 같은 방식으로 채점해요."],
   ["학습 보고서로 약한 곳을 찾아요", "제출 기록에서 강한 주제와 더 공부할 주제를 모아 보여 주고, 더 공부할 문제를 바로 열어 줘요. ‘틀린 곳 같이 찾기’를 쓰면 되풀이한 실수도 모아 줘요."],
   ["AI 연결은 선택이에요", "튜터는 언어 모델로 움직여요. 쓰려면 오른쪽 위 ‘설정’의 ‘AI 연결’에서 Claude나 OpenAI 키를 넣거나 ChatGPT로 로그인해요. 키는 이 기기에만 저장해요."],
 ];
@@ -2933,7 +3244,7 @@ let paneShares = null; // 문제·코드·튜터 칸의 몫. null이면 CSS 기�
 let paneTimer = null, paneDrag = null;
 const paneWidth = (i) => $(`pane-${PANE[i]}`).getBoundingClientRect().width;
 const paneMin = (i) => parseFloat(getComputedStyle($("panes")).getPropertyValue(`--min-${PANE[i]}`)); // 최소 너비는 CSS의 한 곳(--min-*)에서 읽는다
-const narrowPanes = () => matchMedia("(max-width: 1179px)").matches; // 문제 칸이 위 띠가 되어 코드·튜터 둘만 나뉜다
+const narrowPanes = () => matchMedia("(max-width: 1079px)").matches; // 문제 칸이 위 띠가 되어 코드·튜터 둘만 나뉜다
 
 /** 경계 하나가 가르는 두 칸의 지금 모습: 왼쪽 칸 번호, 오른쪽 몫(혼자 풀기에서는 코드와 튜터가 한 몫), 몫, 두 칸 너비의 합(px), 최소 너비 */
 function paneBase(sep) {
@@ -2999,8 +3310,9 @@ function paneSet(shares, save) {
 async function paneSave() {
   clearTimeout(paneTimer);
   paneTimer = null;
-  const r = await api("/api/prefs", { panes: paneShares });
-  if (!r.ok) say(errorNote(r.error).text);
+  const r = await api("/api/prefs", { panes: paneShares, rows: splitRows });
+  if (!r.ok) return say(errorNote(r.error).text);
+  if (ACCOUNTS) Object.assign(ACCOUNTS, { panes: r.data.panes, rows: r.data.rows }); // 연결 상태가 바뀌어 다시 그려도 저장한 값으로 그린다
 }
 
 function paneReset() {
@@ -3030,68 +3342,151 @@ function paneKey(e) {
   return true;
 }
 
-/** 끌기를 마친다. cancel이면 끌기 전 너비로 되돌린다(Esc·포인터를 빼앗길 때) */
+/* ── 결과 높이: 코드 칸 안에서 위(블록·편집기)와 결과 사이 손잡이(#sep-result)를 끌거나 글쇠로 옮긴다. 결과 칸의 몫(15~85)을 서버에 적어 다시 켜도 남는다 ── */
+let splitRows = null, splitBig = false; // 결과 칸의 몫(null이면 CSS 기본), '결과 크게 보기'를 켰는가(저장하지 않는다)
+/** 위와 결과의 지금 모습: 두 칸이 몫으로 나누는 높이(px), 결과 높이, 최소 높이(CSS의 min-height). 결과 칸의 안쪽 여백은 몫 밖이라 뺀다(빼지 않으면 끄는 손잡이가 포인터에서 밀린다) */
+function splitBase() {
+  const top = $("code-main"), box = $("result"), h = (el) => el.getBoundingClientRect().height, css = getComputedStyle(box);
+  const pad = parseFloat(css.paddingTop) + parseFloat(css.paddingBottom) + parseFloat(css.borderTopWidth) + parseFloat(css.borderBottomWidth);
+  return { span: h(top) + h(box) - pad, from: h(box) - pad, min: [parseFloat(getComputedStyle(top).minHeight) || 0, 0] };
+}
+
+/* split-pure:start 결과 높이 계산(DOM을 읽지 않는다. test_server.py가 이 둘레를 떼어 서버가 받는 범위와 맞는지 본다) */
+/** 결과를 want(px)로 키운 몫(%)을 돌려준다. 두 칸의 최소 높이 밖으로는 가지 않고, 서버가 받는 15~85 안에 둔다 */
+function splitNext(b, want) {
+  const px = Math.min(Math.max(Number(want) || 0, b.min[1]), Math.max(b.min[1], b.span - b.min[0]));
+  return b.span > 0 ? Math.min(85, Math.max(15, Math.round(10000 * px / b.span) / 100)) : 40;
+}
+/* split-pure:end */
+
+/** 몫을 화면에 적는다(null이면 기본). save가 참이면 잠깐 뒤 칸 너비와 함께 서버에 한 번 적는다 */
+function splitSet(rows, save) {
+  splitRows = rows;
+  splitBig = false;
+  splitShow();
+  if (!save) return;
+  clearTimeout(paneTimer);
+  paneTimer = setTimeout(paneSave, 400);
+}
+
+function splitShow() {
+  const rows = splitBig ? 85 : splitRows;
+  $("result").style.flexGrow = rows ?? "";
+  $("code-main").style.flexGrow = rows == null ? "" : 100 - rows;
+  $("result-big").textContent = splitBig ? "결과 원래 크기로" : "결과 크게 보기";
+  splitAria();
+}
+
+function splitReset() {
+  splitSet(null, true);
+  say("결과 칸 높이를 기본으로 돌렸어요.");
+}
+
+/** 손잡이의 값(위 칸이 두 칸의 합에서 차지하는 %)을 읽어 주는 도구에 알린다. Home은 위로(결과가 가장 크게), End는 아래로 */
+function splitAria() {
+  const sep = $("sep-result");
+  if (!sep.getClientRects().length) return;
+  const b = splitBase(), now = Math.round(100 * b.from / b.span);
+  sep.setAttribute("aria-valuenow", 100 - now);
+  sep.setAttribute("aria-valuemin", Math.round(100 - splitNext(b, Infinity)));
+  sep.setAttribute("aria-valuemax", Math.round(100 - splitNext(b, 0)));
+  sep.setAttribute("aria-valuetext", `결과 칸 ${now}%`);
+}
+
+function splitKey(e) {
+  if (e.ctrlKey || e.metaKey || e.altKey) return false;
+  const b = splitBase(), step = e.shiftKey ? 96 : 24;
+  const want = { ArrowUp: b.from + step, ArrowDown: b.from - step, Home: Infinity, End: 0 }[e.key];
+  if (want === undefined) return false; // 다루지 않는 키(Esc 등)는 다른 곳으로 넘긴다
+  e.preventDefault();
+  splitSet(splitNext(b, want), true);
+  return true;
+}
+
+/** 끌기를 마친다. cancel이면 끌기 전으로 되돌린다(Esc·포인터를 빼앗길 때) */
 function paneEnd(e, cancel) {
   const d = paneDrag;
   if (!d || (e.pointerId !== undefined && e.pointerId !== d.id)) return;
   paneDrag = null;
   cancelAnimationFrame(d.frame);
   d.sep.classList.remove("dragging");
-  document.body.classList.remove("resizing");
+  document.body.classList.remove("resizing", "rows");
   try { d.sep.releasePointerCapture(d.id); } catch { /* 이미 놓았다 */ }
-  if (cancel) return paneSet(d.before, false);
+  if (cancel) return d.undo();
   if (!d.moved) return; // 누르기만 했다(두 번 누르기의 첫 번째 같은)
-  if (e.clientX === d.x) return paneSet(d.before, false); // 처음 자리로 돌아와 놓았다. 프레임에 적힌 너비를 걷는다
-  paneMove(d.base, d.base.from + e.clientX - d.x, true);
+  if (e[d.axis] === d.x) return d.undo(); // 처음 자리로 돌아와 놓았다. 프레임에 적힌 값을 걷는다
+  d.move(e[d.axis] - d.x, true);
 }
 
 document.addEventListener("pointerdown", (e) => {
-  const sep = e.target.closest && e.target.closest(".sep");
+  const sep = e.target.closest && e.target.closest(".sep, .sep-row");
   if (!sep || e.button !== 0 || paneDrag) return;
   e.preventDefault(); // 글자 선택이 시작되지 않게
   sep.focus();
   sep.setPointerCapture(e.pointerId);
-  paneDrag = { sep, id: e.pointerId, x: e.clientX, base: paneBase(sep), before: paneShares && paneShares.slice(), frame: 0 };
+  const rows = sep.id === "sep-result", axis = rows ? "clientY" : "clientX";
+  let move, undo;
+  if (rows) { // 위로 끌면 결과가 커진다
+    const base = splitBase(), before = splitRows, big = splitBig;
+    move = (delta, save) => splitSet(splitNext(base, base.from - delta), save);
+    undo = () => { splitSet(before, false); splitBig = big; splitShow(); };
+  } else {
+    const base = paneBase(sep), before = paneShares && paneShares.slice();
+    move = (delta, save) => paneMove(base, base.from + delta, save);
+    undo = () => paneSet(before, false);
+  }
+  paneDrag = { sep, id: e.pointerId, axis, x: e[axis], move, undo, frame: 0 };
   sep.classList.add("dragging");
   document.body.classList.add("resizing");
+  if (rows) document.body.classList.add("rows");
 });
 document.addEventListener("pointermove", (e) => {
   const d = paneDrag;
   if (!d || e.pointerId !== d.id) return;
-  d.at = e.clientX;
+  d.at = e[d.axis];
   d.moved = true;
-  if (!d.frame) d.frame = requestAnimationFrame(() => { d.frame = 0; paneMove(d.base, d.base.from + d.at - d.x, false); }); // 한 프레임에 한 번
+  if (!d.frame) d.frame = requestAnimationFrame(() => { d.frame = 0; d.move(d.at - d.x, false); }); // 한 프레임에 한 번
 });
 document.addEventListener("pointerup", (e) => paneEnd(e, false));
 document.addEventListener("pointercancel", (e) => paneEnd(e, true));
-document.addEventListener("dblclick", (e) => { if (e.target.closest && e.target.closest(".sep")) paneReset(); });
+document.addEventListener("dblclick", (e) => { const sep = e.target.closest && e.target.closest(".sep, .sep-row"); if (sep) sep.id === "sep-result" ? splitReset() : paneReset(); });
 new ResizeObserver(paneAria).observe($("panes")); // 창이 바뀌거나 칸이 접히고 펴져도 값이 맞게
 for (const name of PANE) new ResizeObserver(paneAria).observe($(`pane-${name}`));
+new ResizeObserver(splitAria).observe($("code-main")); // 결과가 열리고 닫히거나 창 높이가 바뀌어도
 
 /* ── 이벤트 ── */
 document.addEventListener("click", (e) => {
   const el = e.target.closest("button");
   if (!el || el.disabled) return;
   if (el.getAttribute("aria-disabled") === "true") return e.preventDefault(); // 기다리는 중의 단추(초점은 그대로 둔다)
+  if (e.isTrusted) perfPress(e, el.dataset.way ? "tab_to_change_ms" : /send$/.test(el.id) ? "send_to_clear_ms" : "press_to_paint_ms"); // Enter로 보낸 것은 keydown에서 잰다
   if (el.dataset.langFilter !== undefined) { // 등록한 문제를 언어로 거른다(화면에서만)
     LIST_LANG = el.dataset.langFilter;
     document.querySelectorAll("#list-body [data-lang]").forEach((li) => { li.hidden = !!LIST_LANG && li.dataset.lang !== LIST_LANG; });
     return void document.querySelectorAll("[data-lang-filter]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.langFilter === LIST_LANG)));
   }
-  if (el.dataset.quote) { S.quote = S.quote === el.dataset.quote ? null : el.dataset.quote; S.note.chat = null; render(); return void (S.quote && $("fq-text").focus()); }
+  if (el.dataset.gotoBlock) return void gotoBlock(Number(el.dataset.gotoBlock));
   if (el.dataset.hintBlock) return void loadHints(false, Number(el.dataset.hintBlock));
-  if (el.dataset.fill) { // 칸에 적은 것이 있으면 바꿀지 먼저 묻는다
-    harvest();
-    if (!((S.blockCode[el.dataset.fill] || {}).code || "").trim() && !unfoundBlock(el.dataset.fill)) return void fillBlock(el.dataset.fill); // 의자에서 찾기 전 블록도 먼저 묻는다
-    S.fillAsk = el.dataset.fill;
-    render();
-    return void document.querySelector(`[data-fill-no="${CSS.escape(S.fillAsk)}"]`).focus();
+  if (el.dataset.act) { // 튜터 말의 단추: 블록 칸의 같은 단추와 같은 처리기를 부른다(묻는 말과 확인 결과는 블록 칸에 보인다)
+    const b = S.session.blocks[Number(el.dataset.actBlock)];
+    if (el.dataset.act === "run") return void composeRun();
+    if (!b) return;
+    S.codeTab = "blocks";
+    return void (el.dataset.act === "skip" ? skipBlock(b.id) : askFill(b.id));
   }
+  if (el.dataset.fill) return void askFill(el.dataset.fill);
   if (el.dataset.fillYes) { S.fillAsk = null; return void fillBlock(el.dataset.fillYes); }
   if (el.dataset.fillNo) { S.fillAsk = null; render(); return void document.querySelector(`[data-fill="${CSS.escape(el.dataset.fillNo)}"]`).focus(); }
   if (el.dataset.check) return void checkBlock(el.dataset.check);
   if (el.dataset.skip) return void skipBlock(el.dataset.skip);
-  if (el.dataset.own) return void ownWayBlock(el.dataset.own);
+  if (el.dataset.own) { // 의자는 찾지 않은 뒤 블록의 이름이 보이니 먼저 묻는다('이 블록 채우기'와 같다)
+    if (S.talk !== "chair" || S.session.open_count >= S.session.blocks.length) return void skipBlock(el.dataset.own, true);
+    S.ownAsk = el.dataset.own;
+    render();
+    return void document.querySelector(`[data-own-no="${CSS.escape(S.ownAsk)}"]`).focus();
+  }
+  if (el.dataset.ownYes) { S.ownAsk = null; return void skipBlock(el.dataset.ownYes, true); }
+  if (el.dataset.ownNo) { S.ownAsk = null; render(); return void document.querySelector(`[data-own="${CSS.escape(el.dataset.ownNo)}"]`).focus(); }
   if (el.hasAttribute("data-own-off")) return void ownWayOff();
   if (el.dataset.theme) return void setTheme(el.dataset.theme, el.dataset.pick, el.dataset.effort);
   if (el.closest("#more .more-menu") && el.id !== "reset") $("more").open = false; // 더 보기에서 고르면 닫는다. 처음부터의 물음만 그 단추 자리에서 묻는다
@@ -3100,11 +3495,7 @@ document.addEventListener("click", (e) => {
     render();
     return void document.querySelector(`[data-way-info="${el.dataset.wayInfo}"]`).focus();
   }
-  if (el.dataset.way && el.getAttribute("aria-disabled")) return void ($("note-conn") || el).focus(); // 잠긴 방식: 방식은 그대로, 초점은 연결하는 길로
-  if (el.dataset.way) { // 어떻게 풀까요: 고르면 그 방식으로(튜터는 시작 단추에 초점)
-    const way = el.dataset.way;
-    return void Promise.resolve(setMode(way, true)).then(() => (tutorWay(way) ? [$("start"), $("say"), $("p-title")] : [$("code"), $("p-title")]).find(focusable).focus()); // 혼자 풀기는 편집기에, 튜터는 시작 단추에. 보이는 것이 없으면 문제 제목에(카드가 숨으며 초점이 안 보이는 곳에 남지 않게)
-  }
+  if (el.dataset.way) return void setMode(el.dataset.way, true); // 방식 탭: 누르면 바로 바뀐다(초점은 탭에 남는다). 튜터 방식에 대화가 없으면 바로 시작한다
   if (el.dataset.soloOpen || el.dataset.solo) { S.soloOpen = el.dataset.soloOpen || el.dataset.solo; render(); return void $(`solo-tab-${S.soloOpen}`).focus(); }
   if (el.dataset.tab) { S.keptNote = false; if (!setCodeTab(el.dataset.tab, "tab")) render(); return; }
   if (el.dataset.fileDrop) { // 한 장을 빼도 나머지는 남는다
@@ -3116,33 +3507,41 @@ document.addEventListener("click", (e) => {
     return void ($("file-list").querySelectorAll("button")[Math.min(i, FILES.length - 1)] || $("drop")).focus();
   }
   if (el.dataset.asset) return void openAsset(Number(el.dataset.asset));
+  if (el.dataset.noiseRestore !== undefined) { // 문제 밖으로 본 줄을 되돌려 남기거나 다시 뺀다. 다시 그린 뒤 같은 자리의 단추로
+    const line = el.dataset.noiseRestore, at = [...$("noise-lines").querySelectorAll("[data-noise-restore]")].indexOf(el);
+    KEEP.has(line) ? KEEP.delete(line) : KEEP.add(line);
+    renderDetect();
+    syncForm();
+    return void $("noise-lines").querySelectorAll("[data-noise-restore]")[at].focus();
+  }
   if (el.dataset.caseClear) { // 비운 뒤 그 줄의 넣을 값 칸으로
     const inputs = caseCells(el.parentElement);
     inputs.forEach((x) => { if (x.type === "checkbox") x.checked = false; else x.value = ""; });
     showCall(inputs[0]);
+    TOUCHED.add("cases");
     syncForm();
     markTableDiff();
     return void inputs[0].focus();
   }
   const actions = {
     "tags-open": () => { S.tagsOpen = true; render(); $("p-badges").focus(); }, // 연 것은 화면에서만(도움으로 세지 않는다)
-    "start": startMode, "submit": submitCode, "run": () => judgeCode(true), "run-own-go": () => judgeCode(true, $("run-input").value),
+    "explain-start": startMode, "start-again": () => { S.note.start = null; S.tried = null; maybeStart(); }, "submit": submitCode, "run": () => judgeCode(true), "run-own-go": () => judgeCode(true, $("run-input").value),
     "run-fill": () => { $("run-input").value = S.problem.examples[0].input; $("run-input").focus(); }, // 첫 예시의 입력을 한 번에 채운다
     "solo-open": () => loadSolution(false), "solo-force": () => { S.solo.ask = true; render(); $("solo-force-no").focus(); },
     "solo-force-no": () => { S.solo.ask = false; render(); }, "solo-force-yes": () => loadSolution(true),
     "result-tutor-hint": tutorHint,
     "result-hint": () => { S.soloOpen = "hint"; setMode("solo"); }, // 결과의 힌트는 오른쪽 칸에 블록 목차로 열린다(막힌 블록을 고른다)
     "result-learn": async () => { if (!S.solo.sol) await loadSolution(false); S.soloOpen = "sol"; setMode("solo"); $("solo-box").scrollTop = 0; },
-    "way-change": () => { S.choosing = !S.choosing && !!S.mode; render(); (S.choosing ? document.querySelector("[data-way]") : $("way-change")).focus(); },
     "solo-fold": () => { S.soloOpen = null; render(); $("rail-hint").focus(); },
     "to-explain": () => setMode("explain"),
     "compose-run": composeRun,
     "panes-reset": paneReset,
+    "result-big": () => { splitBig = !splitBig; splitShow(); },
     "problem-peek": () => { const open = $("panes").classList.toggle("peek"); el.setAttribute("aria-expanded", String(open)); el.textContent = open ? "문제 접기" : "문제 펼치기"; },
-    "lang-yes": () => changeLanguage(S.langWant), "lang-no": () => { S.langWant = null; render(); $("p-lang-select").focus(); }, "debug-start": debugStart, "to-feedback": askFeedback, "fb-again": askFeedback, "fb-get": askFeedback,
+    "debug-start": debugStart, "to-feedback": askFeedback, "fb-again": askFeedback, "fb-get": askFeedback,
     "old-feedback": () => { location.hash = `#/p/${S.pid}/feedback`; },
     "goto-line": gotoLine,
-    "prep-again": prepAgain, "prep-again-top": prepAgain,
+    "prep-again": prepAgain, "prep-again-top": prepAgain, "swap-guide": swapGuide,
     "cp-save": saveCheckpoint, "cp-restore": () => askCode("restore"), "code-clear": () => askCode("clear"),
     "code-yes": async () => {
       const run = S.codeAsk === "pull" && S.pullThenRun;
@@ -3156,7 +3555,6 @@ document.addEventListener("click", (e) => {
       if (!Object.values(S.blockCode).some((b) => (b.code || "").trim())) { S.codeNote = "블록 칸에 적은 코드가 아직 없어요"; return render(); }
       return codeEmpty() ? pullBlocks() : askCode("pull");
     },
-    "fq-close": () => { S.quote = null; render(); $("say").focus(); },
     "debug-close": () => { S.debug.open = false; render(); },
     "problem-fold": () => {
       const folded = $("panes").classList.toggle("folded");
@@ -3172,6 +3570,7 @@ document.addEventListener("click", (e) => {
       if (S.pid !== pid) return;
       if (!r.ok) { $("code-error").textContent = errorNote(r.error).text; return void ($("code-error").hidden = false); }
       clearProblem(pid);
+      delete KEPT[pid]; // 담아 둔 보내지 않은 글과 결과도 버린다
       say("처음 상태로 돌렸어요.");
       await loadState();
     },
@@ -3185,11 +3584,11 @@ document.addEventListener("click", (e) => {
       if (S.pid !== pid) return;
       if (!r.ok) { $("code-error").textContent = errorNote(r.error).text; return void ($("code-error").hidden = false); }
       S.pid = S.problem = null; // 지운 문제의 코드를 저장하러 가지 않게
+      delete KEPT[pid]; // 지운 문제의 보내지 않은 글과 결과도 버린다
       sayNext("문제를 지웠어요.");
       location.hash = "#/list";
     },
     "edit-yes": () => registerProblem(true), "edit-no": () => { $("edit-confirm").hidden = true; $("new-submit").focus(); },
-    "new-next": nextStep, "new-back": () => (history.state && history.state.wstep > 1 ? history.back() : setStep(WSTEP - 1)),
     "tools-refresh": async () => { const r = await loadTools(true); $("tools-note").textContent = r.ok ? "언어 도구를 다시 확인했어요." : errorNote(r.error).text; }, // 창 아래로 밀리지 않게 단추 옆에
     "note-conn": openConn, "rule-info": () => { S.ruleOpen = !S.ruleOpen; $("rule-short").hidden = !S.ruleOpen; $("rule-info").setAttribute("aria-expanded", String(S.ruleOpen)); },
     "chatgpt-login": chatgptLogin,
@@ -3210,15 +3609,14 @@ document.addEventListener("click", (e) => {
     "key-delete-no": () => { const name = keyDeleting; keyDeleting = null; renderKeyDelete(); const back = name && $(`key-del-${name}`); if (back) back.focus(); }, "key-delete-yes": deleteKey,
     "tour-open": openTour, "tour-open2": openTour, "tour-skip": () => { const last = tourAt === TOUR.length - 1; closeTour(); if (last && !CONN.ready) openConn(); }, "tour-prev": () => tourStep(-1), "tour-next": () => tourStep(1),
     "drop": () => $("new-files").click(), "read-files": readFiles, "asset-close": closeAsset,
-    "case-add": () => { addCaseRow(); $("case-rows").lastElementChild.querySelector("input").focus(); },
-    "mode-switch": async () => {
-      $("new-mode").value = $("new-mode").value === "program" ? "function" : "program"; setCaseMode(); say(`입출력 방식을 바꿨어요: ${$("new-mode").value === "program" ? "표준 입출력" : "함수(solution)"}`); $("new-mode").focus();
-      if (!formCases().some((x) => x.input.trim() || x.expected.trim())) await fillCases(true, true); // 찾아 둔 예시를 바로 채운다(비어 있을 때만. 적은 케이스는 덮지 않는다)
-    },
+    "case-add": () => { addCaseRow(); TOUCHED.add("cases"); syncForm(); $("case-rows").lastElementChild.querySelector(".case-val").focus(); },
+    "case-edit": () => { const open = $("case-box").hidden; openCases(open); if (open) $("case-input-1").focus(); },
+    "raw-edit": () => { $("new-text").focus(); $("new-text").scrollIntoView({ block: "center" }); },
+    "noise-show": () => { const open = $("noise-lines").hidden; $("noise-lines").hidden = !open; $("noise-show").setAttribute("aria-expanded", String(open)); $("noise-show").textContent = open ? "접기" : "보기"; },
+    "suggest-use": useSuggest, "prep-hold": prepHold,
     "new-clear": () => { $("new-clear").hidden = true; $("new-clear-confirm").hidden = false; $("new-clear-no").focus(); },
     "new-clear-no": () => { $("new-clear-confirm").hidden = true; syncForm(); $("new-clear").focus(); },
-    "new-clear-yes": () => { $("new-clear-confirm").hidden = true; emptyForm(); fillLangs(); formMode(false); findTable(); setStep(1, false); say("등록 화면을 비웠어요."); $("new-text").focus(); },
-    "case-fill": () => fillCases(false), "case-fill-yes": () => fillCases(true), "case-fill-no": () => { $("case-fill-confirm").hidden = true; $("case-fill").focus(); },
+    "new-clear-yes": () => { $("new-clear-confirm").hidden = true; emptyForm(); fillLangs(); formMode(false); say("등록 화면을 비웠어요."); $("new-text").focus(); },
   };
   if (!actions[el.id]) return;
   const done = actions[el.id]();
@@ -3229,14 +3627,19 @@ document.addEventListener("click", (e) => {
 document.addEventListener("submit", (e) => {
   e.preventDefault();
   if (S.busy) return;
-  ({ "composer": sendAnswer, "fq-composer": sendFollowup, "debug-composer": debugSend, "new-form": registerProblem }[e.target.id] || (() => {}))();
+  ({ "composer": sendAnswer, "debug-composer": debugSend, "new-form": registerProblem }[e.target.id] || (() => {}))();
 });
 
 document.addEventListener("change", (e) => {
   if (e.target.id === "new-files") { addFiles(e.target.files); return void (e.target.value = ""); }
-  if (e.target.id === "new-mode") return setCaseMode();
+  if (e.target.id === "new-mode") { // 고른 방식으로 예시를 다시 찾는다(고친 케이스는 그대로)
+    TOUCHED.add("mode");
+    setCaseMode();
+    if (!TOUCHED.has("cases")) { clearTimeout(modelTimer); detect(true, true); } // 걸려 있던 모델 감지는 이 감지 뒤에 한 번만 다시 건다
+    return;
+  }
   if (e.target.id === "new-theme") return syncForm();
-  if (e.target.id === "p-lang-select") return void (e.target.value !== S.problem.language && wantLanguage(e.target.value));
+  if (e.target.id === "p-lang-select") return void (e.target.value !== S.problem.language && changeLanguage(e.target.value));
   if (e.target.id === "upd-auto") return void updAct("auto", { on: e.target.checked });
   if (e.target.name === "keyname") { setKeyShown(false); return renderKeyStatus(); }
   if (e.target.name === "scheme") return void chooseScheme(e.target.value);
@@ -3251,11 +3654,13 @@ document.addEventListener("input", (e) => {
   const el = e.target;
   if (el.id === "code") return codeChanged();
   if (el.id === "key-value") return renderKeyStatus(); // 글자를 고치면 앞의 결과 대신 꼴을 바로 본다
+  if (el.closest("#case-box")) TOUCHED.add("cases"); // 고친 칸은 감지가 덮지 않는다
+  if (el.id === "new-title" || el.id === "new-many") TOUCHED.add(el.id.slice(4));
   if (el.closest("#new-form")) { syncForm(); if (el.getAttribute("aria-invalid")) clearError(); }
   if (el.classList.contains("case-val")) markTableDiff();
   if (el.id.startsWith("case-input-")) return showCall(el);
   if (el.id.startsWith("case-expected-") && el.tagName === "TEXTAREA") return grow(el);
-  if (el.id === "new-text") return findTableSoon();
+  if (el.id === "new-text") return detectSoon();
   if (el.dataset.block) {
     harvest();
     syncCheck(el); // 칸 글이 저장된 글과 달라지면 곧바로 '블록 코드 확인'(같아지면 걷는다)
@@ -3272,12 +3677,18 @@ document.addEventListener("keydown", (e) => {
     if (ins.length && (!modal.contains(el) || (e.shiftKey ? el === ins[0] : el === ins[ins.length - 1]))) { e.preventDefault(); ins[e.shiftKey ? ins.length - 1 : 0].focus(); }
     return;
   }
-  if (e.key === "Enter" && !e.isComposing && el.dataset && el.dataset.send && (el.tagName === "INPUT" || e.ctrlKey || e.metaKey)) { // 한 줄 칸은 Enter, 여러 줄 칸은 Ctrl/Cmd+Enter
+  if (talkBox(el) && (e.key === "Enter" || e.code === "Enter" || e.code === "NumpadEnter") && !e.shiftKey && !e.altKey) { // 대화 칸은 Enter로 보내고 Shift+Enter로 줄을 바꾼다(Windows 입력기는 조합 중 key가 Process라 code도 본다)
+    if (e.isComposing) return void (el._sendAfter = true); // 한글 조합을 확정하는 Enter: 확정된 뒤(compositionend) 한 번 보낸다. 확정 뒤에 한 번 더 오는 Enter는 빈 칸이라 보내지 않는다
+    e.preventDefault(); // 확정이 먼저 끝난 Enter(keyCode 229, WebKit)도 마지막 글자까지 들어 있어 바로 보낸다
+    return sendTalk(el, e);
+  }
+  if (e.key === "Enter" && !e.isComposing && el.dataset && el.dataset.send && (el.tagName === "INPUT" || e.ctrlKey || e.metaKey)) { // 한 줄 칸은 Enter, 그 밖의 여러 줄 칸(코드·내 입력·문제 글)은 Ctrl/Cmd+Enter
     e.preventDefault();
     return $(el.dataset.send).click();
   }
   if (e.key === "Escape" && paneDrag) return paneEnd(e, true); // 끌던 것은 처음 너비로
   if (el.classList && el.classList.contains("sep") && paneKey(e)) return;
+  if (el.id === "sep-result" && splitKey(e)) return;
   if (e.key === "Escape" && $("more").open) { $("more").open = false; return $("more").querySelector("summary").focus(); }
   if (e.key === "Escape" && S.wayInfo && el.closest && el.closest("#view-code")) { // 펴진 방식 설명을 접고 그 ⓘ로 돌아온다
     const key = S.wayInfo; S.wayInfo = null; render();
@@ -3292,31 +3703,40 @@ document.addEventListener("keydown", (e) => {
   if (el.id === "code" || (el.dataset && el.dataset.block)) codeKeys(e);
 });
 
+document.addEventListener("compositionend", (e) => {
+  const el = e.target;
+  if (!el._sendAfter) return;
+  el._sendAfter = false;
+  setTimeout(() => sendTalk(el, e)); // 확정된 글이 칸에 들어간 뒤
+});
+document.addEventListener("keyup", (e) => { if (e.target._sendAfter && (e.key === "Enter" || e.code === "Enter" || e.code === "NumpadEnter")) e.target._sendAfter = false; }); // 확정 없이 끝난 Enter는 다음 확정에 보내지 않는다
+
 $("more").addEventListener("toggle", () => { if (!$("more").open) { $("reset-confirm").hidden = true; $("reset").hidden = false; } }); // 메뉴를 닫으면 처음부터의 물음도 접는다
-/** 더 보기: 키보드로 메뉴 밖으로 나가면(Tab) 닫는다. 열린 채 남은 메뉴가 그 아래 단추(방식 바꾸기 등)를 덮지 않게. */
+/** 더 보기: 키보드로 메뉴 밖으로 나가면(Tab) 닫는다. 열린 채 남은 메뉴가 그 아래 방식 탭을 덮지 않게. */
 $("more").addEventListener("focusout", (e) => { if ($("more").open && e.relatedTarget && !$("more").contains(e.relatedTarget)) $("more").open = false; });
 /* ── 키보드 초점 ── */
 const focusable = (x) => !!x && !x.disabled && !x.closest("[hidden]") && !!x.offsetParent;
 /** 키보드로 누른 단추가 다시 그리며 사라지거나 새로 그려져 초점이 문서 맨 위(body)로 떨어지면, 같은 단추나 그 일이 이어지는 자리로 돌려 놓는다.
     기다림(모델·채점)이 끝난 뒤에 한 번 본다. 그 사이 사용자가 초점을 옮겼으면 건드리지 않는다. */
 function focusAfter(el) {
-  const own = [...el.attributes].filter((a) => a.name.startsWith("data-") && a.name !== "data-model").map((a) => `[${a.name}="${CSS.escape(a.value)}"]`)[0];
-  const block = el.dataset.check || el.dataset.fill || el.dataset.skip || el.dataset.own;
-  const next = [el.id ? `#${el.id}` : own, el.id === "start" && "#say", block && `textarea[data-block="${CSS.escape(block)}"]`, "#p-title"].filter(Boolean); // 같은 단추 → 이어서 할 칸 → 문제 제목
+  // 튜터 말의 단추는 켜진 것(가장 최근 튜터 말)만 고른다. 앞의 말에도 같은 단추가 꺼진 채 남아 있다
+  const own = el.dataset.act ? `[data-act="${CSS.escape(el.dataset.act)}"]:not(:disabled)` : [...el.attributes].filter((a) => a.name.startsWith("data-") && a.name !== "data-model").map((a) => `[${a.name}="${CSS.escape(a.value)}"]`)[0];
+  const block = el.dataset.check || el.dataset.fill || el.dataset.skip || el.dataset.own || (el.dataset.actBlock && (S.session.blocks[Number(el.dataset.actBlock)] || {}).id);
+  const next = [el.id ? `#${el.id}` : own, el.id === "start-again" && "#say", block && `textarea[data-block="${CSS.escape(block)}"]`, "#p-title"].filter(Boolean); // 같은 단추 → 이어서 할 칸 → 문제 제목
   const t0 = Date.now();
   let waited = false, end = 0, placed = null;
   const put = (x) => { if (x) { x.focus(); placed = x; } };
   const look = () => {
     const now = document.activeElement, lost = !now || now === document.body || !now.isConnected;
     if (!lost && now !== el && now !== placed) return; // 사용자(또는 그 일 자체)가 다른 곳으로 옮겼다
-    if (S.busy) { // 기다림 동안: 다시 그려진 같은 단추나 상태 글에 둔다(잠긴 단추는 aria-disabled라 초점을 받는다)
+    if (S.busy || S.running) { // 기다림 동안: 다시 그려진 같은 단추나 상태 글에 둔다(잠긴 단추는 aria-disabled라 초점을 받는다)
       waited = true;
       if (lost) put(next.slice(0, 1).map((q) => document.querySelector(`#view-code ${q}`)).find(focusable) || $("status"));
     } else {
       end = end || Date.now();
       if (lost || (placed && placed === $("status") && now === placed)) put(next.map((q) => document.querySelector(`#view-code ${q}`)).find(focusable)); // 끝난 뒤: 결과를 이어 갈 자리로(기다리는 동안 상태 글에 두었다면 거기서 옮긴다). 뒤따르는 다시 그리기가 또 떨어뜨리면 한 번 더
     }
-    if (S.busy ? Date.now() - t0 < 120000 : Date.now() - (waited ? end : t0) < 1500) setTimeout(look, 100); // 기다림이 끝날 때까지, 끝난 뒤(또는 기다림이 없으면) 1.5초
+    if (S.busy || S.running ? Date.now() - t0 < 120000 : Date.now() - (waited ? end : t0) < 1500) setTimeout(look, 100); // 기다림이 끝날 때까지, 끝난 뒤(또는 기다림이 없으면) 1.5초
   };
   setTimeout(look, 60);
 }
@@ -3346,12 +3766,6 @@ document.addEventListener("click", (e) => {
   if ($("more").open && !e.target.closest("#more")) $("more").open = false;
 });
 window.addEventListener("hashchange", route);
-window.addEventListener("popstate", () => { // 등록 화면의 뒤로·앞으로 가기: 기록에 적힌 걸음으로(글이 없으면 1걸음)
-  if (S.view !== "new" || !/^#\/(new|edit\/)/.test(location.hash)) return; // 다른 화면으로 가는 길이면 걸음을 건드리지 않는다
-  let n = (history.state && history.state.wstep) || (EDIT ? 2 : 1);
-  if (n > 1 && !EDIT && !$("new-text").value.trim()) n = 1;
-  if (n !== WSTEP) setStep(n, false);
-});
 window.addEventListener("pagehide", () => { leaving = true; flushSaves(); if (paneTimer) paneSave(); });
 window.addEventListener("pageshow", () => { leaving = false; });
 

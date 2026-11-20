@@ -155,6 +155,8 @@ UPDATE study SET help_after_reset_at = help_first_at;
 """,
     # 11: 디버그 진단이 고른 언어 함정(피드백이 이어 받는다)
     "ALTER TABLE debug_state ADD COLUMN trap TEXT NOT NULL DEFAULT '';",
+    # 12: 튜터 말의 칸(결과·질문·근거·단추 표시, JSON). text는 그대로 채운다. 옛 말은 NULL이라 text만으로 그린다
+    "ALTER TABLE message ADD COLUMN parts_json TEXT;",
 ]
 
 

@@ -3,14 +3,16 @@ import java.util.*;
 
 class Solution {
     public long solution(int[] fix, int[] line, int walk) {
+        // a 다음에 b를 고치면 b의 손님이 (fix[a] + walk) × line[b]만큼 더 기다리고,
+        // b 다음에 a를 고치면 a의 손님이 (fix[b] + walk) × line[a]만큼 더 기다린다 → 작은 쪽 차례가 앞
+        Comparator<Integer> compare = (a, b) -> Long.compare((long) (fix[a] + walk) * line[b], (long) (fix[b] + walk) * line[a]);
+
         int n = fix.length;
         Integer[] order = new Integer[n];
         for (int i = 0; i < n; i++) {
             order[i] = i;
         }
-        // a 다음에 b를 고치면 b의 손님이 (fix[a] + walk) × line[b]만큼 더 기다리고,
-        // b 다음에 a를 고치면 a의 손님이 (fix[b] + walk) × line[a]만큼 더 기다린다 → 작은 쪽 차례가 앞
-        Arrays.sort(order, (a, b) -> Long.compare((long) (fix[a] + walk) * line[b], (long) (fix[b] + walk) * line[a]));
+        Arrays.sort(order, compare);
 
         long now = 0;  // 지금 시각
         int total = 0;  // 기다림의 합

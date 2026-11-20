@@ -13,7 +13,7 @@ from ..explain.rules import check_sections
 from ..feedback.rules import check_feedback, mark_claims
 from ..output_check.nodes import guard, progress, strip_fence
 from ..plan.rules import check_blocks, clean_blocks
-from ..state import EXPLAIN_TITLES, ChatMessage, Explain, Section
+from ..state import EXPLAIN_TITLES, Explain, Section
 
 
 class StrategyTest(unittest.TestCase):
@@ -150,9 +150,6 @@ class OutputCheckTest(unittest.TestCase):
         empty = self.state("fill", block_id="b1")
         empty["result"] = {"code": "```\n```"}
         self.assertEqual(guard(empty)["error"].message, "블록 코드가 비었습니다.")
-        follow = self.state("followup", mode="chair", quote_id="m1", text="왜")
-        follow["result"] = {"reply": "이유?", "advance": True}
-        self.assertNotIn("advance", guard(follow)["result"])
 
     def test_progress(self):
         plan = fakes.planned(fakes.two())
@@ -189,8 +186,9 @@ class VerdictTest(unittest.TestCase):
         self.assertEqual(parse_verdict("[check]Y e입니다").basis, "e")
         for bad in ("Y", "[check]", None):
             self.assertIsNone(parse_verdict(bad))
-        got = parse_verdict("[check]W")  # 낱말의 뜻을 묻는 말
-        self.assertEqual((got.ok, got.aside), (False, "W"))
+        for mark in ("Q", "W", "q"):  # 되묻는 말. 옛 W(낱말 뜻)도 Q로 읽는다
+            got = parse_verdict(f"[check]{mark}")
+            self.assertEqual((got.ok, got.aside, got.other), (False, "Q", False), mark)
 
 
 class TalkRuleTest(unittest.TestCase):
@@ -250,7 +248,6 @@ class FeedbackRuleTest(unittest.TestCase):
 class RequestCheckTest(unittest.TestCase):
     def test_rejections_do_not_call_llm(self):
         plan = fakes.planned(fakes.two())
-        user_line = ChatMessage(id="user1", role="user", text="사용자말", at="t", block_index=0)
         cases = [
             (fakes.make_state("turn", fakes.context(plan=plan, open_count=1), mode="explain", event="start"), "validation"),
             (fakes.make_state("turn", fakes.context(plan=plan, open_count=1), mode="chair", event="nope"), "validation"),
@@ -258,14 +255,12 @@ class RequestCheckTest(unittest.TestCase):
             (fakes.make_state("turn", fakes.context(plan=plan, open_count=1), mode="chair", event="block_filled", block_id="b2", code="x"), "validation"),
             (fakes.make_state("turn", fakes.context(plan=plan, open_count=1), mode="chair", event="block_filled", block_id="b1", code=" "), "validation"),
             (fakes.make_state("turn", fakes.context(plan=plan, open_count=1, chair=[fakes.service("이미?", 0)]), mode="chair", event="start"), "already_started"),
-            (fakes.make_state("followup", fakes.context(plan=plan, open_count=1, chair=[fakes.service("말?", 0)]), mode="chair", quote_id="없는", text="왜"), "not_found"),
-            (fakes.make_state("followup", fakes.context(plan=plan, open_count=1, chair=[user_line]), mode="chair", quote_id="user1", text="왜"), "not_found"),
-            (fakes.make_state("followup", fakes.context(plan=plan, open_count=1), mode="chair", quote_id="", text="왜"), "validation"),
             (fakes.make_state("fill", fakes.context(), block_id="b1"), "block_not_found"),
             (fakes.make_state("fill", fakes.context(plan=plan, open_count=1), block_id="없는"), "block_not_found"),
             (fakes.make_state("fill", fakes.context(plan=plan, open_count=1), block_id="b2"), "block_closed"),
             (fakes.make_state("feedback", fakes.context(plan=plan, open_count=1)), "not_submitted"),
             (fakes.make_state("nope", fakes.context()), "validation"),
+            (fakes.make_state("followup", fakes.context(plan=plan, open_count=1)), "validation"),  # 꼬리질문 요청은 없다
         ]
         for state, code in cases:
             with self.subTest(code=code, request=state["request"]):
@@ -910,7 +905,7 @@ class UnsaidCreditTest(unittest.TestCase):
         two = "이름별로 세면 되나요? 그리고 k는 왜 필요한가요?"
         # 걸리면 실패(대체 질문)가 아니라 답 앞에 미룸 문장이 붙고 본문은 그대로다
         self.assertNotIn("물음을 받지 않음", reply_problems("입력의 첫 값을 손으로 따라가 볼까요?", move="trace", problem="", user=two))
-        self.assertEqual(defer_ask("입력의 첫 값을 손으로 따라가 볼까요?", two), lead + "입력의 첫 값을 손으로 따라가 볼까요?")
+        self.assertEqual(defer_ask("입력의 첫 값을 손으로 따라가 볼까요?", two), lead.strip() + "\n입력의 첫 값을 손으로 따라가 볼까요?")  # 미룸 줄 아래에 답
         self.assertIn("여럿이라", defer_ask("입력을 볼까요?", "가는 뭐죠? 나는 뭐죠? 다는 뭐죠?"))
         # 걸리지 않는다: 한 물음만 다뤄도, 이미 미뤘다고 말해도(미룸 말을 겹쳐 붙이지 않는다), 물음이 하나이거나 없어도, 코드만 붙여도
         for text, user in [("k는 어떤 값을 담는 변수일까요?", two), (lead + "입력부터 따라가 볼까요?", two),
@@ -1022,10 +1017,9 @@ class UnsaidCreditTest(unittest.TestCase):
         from ..common.talk_prompts import NOT_SAID
         from ..chair.prompts import SYSTEM as CHAIR
         from ..debug.prompts import SPEAK_SYSTEM
-        from ..followup.prompts import SYSTEM as FOLLOWUP
         from ..guide.prompts import SYSTEM as GUIDE
 
-        for text in (CHAIR, GUIDE, FOLLOWUP, SPEAK_SYSTEM):
+        for text in (CHAIR, GUIDE, SPEAK_SYSTEM):
             self.assertIn(NOT_SAID, text)
 
     def test_debug_reply_with_unsaid_credit_falls_back(self):

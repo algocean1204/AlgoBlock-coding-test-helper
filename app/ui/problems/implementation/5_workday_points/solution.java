@@ -2,12 +2,22 @@ import java.util.*;
 
 class Solution {
     static final int[] MONTH_DAYS = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
-    static long[] yearStart = new long[10000];
 
     static boolean isLeap(int year) {
         if (year % 400 == 0) return true;
         if (year % 100 == 0) return false;
         return year % 4 == 0;
+    }
+
+    // 해마다 '1년 1월 1일부터 그해 1월 1일까지 며칠인가'를 한 번만 구해 둔다
+    static long[] yearStart = new long[10000];
+
+    static {
+        long days = 0;
+        for (int year = 1; year < 10000; year++) {
+            yearStart[year] = days;
+            days += isLeap(year) ? 366 : 365;
+        }
     }
 
     static long dayNumber(String date) {
@@ -39,13 +49,6 @@ class Solution {
     }
 
     public long[] solution(String[][] staff, String today) {
-        // 해마다 '1년 1월 1일부터 그해 1월 1일까지 며칠인가'를 한 번만 구해 둔다
-        long days = 0;
-        for (int year = 1; year < 10000; year++) {
-            yearStart[year] = days;
-            days += isLeap(year) ? 366 : 365;
-        }
-
         long todayNumber = dayNumber(today);
         TreeMap<String, Long> points = new TreeMap<>();  // TreeMap은 부서 이름을 사전 순으로 꺼낸다
         for (String[] row : staff) {

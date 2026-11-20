@@ -13,24 +13,24 @@ AlgoBlock의 기록과 설정은 데이터 폴더 하나에 있다. 이 문서�
 
 - 설치 파일도 `ALGOBLOCK_UI_DATA`가 이미 있으면 그 값을 쓴다.
 - 소스 실행의 데이터 폴더는 `app/ui/data/.gitignore`에 따라 git에서 빠진다.
-- 브라우저 쪽에는 문제마다 고른 푸는 방식이 로컬 저장소의 `algoblock.way.<문제 id>` 키로 남는다.
 
 ## 파일
 
 | 파일 | 내용 |
 |---|---|
 | `tutor.db` | 튜터 엔진의 SQLite 파일 |
-| `problems.json` | 등록 문제: 제목, 글, 케이스, 방식, 주제, 단계, 인자 이름, 대조 결과 `check`, 만든 케이스 `made`, 제한 `limits` |
+| `problems.json` | 등록 문제: 제목, 글, 케이스, 방식, 주제, 단계, 인자 이름, 대조 결과 `check`, 만든 케이스 `made`, 제한 `limits`, 대조가 찾았지만 대화가 있어 바꿔 끼우지 않은 가이드 `better`(언어와 함께), 대조 전에 맡겨 둔 정석 가이드의 채점 결과와 쓴 급 `pending`(언어와 함께. 대조가 끝나면 지운다) |
 | `blocks.json` | 블록 칸의 코드 |
 | `codes.json` | 문제마다 언어별로 쓰던 코드 |
 | `checkpoints.json` | 언어마다 마지막 체크포인트 |
 | `attendance.json` | 출석한 날짜(기기의 현지 날짜) |
 | `touched.json` | 문제를 마지막으로 손댄 시각(코드 저장, 실행, 제출, 힌트) |
+| `ways.json` | 문제마다 고른 푸는 방식(`solo`, `chair`, `guide`). '이 문제 처음부터'와 문제 삭제 때 지운다 |
 | `hints.json` | 혼자 풀기에서 이번 풀이에 블록마다 본 힌트 수. 없거나 맞지 않으면 본 힌트 수를 블록 1부터 차례로 나눈다 |
 | `keys.json` | 화면에서 넣은 API 키. 권한 0600 |
 | `prefs.json` | 안내를 봤는지(`tour_seen`), 과정별 급과 추론 정도(`stages`), 마지막 풀이 언어(`language`), 화면 색(`scheme`: `light` 또는 `dark`. 없으면 운영체제 설정을 따른다), 세 칸의 너비 몫(`panes`) |
 | `models.json` | 공급자 시리즈마다 최신 모델 이름과 받은 시각 |
-| `kept.json` | 언어를 바꿀 때 보관한 그 언어의 가이드, 계획, 해설 |
+| `kept.json` | 언어를 바꿀 때 보관한 그 언어의 가이드, 계획, 해설과 대화·블록 진행(`talk`: 대화와 블록 판정, 디버그 상태, 열린 블록 수, 블록 칸, '끝까지 내 방식으로 쓰기'). 그 언어로 돌아오면 되살리고 `talk`는 뺀다. '이 문제 처음부터'는 모든 언어의 `talk`를 지우고, 문제 글이나 케이스를 고치거나 문제를 지우면 그 문제의 것을 모두 지운다 |
 | `.env` | 키(선택). 루트 `.env` 다음에 읽는다 |
 | `auth/` | ChatGPT 로그인: 기기 아이디 `chatgpt-host.json`, 계정과 토큰 `chatgpt.json`(0600) |
 | `usage.jsonl` | 모델 호출마다 한 줄. 토큰 수만 적는다 |
@@ -53,7 +53,7 @@ AlgoBlock의 기록과 설정은 데이터 폴더 하나에 있다. 이 문서�
 | `setting` | 키와 값(`key`, `value`) 쌍. 다른 표와 달리 문제별로 나뉘지 않는다 |
 | `problem` | 문제 기본 행 |
 | `tutor_session` | 튜터 세션 상태(`solution_json` 포함) |
-| `message` | 대화 말(사용자와 튜터)과 질문 유형(`move`) |
+| `message` | 대화 말(사용자와 튜터), 질문 유형(`move`), 튜터 말의 칸(`parts_json`) |
 | `feedback` | 제출에 대한 피드백 |
 | `submission` | 제출 코드, 통과 여부, 시각, 언어, 결과 종류, 상세(`detail_json`: 정확성·효율성 점수와 가장 긴 실행 시간) |
 | `block_state` | 블록 판정('Y', 'N', '?'), 이름 짝(`renames_json`) |
@@ -68,7 +68,7 @@ AlgoBlock의 기록과 설정은 데이터 폴더 하나에 있다. 이 문서�
 
 ## 스키마 버전
 
-- 버전은 `PRAGMA user_version`에 저장한다. 마이그레이션 목록(`MIGRATIONS`)의 길이가 최신 버전이다. 현재 버전은 10이다.
+- 버전은 `PRAGMA user_version`에 저장한다. 마이그레이션 목록(`MIGRATIONS`)의 길이가 최신 버전이다. 현재 버전은 12다.
 - DB를 열면 저장된 버전 다음부터 차례로 마이그레이션을 돈다. 남은 마이그레이션은 모두 한 트랜잭션 안에서 돈다. 쓰기 잠금(`BEGIN IMMEDIATE`)을 먼저 잡고, 실패하면 모두 되돌린다.
 - 버전별 변경:
   - 2: `message`에 `move` 열
@@ -80,6 +80,8 @@ AlgoBlock의 기록과 설정은 데이터 폴더 하나에 있다. 이 문서�
   - 8: 블록 판정에 '?' 추가(표를 새로 만들어 옮김)
   - 9: `problem_fact`에 `level`과 `tags_json`
   - 10: `study`에 `help_first_at`, `help_after_reset_at`, `reset_at`, `hints_at_reset`. 옛 행은 남은 기록으로 채운다(대화가 있던 문항은 행을 만든다. 본 힌트는 시각이 없어 가장 이른 시각으로 둔다)
+  - 11: `debug_state`에 `trap`
+  - 12: `message`에 `parts_json`(튜터 말의 칸. 옛 말은 NULL로 남고 `text`로 그린다)
 
 ## 기기 밖으로 나가는 것
 

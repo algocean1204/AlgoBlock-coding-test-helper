@@ -6,7 +6,7 @@ from dataclasses import replace
 
 from . import fakes
 from ..common.talk_prompts import CONCEPT_FIRST
-from ..common.talk_rules import reply_problems, sentences
+from ..common.talk_rules import reply_problems
 from ..common.talk_rules import (ALL_FILLED, ALONE_OK, ANSWER_LEAD, BACK_LEAD, EXAMPLES_ONLY, FALLBACK, MALFORMED, RETRY_LEAD, SKIPPED, UNRUN_NO,
                                 UNVERIFIED, open_lead)
 
@@ -15,8 +15,8 @@ from ..llm import LlmFailed, LlmTimeout
 from ..main import AGENTS, build
 from ..state import BlockState, DebugState, FilledBlock, Solution, Submission
 from ..feedback.prompts import WAY_TEXT
-from ..turn.code_check import BRACE_CLOSE, BRACE_OPEN, NOT_JOINED, _RUNTIME, brace_note, code_hash, unrun_note
-from ..turn.moves import FOUND_OK, FOUND_TIP, HINTS_DONE, HINTS_DONE_UNFOUND, WRITE_TIP
+from ..turn.code_check import BRACE_CLOSE, NOT_JOINED, _RUNTIME, brace_note, code_hash, unrun_note
+from ..turn.moves import FOUND_OK, HINTS_DONE, WRITE_TIP, WRITE_TIP_LAST
 
 ZERO = _RUNTIME[2][1]  # 0으로 나눈 실행 오류의 쉬운 말
 
@@ -126,21 +126,37 @@ class ChairTest(unittest.TestCase):
             self.assertNotIn(leak, ask)
 
     def test_basis_then_advance_with_saved_next(self):
+        """근거 질문에 평서로 답하면 판정 없이(모델 0회) 그 블록의 코드로 적으라는 고정 말이고, 넘기지 않는다.
+        다음 블록은 그 블록 코드 확인이 통과해야 열리고, 그때 다음 블록의 첫 저장 힌트가 다음 블록 번호로 나간다."""
         talk = [fakes.service(fakes.HINTS1[0], 0, "m1"), fakes.user("이름을 세면 돼요", 0), fakes.service("근거는요?", 0, "m2", "basis")]
         done, fake = fakes.go(chair_state("문제에 제목이 같으면 같은 책이라고 해서요", chair=talk), {})
-        self.assertEqual(fakes.tasks(fake), [])  # 근거 질문의 답은 판정하지 않고 넘어간다(모델 0회)
-        # 찾은 블록의 안내와 다음 블록의 첫 질문은 다른 말이다(한 말에 붙어 다음 블록 아래에 보였다)
-        self.assertEqual(done["result"], {"reply": OPEN_LEAD + fakes.HINTS2[0], "advance": True, "move": "open", "found": FOUND_TIP.strip()})
-        self.assertEqual(done["open_count"], 2)
+        self.assertEqual(fakes.tasks(fake), [])
+        self.assertEqual((done["result"], done["open_count"]), ({"reply": WRITE_TIP, "advance": False, "move": "write"}, 1))
+        asked, fake = fakes.go(chair_state("문제에 그렇게 적혀 있지 않나요?", chair=talk), {"chair.judge": ["[check]Y t"], "chair.ask": ["그 문장대로 예시를 따라가면 무엇이 나오나요?"]})
+        self.assertEqual(fakes.tasks(fake), ["chair.judge", "chair.ask"])  # 물음 꼴의 답은 판정한다. 맞아도 넘기지 않고 스스로 확인하게 묻는다
+        self.assertEqual((asked["result"]["move"], asked["result"]["advance"], asked["open_count"]), ("verify", False, 1))
+        # 말 → 블록: 이어서 그 블록의 코드를 확인받아 통과하면 다음 블록이 열린다(모델 0회)
+        wrote = [*talk, fakes.user("문제에 제목이 같으면 같은 책이라고 해서요", 0, "u2"), fakes.service(WRITE_TIP, 0, "m3", "write")]
+        done, fake = fakes.go(chair_state("REF_ONE", event="block_filled", chair=wrote), {})
+        self.assertEqual((fake.calls, done["result"]["reply"], done["result"]["advance"], done["open_count"], done["move"].target),
+                         ([], OPEN_LEAD.strip() + "\n" + fakes.HINTS2[0], True, 2, 1))
         from ..feedback.prompts import record_lines
-        found = [fakes.user("이름을 세면 돼요", 0), fakes.service(FOUND_TIP.strip(), 0, "m3", "found"), fakes.service(OPEN_LEAD + fakes.HINTS2[0], 1, "m4")]
-        self.assertEqual(record_lines(fakes.context(chair=found), fakes.planned(fakes.two())), [])  # 찾은 블록에 남긴 안내는 막힌 답이 아니다
+        found = [fakes.user("이름을 세면 돼요", 0), fakes.service(WRITE_TIP, 0, "m3", "write"), fakes.service(OPEN_LEAD + fakes.HINTS2[0], 1, "m4")]
+        self.assertEqual(record_lines(fakes.context(chair=found), fakes.planned(fakes.two())), [])  # 코드로 적으라는 말은 막힌 답이 아니다
 
     def test_last_block_recap(self):
+        """마지막 블록을 말로 맞혀도 정리 질문으로 넘기지 않고 마지막 블록의 코드로 적으라는 고정 말이다(생성 0회).
+        그 블록 코드 확인이 통과하면 정리 질문이고, 모델에게 거절로 알리지 않는다."""
         plan = fakes.planned([fakes.hinted()[0]])
         done, fake = fakes.go(chair_state("문제 글에 그렇게 적혀 있어요", plan=plan), {"chair.judge": ["[check]Y t"], "chair.ask": ["처음부터 무엇을 정했는지 말해 볼까요?"]})
-        self.assertEqual((done["result"]["move"], done["result"]["advance"], done["open_count"]), ("recap", True, 1))
-        self.assertIn("처음부터 순서대로", fakes.prompt(fake, "chair.ask"))
+        self.assertEqual(fakes.tasks(fake), ["chair.judge"])
+        self.assertEqual((done["result"]["move"], done["result"]["advance"], done["result"]["reply"], done["open_count"]), ("write", False, WRITE_TIP_LAST, 1))
+        wrote = [fakes.user("문제 글에 그렇게 적혀 있어요", 0), fakes.service(WRITE_TIP_LAST, 0, "m2", "write")]
+        done, fake = fakes.go(chair_state("REF_ONE", event="block_filled", plan=plan, chair=wrote), {"chair.ask": ["처음부터 무엇을 정했는지 말해 볼까요?"]})
+        self.assertEqual((fakes.tasks(fake), done["result"]["move"], done["result"]["advance"], done["open_count"]), (["chair.ask"], "recap", True, 1))
+        asked = fakes.prompt(fake, "chair.ask")
+        self.assertIn("처음부터 순서대로", asked)
+        self.assertNotIn("아직 넘어가지 않는다", asked)
 
     def test_after_recap_answer_close_without_model(self):
         plan = fakes.planned([fakes.hinted()[0]])
@@ -175,7 +191,7 @@ class ChairTest(unittest.TestCase):
                          ([], {"reply": FOUND_OK, "advance": False, "move": "done", "renamed": []}, 2, "b1", "Y"))
         done, fake = fakes.go(chair_state("x = 1", event="block_filled", chair=chair, open_count=2), {"chair.check_code": ["[check]N2"]})
         self.assertEqual((fakes.tasks(fake), done["result"]["reply"], done["result"]["advance"], done["open_count"]),
-                         (["chair.check_code"], unrun_note("") + " " + UNRUN_NO + " " + fakes.HINTS1[1], False, 2))  # 확인 항목(답을 말한 문장)은 인용하지 않는다. 채점 함수가 없어 읽고 본 판단이라 그렇게 말한다
+                         (["chair.check_code"], unrun_note("") + " " + UNRUN_NO + "\n" + fakes.HINTS1[1], False, 2))  # 확인 항목(답을 말한 문장)은 인용하지 않는다. 채점 함수가 없어 읽고 본 판단이라 그렇게 말한다
         guide = fakes.make_state("turn", fakes.context(plan=fakes.planned(fakes.hinted()), open_count=2, guide=[fakes.service("빈칸?", 1)]),
                                  mode="guide", event="block_filled", block_id="b1", code="REF_ONE")
         done, fake = fakes.go(guide, {})  # 가이드도 앞 블록을 고쳐 다시 확인할 수 있다. 진행은 그대로
@@ -186,7 +202,7 @@ class ChairTest(unittest.TestCase):
         done, fake = fakes.go(state, {"chair.check_code": ["[check]Y"]})
         self.assertEqual(fakes.tasks(fake), ["chair.check_code"])
         # 채점 함수가 없어 모델이 코드를 읽고 통과시켰다: 그렇다고 말하고 '확인 전'으로 둔다(진행은 한다)
-        self.assertEqual(done["result"]["reply"], unrun_note("") + " " + OPEN_LEAD + fakes.HINTS2[0])
+        self.assertEqual(done["result"]["reply"], unrun_note("") + "\n" + OPEN_LEAD.strip() + "\n" + fakes.HINTS2[0])
         self.assertEqual((done["block_check"].verdict, done["block_check"].tries, done["open_count"]), ("?", 1, 2))
         checked = fakes.prompt(fake, "chair.check_code")
         self.assertIn("REF_ONE", checked)  # 비교 기준. 출력이 [check]뿐이라 새지 않는다
@@ -196,21 +212,21 @@ class ChairTest(unittest.TestCase):
         again = chair_state("\nx = 1 ", event="block_filled", block_states={"b1": saved}, chair=[fakes.service(fakes.HINTS1[0], 0)])  # 앞 빈 줄·끝 공백만 다르다
         done, fake = fakes.go(again, {})
         self.assertEqual(fakes.tasks(fake), [])  # 같은 코드라 판정은 0회, 말은 고정 앞말 + 다음 저장 힌트
-        self.assertEqual(done["result"]["reply"], unrun_note("") + " " + UNRUN_NO + " " + fakes.HINTS1[1])  # 채점 함수가 없을 때의 지난 거절이라 읽고 본 판단이다('확인 전')
+        self.assertEqual(done["result"]["reply"], unrun_note("") + " " + UNRUN_NO + "\n" + fakes.HINTS1[1])  # 채점 함수가 없을 때의 지난 거절이라 읽고 본 판단이다('확인 전')
         self.assertEqual((done["block_check"].verdict, done["block_check"].tries), ("N", 1))  # 실행으로 확인한 틀림이 아니라 틀린 수는 그대로다
 
     def test_answer_request_and_off_topic_get_fixed_leads(self):
         chair = [fakes.service(fakes.HINTS1[0], 0)]
         done, fake = fakes.go(chair_state("그냥 답 코드 알려 줘", chair=chair), {})  # 짧은 답 요청은 규칙으로 가른다(모델 0회)
-        self.assertEqual((fake.calls, done["result"]["reply"]), ([], ANSWER_LEAD + fakes.HINTS1[1]))
+        self.assertEqual((fake.calls, done["result"]["reply"]), ([], fakes.HINTS1[1] + "\n" + ANSWER_LEAD.strip()))
         done, fake = fakes.go(chair_state("이 문제 어떻게 푸는지 코드로 전부 보여 주실 수 있나요", chair=chair), {"chair.judge": ["[check]A"]})
-        self.assertEqual((fakes.tasks(fake), done["result"]["reply"]), (["chair.judge"], ANSWER_LEAD + fakes.HINTS1[1]))  # 말은 저장 힌트(모델이 짓지 않는다)
+        self.assertEqual((fakes.tasks(fake), done["result"]["reply"]), (["chair.judge"], fakes.HINTS1[1] + "\n" + ANSWER_LEAD.strip()))  # 말은 저장 힌트(모델이 짓지 않는다)
         self.assertIn("[check]A", fakes.prompt(fake, "chair.judge"))
         done, fake = fakes.go(chair_state("오늘 점심 뭐 먹지", chair=chair), {"chair.judge": ["[check]O"]})
-        self.assertEqual((fakes.tasks(fake), done["result"]["reply"]), (["chair.judge"], BACK_LEAD + fakes.HINTS1[1]))
+        self.assertEqual((fakes.tasks(fake), done["result"]["reply"]), (["chair.judge"], BACK_LEAD.strip() + "\n" + fakes.HINTS1[1]))
         old = fakes.planned(fakes.two())  # 저장 힌트가 없는 옛 계획은 모델이 짓는다
         done, fake = fakes.go(chair_state("그냥 답 코드 알려 줘", chair=chair, plan=old), {"chair.ask": ["이름이 두 번 나오면 무엇을 적어 둘까요?"]})
-        self.assertEqual(done["result"]["reply"], ANSWER_LEAD + "이름이 두 번 나오면 무엇을 적어 둘까요?")
+        self.assertEqual(done["result"]["reply"], "이름이 두 번 나오면 무엇을 적어 둘까요?\n" + ANSWER_LEAD.strip())
         self.assertIn("답을 달라고 했다", fakes.prompt(fake, "chair.ask"))
 
     def test_two_empty_answers_get_fill_tip_once(self):
@@ -220,13 +236,13 @@ class ChairTest(unittest.TestCase):
         chair = [fakes.service(fakes.HINTS1[0], 0, "m1"), fakes.user("모르겠어요", 0, "u1"), fakes.service("명단에서 무엇을 셀까요?", 0, "m2", "clue")]
         ask = {"chair.judge": ["[check]N1"], "chair.ask": ["s가 \"aa\"라면 무엇을 적어 둘까요?"]}
         done, fake = fakes.go(chair_state("잘 모르겠음", chair=chair), dict(ask))
-        self.assertEqual((fake.calls, done["result"]["reply"]), ([], FILL_TIP + fakes.HINTS1[1]))  # 내용 없는 답: 판정도 말도 모델 0회
+        self.assertEqual((fake.calls, done["result"]["reply"]), ([], fakes.HINTS1[1] + "\n" + FILL_TIP.strip()))  # 내용 없는 답: 판정도 말도 모델 0회. 길 안내는 질문 아래 줄
         third = chair + [fakes.user("잘 모르겠음", 0, "u2"), fakes.service(done["result"]["reply"], 0, "m3", "trace")]
         done, _ = fakes.go(chair_state("모르겠어요", chair=third), dict(ask))
-        self.assertFalse(done["result"]["reply"].startswith(FILL_TIP))  # 한 블록에 한 번
+        self.assertNotIn(FILL_TIP.strip(), done["result"]["reply"])  # 한 블록에 한 번
         once = [fakes.service(fakes.HINTS1[0], 0, "m1"), fakes.user("이름을 세면 될 것 같은데 같은 이름은 잘 모르겠어요", 0, "u1"), fakes.service("명단에서 무엇을 셀까요?", 0, "m2", "clue")]
         done, _ = fakes.go(chair_state("모르겠어요", chair=once), dict(ask))
-        self.assertFalse(done["result"]["reply"].startswith(FILL_TIP))  # 앞 말에 내용이 있었다
+        self.assertNotIn(FILL_TIP.strip(), done["result"]["reply"])  # 앞 말에 내용이 있었다
 
     def test_empty_answers_use_saved_hints_without_model(self):
         """의자도 '모르겠어요'·답 조름 뒤에 모델이 지은 말이 블록의 답을 말했다. 판정도 규칙으로 먼저 가른다(모델 0회)."""
@@ -242,16 +258,16 @@ class ChairTest(unittest.TestCase):
             self.assertEqual(fake.calls, [], text)
             replies.append(done["result"]["reply"])
             talk = talk + [fakes.user(text, 0, f"u{n}"), fakes.service(replies[-1], 0, f"s{n}", done["result"]["move"])]
-        self.assertEqual(replies, [fakes.HINTS1[1], FILL_TIP + fakes.HINTS1[2], HINTS_DONE_UNFOUND, "답 코드는 드리지 않아요. " + HINTS_DONE_UNFOUND])
+        self.assertEqual(replies, [fakes.HINTS1[1], fakes.HINTS1[2] + "\n" + FILL_TIP.strip(), HINTS_DONE, HINTS_DONE + "\n답 코드는 드리지 않아요."])
 
     def test_term_question_and_hard_message_reach_the_prompt(self):
         """'그게 뭐예요?'에 뜻을 풀지 않고 되묻기만 했다. 판정이 뜻 묻기(W)를 가르고, 질문 지시가 짧은 뜻과 예 뒤에 원래 질문으로 돌아가게 한다."""
         from ..common.talk_prompts import HARD_STEP, TERM_STEP
 
-        asked = "변수는 값을 담아 두는 이름표예요. 예를 들어 나이를 age라는 이름에 담아 둘 수 있어요. 그럼 책마다 무엇을 담아 둬야 할까요?"
-        done, fake = fakes.go(chair_state("변수가 뭐예요?"), {"chair.judge": ["[check]W"], "chair.ask": [asked]})
-        self.assertEqual((done["result"]["move"], done["result"]["advance"], done["result"]["reply"]), ("term", False, asked))
-        self.assertIn("[check]W", fakes.prompt(fake, "chair.judge"))
+        asked = {"note": "변수는 값을 담아 두는 이름표예요(예: 나이를 `age`에 담아요).", "question": "책마다 무엇을 담아 둬야 할까요?"}
+        done, fake = fakes.go(chair_state("변수가 뭐예요?"), {"chair.judge": ["[check]Q"], "chair.ask": [asked]})
+        self.assertEqual((done["result"]["move"], done["result"]["advance"], done["result"]["reply"]), ("term", False, asked["question"] + "\n" + asked["note"]))
+        self.assertIn("[check]Q", fakes.prompt(fake, "chair.judge"))
         prompt = fakes.prompt(fake, "chair.ask")
         self.assertIn(TERM_STEP, prompt)
         self.assertIn("사용자 말:변수가 뭐예요?", prompt)  # 무엇을 물었는지 본다(답 요청·무관한 말처럼 가리지 않는다)
@@ -295,6 +311,23 @@ class GuideTest(unittest.TestCase):
         self.assertIn(TERM_STEP, lead)
         self.assertNotIn("맞는 부분과 빠진 부분", lead)  # 생각을 낸 말에 답하는 지시가 아니다
 
+    def test_guide_asked_back_keeps_progress_and_hint_number(self):
+        """되묻는 말(Q)은 판정 1 + 생성 1로 답하고 진행(열린 블록 수, 힌트 번호)을 바꾸지 않는다. 문법은 이 문제와 상관없는 예로 답하게 한다."""
+        from ..common.talk_prompts import TERM_STEP
+
+        talk = [fakes.service(fakes.HINTS1[0], 0, "m1", "blank")]
+        said = "`fruits = {}`처럼 쓰면 빈 상자가 생겨요. 그럼 책마다 무엇을 기록해 둘까요?"
+        done, fake = fakes.go(self.guide("딕셔너리는 어떻게 만들어요?", guide=talk), {"guide.judge": ["[check]Q"], "guide.lead": [said]})
+        self.assertEqual((done["result"]["move"], done["result"]["advance"], done["open_count"], fakes.tasks(fake)),
+                         ("term", False, 1, ["guide.judge", "guide.lead"]))
+        self.assertIn("[check]Q", fakes.prompt(fake, "guide.judge"))
+        self.assertIn("Q가 아니라", fakes.prompt(fake, "guide.judge"))  # 자기 생각을 물음 꼴로 낸 말은 되묻기가 아니다
+        self.assertIn(TERM_STEP, fakes.prompt(fake, "guide.lead"))
+        self.assertIn("이 문제와 상관없는 작은 예", TERM_STEP)
+        talk = talk + [fakes.user("딕셔너리는 어떻게 만들어요?", 0, "u1"), fakes.service(done["result"]["reply"], 0, "s1", "term")]
+        done, fake = fakes.go(self.guide("모르겠어요", guide=talk), {})
+        self.assertEqual((done["result"]["reply"], fake.calls), (fakes.HINTS1[1], []))  # 되묻기 뒤에도 다음 저장 힌트는 2번이다
+
     def test_guide_opens_with_saved_hints_and_never_asks_basis(self):
         """모델이 지은 블록 안내 말은 블록의 답을 문장으로 말하곤 했다. 여는 말과 내용 없는 답 뒤는 저장 힌트(모델 0회)."""
         done, fake = fakes.go(self.guide(event="start"), {})
@@ -307,7 +340,7 @@ class GuideTest(unittest.TestCase):
             replies.append(done["result"]["reply"])
             talk = talk + [fakes.user(text, 0, f"u{n}"), fakes.service(replies[-1], 0, f"s{n}", done["result"]["move"])]
         from ..common.talk_rules import FILL_TIP
-        self.assertEqual(replies, [fakes.HINTS1[1], FILL_TIP + fakes.HINTS1[2], HINTS_DONE, "답 코드는 드리지 않아요. " + HINTS_DONE])
+        self.assertEqual(replies, [fakes.HINTS1[1], fakes.HINTS1[2] + "\n" + FILL_TIP.strip(), HINTS_DONE, HINTS_DONE + "\n답 코드는 드리지 않아요."])
         done, fake = fakes.go(self.guide("이름마다 몇 번인지 세면 될 것 같아요", guide=talk[:1]),
                               {"guide.judge": ["[check]N2"], "guide.lead": ["같은 이름이 두 번 나오면 그 수는 어떻게 될까요?"]})
         self.assertEqual(fakes.tasks(fake), ["guide.judge", "guide.lead"])  # 내용 있는 말에만 모델이 답한다
@@ -373,7 +406,7 @@ class GuideTest(unittest.TestCase):
         self.assertIn("해내지 못한 것: 없던 이름은 0에서 시작한다", lead)
         self.assertIn("질문을 한 것이 아니다", lead)
         self.assertIn("count[x] += 1", lead)
-        self.assertEqual((done["result"]["reply"], done["block_check"].miss), (unrun_note("") + " " + UNRUN_NO + " 처음 보는 이름이면 어떻게 될까요?", 2))
+        self.assertEqual((done["result"]["reply"], done["block_check"].miss), (unrun_note("") + " " + UNRUN_NO + "\n처음 보는 이름이면 어떻게 될까요?", 2))
         self.assertIn("신호를 1번부터 하나씩", fakes.prompt(fake, "guide.check_code"))
 
 
@@ -423,14 +456,14 @@ class RunCheckTest(unittest.TestCase):
         seen = []
         done, fake = fakes.go(self.turn("order = list(items)\norder.sort()"), {}, sort_check(seen))
         self.assertEqual((fake.calls, done["block_check"].verdict, done["open_count"]), ([], "Y", 2))
-        self.assertEqual(done["result"]["reply"], open_lead("guide", "var_during") + fakes.HINTS2[0])
+        self.assertEqual(done["result"]["reply"], open_lead("guide", "var_during").strip() + "\n" + fakes.HINTS2[0])
         self.assertEqual(seen, ["def solution(items):\n    order = list(items)\n    order.sort()\n    return order[-1] - order[0]"])
 
     def test_wrong_answer_is_no_without_model(self):
         done, fake = fakes.go(self.turn("order = items"), {}, sort_check([]))
         self.assertEqual((fake.calls, done["block_check"].verdict, done["open_count"]), ([], "N", 1))
         # 고정 앞말 + 실행에서 본 것 한 줄(공개 예시) + 다음 저장 힌트. 확인 항목은 인용하지 않는다
-        self.assertEqual(done["result"]["reply"], RETRY_LEAD + "뒤 블록은 튜터의 코드로 채워서 돌리면 예시 `solution([3, 1, 2])`의 기대한 값은 2인데 -1이 나와요. " + NOT_JOINED + " " + fakes.HINTS1[1])
+        self.assertEqual(done["result"]["reply"], RETRY_LEAD + "뒤 블록은 튜터의 코드로 채워서 돌리면 예시 `solution([3, 1, 2])`의 기대한 값은 2인데 -1이 나와요. " + NOT_JOINED + "\n" + fakes.HINTS1[1])
         self.assertNotIn("가벼운 것부터", done["result"]["reply"])
 
     def test_seen_line_tells_only_public_examples(self):
@@ -494,13 +527,13 @@ class RunCheckTest(unittest.TestCase):
                 "뒤 블록을 '이 블록 채우기'로 채우면 튜터의 코드를 내 이름으로 바꿔 넣어요.")
         self.assertEqual((len(seen), done["block_check"].verdict, done["result"]["renamed"]), (1, "Y", [["arr", "order"]]))  # 이름이 달라 실행으로 통과
         self.assertEqual(rename_note([["arr", "order"]]), note)
-        self.assertEqual(done["result"]["reply"], note + " " + open_lead("guide", "var_during") + fakes.HINTS2[0])
+        self.assertEqual(done["result"]["reply"], note + "\n" + open_lead("guide", "var_during").strip() + "\n" + fakes.HINTS2[0])
         body = body_for(done["request"], done["result"], done["ctx"])
         self.assertEqual(body["renamed"], [["arr", "order"]])
         chair = [fakes.service(fakes.HINTS1[0], 0), fakes.service(OPEN_LEAD + fakes.HINTS2[0], 1, "m2")]
         found = fakes.context(plan=fakes.planned(SORT_BLOCKS), open_count=2, chair=chair)
         done, fake = fakes.go(fakes.make_state("turn", found, mode="chair", event="block_filled", block_id="b1", code="arr = sorted(items)"), {}, sort_check([]))
-        self.assertEqual((fake.calls, done["result"]["reply"]), ([], FOUND_OK + " " + note))  # 통과 말 뒤에(실행으로 통과)
+        self.assertEqual((fake.calls, done["result"]["reply"]), ([], FOUND_OK + "\n" + note))  # 통과 말 뒤 줄에(실행으로 통과)
         from ..turn.pairs import pair_block
         info = pair_block("for x in a:\n    t += x", "for k in a:\n    t += k", {}, "print(t)", {"t"}, "python")
         self.assertEqual((info.open, info.guess()), ([], {}))  # 뒤 블록이 읽지 않는 이름은 짝이 필요 없다
@@ -572,7 +605,7 @@ class BlockCheckResultTest(unittest.TestCase):
         seen = []  # 튜터 이름(order)의 NameError가 아니라 내 이름(arr)으로 돌린 시도의 오답을 말한다
         done, fake = fakes.go(self.sort_turn("arr = list(items)"), {}, sort_check(seen))
         self.assertEqual((len(seen), done["verdict"].seen), (2, "뒤 블록은 튜터의 코드로 채워서 돌리면 예시 `solution([3, 1, 2])`의 기대한 값은 2인데 -1이 나와요. " + NOT_JOINED))  # 실행 둘: 이은 것, 내 블록만 이은 것
-        self.assertEqual(done["result"]["reply"], RETRY_LEAD + done["verdict"].seen + " " + fakes.HINTS1[1])  # 오답에는 저장 힌트를 붙인다
+        self.assertEqual(done["result"]["reply"], RETRY_LEAD + done["verdict"].seen + "\n" + fakes.HINTS1[1])  # 오답에는 저장 힌트를 붙인다(다음 줄)
         seen = []  # 시간 초과면 시도 한 번에서 멈춘다(후보가 둘이어도)
         done, fake = fakes.go(self.sort_turn("arr = list(items)\nfoo = 1"), {}, exec_check(seen, SORT_CASES_ARGS, timeout_if="arr[-1]"))
         self.assertTrue(done["verdict"].unsure)
@@ -1208,14 +1241,17 @@ class ConceptReplyTest(unittest.TestCase):
     DRAFT = ("덱을 쓰는 까닭은 먼저 오른 상자가 먼저 내리기 때문입니다. 벨트 위에 상자가 여러 개 있어도 매초 가장 먼저 내릴 상자는 가장 일찍 오른 상자 하나뿐입니다. "
              "그래서 오른 순서대로 줄을 세워 두면 앞에서 바로 꺼낼 수 있습니다. "
              "그러면 이 블록에서는 문제 글의 '벨트에 오른 상자는 정확히 travel초 뒤에 벨트 끝에서 내립니다'를 보면, 벨트 위 상자를 어떤 순서로 담아 둘까요?")
+    # 두 칸으로 받은 같은 답: 까닭은 근거 칸, 물음은 질문 칸
+    SAID = {"note": "덱을 쓰는 까닭은 먼저 오른 상자가 먼저 내리기 때문입니다.",
+            "question": "문제 글의 '벨트에 오른 상자는 정확히 travel초 뒤에 벨트 끝에서 내립니다'를 보면, 벨트 위 상자를 어떤 순서로 담아 둘까요?"}
 
     def test_guide_answer_is_trimmed_not_replaced(self):
         blocks = [fakes.block(1, "벨트 줄 준비", "from collections import deque\nbelt = deque()", hints=list(fakes.HINTS1)),
                   fakes.block(2, "상태 값 준비", "load = 0"), fakes.block(3, "1초씩 반복", "while t:", "loop"), fakes.block(4, "먼저 내리기", "belt.popleft()", "loop")]
         ctx = fakes.context(plan=fakes.planned(blocks), open_count=1, problem_text=self.TEXT, guide=[fakes.service(fakes.HINTS1[0], 0, move="blank")])
         state = fakes.make_state("turn", ctx, mode="guide", event="message", text="왜 덱을 써야 하나요?")
-        done, fake = fakes.go(state, {"guide.judge": ["[check]N1"], "guide.lead": [self.DRAFT]})
-        self.assertEqual(done["result"]["reply"], " ".join(sentences(self.DRAFT)[-3:]))  # 대체 질문이 아니라 답 + 질문(뒤 세 문장)
+        done, fake = fakes.go(state, {"guide.judge": ["[check]N1"], "guide.lead": [self.SAID]})
+        self.assertEqual(done["result"]["reply"], self.SAID["question"] + "\n" + self.SAID["note"])  # 대체 질문이 아니라 질문 + 답(근거 칸)
         self.assertEqual(reply_problems(self.DRAFT, move="blank", problem=self.TEXT, later_names=["먼저 내리기"]), ["3문장 초과", "뒤 블록 이름"])  # 의자 등은 그대로
         self.assertIn("뒤 블록 이름", reply_problems("상태 값 준비를 먼저 볼까요?", move="blank", problem=self.TEXT, later_names=["상태 값 준비"], loose_names=True))
 
@@ -1398,7 +1434,7 @@ class HonestCheckTest(unittest.TestCase):
         example = lambda pid, code, quick=False: {"status": "passed", "cases": [{"kind": "example", "status": "passed"}] * 2}  # noqa: E731
         done, fake = self.cpp("    int total = 0;", check=example)
         self.assertEqual((done["block_check"].verdict, fake.calls), ("Y", []))
-        self.assertTrue(done["result"]["reply"].startswith(EXAMPLES_ONLY + " "), done["result"]["reply"])
+        self.assertTrue(done["result"]["reply"].startswith(EXAMPLES_ONLY + "\n"), done["result"]["reply"])
 
     def test_program_mode_is_given_not_guessed(self):
         """def main이 없는 Python 표준 입출력 코드: 방식을 넘겨받아 '예시 N의 기대한 출력'으로 말한다(코드 모양으로 짐작하면 함수 호출 꼴로 말했다)."""
@@ -1535,30 +1571,6 @@ class HonestCheckTest(unittest.TestCase):
 
 
 class OtherFeatureTest(unittest.TestCase):
-    def test_followup(self):
-        chair = [fakes.service("인용문장?", 0, "m1"), fakes.service("OTHER_CHAT_SECRET?", 0, "m2")]
-        ctx = fakes.context(plan=fakes.planned(fakes.two() + [fakes.block(3, "뒤", "LATER_REF", "branch")]), open_count=1, chair=chair)
-        done, fake = fakes.go(fakes.make_state("followup", ctx, mode="chair", quote_id="m1", text="왜 그래요"),
-                              {"followup.answer": ["'제목이 같으면 같은 책입니다'(문제 글)라서요. 그럴 때 무엇을 놓칠까요?"]})
-        body = fakes.prompt(fake, "followup.answer")
-        self.assertIn("인용한 말:인용문장?", body)
-        self.assertIn("(추론)", body)
-        for leak in ("OTHER_CHAT_SECRET", "LATER_REF"):
-            self.assertNotIn(leak, body)
-        self.assertEqual(done["result"]["move"], "followup")
-        self.assertNotIn("advance", done["result"])
-        self.assertEqual(done["open_count"], 1)
-        done, _ = fakes.go(fakes.make_state("followup", ctx, mode="chair", quote_id="m1", text="왜"), {"followup.answer": ["정답은 딕셔너리예요."]})
-        self.assertEqual(done["result"]["reply"], FALLBACK["followup"])
-
-    def test_followup_syntax_examples_follow_the_language(self):
-        """문법 예는 파이썬으로만 써 두었으니 파이썬 사용자의 꼬리질문에만 들어간다."""
-        chair = [fakes.service("인용문장?", 0, "m1")]
-        for language, shown in (("python", True), ("java", False)):
-            ctx = fakes.context(plan=fakes.planned(fakes.two()), open_count=1, chair=chair, skills=["dict_count"], language=language)
-            _, fake = fakes.go(fakes.make_state("followup", ctx, mode="chair", quote_id="m1", text="왜"), {"followup.answer": ["그럴 때 무엇을 놓칠까요?"]})
-            self.assertEqual("fruit.get(name, 0)" in fakes.prompt(fake, "followup.answer"), shown, language)
-
     def test_debug_question_prompt_syntax_examples_follow_the_language(self):
         """디버그 질문 프롬프트의 '문법 예'는 파이썬 사용자에게만 간다."""
         from ..debug.prompts import speak_messages
@@ -1571,14 +1583,13 @@ class OtherFeatureTest(unittest.TestCase):
 
     def test_syntax_example_passes(self):
         """문법을 물으면 대체 질문만 나왔다. 문제와 무관한 예의 코드 안 문자열은 인용 검사에서 뺀다."""
-        ctx = fakes.context(plan=fakes.planned(fakes.two()), open_count=1, chair=[fakes.service("인용문장?", 0, "m1")])
+        blocks = fakes.two()
         for answer in ("과일 이름으로 한 줄 보여 드리면, basket = deque(['사과', '배', '포도']) 같은 덱에서 basket.popleft()를 쓰면 맨 앞의 '사과'가 빠져요. "
                        "그러면 명단에서 맨 앞을 꺼낼 때는 무엇을 쓰면 될까요?",
                        "과일 이름으로 한 줄 보여 드리면, `basket = deque([\"사과\", \"배\", \"포도\"])` 같은 덱에서 `basket.popleft()`를 쓰면 맨 앞의 사과가 빠져요. "
                        "그러면 명단에서 맨 앞을 꺼낼 때는 무엇을 쓰면 될까요?"):
-            done, _ = fakes.go(fakes.make_state("followup", ctx, mode="chair", quote_id="m1", text="덱에서 맨 앞을 꺼내는 법을 다른 예로 보여 줘요"),
-                               {"followup.answer": [answer]})
-            self.assertEqual(done["result"]["reply"], answer)
+            self.assertEqual(reply_problems(answer, move="term", problem=fakes.PROBLEM, reference=blocks[0].reference, later_names=[blocks[1].name],
+                                            said="덱에서 맨 앞을 꺼내는 법을 다른 예로 보여 줘요"), [])
 
     def test_fill_returns_reference_without_model(self):
         ref = "    if load + w <= limit:\n        belt.append(w)"  # 들여쓰기의 차는 남는다(첫 줄 기준으로 놓는다)
@@ -2166,7 +2177,7 @@ class OwnWayTest(unittest.TestCase):
         done, fake = turn(own_way=True)
         self.assertEqual((fake.calls, done["open_count"], done["block_check"].verdict), ([], len(TWICE), "?"))  # 열린 블록 수가 끝이다(셋)
         self.assertEqual([f for f in done.get("block_fixes") or [] if f.verdict == "Y"], [])  # 통과가 새로 생기지 않는다
-        self.assertEqual((done["result"]["reply"], done["result"]["advance"]), (SKIPPED + " " + OWN_WAY, True))
+        self.assertEqual((done["result"]["reply"], done["result"]["advance"]), (SKIPPED + "\n" + OWN_WAY, True))
         done, _ = turn()  # 표시 없이 넘어가면 지금처럼 한 블록만 더 연다
         self.assertEqual(done["open_count"], 2)
 
@@ -2219,6 +2230,15 @@ class BlockCheckTextTest(unittest.TestCase):
         report = {"status": "runtime_error", "compile": "", "cases": [{"status": "runtime_error", "line": 2, "error": "NameError: name 'dfs' is not defined"}]}
         said = failure_verdict(report, [span], False, "", False).seen
         self.assertTrue(said.startswith("다른 블록의 코드에서 실행 오류가 났어요.\n`dfs`라는 이름을 찾지 못했어요. 만들기 전에 썼거나 철자가 다른지 확인해 보세요.") and "번째 줄" not in said, said)
+
+    def test_hidden_block_keeps_only_my_error_rows(self):
+        """의자에서 이름이 가려진 블록: 내 줄이 아닌 곳에서 난 오류의 원문(튜터 코드의 줄과 이름이 든다)은 싣지 않는다. 내 줄의 오류는 그대로."""
+        from ..turn.code_check import failure_verdict
+
+        report = {"status": "runtime_error", "compile": "", "cases": [{"status": "runtime_error", "line": 2, "error": "NameError: name 'dfs' is not defined"}]}
+        other = {"first": 1, "last": 2, "block": 0, "whose": "this", "cut": 0, "code": "a = 1\nb = 2", "rows": ["x", "y"]}
+        self.assertNotIn("dfs", failure_verdict(report, [other], False, "", False, hide=True).seen)
+        self.assertIn("dfs", failure_verdict(report, [{**other, "rows": ["a = 1", "b = 2"]}], False, "", False, hide=True).seen)
 
     def test_missing_member_and_name_are_said_in_easy_words(self):
         """같은 실수는 다섯 언어가 같은 쉬운 말을 받는다(이 맥의 python3·javac·clang++·rustc·node가 낸 글)."""

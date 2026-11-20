@@ -10,7 +10,7 @@ BLOCK_KINDS = ("var_from_problem", "var_during", "loop", "condition", "branch")
 
 EXPLAIN_TITLES = ("문제에서 읽을 것", "흐름", "블록이 놓이는 순서", "블록별 설명")
 
-KINDS = ("explain", "turn", "followup", "fill", "feedback", "debug", "prepare")
+KINDS = ("explain", "turn", "fill", "feedback", "debug", "prepare")
 
 
 @dataclass
@@ -58,7 +58,6 @@ class BlockPlan:
     algorithm: str = ""
     out_of_scope: bool = False
     link: str = ""  # 사용자가 전에 풀어 본 같은 구조 문항 한 줄(제목: 흐름). 떠올리게 하는 말에만 쓴다. 풀이를 정하지 않는다
-    settled: bool = False  # 언어를 갔다 와서 되살린 계획. 그 언어에서 쓰던 코드가 있어도 낡았다고 다시 짜지 않는다(stale_plan)
 
 
 @dataclass
@@ -95,10 +94,13 @@ class ChatMessage:
     block_index: int | None = None
     quote_id: str | None = None
     move: str | None = None  # 질문 유형(서비스 말). 사용자 말에는 블록 코드 확인의 판정 표시(talk_rules.CHECKED + Y·N·?)만
+    parts: dict | None = None  # 튜터 말의 칸 {block_index, result?, question?, note?, buttons?}. 칸을 남기기 전의 말과 사용자 말은 None
 
 
 @dataclass
 class FollowupThread:
+    """옛 꼬리질문 기록(인용한 말 id로 묶음). 새로 쓰지 않고 읽기만 한다"""
+
     quote_id: str
     messages: list[ChatMessage] = field(default_factory=list)
 
@@ -141,7 +143,6 @@ class TutorRequest:
     text: str | None = None
     block_id: str | None = None
     code: str | None = None
-    quote_id: str | None = None
     filled: list[FilledBlock] = field(default_factory=list)
     report: dict | None = None  # 디버그: 채점 결과 {status, cases[{id, input, expected, got, error, status}], compile}
     quiet: bool = False  # 블록 코드를 사용자의 말로 대화에 넣지 않는다(채운 마지막 블록의 확인)
@@ -196,7 +197,7 @@ class Verdict:
     score: int | None = None
     malformed: bool = False
     other: bool = False  # D: 계획과 다르지만 문제가 풀리는 방법을 말했다
-    aside: str = ""  # A: 답·답 코드를 달라는 요청, O: 문제와 무관한 말, W: 낱말·개념의 뜻을 묻는 말(의자·가이드 말 판정만)
+    aside: str = ""  # A: 답·답 코드를 달라는 요청, O: 문제와 무관한 말, Q: 튜터 말·문제·문법·개념을 되묻는 말(의자·가이드 말 판정만)
     seen: str = ""  # 블록 코드 확인이 통과하지 못했을 때 실행에서 본 것 한 줄(오답 값, 오류, 괄호 수)
     hint: bool = True  # 거짓이면 그 실패와 상관없는 저장 힌트를 붙이지 않는다(문법·실행 오류, 괄호·들여쓰기 안내, 이름 찾기 실패)
     ran: bool = True  # 블록 코드 확인: 거짓이면 실행하지 못해 모델이 코드를 읽고 본 판단이다(통과여도 '확인 전'으로 보이고 그렇다고 말한다)
@@ -228,9 +229,11 @@ class MovePlan:
     move: str
     target: int
     advance: bool
-    lead: str = ""  # 이음말 또는 앞말
+    lead: str = ""  # 이음말 또는 앞말(결과 줄. 질문 위에 놓인다)
     saved: str | None = None
     missing_signal: str = ""
+    way: str = ""  # 막혔을 때 갈 길 안내(채우기·넘어가기). 질문과 근거 아래 따로 놓인다
+    fact: bool = False  # saved가 질문이 아니라 결과 줄이다(통과, 넘어감, 실행에서 본 것). 칸에서 결과 칸에 들어간다
 
 
 @dataclass
@@ -261,7 +264,9 @@ class MainState(TypedDict, total=False):
     turn: TurnContext
     verdict: Verdict
     move: MovePlan
-    reply_draft: str  # 말풍선 초안
+    reply_draft: str  # 말풍선 초안(의자·가이드는 질문 칸)
+    reply_note: str  # 의자·가이드 말풍선의 근거 칸 초안
+    reply_parts: dict  # 의자·가이드 말풍선의 칸(저장이 message.parts_json에 남긴다)
     block_check: BlockState | None  # 블록 판정 기록
     block_fixes: list  # 다시 고른 앞 블록의 판정 기록(짝을 새 차례로 고쳐 쓴 것)
     withdrawn: list  # 이 블록의 글이 바뀌어 통과를 물린 뒤 블록 id
@@ -321,7 +326,7 @@ class Bound:
 
 @dataclass
 class CaseMaker:
-    """케이스 생성기(모델 출력): small·edge·large 함수를 담은 파이썬 코드와 제한사항"""
+    """케이스 생성기(모델 출력): small·edge·tricky·large 함수를 담은 파이썬 코드와 제한사항(tricky는 없어도 된다)"""
 
     code: str
     bounds: list[Bound] = field(default_factory=list)
@@ -367,6 +372,14 @@ class Diagnosis:
 @dataclass
 class Reply:
     text: str
+
+
+@dataclass
+class Said:
+    """의자·가이드 말(모델 출력): 물음 하나와, 그 물음이 기대는 사실 한 줄(없으면 빈 글)"""
+
+    question: str
+    note: str = ""
 
 
 @dataclass

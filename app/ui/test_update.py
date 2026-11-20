@@ -131,6 +131,12 @@ def dev_build(folder: Path) -> None:
                 raise AssertionError("개발용 앱은 받지 않는다")
             except updater.Refused as exc:
                 assert "개발용" in str(exc)
+            with fake_net({}):  # '지금 확인'도 묻지 않는다(새 버전 안내를 띄우지 않게)
+                try:
+                    updater.handle({"action": "check"}, lambda: None)
+                    raise AssertionError("개발용 앱은 확인하지 않는다")
+                except updater.Refused as exc:
+                    assert "개발용" in str(exc)
         assert updater.NOW["state"] == "available"
     finally:
         updater.STARTED[:] = started

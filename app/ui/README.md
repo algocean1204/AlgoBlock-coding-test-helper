@@ -5,7 +5,7 @@
 빌드 단계와 프레임워크가 없다. 앱 본체는 HTML, CSS, JS만 쓰고 외부 CDN을 부르지 않는다. 처음 안내의 움직이는 데모만 미리 빌드한 묶음(`tour-demos.js`, `tour-demos.css`)을 쓴다.
 
 - AI 없이 되는 것: 기본 문제 열기, 직접 풀기, 예시 실행, 직접 입력 실행, 제출과 채점, 힌트, 기본 문제 해설, 학습 보고서, 문제 등록, 체크포인트.
-- AI 튜터를 연결하면 더 되는 것: '튜터와 차례로', '튜터의 질문으로', 튜터 해설, 꼬리질문, 이 블록 채우기, 틀린 곳 같이 찾기, 피드백, 등록한 문제의 해설.
+- AI 튜터를 연결하면 더 되는 것: '튜터와 차례로', '튜터의 질문으로', 튜터 해설, 이 블록 채우기, 틀린 곳 같이 찾기, 피드백, 등록한 문제의 해설.
 
 ## 실행
 
@@ -47,6 +47,7 @@ uv run -q --no-project --python 3.12 --with langgraph --with pypdf python -B ui/
 python3 -B ui/test_structure.py   # 저장소 구조
 python3 -B ui/test_publish.py     # 공개 전 검사(키, 개인 경로, 내부 이름, 큰 파일, 링크)
 node ui/test_highlight.js         # 코드 칸 문법 색
+uv run -q --no-project --python 3.12 --with langgraph --with pypdf python -B ui/test_flow.py   # 화면 흐름(처음 한 번 stageshow에서 npm ci --ignore-scripts)
 ```
 
 `test_server.py`는 unittest가 아니다. `main()`이 확인 함수를 차례로 부르고, 끝에 `ok`를 찍는다.
@@ -54,7 +55,7 @@ node ui/test_highlight.js         # 코드 칸 문법 색
 ## 화면
 
 - 쓰는 법은 [Docs/guide/solve.md](../../Docs/guide/solve.md), 문제 등록은 [Docs/guide/add-problem.md](../../Docs/guide/add-problem.md), AI 연결과 과정별 모델은 [Docs/guide/connect-ai.md](../../Docs/guide/connect-ai.md)에 있다.
-- 문제 화면의 오른쪽 칸은 푸는 방식 셋(`app.js`의 `solo`, `guide`, `chair`)이다: '혼자 풀기', '튜터와 차례로', '튜터의 질문으로'. '혼자 풀기' 안에 '힌트'와 '해설' 탭이 있다. AI가 연결되지 않으면 '혼자 풀기'만 쓴다.
+- 문제 화면의 오른쪽 칸은 푸는 방식 셋(`app.js`의 `solo`, `guide`, `chair`)이다: '혼자 풀기', '튜터와 차례로', '튜터의 질문으로'. 세 방식은 튜터 칸 맨 위의 탭(`#way-tabs`)이고, 튜터 탭은 누르면 바로 시작한다. '혼자 풀기' 안에 '힌트'와 '해설' 탭이 있다. AI가 연결되지 않으면 '혼자 풀기'만 쓴다.
 - 처음 안내의 데모 묶음을 다시 빌드하는 법은 [stageshow/README.md](stageshow/README.md)에 있다. 기본 문제를 더하거나 고치는 법은 [problems/README.md](problems/README.md)에 있다.
 
 ## 파일
@@ -78,6 +79,7 @@ node ui/test_highlight.js         # 코드 칸 문법 색
 | `PretendardVariable.woff2`, `PretendardVariable-LICENSE.txt` | 맥 밖에서 쓰는 글꼴과 그 라이선스(SIL OFL 1.1). 맥은 시스템 글꼴을 쓴다 |
 | `icon.svg`, `favicon.svg` | 앱 아이콘과 파비콘 |
 | `test_server.py`, `test_update.py`, `test_structure.py`, `test_publish.py`, `test_highlight.js` | 화면 서버 시험, 업데이트 시험(`test_server.py`가 부른다), 저장소 구조 시험, 공개 전 검사, 문법 색 시험(Node) |
+| `test_flow.py`, `flow/` | 화면 흐름 시험. 서버를 가짜 모델로 띄우고 `flow/*.mjs`를 브라우저로 돌린다. 같은 이름의 `flow/*.json`은 그 흐름에서 가짜 모델이 줄 응답 대본이다. 브라우저는 `stageshow/scripts/browser.mjs`의 `launch()`로 연다 |
 | `data/` | 사용자 데이터 폴더. git에서 빠진다. 들어 있는 파일은 [Docs/architecture/data.md](../../Docs/architecture/data.md)에 있다 |
 
 ## 서버 API
@@ -102,6 +104,8 @@ POST, 문제와 무관한 것 16개
 | `/api/problems/delete` | 등록한 문제와 그 기록 지우기 |
 | `/api/problems/read` | 올린 파일에서 글 읽기(저장하지 않는다) |
 | `/api/problems/cases` | 입출력 예 표나 예제 구역에서 케이스 찾기(모델 0회) |
+| `/api/problems/detect` | 붙여 넣은 글에서 방식·예시·제목·수 범위·줄마다의 구역 찾기(저장하지 않는다). `fast: true`면 규칙만(모델 0회), 아니면 연결돼 있을 때 문제 나누기 모델로 보탠다(1~2회. 공급자 연결은 모양이 깨진 답을 한 번 더 요청한다). `touched`로 보낸 칸은 덮지 않고 `suggest`에 싣는다 |
+| `/api/problems/prepare` | 문제 글로 보이지 않아 미뤄 둔 등록 문제의 준비를 시작한다 |
 | `/api/tools` | 언어 도구 있음·없음. `refresh: true`면 다시 센다 |
 | `/api/accounts` | 연결 상태, 키 있음, 과정별 급과 모델 이름, 주제 목록, 마지막 언어, `tour_seen`, `scheme`, 칸 너비 `panes` |
 | `/api/tour` | 처음 안내를 봤다고 적는다 |
@@ -116,12 +120,13 @@ POST, 문제 하나에 대한 것 19개. 본문에 `id`가 필요하다.
 
 | 경로 | 설명 |
 | --- | --- |
-| `/api/state` | 문제 화면 상태. 등록한 문제는 `open: true`면 뒤에서 튜터 준비를 시작한다(기본 문제는 튜터를 시작할 때 준비한다) |
-| `/api/language` | 풀이 언어 바꾸기. 계획, 대화, 블록 진행을 지우고 코드는 언어마다 보관한다 |
+| `/api/state` | 문제 화면 상태(예전에 남긴 꼬리질문 기록은 `session.followups`로 읽기만 한다). 등록한 문제는 `open: true`면 뒤에서 튜터 준비를 시작한다(기본 문제는 튜터를 시작할 때 준비한다). `block_facts`는 지금 블록의 사실이다: `index`(지금 블록, 0부터), `names`(통과한 내 블록 코드가 만든 이름), `goal`(`mode`가 `guide`일 때만 그 블록의 할 일. 블록의 답을 말하면 블록 이름. 그 밖에는 빈 글). 계획이 없으면 null. 모델을 부르지 않는다 |
+| `/api/language` | 풀이 언어 바꾸기. 코드, 계획, 대화, 블록 진행을 언어마다 보관하고 그 언어로 돌아오면 되살린다. `blocks`로 아직 저장하지 않은 블록 칸을 함께 받는다. 응답은 `/api/state`와 같고, `mode`도 같은 뜻이다(`chair`면 찾지 않은 블록 이름을 가린다) |
 | `/api/run` | 공개 예시만 실행하거나 `input` 하나를 직접 실행한다. 제출로 남기지 않는다 |
 | `/api/hint` | 다음 힌트 하나(`block`: 그 블록의 다음 힌트, 1부터. 없으면 아직 다 보지 않은 첫 블록. `peek: true`면 본 것과 블록 목차만 다시 보여 준다) |
 | `/api/solution` | 해설. 기본 문제는 실린 해설, 등록한 문제는 튜터가 만든 풀이 가이드. 통과 전이면 409, `force: true`면 연다 |
 | `/api/code` | 직접 풀기 코드 저장 |
+| `/api/way` | 푸는 방식 고르기(`way`: `solo`, `chair`, `guide`). 문제마다 남고, `/api/state`가 `way`로 돌려준다 |
 | `/api/blocks` | 블록 칸 코드 저장 |
 | `/api/compose` | 블록 칸 코드를 블록 코드 확인과 같은 방식으로 모은다 |
 | `/api/checkpoint` | 지금 언어의 체크포인트 덮어쓰기 |
@@ -130,7 +135,6 @@ POST, 문제 하나에 대한 것 19개. 본문에 `id`가 필요하다.
 | `/api/submit` | 모든 케이스로 채점하고 제출로 남긴다 |
 | `/api/feedback/get` | 저장된 피드백 |
 | `/api/turn` | '튜터의 질문으로'나 '튜터와 차례로'의 한 턴 |
-| `/api/followup` | 꼬리질문 |
 | `/api/fill` | 이 블록 채우기 |
 | `/api/explain` | 튜터 해설 |
 | `/api/feedback` | 피드백 만들기 |

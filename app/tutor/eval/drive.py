@@ -1,7 +1,7 @@
 """시나리오 하나를 실제 그래프(Tutor)로 끝까지 돈다. 사용자 쪽은 초보자 시뮬레이터(모델)가 말한다.
 
-흐름(화면에서 초보자가 하는 순서): 의자나 가이드 시작 → 블록마다 대화 → 막히면 꼬리질문(3번째) → 그래도 막히면 이 블록 채우기(5번째)
-→ 마지막 블록까지 열리면 전체 코드 작성 → 채점기 제출 → 피드백 → 해설.
+흐름(화면에서 초보자가 하는 순서): 의자나 가이드 시작 → 블록마다 대화 → 튜터가 코드로 적으라 하면 그 블록 코드를 적어 확인받기(통과해야 다음 블록)
+→ 막히면 튜터 말을 되묻는 말(3번째. 메인 대화로 보낸다) → 그래도 막히면 이 블록 채우기(5번째) → 마지막 블록까지 열리면 전체 코드 작성 → 채점기 제출 → 피드백 → 해설.
 기록 한 줄 = 요청 하나. 평가기(checks, judge)가 읽을 숨은 정보(hidden: 블록 목표·신호·참고 코드)를 같이 남긴다.
 """
 
@@ -32,7 +32,7 @@ _talk_log.addHandler(_WhyHandler())
 _talk_log.setLevel(logging.INFO)
 _talk_log.propagate = False
 
-FOLLOWUP_AT = 3  # 한 블록에서 넘어가지 못한 말이 이만큼이면 꼬리질문
+ASK_AT = 3  # 한 블록에서 넘어가지 못한 말이 이만큼이면 튜터 말을 되묻는다
 FILL_AT = 5  # 이만큼이면 이 블록 채우기
 MAX_USER_TURNS = 24
 # 채점기 위치. 설치 파일로 묶였을 때는 ALGOBLOCK_JUDGE_DIR로 받는다
@@ -77,39 +77,49 @@ def novice_say(scenario: Scenario, visible: list[str], instruction: str) -> str:
     return (text or "").strip().strip('"“”') or "모르겠어요"
 
 
-def novice_code(scenario: Scenario, visible: list[str], filled: dict[str, str]) -> str:
+def novice_write(scenario: Scenario, lines: list[str]) -> str:
+    """초보자가 코드만 쓴다(코드 블록 하나)."""
     system = NOVICE_SYSTEM.format(
         knows=scenario.persona.knows, misconception=scenario.persona.misconception, habits=", ".join(scenario.persona.habits)
     ).replace("한국어 1~2문장. 정답 코드를 줄줄 쓰지 않는다.", "이번에는 코드만 쓴다.")
-    lines = [
-        f"문제:\n{scenario.text}",
-        "튜터와 나눈 대화:",
-        *(visible[-30:] or ["없음"]),
-        "채우기로 받은 블록 코드:",
-        *(filled.values() or ["없음"]),
-        "대화에서 정한 흐름대로, 초보자인 네 실력으로 solution 함수 전체를 python으로 쓴다. 코드만, 코드 블록 하나로.",
-    ]
     text = llm().use([{"role": "system", "content": system}, {"role": "user", "content": "\n".join(lines)}], None, task="eval.novice")
     found = re.search(r"```(?:python)?\n(.*?)```", text or "", re.S)
     return (found.group(1) if found else text or "").strip()
 
 
+def novice_code(scenario: Scenario, visible: list[str], filled: dict[str, str]) -> str:
+    return novice_write(scenario, [
+        f"문제:\n{scenario.text}",
+        "튜터와 나눈 대화:",
+        *(visible[-30:] or ["없음"]),
+        "블록 칸의 코드(채우기로 받았거나 확인을 통과한 것):",
+        *(filled.values() or ["없음"]),
+        "대화에서 정한 흐름대로, 초보자인 네 실력으로 solution 함수 전체를 python으로 쓴다. 코드만, 코드 블록 하나로.",
+    ])
+
+
+def novice_block(scenario: Scenario, visible: list[str], filled: dict[str, str], name: str) -> str:
+    """튜터가 코드로 적으라 했다: 대화에서 말한 생각대로 지금 블록의 코드만 쓴다."""
+    return novice_write(scenario, [
+        f"문제:\n{scenario.text}",
+        "튜터와 나눈 대화:",
+        *(visible[-8:] or ["없음"]),
+        "앞 블록 칸의 코드:",
+        *(filled.values() or ["없음"]),
+        f"대화에서 말한 생각대로, 초보자인 네 실력으로 지금 블록('{name}')의 코드만 python으로 쓴다. 앞 블록 코드에 이어 붙일 줄만, 코드 블록 하나로.",
+    ])
+
+
 def novice_fix(scenario: Scenario, visible: list[str], code: str) -> str:
     """디버깅 대화 뒤 초보자가 자기 코드를 고친다. 튜터가 짚어 준 만큼만."""
-    system = NOVICE_SYSTEM.format(
-        knows=scenario.persona.knows, misconception=scenario.persona.misconception, habits=", ".join(scenario.persona.habits)
-    ).replace("한국어 1~2문장. 정답 코드를 줄줄 쓰지 않는다.", "이번에는 코드만 쓴다.")
-    lines = [
+    return novice_write(scenario, [
         f"문제:\n{scenario.text}",
         f"네가 쓴 코드(틀렸다고 나왔다):\n{code}",
         "튜터와 나눈 디버깅 대화:",
         *(visible[-8:] or ["없음"]),
         "너는 혼자서는 틀린 곳을 못 찾는다. 위 대화로 틀린 곳과 이유를 알게 됐을 때만 그 부분을 고친다. 아직 모르겠으면 코드를 한 글자도 바꾸지 않고 그대로 다시 쓴다.",
         "solution 함수 전체를 코드 블록 하나로.",
-    ]
-    text = llm().use([{"role": "system", "content": system}, {"role": "user", "content": "\n".join(lines)}], None, task="eval.novice")
-    found = re.search(r"```(?:python)?\n(.*?)```", text or "", re.S)
-    return (found.group(1) if found else text or "").strip()
+    ])
 
 
 class Session:
@@ -165,7 +175,7 @@ class Session:
         return out, row
 
     def _reply_row(self, row: dict) -> None:
-        """방금 나간 튜터 말과 그 숨은 블록 정보를 기록에 붙인다."""
+        """방금 나간 튜터 말과 그 칸(parts. 칸을 남기기 전의 말이면 None), 숨은 블록 정보를 기록에 붙인다."""
         if row["status"] != 200:
             return
         ctx = self.ctx()
@@ -173,7 +183,7 @@ class Session:
         if not said:
             return
         last = said[-1]
-        row.update(reply=last.text, move=last.move, hidden=self.hidden(ctx, last.block_index), context=self.visible[-4:])
+        row.update(reply=last.text, move=last.move, parts=last.parts, hidden=self.hidden(ctx, last.block_index), context=self.visible[-4:])
         self.visible.append(f"튜터: {last.text}")
 
     def start(self) -> None:
@@ -193,17 +203,6 @@ class Session:
             row["judged"] = judged
         return row
 
-    def followup(self, text: str) -> dict:
-        ctx = self.ctx()
-        quote = [m for m in self.chat(ctx) if m.role == "service"][-1]
-        out, row = self.call("followup", lambda: self.tutor.followup(self.scenario.id, self.mode, quote.id, text), user=text)
-        if out.status == 200:
-            answer = out.body["messages"][-1]["text"] if out.body.get("messages") else ""
-            row.update(reply=answer, move="followup", hidden=self.hidden(ctx, ctx.open_count - 1),
-                       context=[f"인용: {quote.text}"], quote=quote.text)
-            self.visible.append(f"(꼬리질문) 나: {text} / 튜터: {answer}")
-        return row
-
     def fill(self) -> dict:
         ctx = self.ctx()
         block = ctx.plan.blocks[ctx.open_count - 1]
@@ -213,6 +212,24 @@ class Session:
             self.filled[block.id] = out.body.get("code", "")
             row.update(code=self.filled[block.id], hidden=self.hidden(ctx, ctx.open_count - 1))
             self.visible.append(f"(채우기 {block.name}) {self.filled[block.id]}")
+        return row
+
+    def check(self) -> dict:
+        """튜터가 코드로 적으라 했다: 지금 블록의 코드를 블록 칸에 적어 '블록 코드 확인'을 누른다. 다음 블록은 이것으로 열린다."""
+        ctx = self.ctx()
+        index = ctx.open_count - 1
+        block = ctx.plan.blocks[index]
+        code = novice_block(self.scenario, self.visible, self.filled, block.name)
+        self.visible.append(f"(블록 {block.name} 코드) {code}")
+        _, row = self.call("turn", lambda: self.tutor.turn(self.scenario.id, self.mode, "block_filled", block_id=block.id, code=code),
+                           event="block_filled", block_id=block.id, code=code)
+        self._reply_row(row)
+        if row["status"] == 200:
+            state = self.ctx().block_states.get(block.id)
+            row["passed"] = row["advance"] or getattr(state, "verdict", None) == "Y"  # 마지막 블록은 통과해도 열린 수가 그대로다
+            row["last"] = index == len(ctx.plan.blocks) - 1
+            if row["passed"]:
+                self.filled[block.id] = code
         return row
 
     def next(self) -> dict:
@@ -282,17 +299,25 @@ def play(scenario: Scenario, mode: str = "chair") -> Session:
                 break  # 마지막 블록을 채웠으면 코드 쓰기로
             s.next()
             continue
-        if stuck == FOLLOWUP_AT and not asked:
+        ask = stuck == ASK_AT and not asked  # 되묻는 말도 메인 대화 턴이라 결과는 보통 턴처럼 본다. 턴 수와 막힘 수에는 넣지 않는다
+        if ask:
             asked = True
-            s.followup(novice_say(scenario, s.visible, "방금 튜터 말에서 이해가 안 되는 부분을 꼬리질문으로 한 문장 묻는다."))
-            continue
-        turns += 1
-        row = s.say(novice_say(scenario, s.visible, "튜터의 마지막 질문에 학생으로서 답한다."))
+        else:
+            turns += 1
+        row = s.say(novice_say(scenario, s.visible, "방금 튜터 말에서 이해가 안 되는 부분을 한 문장으로 되묻는다." if ask else "튜터의 마지막 질문에 학생으로서 답한다."))
+        if ask:
+            row["ask"] = True  # 지표(checks)가 사용자 턴과 막힘에서 뺀다
         if row["status"] != 200 or closing:
             break  # 정리 질문에 한 번 답했으면 끝
+        found = row.get("decision") == "찾음"
+        if row.get("move") == "write":  # 말로 맞혔다: 다음 블록은 말이 아니라 그 블록의 코드 확인으로 열린다
+            row = s.check()
+            if row["status"] != 200 or (row["passed"] and row["last"] and row.get("move") not in LAST_MOVES):
+                break  # 마지막 블록을 통과했다(정리 질문이 없으면 바로 코드 쓰기로)
+            found = row["passed"]
         closing = row.get("move") in LAST_MOVES
-        stuck = 0 if row.get("decision") == "찾음" else stuck + 1
-        if row.get("decision") == "찾음":
+        stuck = 0 if found else stuck + (0 if ask else 1)
+        if found:
             asked = False
     source = novice_code(scenario, s.visible, s.filled)
     if not s.submit(source)["ok"]:

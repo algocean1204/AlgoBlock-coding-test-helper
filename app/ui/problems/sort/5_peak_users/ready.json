@@ -17,11 +17,11 @@
   "solution": {
    "approach": "초를 하나씩 세면 범위가 너무 크기 때문에, 인원이 바뀌는 순간만 사건으로 모읍니다. 접속은 +1, 끊음은 -1로 적어 두고 시각 순으로 정렬합니다. 같은 초에서는 -1이 앞에 오므로 끊음이 접속보다 먼저 처리됩니다. 정렬한 사건을 차례로 보며 지금 인원을 갱신하고, 다음 사건까지의 길이만큼 그 인원이 이어진다고 보고 최댓값과 그 최댓값이었던 초의 개수를 함께 셉니다.",
    "steps": [
-    "각 기록마다 (login, 1)과 (logout, -1) 두 사건을 events에 넣는다 — 인원이 바뀌는 시각만 보면 되기 때문이다",
-    "events를 정렬한다 — 시각 순으로 보게 되고, 같은 초에서는 -1이 +1보다 앞에 와서 끊음이 먼저 처리된다",
-    "inside, most, seconds를 0으로 둔다 — 지금 인원, 지금까지의 최댓값, 최댓값이었던 초의 개수를 기억하기 위해서다",
-    "마지막 사건 하나를 빼고 사건을 차례로 본다. inside에 변화량을 더하고, 다음 사건 시각에서 지금 시각을 뺀 length를 구한다 — 다음 사건 전까지 inside명이 그대로 이어지기 때문이다",
-    "inside가 most보다 크면 most를 바꾸고 seconds를 length로 새로 시작한다. 같으면 seconds에 length를 더한다 — 같은 초 안에서 잠깐 생기는 중간 인원은 length가 0이라 개수에 더해지지 않는다",
+    "각 기록마다 (login, 1)과 (logout, -1) 두 사건을 events에 넣는다, 인원이 바뀌는 시각만 보면 되기 때문이다",
+    "events를 정렬한다, 시각 순으로 보게 되고, 같은 초에서는 -1이 +1보다 앞에 와서 끊음이 먼저 처리된다",
+    "inside, most, seconds를 0으로 둔다, 지금 인원, 지금까지의 최댓값, 최댓값이었던 초의 개수를 기억하기 위해서다",
+    "마지막 사건 하나를 빼고 사건을 차례로 본다. inside에 변화량을 더하고, 다음 사건 시각에서 지금 시각을 뺀 length를 구한다, 다음 사건 전까지 inside명이 그대로 이어지기 때문이다",
+    "inside가 most보다 크면 most를 바꾸고 seconds를 length로 새로 시작한다. 같으면 seconds에 length를 더한다, 같은 초 안에서 잠깐 생기는 중간 인원은 length가 0이라 개수에 더해지지 않는다",
     "[most, seconds]를 돌려준다"
    ],
    "code": "def solution(logs):\n    events = []\n    for login, logout in logs:\n        events.append((login, 1))  # 접속: 인원 +1\n        events.append((logout, -1))  # 끊음: 인원 -1\n    # 시각 순으로 정렬한다. 같은 초면 -1(끊음)이 +1(접속)보다 앞에 온다.\n    # logout초에는 이미 접속해 있지 않으므로, 같은 초의 접속보다 먼저 빼 주어야 한다.\n    events.sort()\n\n    inside = 0  # 지금 접속해 있는 인원\n    most = 0  # 지금까지 본 가장 많은 인원\n    seconds = 0  # 인원이 most였던 초의 개수\n    for i in range(len(events) - 1):\n        time, change = events[i]\n        inside += change\n        length = events[i + 1][0] - time  # 다음 사건 전까지 inside명이 이어진다(같은 초의 사건 사이는 0초)\n        # 같은 초 안에서 잠깐 생기는 중간 인원은 length가 0이라 seconds에 더해지지 않는다.\n        # 끊음을 먼저 빼고 접속을 나중에 더하므로, 중간 인원이 그 초의 최종 인원보다 커지는 일도 없다.\n        if inside > most:\n            most = inside\n            seconds = length  # 최댓값이 바뀌었으니 처음부터 다시 센다\n        elif inside == most:\n            seconds += length\n    return [most, seconds]",
@@ -163,6 +163,124 @@
    "algorithm": "sort",
    "out_of_scope": false,
    "link": ""
+  }
+ },
+ "langs": {
+  "java": {
+   "source": 2182524843,
+   "lines": [
+    [
+     1,
+     10
+    ],
+    [
+     11,
+     16
+    ],
+    [
+     17,
+     20
+    ],
+    [
+     21,
+     25
+    ],
+    [
+     26,
+     32
+    ],
+    [
+     33,
+     35
+    ]
+   ]
+  },
+  "javascript": {
+   "source": 2670061256,
+   "lines": [
+    [
+     1,
+     6
+    ],
+    [
+     7,
+     12
+    ],
+    [
+     13,
+     16
+    ],
+    [
+     17,
+     22
+    ],
+    [
+     23,
+     28
+    ],
+    [
+     29,
+     31
+    ]
+   ]
+  },
+  "cpp": {
+   "source": 2358583098,
+   "lines": [
+    [
+     1,
+     12
+    ],
+    [
+     13,
+     15
+    ],
+    [
+     16,
+     19
+    ],
+    [
+     20,
+     24
+    ],
+    [
+     25,
+     31
+    ],
+    [
+     32,
+     33
+    ]
+   ]
+  },
+  "rust": {
+   "source": 2686941109,
+   "lines": [
+    [
+     1,
+     6
+    ],
+    [
+     7,
+     10
+    ],
+    [
+     11,
+     13
+    ],
+    [
+     14,
+     18
+    ],
+    [
+     19,
+     25
+    ],
+    [
+     26,
+     27
+    ]
+   ]
   }
  }
 }

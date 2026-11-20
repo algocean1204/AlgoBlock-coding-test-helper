@@ -63,8 +63,10 @@ python3 -m tutor.eval.recall_hard run --model intfloat/multilingual-e5-small   #
 
 | 층 | 파일 | 보는 것 | 신뢰 근거 |
 | --- | --- | --- | --- |
-| 규칙 | `checks.py` | 펜스, 금지 표현, 3문장, 물음표, 참고 코드·뒤 블록 이름 유출, 지어낸 인용, 대체 질문, 같은 말 반복, 진행·막힘, 오류, 시간, 캐시 적중 | 모델 없음. 같은 입력이면 같은 결과. `tests/test_eval.py` |
+| 규칙 | `checks.py` | 펜스, 금지 표현, 3문장(칸이 없는 기록), 칸 기준(칸이 있는 기록), 물음표, 참고 코드·뒤 블록 이름 유출, 지어낸 인용, 대체 질문, 같은 말 반복, 진행·막힘, 오류, 시간, 캐시 적중 | 모델 없음. 같은 입력이면 같은 결과. `tests/test_eval.py` |
 | 모델 평가기 | `judge.py` | leak(뜻으로 새는 답), responsive(사용자 말을 받는가), novice_fit(초보자 눈높이), grounded(문제와 맞는 사실), verdict(내부 판정이 맞는가) | 아래 다섯 장치 |
+
+칸 기준: 기록 줄에 튜터 말의 칸(`parts`: 블록 번호, 결과, 질문, 근거, 단추)이 있으면 질문 칸과 근거 칸만 따로 잰다. 엔진의 칸 검사(`talk_rules.field_problems`)를 그대로 써서 질문 칸은 한 문장·물음 하나·120자 이하, 근거 칸은 한 문장 이하·80자 이하인지 본다. 어기면 `질문 칸 여러 문장`, `근거 칸 길이`처럼 남는다. 결과 줄과 길 안내 줄은 칸 기준에 넣지 않고, 말 전체의 3문장 검사도 하지 않는다. 칸이 없는 옛 기록은 말 전체로 3문장을 센다. 보고서와 `qa-*-summary.json`의 `slot_clean_rate`는 질문·근거 칸이 있는 말 가운데 칸 기준을 지킨 비율이다(칸이 있는 말이 없으면 `None`).
 
 평가기 task(`eval.judge`)는 '블록 설계와 힌트' 과정의 모델로 돈다(`tutor/llm/themes.py`의 `TASKS`). 튜터의 판정보다 센 모델이어야 평가를 믿을 수 있기 때문이다.
 
@@ -82,7 +84,7 @@ python3 -m tutor.eval.recall_hard run --model intfloat/multilingual-e5-small   #
 
 기본 시나리오는 이 프로젝트에서 새로 쓴 글이다(`hash_library`, `stack_brackets`, `brute_pairs`와 그 변형). 다른 사이트의 문제는 저장소에 넣지 않는다. 쓰려면 `ALGOBLOCK_EVAL_EXTRA` 폴더에 JSON으로 두고 읽는다(`scenarios.load_extra`). 채점 케이스와 초보자 성격(아는 것, 틀린 생각 하나, 습관)은 시나리오마다 있다. 초보자는 모델이 연기한다.
 
-세션(`drive.py`의 `Session`)은 튜터를 만들 때 채점 콜백(`check`)을 넘긴다. 풀이 가이드의 정답 코드가 이 시나리오의 케이스로 채점된다. 흐름: 시작 → 블록마다 대화 → 같은 블록에서 3번 막히면 꼬리질문, 5번이면 이 블록 채우기 → 끝까지 열리면 초보자가 전체 코드를 쓴다 → 채점기 제출 → 피드백 → 해설.
+세션(`drive.py`의 `Session`)은 튜터를 만들 때 채점 콜백(`check`)을 넘긴다. 풀이 가이드의 정답 코드가 이 시나리오의 케이스로 채점된다. 의자·가이드 말의 기록 줄에는 글(`reply`)과 함께 저장된 칸(`parts`)이 남는다. 디버깅 말에는 칸이 없다. 흐름: 시작 → 블록마다 대화 → 같은 블록에서 3번 막히면 튜터 말을 메인 대화로 한 번 되묻고(그 줄에 `ask`를 달아 사용자 턴 수와 막힘 수에서 뺀다. 그 답으로 블록이 넘어가거나 코드로 적으라는 말이 오면 보통 턴처럼 따른다), 되묻기를 빼고 5번이면 이 블록 채우기 → 끝까지 열리면 초보자가 전체 코드를 쓴다 → 채점기 제출 → 피드백 → 해설.
 
 ## 돌리기
 
@@ -91,7 +93,7 @@ cd app
 python3 -m tutor.eval.qa calibrate --cli          # 평가기 보정. 결과 results/calibration-*.json
 python3 -m tutor.eval.qa run --cli --modes chair  # 시나리오. results/qa-*.md(보고서), qa-*.jsonl(기록), qa-*-summary.json
 python3 -m tutor.eval.qa run --cli --modes chair,bugs  # 의자 시나리오와 디버그 세션(debug_bench.BUGS)을 함께
-python3 -m tutor.eval.compare results/qa-A.jsonl results/qa-B.jsonl   # 두 기록을 같은 규칙 검사로 다시 세어 나란히(모델 없음)
+python3 -m tutor.eval.compare results/qa-A.jsonl results/qa-B.jsonl   # 두 기록을 같은 규칙 검사로 다시 세어 나란히(모델 없음. 칸이 없는 기록의 slot_clean_rate는 None)
 python3 tutor/eval/cost.py ui/data/usage.jsonl    # 모델 호출 기록을 과정별로 묶어 호출 수, 토큰, 캐시 적중률(모델 없음)
 ```
 

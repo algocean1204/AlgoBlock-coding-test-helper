@@ -23,6 +23,9 @@ cd app/judge && python3 -B -m unittest test_check
 
 # 5. 코드 칸 문법 색 (Node)
 cd app && node ui/test_highlight.js
+
+# 6. 화면 흐름 (Node와 Chrome. 처음 한 번: cd app/ui/stageshow && npm ci --ignore-scripts)
+cd app && uv run -q --no-project --python 3.12 --with langgraph --with pypdf python -B ui/test_flow.py
 ```
 
 | 시험 | 보는 것 |
@@ -34,9 +37,11 @@ cd app && node ui/test_highlight.js
 | 3. 공개 전 검사 `history` | 현재 브랜치의 모든 커밋의 모든 파일에서 내부 경로와 내용(키 모양, 개인 경로·이메일, 내부 이름)을 본다. 걸리면 경로와 커밋 수를 내고 종료 코드 1로 끝난다 |
 | 4. 채점기 | 비교, 모드 정하기, 5개 언어의 두 모드, 실패 종류, 다른 모드로 다시 돌리기, 큰 인자 파일, 출력·메모리 상한, 자식 프로세스 정리, CPU 시간 상한, 비밀 환경 변수 거르기, 효율성 케이스. Windows에서는 작업 객체(정상 종료 뒤의 자식, 커밋 메모리 상한과 그때의 `memory_limit` 판정, 프로세스 수 상한, 자식의 오류 창 끄기, 작업 없이 돌 때의 `warning`)도 본다. 다른 OS에서는 그 시험을 건너뛴다 |
 | 5. 문법 색 | 기본 풀이 전부에서 색칠한 글을 이으면 원래 코드와 같은지, 줄마다 나눈 HTML이 그 줄의 글과 같고 span이 줄 안에서 닫히는지, 언어마다 대표 토큰, `<`·`&`의 이스케이프, macOS 12 웹뷰가 모르는 문법(정규식 뒤돌아보기 등)이 화면 스크립트에 없는지 |
+| 6. 화면 흐름 | 서버를 가짜 모델과 임시 데이터 폴더로 띄우고 `ui/flow/*.mjs`를 브라우저로 돌린다. 뷰포트 1366x689와 1093x551에서 돈다. `open_run.mjs`는 기본 문제 열기 → 예시 실행 → 결과가 화면 안에 보임을 본다. `chair_write.mjs`는 '튜터의 질문으로'와 '튜터와 차례로'에서 블록 칸에 코드를 적어 '블록 코드 확인'을 통과해야 다음 블록이 열리는지, 말로 찾은 블록은 이름만 드러나고 다음 블록은 잠긴 채인지 본다. 서버 밖으로 나가는 요청은 막고 실패로 친다. 흐름과 같은 이름의 `.json`(`{"env": {…}, "scripts": {작업: [응답, …]}}`)이 있으면 그 흐름 동안 가짜 모델이 대본대로 답한다. 대본 밖의 모델 호출과 쓰지 않고 남은 대본은 실패다. 대본이 없는 흐름은 모델을 한 번이라도 부르면 실패다. 흐름마다 일부러 실패시켜 막기와 화면 사진이 걸리는지 먼저 본다 |
 
 - 1번은 임베딩 패키지나 모델 파일이 없으면 색인 시험 일부를 건너뛴다.
 - 4번은 기기에 없는 언어를 건너뛴다. 모든 언어를 시험하려면 그 언어의 도구를 먼저 깐다([언어 도구](../guide/install.md#언어-도구)).
+- 6번은 깔린 Chrome을 쓴다. 다른 Chrome·Chromium·Edge를 쓰려면 `CHROME_PATH`에 실행 파일 경로를 준다. 실패하면 인자로 준 폴더(없으면 임시 폴더)에 뷰포트마다 화면 사진을 남긴다.
 - `ALGOBLOCK_LIVE=1`을 주면 실제 모델을 부르는 `tutor/tests/test_live.py`가 돈다. 키가 필요하다. 평소 실행과 CI에서는 건너뛴다.
 
 ## 기본 문제 검사
@@ -55,7 +60,7 @@ cd app && python3 ui/problemkit.py check ui/problems/<주제>
 | --- | --- |
 | `app/tutor/` | 1번 |
 | `app/llm/` | 1번 |
-| `app/ui/` (서버, 화면, 도구) | 2번. 튜터 코드도 건드렸다면 1번 |
+| `app/ui/` (서버, 화면, 도구) | 2번. 화면(`index.html`, `app.css`, `app.js`)을 바꿨다면 6번. 튜터 코드도 건드렸다면 1번 |
 | `app/ui/highlight.js`, 기본 풀이 | 5번 |
 | `app/judge/` | 4번과 2번(서버가 채점기를 부른다) |
 | `app/ui/problems/` 또는 `problemkit.py`·`make_builtin.py` | 기본 문제 검사(바꾼 주제 폴더) + 2번 |
@@ -71,13 +76,14 @@ cd app && python3 ui/problemkit.py check ui/problems/<주제>
 
 ## CI
 
-파일은 `.github/workflows/ci.yml`이다. pull request에서만 돈다(열기, 새 커밋, 다시 열기, 초안을 검토 준비로 바꾸기). 푸시에는 돌지 않는다. 같은 PR의 이전 실행은 취소된다. 문서만 바뀐 PR(맨 위·`.github`의 `.md`, `Docs/`, `.github`의 그림·이슈 양식, `LICENSE`)과 초안 PR에서는 엔진·채점기·Windows 시험을 건너뛴다.
+파일은 `.github/workflows/ci.yml`이다. pull request에서만 돈다(열기, 새 커밋, 다시 열기, 초안을 검토 준비로 바꾸기). 푸시에는 돌지 않는다. 같은 PR의 이전 실행은 취소된다. 문서만 바뀐 PR(맨 위·`.github`의 `.md`, `Docs/`, `.github`의 그림·이슈 양식, `LICENSE`)과 초안 PR에서는 엔진·채점기·화면 흐름·Windows 시험을 건너뛴다.
 
 | 작업 | 돌리는 것 | 제한 시간 |
 | --- | --- | --- |
 | `changes` | 바뀐 파일이 문서뿐인지 본다. 목록을 읽지 못하면 모두 돌린다 | 5분 |
 | `engine-tests` | 1번, 2번, 5번 | 20분 |
 | `judge-tests` | 4번(러너에 있는 언어만 돈다) | 20분 |
+| `ui-flow` | 6번. ubuntu(Chrome)와 Windows(Edge, `CHROME_PATH`)에서 각각 돈다. 브라우저는 러너에 깔린 것을 쓴다. 실패하면 화면 사진을 산출물(`flow-shots-chrome`, `flow-shots-msedge`)로 7일 동안 남긴다 | 15분 |
 | `windows` | Windows 러너(`windows-latest`)에서 아래 차례로 돈다 | 60분 |
 | `publish-check` | 3번 세 가지(구조, 현재 파일, 모든 커밋) | 10분 |
 | `secret-scan` | gitleaks로 기록 전체 검사 | 10분 |

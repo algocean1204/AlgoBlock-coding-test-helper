@@ -1,17 +1,14 @@
 fn solution(classes: Vec<String>, medals: Vec<Vec<i32>>) -> Vec<String> {
-    // 반 번호(0..n-1)를 줄 세운다. 정렬 기준은 금 많은 순 → 은 많은 순 → 동 많은 순 → 이름 사전 순
-    let mut order: Vec<usize> = (0..classes.len()).collect();
-    order.sort_by(|&a, &b| {
-        // 메달은 많은 쪽이 앞(내림차순)이라 b와 a의 자리를 바꿔 비교한다
-        medals[b][0]
-            .cmp(&medals[a][0])
-            .then(medals[b][1].cmp(&medals[a][1]))
-            .then(medals[b][2].cmp(&medals[a][2]))
-            .then(classes[a].cmp(&classes[b])) // 이름은 사전 순(오름차순)
-    });
+    let mut rows: Vec<(i32, i32, i32, String)> = Vec::new();
+    for i in 0..classes.len() {
+        let (gold, silver, bronze) = (medals[i][0], medals[i][1], medals[i][2]);
+        // 메달은 많은 쪽이 앞(내림차순)이라 마이너스를 붙이고, 이름은 사전 순(오름차순) 그대로 둔다
+        rows.push((-gold, -silver, -bronze, classes[i].clone()));
+    }
+    rows.sort(); // 튜플은 앞 기준부터 비교하고, 같으면 다음 기준으로 넘어간다
     let mut answer: Vec<String> = Vec::new();
-    for i in order {
-        answer.push(classes[i].clone());
+    for row in rows {
+        answer.push(row.3);
     }
     answer
 }

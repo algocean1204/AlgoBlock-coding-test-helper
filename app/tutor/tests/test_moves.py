@@ -8,7 +8,7 @@ from ..common.talk_rules import RETRY_LEAD, open_lead
 
 OPEN_LEAD = open_lead("chair", "loop")  # 시험 계획의 둘째 블록은 반복이다
 from ..state import TurnContext, Verdict
-from ..turn.moves import FOUND_OK, FOUND_TIP, HINTS_DONE_UNFOUND, WRITE_TIP, WRITE_TIP_LAST, pick_move
+from ..turn.moves import FOUND_OK, HINTS_DONE, WRITE_TIP, WRITE_TIP_LAST, pick_move
 
 PLAN = fakes.planned(fakes.hinted())
 
@@ -38,15 +38,29 @@ class ChairMoveTest(unittest.TestCase):
         got = pick_move("chair", plan, at(), Verdict(True, basis="g"))
         self.assertEqual((got.move, got.advance, got.saved), ("basis", False, None))
         asked = pick_move("chair", plan, at(basis_asked=True), Verdict(True, basis="g"))  # 문항에 한 번만
-        self.assertEqual((asked.move, asked.advance), ("open", True))
+        self.assertEqual((asked.move, asked.advance, asked.saved), ("write", False, WRITE_TIP))
         variable = self.pick(Verdict(True, basis="g"), text="이름을 세면 돼요", used=["open"])  # 변수 블록에서는 묻지 않는다
-        self.assertEqual((variable.move, variable.advance, variable.target, variable.lead, variable.saved), ("open", True, 1, OPEN_LEAD, fakes.HINTS2[0]))  # 찾은 블록의 안내(FOUND_TIP)는 이 말에 붙이지 않는다
+        self.assertEqual((variable.move, variable.advance, variable.target, variable.saved), ("write", False, 0, WRITE_TIP))
 
-    def test_found_with_basis_advances(self):
+    def test_found_by_words_writes_not_advances(self):
+        """의자에서 말로 맞혀도 다음 블록을 열지 않는다: 그 블록의 코드 칸에 적으라는 고정 말(모델 0회). 마지막 블록은 마지막 블록의 말."""
         got = self.pick(Verdict(True, basis="t"), text="문제에 제목이 같으면 같은 책이라고 있어서요")
-        self.assertEqual((got.move, got.target, got.advance), ("open", 1, True))
+        self.assertEqual((got.move, got.target, got.advance, got.saved), ("write", 0, False, WRITE_TIP))
         last = pick_move("chair", PLAN, turn(index=1), Verdict(True, basis="e"))
-        self.assertEqual((last.move, last.advance, last.saved), ("recap", True, None))
+        self.assertEqual((last.move, last.target, last.advance, last.saved), ("write", 1, False, WRITE_TIP_LAST))
+        asked = self.pick(Verdict(True, basis="t"), text="이름마다 세면 되나요?")  # 물음 꼴: 가이드처럼 스스로 확인하게 묻는다
+        self.assertEqual((asked.move, asked.advance, asked.saved), ("verify", False, None))
+        answered = self.pick(Verdict(False), text="3이 나와요", used=["open", "verify"])  # 확인 질문에 평서로 답했다
+        self.assertEqual((answered.move, answered.advance, answered.saved), ("write", False, WRITE_TIP))
+
+    def test_basis_answer_writes_or_is_judged(self):
+        """근거 질문의 답: 평서면 코드로 적으라는 고정 말, 물음 꼴이면 판정대로(넘기지 않는다)."""
+        plain = self.pick(None, text="문제에 제목이 같으면 같은 책이라고 해서요", used=["open", "basis"])
+        self.assertEqual((plain.move, plain.advance, plain.saved), ("write", False, WRITE_TIP))
+        asked = self.pick(Verdict(True, basis="t"), text="문제에 그렇게 적혀 있지 않나요?", used=["open", "basis"])
+        self.assertEqual((asked.move, asked.advance), ("verify", False))
+        wrong = self.pick(Verdict(False, miss=1), text="그냥 짐작인데 맞나요?", used=["open", "basis"])
+        self.assertFalse(wrong.advance)
 
     def test_missing_minor_signal_is_edge(self):
         got = self.pick(Verdict(False, miss=2), text="이름별로 세요")
@@ -66,9 +80,9 @@ class ChairMoveTest(unittest.TestCase):
         third = self.pick(Verdict(False), text="몰라요", used=["open", "clue"])
         self.assertEqual((third.move, third.saved), ("trace", fakes.HINTS1[2]))
         done = self.pick(Verdict(False), text="몰라요", used=["open", "clue", "trace"])
-        self.assertEqual((done.saved, done.lead), (HINTS_DONE_UNFOUND, ""))  # 아직 찾지 못한 블록에는 코드 칸이 없다
+        self.assertEqual((done.saved, done.lead), (HINTS_DONE, ""))  # 아직 찾지 못한 블록에도 코드 칸이 있다
         asked = self.pick(Verdict(False, aside="A"), text="답 알려 주세요", used=["open", "clue", "trace"])
-        self.assertEqual((asked.lead, asked.saved), ("답 코드는 드리지 않아요. ", HINTS_DONE_UNFOUND))  # 같은 '이 블록 채우기' 안내는 한 번만
+        self.assertEqual((asked.lead, asked.way, asked.saved), ("", "답 코드는 드리지 않아요.", HINTS_DONE))  # 같은 '이 블록 채우기' 안내는 한 번만. 답을 주지 않는다는 말은 길 안내 줄
 
     def test_confused_long_answer_gets_help_not_assume(self):
         got = self.pick(Verdict(False, miss=1), text="모르겠어요, 반복문으로 하나씩 보면 될지 감이 안 와요", used=["open"])
@@ -96,7 +110,7 @@ class ChairMoveTest(unittest.TestCase):
         found = pick_move("chair", PLAN, turn(event="block_filled"), Verdict(True), found=True)  # 의자에서 이미 찾은 블록: 맞는지만, 진행은 그대로
         self.assertEqual((found.move, found.advance, found.saved, found.target), ("done", False, FOUND_OK, 0))
         missed = pick_move("chair", PLAN, turn(event="block_filled", used=["open"]), Verdict(False, miss=2), found=True)
-        self.assertEqual((missed.move, missed.advance, missed.saved), ("done", False, RETRY_LEAD + fakes.HINTS1[1]))  # 확인 항목(답)을 인용하지 않는다
+        self.assertEqual((missed.move, missed.advance, missed.lead, missed.saved), ("done", False, RETRY_LEAD, fakes.HINTS1[1]))  # 확인 항목(답)을 인용하지 않는다. 결과 줄과 질문은 따로
 
 
 class BeginnerMoveTest(unittest.TestCase):
@@ -104,12 +118,12 @@ class BeginnerMoveTest(unittest.TestCase):
 
     def test_term_question_gets_meaning_then_returns(self):
         for mode in ("chair", "guide"):
-            got = pick_move(mode, PLAN, turn(text="그게 뭐예요?", used=["open"]), Verdict(False, aside="W"))
+            got = pick_move(mode, PLAN, turn(text="그게 뭐예요?", used=["open"]), Verdict(False, aside="Q"))
             self.assertEqual((got.move, got.advance, got.target, got.saved, got.lead), ("term", False, 0, None, ""), mode)  # 모델이 뜻과 예를 짓는다
 
     def test_term_during_verify_keeps_the_way_to_write(self):
         """확인 질문(verify) 중에 낱말의 뜻을 물었다(term). 뜻을 들은 뒤 답하면 처음 생각은 이미 맞았으니 코드로 적게 한다(그 길을 놓쳤다)."""
-        asked = pick_move("guide", PLAN, turn(text="range가 뭐예요?", used=["blank", "verify"]), Verdict(False, aside="W"))
+        asked = pick_move("guide", PLAN, turn(text="range가 뭐예요?", used=["blank", "verify"]), Verdict(False, aside="Q"))
         self.assertEqual(asked.move, "term")
         after = pick_move("guide", PLAN, turn(text="0부터 n-1까지 돌아요", used=["blank", "verify", "term"]), Verdict(False))
         self.assertEqual((after.move, after.saved), ("write", WRITE_TIP))

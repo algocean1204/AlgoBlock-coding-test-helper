@@ -15,7 +15,6 @@ tutor.store.put_problem("p1", "python", body)
 tutor.turn("p1", "chair", "start")                             # Outcome(status, body)
 tutor.turn("p1", "chair", "message", text="이름을 세면 돼요")
 tutor.turn("p1", "chair", "next")                              # 채우기로 열린 블록의 첫 질문(모델 0회)
-tutor.followup("p1", "chair", quote_id="3", text="왜요?")
 tutor.fill("p1", "b2", filled=[{"id": "b1", "code": "..."}])
 tutor.explain("p1"); tutor.feedback("p1")                      # 해설, 피드백
 tutor.session("p1")                                            # 세션 상태(모드 생략 가능)
@@ -36,16 +35,16 @@ tutor.adopt("p1", ready)                                       # 미리 만든 �
 | `state.py` | 그래프가 주고받는 데이터 | 전부 |
 | `llm/` | 모델 입구, 가짜 모델, 모양 맞추기 | 모델을 부르는 노드 |
 | `store/` | SQLite 표(`schema.py`, 표 12개. 버전은 `MIGRATIONS`의 길이), 계획 JSON(`codec.py`), `Store` | A2, A12, `Tutor`의 일부 메서드, 화면 서버 |
-| `common/scope.py` | 풀이 범위 15종, 설계 원칙 | A4, A5, A6–A10 |
-| `llm/themes.py` | 과정 여덟(문제 읽기, 풀이 가이드, 블록 설계와 힌트, 대화, 판정, 해설, 피드백, 디버그 진단)마다 급과 추론 정도, 시리즈마다 최신 모델 이름 | 모델을 부르는 모든 노드(입구에서 고름) |
-| `common/solution.py` | 풀이 가이드를 프롬프트 앞부분에 싣는다(`solution_of`, `solution_lines`) | 대화·판정·코드 확인·꼬리질문·채우기·해설·피드백 |
-| `knowledge/ontology.py` | 기법 30, 패턴 31, 함정 32, 구현 기술 20, 입력 크기 규칙 | A4, A8, A10, A13 |
+| `common/scope.py` | 풀이 범위 15종, 설계 원칙 | A4, A5, A6, A7, A9, A10, A13 |
+| `llm/themes.py` | 과정 열(문제 나누기, 문제 읽기, 풀이 가이드, 검증 풀이, 블록 설계와 힌트, 대화, 판정, 해설, 피드백, 디버그 진단)마다 급과 추론 정도, 시리즈마다 최신 모델 이름 | 모델을 부르는 모든 노드(입구에서 고름) |
+| `common/solution.py` | 풀이 가이드를 프롬프트 앞부분에 싣는다(`solution_of`, `solution_lines`) | 대화·판정·코드 확인·채우기·해설·피드백 |
+| `knowledge/ontology.py` | 기법 30, 패턴 31, 함정 32, 구현 기술 20, 입력 크기 규칙 | A4, A10, A13 |
 | `knowledge/index.py` | 벡터 색인(Qdrant 로컬), 열기(`open_index`), 임베딩 이름표 | A4 |
 | `knowledge/embed.py` | 기기 안 임베딩 multilingual-e5-small: 파일 받기(`fetch`), 임베딩(`e5_embedder`). fastembed를 쓰지 않는다 | A4 |
 | `common/verdict.py` | `[check]` 판정(근거 글자 t·e·g 포함), 16토큰 | A4, A6, A7, A10 |
 | `common/assess.py` | 채점 기준표, 전략(50점 경계) | A4, A10 |
-| `common/talk_rules.py` | 대화 원칙: 금지 표현, 인용 확인, 말풍선 검사, 대체 질문 | A4, A6–A8, A10 |
-| `common/talk_prompts.py` | 대화 시스템 프롬프트, 판정 프롬프트 틀 | A6–A8 |
+| `common/talk_rules.py` | 대화 원칙: 금지 표현, 인용 확인, 말풍선 검사, 대체 질문 | A4, A6, A7, A10 |
+| `common/talk_prompts.py` | 대화 시스템 프롬프트, 판정 프롬프트 틀 | A6, A7 |
 | `turn/` | 의자·가이드 공통 그래프, 질문 유형 표(`moves.py`), 블록 코드 판정 | A6, A7 |
 
 ## 시험
@@ -57,7 +56,7 @@ tutor.adopt("p1", ready)                                       # 미리 만든 �
 | `test_backend_llm.py` | 모델 연결 공급자(`app.llm`)가 서버 안에서 그대로 도는지 |
 | `test_rules.py` | 전략, 블록 검사, 힌트 다듬기, 해설 절, 펜스, 열린 블록 수, 판정 읽기, 대화 원칙, 피드백 검사, 요청 거절(모델 0회) |
 | `test_moves.py` | 질문 유형 표 전부 |
-| `test_pipeline.py` | 그래프 흐름(가짜 모델): 계획, 의자·가이드 턴, 대체 질문, 꼬리질문, 채우기, 피드백, 실패 |
+| `test_pipeline.py` | 그래프 흐름(가짜 모델): 계획, 의자·가이드 턴, 대체 질문, 채우기, 피드백, 실패 |
 | `test_tutor.py` | SQLite까지: 저장·질문 유형 기록, 재사용(모델 0회), 오류 시 저장 없음, 저장소 실패, 옛 DB 이전, 예전 문제가 가이드·블록 설계 프롬프트에 없음, 원칙을 어긴 블록 질문은 그 블록만 한 번 다시 받음(다시 받기 실패해도 계획을 만듦) |
 | `test_ingest.py` | 글 잇기, PDF, OCR 판정, 장 실패 |
 | `test_llm.py` | 모양 맞추기, 가짜 모델, backend 공급자 연결(기본 모델, 글 모드) |

@@ -17,12 +17,12 @@
   "solution": {
    "approach": "접시를 고칠 수 있는 2차원 목록으로 바꾸고, 시간을 한 시간씩 규칙대로 시뮬레이션합니다. 모든 칸이 동시에 바뀌므로, 각 단계마다 접시를 복사합니다. 판단은 원래 접시를 보고 하고, 결과는 복사본에 적습니다. 번식 결과는 grown에, 포위 결과는 result에 적습니다. 한 칸은 많아야 두 번만 바뀝니다. 그래서 1시간 동안 접시가 그대로인 순간이 금방 오고, 그때 멈추면 10억 시간을 다 돌지 않아도 됩니다.",
    "steps": [
-    "dish의 각 줄을 글자 목록으로 바꿔 2차원 board를 만들고 n, m을 구한다 — 칸을 하나씩 고칠 수 있게 하려고",
-    "count 함수를 만든다. 상하좌우 네 칸 가운데 접시 안에 있고 원하는 균인 칸의 수를 센다 — 번식과 포위 두 단계에서 같은 세기를 쓰기 때문",
-    "hours만큼 반복한다. board를 grown으로 복사하고, board의 빈칸마다 맞닿은 A와 B의 수를 센다. 많은 쪽 균을, 같고 1 이상이면 '#'을 grown에 적는다 — 1시간이 시작될 때의 접시만 보고 동시에 바꾸려고",
-    "grown을 result로 복사한다. grown에서 A는 맞닿은 B가 3개 이상일 때, B는 맞닿은 A가 3개 이상일 때 result에 '#'을 적는다 — 같은 단계에서 '#'이 된 칸도 원래 균으로 세려고 grown만 본다",
-    "result가 board와 같으면 반복을 멈추고, 아니면 board를 result로 바꾼다 — 1시간 동안 바뀐 게 없으면 그 뒤로도 계속 같기 때문",
-    "board의 각 행을 문자열로 이어 붙여 돌려준다 — dish와 같은 형태로 답하려고"
+    "dish의 각 줄을 글자 목록으로 바꿔 2차원 board를 만들고 n, m을 구한다, 칸을 하나씩 고칠 수 있게 하려고",
+    "count 함수를 만든다. 상하좌우 네 칸 가운데 접시 안에 있고 원하는 균인 칸의 수를 센다, 번식과 포위 두 단계에서 같은 세기를 쓰기 때문",
+    "hours만큼 반복한다. board를 grown으로 복사하고, board의 빈칸마다 맞닿은 A와 B의 수를 센다. 많은 쪽 균을, 같고 1 이상이면 '#'을 grown에 적는다, 1시간이 시작될 때의 접시만 보고 동시에 바꾸려고",
+    "grown을 result로 복사한다. grown에서 A는 맞닿은 B가 3개 이상일 때, B는 맞닿은 A가 3개 이상일 때 result에 '#'을 적는다, 같은 단계에서 '#'이 된 칸도 원래 균으로 세려고 grown만 본다",
+    "result가 board와 같으면 반복을 멈추고, 아니면 board를 result로 바꾼다, 1시간 동안 바뀐 게 없으면 그 뒤로도 계속 같기 때문",
+    "board의 각 행을 문자열로 이어 붙여 돌려준다, dish와 같은 형태로 답하려고"
    ],
    "code": "def solution(dish, hours):\n    n, m = len(dish), len(dish[0])\n    board = [list(line) for line in dish]\n\n    def count(grid, r, c, mold):\n        \"\"\"grid에서 (r, c)와 맞닿은 칸 가운데 mold인 칸의 수.\"\"\"\n        total = 0\n        for nr, nc in ((r - 1, c), (r + 1, c), (r, c - 1), (r, c + 1)):\n            if 0 <= nr < n and 0 <= nc < m and grid[nr][nc] == mold:\n                total += 1\n        return total\n\n    for _ in range(hours):\n        # 1단계(번식): 1시간이 시작될 때의 board를 보고, 결과는 grown에 적는다\n        grown = [row[:] for row in board]\n        for r in range(n):\n            for c in range(m):\n                if board[r][c] != '.':\n                    continue\n                a, b = count(board, r, c, 'A'), count(board, r, c, 'B')\n                if a > b:\n                    grown[r][c] = 'A'\n                elif b > a:\n                    grown[r][c] = 'B'\n                elif a > 0:\n                    grown[r][c] = '#'\n        # 2단계(포위): 1단계가 끝난 grown을 보고, 결과는 result에 적는다\n        result = [row[:] for row in grown]\n        for r in range(n):\n            for c in range(m):\n                if grown[r][c] == 'A' and count(grown, r, c, 'B') >= 3:\n                    result[r][c] = '#'\n                elif grown[r][c] == 'B' and count(grown, r, c, 'A') >= 3:\n                    result[r][c] = '#'\n        if result == board:  # 1시간 동안 아무것도 바뀌지 않았으면 그 뒤로도 계속 같다\n            break\n        board = result\n    return [''.join(row) for row in board]",
    "verified": true,
@@ -184,6 +184,140 @@
    "algorithm": "simulation",
    "out_of_scope": false,
    "link": ""
+  }
+ },
+ "langs": {
+  "javascript": {
+   "source": 2100759867,
+   "lines": [
+    [
+     1,
+     4
+    ],
+    [
+     5,
+     13
+    ],
+    [
+     14,
+     16
+    ],
+    [
+     17,
+     25
+    ],
+    [
+     26,
+     33
+    ],
+    [
+     34,
+     37
+    ],
+    [
+     38,
+     39
+    ]
+   ]
+  },
+  "java": {
+   "source": 3807335772,
+   "lines": [
+    [
+     1,
+     8
+    ],
+    [
+     9,
+     23
+    ],
+    [
+     24,
+     27
+    ],
+    [
+     28,
+     36
+    ],
+    [
+     37,
+     45
+    ],
+    [
+     46,
+     48
+    ],
+    [
+     49,
+     53
+    ]
+   ]
+  },
+  "cpp": {
+   "source": 1751168705,
+   "lines": [
+    [
+     1,
+     9
+    ],
+    [
+     10,
+     21
+    ],
+    [
+     22,
+     24
+    ],
+    [
+     25,
+     33
+    ],
+    [
+     34,
+     41
+    ],
+    [
+     42,
+     44
+    ],
+    [
+     45,
+     46
+    ]
+   ]
+  },
+  "rust": {
+   "source": 1508252071,
+   "lines": [
+    [
+     1,
+     4
+    ],
+    [
+     5,
+     17
+    ],
+    [
+     18,
+     20
+    ],
+    [
+     21,
+     36
+    ],
+    [
+     37,
+     47
+    ],
+    [
+     48,
+     52
+    ],
+    [
+     53,
+     54
+    ]
+   ]
   }
  }
 }

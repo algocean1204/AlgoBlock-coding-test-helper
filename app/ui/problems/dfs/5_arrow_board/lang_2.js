@@ -1,6 +1,7 @@
 // 언어 함정: javascript.float_division
 function solution(board) {
     const rows = board.length, cols = board[0].length;
+    const step = { U: [-1, 0], D: [1, 0], L: [0, -1], R: [0, 1] };
     const NEW = 0, ON_PATH = 1, DONE = 2; // 아직 안 감 / 지금 걷는 길 위 / 점수가 정해짐
     const state = Array.from({ length: rows }, () => new Array(cols).fill(NEW));
     const order = Array.from({ length: rows }, () => new Array(cols).fill(0)); // 지금 길에서 몇 번째로 밟은 칸인가
@@ -16,11 +17,9 @@ function solution(board) {
                 state[r][c] = ON_PATH;
                 order[r][c] = path.length;
                 path.push(r * cols + c);
-                const arrow = board[r][c];
-                if (arrow === 'U') r--;
-                else if (arrow === 'D') r++;
-                else if (arrow === 'L') c--;
-                else c++;
+                const [dr, dc] = step[board[r][c]];
+                r += dr;
+                c += dc;
                 if (r < 0 || r >= rows || c < 0 || c >= cols) {
                     nextScore = 0; // 밖이다: 더 밟을 칸이 없다
                     break;
