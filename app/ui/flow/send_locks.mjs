@@ -85,12 +85,12 @@ async function flow(name, viewport, steps, opts = {}) {
     const q = { path: url.pathname, method: req.method(), body, t: Date.now() }
     t.seen.push(q)
     if (q.path === '/api/accounts') {
-      const res = await route.fetch()
+      const res = await route.fetch({ timeout: 30000 })
       return route.fulfill({ response: res, json: { ...(await res.json()), connected: t.connected, dev: t.dev } })
     }
     if (isState(q)) {
       if (t.stateDelay) await sleep(t.stateDelay)
-      const res = await route.fetch()
+      const res = await route.fetch({ timeout: 30000 })
       let json = await res.json()
       if (t.prepOn) json = { ...json, problem: { ...json.problem, preparing: true } }
       if (t.mutate) json = t.mutate(json) || json

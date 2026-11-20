@@ -4,10 +4,12 @@
 기본 문제는 ui/problems에서 지금 검사를 통과해 있는 것(cases.json이 있는 폴더)을 임시 파일로 묶어 쓴다. ui/builtin.json은 건드리지 않는다.
 """
 
+import atexit
 import base64
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -19,6 +21,7 @@ from unittest.mock import patch
 
 HERE = Path(__file__).resolve().parent
 TMP = Path(tempfile.mkdtemp(prefix="algoblock-ui-test-"))
+atexit.register(shutil.rmtree, TMP, ignore_errors=True)  # 실패하거나 예외가 나도 임시 자료 폴더는 지운다
 os.environ["ALGOBLOCK_UI_DATA"] = str(TMP / "data")  # 사용자 데이터 폴더를 건드리지 않는다
 os.environ["ALGOBLOCK_UI_BUILTIN"] = str(TMP / "builtin.json")
 os.environ["ALGOBLOCK_UI_PREPARE"] = "0"
@@ -2895,6 +2898,7 @@ def broken_files() -> None:
     import io
 
     folder = Path(tempfile.mkdtemp(prefix="algoblock-ui-broken-"))
+    atexit.register(shutil.rmtree, folder, ignore_errors=True)
     cut, empty, good = folder / "problems.json", folder / "blocks.json", folder / "prefs.json"
     cut.write_text('[{"id": "u1", "title": "잘', encoding="utf-8")
     empty.write_text("null", encoding="utf-8")

@@ -14,6 +14,8 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
+import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from functools import partial
@@ -105,12 +107,28 @@ def self_check(script: Path, base: str) -> None:
 
 
 def short_waits(script: Path) -> list[str]:
-    """기본 대기를 줄인 흐름(setDefaultTimeout)의 서버 요청(request.post·get)과 페이지 이동(goto·reload)은 timeout을 따로 준다:
+    """기본 대기를 줄인 흐름(setDefaultTimeout)의 서버 요청(request.post·get, 가로챈 응답의 route.fetch)과 페이지 이동(goto·reload)은 timeout을 따로 준다:
     준비 요청과 페이지를 여는 일이 느린 러너에서 화면 대기 기본값에 끊기지 않게."""
     text = script.read_text(encoding="utf-8")
     if "setDefaultTimeout(" not in text:
         return []
-    return [f"{script.name}:{n}" for n, line in enumerate(text.splitlines(), 1) if re.search(r"request\.(post|get)\(|\.(goto|reload)\(", line) and "timeout:" not in line]
+    return [f"{script.name}:{n}" for n, line in enumerate(text.splitlines(), 1) if re.search(r"request\.(post|get)\(|route\.fetch\(|\.(goto|reload)\(", line) and "timeout:" not in line]
+
+
+def warm(base: str) -> None:
+    """흐름 전에 서버의 첫 요청을 넉넉한 대기로 한 번 보낸다(흐름이 처음 부르는 초기화와 문제 열기). 느린 러너에서 첫 요청이
+    흐름의 준비 요청 대기를 넘지 않게. 걸린 시간을 한 줄로 찍고, 실패하거나 모델을 부르면 멈춘다."""
+    pid, calls, spent = next(iter(server.BUILTIN)), len(FAKE.calls), []
+    for path, body in (("/api/reset", {"id": pid}), ("/api/state", {"id": pid, "open": True})):
+        began = time.monotonic()
+        try:
+            with urllib.request.urlopen(urllib.request.Request(base + path, json.dumps(body).encode(), {"Content-Type": "application/json"}), timeout=180) as res:
+                res.read()
+        except Exception as exc:  # noqa: BLE001 - 원인을 실어 실행기를 멈춘다
+            raise AssertionError(f"예열 {path} 실패({time.monotonic() - began:.1f}초): {exc}") from exc
+        spent.append(f"{path} {time.monotonic() - began:.1f}초")
+    assert len(FAKE.calls) == calls, f"예열이 모델을 불렀다: {[call['task'] for call in FAKE.calls[calls:]]}"
+    print(f"예열({pid}): {', '.join(spent)}", flush=True)
 
 
 def main() -> bool:
@@ -133,6 +151,7 @@ def main() -> bool:
             blank.shutdown()
         httpd, base = serve(server.Handler)
         try:
+            warm(base)
             for script in scripts:
                 # 처음 안내 창이 화면을 가리지 않게. 흐름마다 이 값으로 되돌려 앞 흐름이 실패하며 남긴 설정(마지막 언어 등)을 넘기지 않는다
                 (TMP / "data" / "prefs.json").write_text(json.dumps({"tour_seen": True}), encoding="utf-8")

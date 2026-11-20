@@ -59,9 +59,9 @@ async function flow(way, viewport, scenario) {
       problems.push(`external: ${req.url()}`)
       return route.abort()
     }
-    if (url.pathname === '/api/accounts') { const res = await route.fetch(); return route.fulfill({ response: res, json: { ...(await res.json()), connected: true } }) }
+    if (url.pathname === '/api/accounts') { const res = await route.fetch({ timeout: 30000 }); return route.fulfill({ response: res, json: { ...(await res.json()), connected: true } }) }
     if (url.pathname === '/api/state') {
-      const res = await route.fetch(), json = await res.json()
+      const res = await route.fetch({ timeout: 30000 }), json = await res.json()
       const s = json.session
       if (s && s.blocks && s.blocks.length >= 4) {
         s.blocks = s.blocks.map((b, i) => ({ ...b, name: i < 2 || way === 'guide' ? `시험블록${i + 1}` : null }))
