@@ -2484,7 +2484,7 @@ async function changeLanguage(language) {
   const away = S.pid !== pid, k = (KEPT[pid] ??= {}), langs = (k.langs ??= {}), back = langs[language] || {};
   langs[from] = Object.fromEntries(TALKS.map((id) => [id, away ? k[id] || "" : $(id).value]));
   delete langs[language];
-  if (away) return void TALKS.forEach((id) => { k[id] = back[id] || ""; });
+  if (away) { TALKS.forEach((id) => { k[id] = back[id] || ""; }); return void Object.assign(k, { "run-input": "", result: null }); } // 그 자리에서 바꿀 때(clearProblem)처럼 실행 입력 칸과 마지막 결과도 비운다
   clearProblem(pid);
   for (const id of TALKS) $(id).value = back[id] || "";
   applyState(r.data, talk);
