@@ -42,13 +42,13 @@ async function flow(name, viewport, steps) {
       return route.abort()
     }
     if (url.pathname === '/api/accounts') {
-      const res = await route.fetch()
+      const res = await route.fetch({ timeout: 30000 })
       return route.fulfill({ response: res, json: { ...(await res.json()), connected: true } })
     }
     if (req.method() === 'POST' && url.pathname.startsWith('/api/')) sent.push({ path: url.pathname, body: req.postData() || '' })
     let body = {}
     try { body = JSON.parse(req.postData() || '{}') } catch {}
-    if (hold && url.pathname === hold.path) { const h = hold; hold = null; const res = await route.fetch(); h.got(); await h.wait; return route.fulfill({ response: res }) }
+    if (hold && url.pathname === hold.path) { const h = hold; hold = null; const res = await route.fetch({ timeout: 30000 }); h.got(); await h.wait; return route.fulfill({ response: res }) }
     if (url.pathname === '/api/language' && failLang) { failLang = false; return route.fulfill({ status: 502, contentType: 'application/json', body: JSON.stringify({ detail: { code: 'llm_timeout', message: '모델이 답하지 않았어요' } }) }) }
     if (url.pathname === '/api/turn' && body.event === 'message') return route.fulfill({ status: 200, contentType: 'application/json', body: '{}' })
     if (url.pathname === '/api/debug') return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ message: '어디서 값이 사라질까요?', passed: false, line: null }) })
