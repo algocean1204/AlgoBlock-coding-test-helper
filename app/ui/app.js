@@ -2021,8 +2021,12 @@ function clearCode() {
 
 /* ── 채점 결과 ── */
 /** 복사 단추를 단 코드 상자. lang을 주면 코드 칸과 같은 문법 색을 칠한다(AlgoBlockHighlight가 &, <, >를 바꾼다. 모르는 언어는 글만). */
+const COPY = '<button type="button" class="btn quiet small copy" data-copy>복사</button>';
 const codeBlock = (text, lang, cls = "") => `<div class="code-wrap"><pre class="code${cls ? ` ${cls}` : ""}"><code>${
-  lang ? window.AlgoBlockHighlight.lines(text, lang).join("\n") : esc(text)}</code></pre><button type="button" class="btn quiet small copy" data-copy>복사</button></div>`;
+  lang ? window.AlgoBlockHighlight.lines(text, lang).join("\n") : esc(text)}</code></pre>${COPY}</div>`;
+/** 터미널 출력: 내가 찍은 것(표준 출력) 다음에 표준 오류(색을 달리한다). 둘은 따로 모아 섞인 차례는 알 수 없다. 둘 다 없으면 빈 글 */
+const termBox = (out, err) => (out || err ? `<div class="code-wrap"><pre class="code term" tabindex="0" aria-label="터미널 출력"><code>${esc(out || "")}${out && err ? "\n" : ""}${
+  err ? `<span class="term-err">${esc(err)}</span>` : ""}</code></pre>${COPY}</div>` : "");
 /** 복사 단추: 같은 상자의 코드 글을 클립보드에 넣는다. 클립보드를 쓰지 못하면 글을 골라 두어 복사 단축키로 가져가게 한다. */
 async function copyCode(el) {
   const pre = el.closest(".code-wrap").querySelector("pre"), text = pre.textContent;
@@ -2073,14 +2077,15 @@ function testsHtml(r) {
   const worstFirst = (list) => (r.ok ? list : [...list].sort((a, b) => rank(a[0]) - rank(b[0]))); // 틀린 제출은 실패한 테스트를 맨 위에(번호는 그대로, 같은 무리 안은 번호 순서)
   const pre = (label, text, bad) => `<div><span class="io-label">${label}</span><pre class="code${bad ? " bad" : ""}"><code>${esc(text)}</code></pre></div>`;
   const io = (c, ok) => `<div class="io-case">${pre("입력", c.input || "(입력 없음)")}<div class="io-pair">${pre("기대 출력", c.expected)}${pre("내 출력", c.got || none(c, "출력하지"), !ok)}</div>
-    ${c.error ? `<p class="hint bad">${esc(errText(c))}${errHint(c)}</p>` : ""}</div>`; // 표준 입출력: 기대 출력과 내 출력을 나란히 두고 줄마다 견준다
+    ${c.error ? `<p class="hint bad">${esc(errText(c))}${errHint(c)}</p>` : ""}${c.stderr ? `<div><span class="io-label">터미널 출력(표준 오류)</span>${termBox("", c.stderr)}</div>` : ""}</div>`; // 표준 입출력: 기대 출력과 내 출력을 나란히 두고 줄마다 견준다
   const detail = (c, n) => {
     const ok = c.status === "passed";
     const head = `<summary class="case-head"><span>테스트 ${n} · 예시</span><span class="state">${esc(CASE_STATE[c.status] || c.status)}${c.status === "skipped" ? "" : ` <span class="ms">${took(c.ms || 0)}</span>`}</span></summary>`;
     if (program()) return `<details class="case ${ok ? "pass" : "fail"}"${ok ? "" : " open"}>${head}${io(c, ok)}</details>`;
     return `<details class="case ${ok ? "pass" : "fail"}"${ok ? "" : " open"}>${head}
       <dl><dt>넣은 값</dt><dd>${esc(callText(c.input))}</dd><dt>기대한 결과</dt><dd>${esc(c.expected)}</dd>
-        <dt>내 코드의 결과</dt><dd${ok ? "" : ' class="bad"'}>${esc(c.got ? shownValue(c.got) : none(c, "돌려주지"))}</dd>${c.error ? `<dt>오류</dt><dd class="bad">${esc(errText(c))}${errHint(c)}</dd>` : ""}</dl></details>`;
+        <dt>내 코드의 결과</dt><dd${ok ? "" : ' class="bad"'}>${esc(c.got ? shownValue(c.got) : none(c, "돌려주지"))}</dd>${c.error ? `<dt>오류</dt><dd class="bad">${esc(errText(c))}${errHint(c)}</dd>` : ""}
+        ${c.stdout || c.stderr ? `<dt>터미널 출력</dt><dd>${termBox(c.stdout, c.stderr)}</dd>` : ""}</dl></details>`;
   };
   const score = r.score || { accuracy: [acc.filter((c) => c.status === "passed").length, acc.length], efficiency: [0, 0] };
   const hiddenErrors = (list, label) => { // 숨은 테스트의 오류 → 그 오류가 난 테스트 번호들(같은 오류는 한 줄로)
@@ -2120,15 +2125,15 @@ function ownHtml(r) {
     const box = (text) => `<pre class="code"><code>${esc(text)}</code></pre>`;
     return `<h4 class="tests-title">직접 넣은 입력으로 실행 <span>${r.status === "ran" ? took(r.ms || 0) : esc(CASE_STATE[r.status])}</span></h4>
       <dl class="own-run"><dt>입력</dt><dd>${box(r.input || "(입력 없음)")}</dd><dt>출력</dt><dd>${box(r.got || (r.status === "timeout" ? "제한 시간 안에 끝나지 않아 멈췄어요" : "(아무것도 출력하지 않았어요)"))}</dd>
-        ${r.error ? `<dt>오류</dt><dd class="bad">${esc(errText(r))}${errHint(r)}</dd>` : ""}</dl>`;
+        ${r.error ? `<dt>오류</dt><dd class="bad">${esc(errText(r))}${errHint(r)}</dd>` : ""}${r.stderr ? `<dt>터미널 출력</dt><dd>${termBox("", r.stderr)}</dd>` : ""}</dl>`;
   }
   const value = (v) => `<pre class="code"><code>${esc(v ? shownValue(v) : "(아무것도 돌려주지 않았어요)")}</code></pre>`;
   return `<h4 class="tests-title">직접 넣은 값으로 실행 <span>${r.status === "ran" ? took(r.ms || 0) : esc(CASE_STATE[r.status])}</span></h4>
     <dl class="own-run"><dt>넣은 값</dt><dd>${esc(callText(r.input))}</dd>
       ${r.status === "ran" ? `<dt>돌려준 값</dt><dd>${value(r.got)}</dd>` : ""}
       ${r.reference !== undefined ? `<dt>정답 풀이의 결과</dt><dd>${value(r.reference)}${r.same === undefined ? "" : `<span class="same ${r.same ? "pass" : "fail"}">${r.same ? "같아요" : "달라요"}</span>`}</dd>` : ""}
-      ${r.stdout ? `<dt>찍은 것</dt><dd><pre class="code"><code>${esc(r.stdout)}</code></pre></dd>` : ""}
-      ${r.error ? `<dt>오류</dt><dd class="bad">${esc(errText(r))}${errHint(r)}</dd>` : ""}</dl>
+      ${r.error ? `<dt>오류</dt><dd class="bad">${esc(errText(r))}${errHint(r)}</dd>` : ""}
+      ${r.stdout || r.stderr ? `<dt>터미널 출력</dt><dd>${termBox(r.stdout, r.stderr)}</dd>` : ""}</dl>
     ${r.reference_note ? `<p class="hint">${esc(r.reference_note)}</p>` : ""}`;
 }
 

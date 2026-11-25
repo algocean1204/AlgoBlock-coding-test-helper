@@ -539,6 +539,9 @@ pre.code.bad { color: var(--danger); }
 .code-wrap > pre.code { padding-right: 64px; }
 .code-wrap > .copy { position: absolute; top: 6px; right: 6px; min-height: 26px; padding: 0 8px; background: var(--surface); color: var(--muted); font-size: 12px; box-shadow: 0 0 0 1px var(--line); }
 .code-wrap > .copy:hover { background: var(--fill-2); color: var(--text); }
+/* 터미널 출력: 길면 제 안에서 민다(결과 칸은 손잡이로 키운다). 표준 오류는 색을 달리한다 */
+pre.code.term { max-height: 260px; overflow: auto; }
+.term-err { color: var(--danger); }
 /* 표준 입출력 문제: 예제 입력·출력(문제 글), 테스트의 입력·기대 출력·내 출력. 같은 번호의 입력과 출력은 나란히 */
 .io-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .sample > * + *, .io-case > * + * { margin-top: 6px; }

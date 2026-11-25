@@ -381,7 +381,7 @@ def grade(p, language: str, code: str, kinds: tuple = KINDS, stop_after: int | N
              "limit": by[c["id"]].get("timeout"), **({"note": MANY_ANSWERS} if many and c["status"] == "failed" else {}), **({"made": True} if by[c["id"]].get("made") else {})}
             for c in raw.get("cases", [])]
     return {"status": raw["status"], "reason": raw.get("reason") or "", "cases": rows, "compile": (raw.get("compile") or {}).get("stderr", ""),
-            "compile_line": raw.get("compile_line"), "language": language, "notice": notice_of(raw)}
+            "compile_line": raw.get("compile_line"), "language": language, "mode": p.mode, "notice": notice_of(raw)}
 
 
 # 채점기가 Windows에서 실행 제한(작업 객체)을 걸지 못했을 때(결과의 warning) 화면에 한 줄로 알린다. 무엇이 빠졌는지와 무엇을 뜻하는지
@@ -1698,6 +1698,24 @@ def clean(text: str) -> str:
     return "\n".join(rows)
 
 
+TERM_MAX = 8000  # 터미널 출력(찍은 것, 표준 오류) 하나에 싣는 글자 수. 넘으면 앞뒤 절반씩 남긴다(앞의 디버그 출력과 끝의 오류 자취가 남게)
+
+
+def term_text(text: str) -> str:
+    """터미널 출력에 실을 글: 끝 공백을 빼고, 너무 길면 가운데를 줄인다."""
+    text = (text or "").rstrip()
+    if len(text) <= TERM_MAX:
+        return text
+    half = TERM_MAX // 2
+    return f"{text[:half]}\n… (가운데 {len(text) - 2 * half:,}자는 줄였어요) …\n{text[-half:]}"
+
+
+def terminal(printed: str, stderr: str) -> dict:
+    """공개 예시·직접 실행의 터미널 출력. stdout은 내가 찍은 것(함수 방식에서 돌려준 값 줄은 뺀다), stderr는 채점기 이름을 가린 표준 오류 전체. 빈 것은 싣지 않는다."""
+    out = {"stdout": term_text(printed), "stderr": term_text(clean(stderr))}
+    return {key: value for key, value in out.items() if value}
+
+
 def error_line(text: str, status: str = "") -> str:
     """오류 글에서 초보자가 읽을 한 줄: 들여쓰기 없이 오류 이름이 든 첫 줄 → 자취가 아닌 마지막 줄 → 마지막 줄."""
     lines = clean(text).strip().splitlines()
@@ -1817,8 +1835,13 @@ def result_body(report: dict) -> dict:
     for case in report["cases"]:
         row = {"id": case["id"], "kind": case["kind"], "status": case["status"], "ms": case["ms"], **({"made": True} if case.get("made") else {})}  # made: 자동으로 만든 테스트
         hidden = case["kind"] != "example"
-        if not hidden:
-            row |= {"input": case["input"], "expected": case["expected"], "got": case["got"][:2000], "error": error_line(case["error"], case["status"])}
+        if not hidden:  # 숨은 테스트는 찍은 것·표준 오류를 싣지 않는다(찍은 출력으로 숨은 입력이 드러난다)
+            ran, got, printed = case["status"] in ("passed", "failed"), case["got"], ""
+            if report.get("mode") == "function":  # 채점기는 마지막 줄을 돌려준 값으로 본다. 그 앞 줄은 내가 찍은 것
+                lines = got.splitlines()
+                got, printed = (lines[-1], "\n".join(lines[:-1])) if ran and lines else ("", "\n".join(lines))
+            row |= {"input": case["input"], "expected": case["expected"], "got": got[:2000], "error": "" if ran or case["status"] in ("timeout", "skipped") else error_line(case["error"], case["status"]),
+                    **terminal(printed, case["error"])}
         if case["status"] == "runtime_error":
             row |= error_fields(case, language, hidden)
         if case.get("note"):  # 답이 여럿일 수 있는 문제에서 값이 달랐다: 틀렸다고 단정하지 않는다(숨은 테스트도 입력·값은 싣지 않는다)
@@ -1897,7 +1920,8 @@ def run_once(p, language: str, code: str, given: str) -> dict:
     ran = status in ("passed", "failed")
     lines = (case.get("stdout") or "").strip().splitlines()
     got, printed = (lines[-1], lines[:-1]) if ran and lines else ("", lines)
-    out = {"status": "ran" if ran else status, "reason": raw.get("reason") or "", "input": given, "got": got[:2000], "stdout": "\n".join(printed)[:2000],
+    out = {"status": "ran" if ran else status, "reason": raw.get("reason") or "", "input": given, "got": got[:2000], "stdout": term_text("\n".join(printed)),
+           "stderr": term_text(clean(case.get("stderr") or "")),
            "error": "" if ran else error_line(case.get("stderr") or "", status), "ms": case.get("time_ms", 0),
            "compile": compile_head((raw.get("compile") or {}).get("stderr", "")), "compile_line": raw.get("compile_line"), "notice": notice_of(raw)}
     if p.mode == "program":
