@@ -728,7 +728,9 @@ pre.code.bad { color: var(--danger); }
 .solo-sec h3 { display: flex; align-items: center; gap: 8px; font-size: 16px; font-weight: 700; }
 .solo-sec h3 .ico { width: 16px; height: 16px; color: var(--accent-text); }
 .solo-sec h3 .muted { font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
-.solo-sec h4 { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 13px; font-weight: 700; color: var(--muted); }
+/* 해설의 소제목: 본문(14~14.5px)보다 크고 본문색이다. 위 여백으로 덩어리를 가른다(풀이 해설 안의 소제목도 같다). 설명 줄(.hint)은 흐린 회색 그대로 */
+.solo-sec h4, .solo-sec details.solution > h4 { display: flex; align-items: center; gap: 8px; margin-top: 14px; font-size: 15px; font-weight: 700; color: var(--text); }
+.solo-sec details.solution pre.code { line-height: 1.75; }
 .solo-sec > .hint-blocks { justify-self: stretch; }
 .hint-blocks { display: grid; gap: 12px; }
 .hint-blocks > li { display: grid; gap: 8px; justify-items: start; }
