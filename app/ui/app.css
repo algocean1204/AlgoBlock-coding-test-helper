@@ -534,6 +534,11 @@ body.resizing .pane { pointer-events: none; }
 pre.code { overflow-x: auto; padding: 12px 14px; border-radius: var(--r-md); background: var(--fill); font-size: 13px; line-height: 1.6; white-space: pre; word-break: normal; overflow-wrap: normal; }
 pre.code code { padding: 0; border-radius: 0; background: none; font-size: inherit; }
 pre.code.bad { color: var(--danger); }
+/* 복사 단추를 단 코드 상자: 단추는 상자 오른쪽 위에 둔다(코드는 제 안에서 가로로 밀어도 단추는 그 자리) */
+.code-wrap { position: relative; min-width: 0; }
+.code-wrap > pre.code { padding-right: 64px; }
+.code-wrap > .copy { position: absolute; top: 6px; right: 6px; min-height: 26px; padding: 0 8px; background: var(--surface); color: var(--muted); font-size: 12px; box-shadow: 0 0 0 1px var(--line); }
+.code-wrap > .copy:hover { background: var(--fill-2); color: var(--text); }
 /* 표준 입출력 문제: 예제 입력·출력(문제 글), 테스트의 입력·기대 출력·내 출력. 같은 번호의 입력과 출력은 나란히 */
 .io-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .sample > * + *, .io-case > * + * { margin-top: 6px; }

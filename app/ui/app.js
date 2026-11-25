@@ -2020,6 +2020,29 @@ function clearCode() {
 }
 
 /* ── 채점 결과 ── */
+/** 복사 단추를 단 코드 상자. lang을 주면 코드 칸과 같은 문법 색을 칠한다(AlgoBlockHighlight가 &, <, >를 바꾼다. 모르는 언어는 글만). */
+const codeBlock = (text, lang, cls = "") => `<div class="code-wrap"><pre class="code${cls ? ` ${cls}` : ""}"><code>${
+  lang ? window.AlgoBlockHighlight.lines(text, lang).join("\n") : esc(text)}</code></pre><button type="button" class="btn quiet small copy" data-copy>복사</button></div>`;
+/** 복사 단추: 같은 상자의 코드 글을 클립보드에 넣는다. 클립보드를 쓰지 못하면 글을 골라 두어 복사 단축키로 가져가게 한다. */
+async function copyCode(el) {
+  const pre = el.closest(".code-wrap").querySelector("pre"), text = pre.textContent;
+  let done = false;
+  try {
+    await navigator.clipboard.writeText(text);
+    done = true;
+  } catch (e) {
+    const range = document.createRange(), pick = getSelection();
+    range.selectNodeContents(pre);
+    pick.removeAllRanges();
+    pick.addRange(range);
+    try { done = document.execCommand("copy"); } catch (x) { done = false; }
+  }
+  el.textContent = done ? "복사했어요" : "골라 두었어요";
+  say(done ? "코드를 복사했어요" : "코드를 골라 두었어요. 복사 단축키로 가져가세요");
+  clearTimeout(el._reset);
+  el._reset = setTimeout(() => { el.textContent = "복사"; }, 1600);
+}
+
 const jsonText = (x) => (Array.isArray(x) ? `[${x.map(jsonText).join(", ")}]` : JSON.stringify(x)); // 배열은 쉼표 뒤에 한 칸
 function callText(raw) {
   try { const args = JSON.parse(raw); return Array.isArray(args) ? `solution(${args.map(jsonText).join(", ")})` : raw; } catch (e) { return raw; }
@@ -2402,7 +2425,7 @@ function solutionHtml(sol, passed) {
       ${sol.steps.length ? `<h4>푸는 순서</h4><ol class="plain-list numbered">${sol.steps.map((x) => `<li>${inline(x)}</li>`).join("")}</ol>` : ""}
       <h4>정답 풀이 <span class="tag">${esc(LANG[sol.language] || sol.language)}</span></h4>${guide ? "" : '<p class="hint">이 문제는 글로 된 해설이 아직 없어요. 정답 코드만 있어요.</p>'}
       ${(sol.traps || []).length ? `<div class="traps"><h5>이 언어로 풀 때 조심할 것</h5><ul class="plain-list">${sol.traps.map((x) => `<li>${inline(x.what)} ${inline(x.fix)}${(x.at || []).length ? ` <small>이 문제에서 걸리는 곳: ${x.at.map((at) => `<q>${esc(at)}</q>`).join(" · ")}</small>` : ""}</li>`).join("")}</ul></div>` : ""}
-      <pre class="code"><code>${esc(sol.code.replace(/\s+$/, ""))}</code></pre></details>${passed ? "" : next}`;
+      ${codeBlock(sol.code.replace(/\s+$/, ""), sol.language)}</details>${passed ? "" : next}`;
 }
 
 function renderSolo() {
@@ -3465,6 +3488,7 @@ document.addEventListener("click", (e) => {
     document.querySelectorAll("#list-body [data-lang]").forEach((li) => { li.hidden = !!LIST_LANG && li.dataset.lang !== LIST_LANG; });
     return void document.querySelectorAll("[data-lang-filter]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.langFilter === LIST_LANG)));
   }
+  if (el.dataset.copy !== undefined) return void copyCode(el);
   if (el.dataset.gotoBlock) return void gotoBlock(Number(el.dataset.gotoBlock));
   if (el.dataset.hintBlock) return void loadHints(false, Number(el.dataset.hintBlock));
   if (el.dataset.act) { // 튜터 말의 단추: 블록 칸의 같은 단추와 같은 처리기를 부른다(묻는 말과 확인 결과는 블록 칸에 보인다)
