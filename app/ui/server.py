@@ -1842,7 +1842,9 @@ def result_body(report: dict, term: bool = False) -> dict:
     language = report.get("language", "")
     cases, shown = [], sum(case["kind"] == "example" for case in report["cases"])
     share = max(1000, min(TERM_MAX, TERM_TOTAL // max(shown, 1)))  # 예시마다의 터미널 출력 몫
-    room = TERM_TOTAL // share if term else 0  # 터미널 출력을 싣는 예시 수(예시가 아주 많으면 앞의 것만. 합이 상한을 넘지 않게)
+    room = TERM_TOTAL // share if term else 0  # 터미널 출력을 싣는 예시 수(예시가 아주 많으면 일부만. 합이 상한을 넘지 않게)
+    ran_examples = [case for case in report["cases"] if case["kind"] == "example" and case["status"] != "skipped"]  # 돌리지 않은 예시의 표준 오류 자리는 채점기의 안내 글이다
+    loud = {case["id"] for case in sorted(ran_examples, key=lambda case: case["status"] == "passed")[:room]}  # 틀린 예시부터(화면도 틀린 것을 위에 둔다)
     for case in report["cases"]:
         row = {"id": case["id"], "kind": case["kind"], "status": case["status"], "ms": case["ms"], **({"made": True} if case.get("made") else {})}  # made: 자동으로 만든 테스트
         hidden = case["kind"] != "example"
@@ -1853,8 +1855,7 @@ def result_body(report: dict, term: bool = False) -> dict:
                 got, printed = (lines[-1], "\n".join(lines[:-1])) if ran and lines else ("", "\n".join(lines))
             row |= {"input": case["input"], "expected": case["expected"], "got": got[:2000],
                     "error": "" if ran or case["status"] in ("timeout", "skipped") else LIMIT_WORDS.get(case["status"]) or error_line(case["error"], case["status"])}  # 출력·메모리 초과는 멈춘 까닭(표준 오류는 터미널에)
-            if room and case["status"] != "skipped":  # 돌리지 않은 예시의 표준 오류 자리는 채점기의 안내 글이다
-                room -= 1
+            if case["id"] in loud:
                 row |= terminal(printed, case["error"], share)
         if case["status"] == "runtime_error":
             row |= error_fields(case, language, hidden)

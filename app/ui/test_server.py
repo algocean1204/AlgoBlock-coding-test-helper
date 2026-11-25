@@ -252,10 +252,14 @@ def builtin(fake) -> None:
     assert not {"stdout", "stderr"} & many[40].keys() and many[40]["error"] == ""  # 돌리지 않은 예시는 채점기 안내를 터미널에 싣지 않는다
     crowd = server.result_body(term=True, report={"status": "passed", "reason": "", "compile": "", "language": "python", "mode": "function", "cases": [
         {"id": str(i), "kind": "example", "input": "[]", "expected": "1", "got": "x" * 3000 + "\n1", "error": "", "status": "passed", "ms": 1} for i in range(200)]})["cases"]
-    assert sum("stdout" in case for case in crowd) == server.TERM_TOTAL // 1000 and sum(len(case.get("stdout", "")) for case in crowd) <= server.TERM_TOTAL + 48 * 40  # 예시가 아주 많으면 앞의 것만 싣는다
-    stopped = server.result_body(term=True, report={"status": "output_limit", "reason": "", "compile": "", "language": "python", "mode": "function", "cases": [
-        {"id": "1", "kind": "example", "input": "[]", "expected": "1", "got": "y\ny", "error": "debug line", "status": "output_limit", "ms": 1}]})["cases"][0]
-    assert (stopped["error"], stopped["stderr"], stopped["stdout"]) == (server.LIMIT_WORDS["output_limit"], "debug line", "y\ny"), stopped  # 멈춘 까닭을 오류로, 표준 오류는 터미널에
+    assert sum("stdout" in case for case in crowd) == server.TERM_TOTAL // 1000 and sum(len(case.get("stdout", "")) for case in crowd) <= server.TERM_TOTAL + 48 * 40  # 예시가 아주 많으면 일부만 싣는다
+    late = server.result_body(term=True, report={"status": "failed", "reason": "", "compile": "", "language": "python", "mode": "function", "cases": [
+        {"id": str(i), "kind": "example", "input": "[]", "expected": "1", "got": "x\n" + ("2" if i == 150 else "1"), "error": "", "status": "failed" if i == 150 else "passed", "ms": 1} for i in range(200)]})["cases"]
+    assert late[150]["stdout"] == "x" and sum("stdout" in case for case in late) == server.TERM_TOTAL // 1000  # 틀린 예시가 먼저 자리를 받는다
+    for limit in ("output_limit", "memory_limit"):
+        stopped = server.result_body(term=True, report={"status": limit, "reason": "", "compile": "", "language": "python", "mode": "function", "cases": [
+            {"id": "1", "kind": "example", "input": "[]", "expected": "1", "got": "y\ny", "error": "debug line", "status": limit, "ms": 1}]})["cases"][0]
+        assert (stopped["error"], stopped["stderr"], stopped["stdout"]) == (server.LIMIT_WORDS[limit], "debug line", "y\ny"), stopped  # 멈춘 까닭을 오류로, 표준 오류는 터미널에
     started = time.perf_counter()  # 공백 없는 아주 긴 오류 줄도 바로 가린다(경로 가리기가 길이의 제곱으로 느려지면 요청 하나가 몇 초씩 걸린다)
     assert server.clean("z" * 200000 + " /x/algoblock-check-ab/solution.py") == "z" * 200000 + " 내 코드" and time.perf_counter() - started < 1.0
     wide = call("/api/run", id=PID, code="import sys\ndef solution(loans, k):\n    sys.stderr.write('z' * 60000)\n    return []\n", input='[["a"], 2]')[1]
@@ -279,7 +283,9 @@ def builtin(fake) -> None:
         raise AssertionError("잠김은 409로 알린다") from None
     slow = ("def solution(loans, k):\n    shelf = []\n    for i in range(len(loans)):\n        n = 0\n        for j in range(i + 1):\n            if loans[j] == loans[i]:\n"
             "                n += 1\n        if n == k:\n            shelf.append(loans[i])\n    return shelf\n")
-    wrong = call("/api/submit", id=PID, code="def solution(loans, k):\n    return sorted(set(t for t in loans if loans.count(t) >= k))\n")[1]
+    noisy = lambda code: "import sys\n" + code.replace("def solution(loans, k):\n", "def solution(loans, k):\n    print('p')\n    print('e', file=sys.stderr)\n", 1)  # noqa: E731
+    wrong = call("/api/submit", id=PID, code=noisy("def solution(loans, k):\n    return sorted(set(t for t in loans if loans.count(t) >= k))\n"))[1]
+    assert not any({"stdout", "stderr"} & case.keys() for case in wrong["cases"]), wrong["cases"][0]  # 제출에는 터미널 출력을 싣지 않는다
     assert not wrong["ok"] and wrong["score"]["accuracy"][0] < wrong["score"]["accuracy"][1]
     assert any(case["kind"] == "accuracy" and case["status"] != "passed" for case in wrong["cases"])
     for case in wrong["cases"]:  # 숨은 테스트는 틀려도 입력·기대값·내 결과를 싣지 않는다(공개 예시만). 큰 입력의 크기도 싣지 않는다
@@ -295,8 +301,9 @@ def builtin(fake) -> None:
             "        if count[loans[i]] == k:\n            shelf.append(loans[i])\n        go(i + 1)\n    go(0)\n    return shelf\n")
     sent = []  # 답은 맞지만 큰 입력에서 재귀가 너무 깊다(제출로 남기지 않는 채점): 시간 이야기가 아니라 틀린 곳 찾기로 그 케이스를 넘긴다
     with patch.object(server.Tutor, "debug", lambda self, pid, code, report, text=None: sent.append(report) or SimpleNamespace(status=200, body={"messages": []})):
-        got = call("/api/debug", id=PID, code=deep)[1]
+        got = call("/api/debug", id=PID, code=noisy(deep))[1]
     crashed = got["judged"]
+    assert not any({"stdout", "stderr"} & case.keys() for case in crashed["cases"])  # 틀린 곳 찾기의 다시 채점에도 싣지 않는다
     assert crashed["score"]["accuracy"][0] == crashed["score"]["accuracy"][1] and any(c["kind"] == "efficiency" and c["status"] == "runtime_error" for c in crashed["cases"]), crashed
     assert "efficiency_only" not in got and sent[0]["status"] == "runtime_error", sent
     assert any(c["kind"] == "efficiency" and c["status"] == "runtime_error" and c["input"] == "(아주 큰 입력)" for c in sent[0]["cases"]), sent  # 큰 입력은 싣지 않는다
