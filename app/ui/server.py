@@ -381,7 +381,7 @@ def grade(p, language: str, code: str, kinds: tuple = KINDS, stop_after: int | N
              "limit": by[c["id"]].get("timeout"), **({"note": MANY_ANSWERS} if many and c["status"] == "failed" else {}), **({"made": True} if by[c["id"]].get("made") else {})}
             for c in raw.get("cases", [])]
     return {"status": raw["status"], "reason": raw.get("reason") or "", "cases": rows, "compile": (raw.get("compile") or {}).get("stderr", ""),
-            "compile_line": raw.get("compile_line"), "language": language, "notice": notice_of(raw)}
+            "compile_line": raw.get("compile_line"), "language": language, "mode": p.mode, "notice": notice_of(raw)}
 
 
 # 채점기가 Windows에서 실행 제한(작업 객체)을 걸지 못했을 때(결과의 warning) 화면에 한 줄로 알린다. 무엇이 빠졌는지와 무엇을 뜻하는지
@@ -1681,7 +1681,7 @@ TRACE_LINES = ("    at ", "\tat ", "Node.js v")  # JS·Java 호출 자취와 Nod
 
 
 ABNORMAL = "프로그램이 비정상적으로 끝났어요. 배열 범위를 벗어났거나 재귀가 너무 깊을 수 있어요."  # 오류 글 없이 끝났다(C++ 등)
-TEMP_DIR = re.compile(r"[^\s'\"(]*algoblock-check-[^/\\\s]+[/\\]")  # 채점기의 임시 폴더 경로(app/judge common.work_directory)
+TEMP_DIR = re.compile(r"(?<![^\s'\"(])[^\s'\"(]*algoblock-check-[^/\\\s]+[/\\]")  # 채점기의 임시 폴더 경로(app/judge common.work_directory). 낱말이 시작하는 자리에서만 맞춘다(공백 없는 긴 줄에서 길이의 제곱으로 느려지지 않게)
 HARNESS = re.compile(r"\b(?:algoblock_main|algoblock_runner|FunctionRunner)\.\w+")  # 채점기가 만든 호출 파일(app/judge의 언어별 runner.py)
 # 채점기가 내 코드를 적어 둔 파일: 함수 방식, 프로그램 방식(main. 임시 폴더 경로는 먼저 지우므로 경로 안의 main.rs 같은 남의 파일은 둔다)
 USER_FILE = re.compile(r"\b(?:solution\.(?:py|js|rs|cpp)|Solution\.java)\b|(?<![/\\])\b(?:main\.(?:py|js|rs|cpp)|Main\.java)\b")
@@ -1689,13 +1689,39 @@ USER_FILE = re.compile(r"\b(?:solution\.(?:py|js|rs|cpp)|Solution\.java)\b|(?<![
 
 def clean(text: str) -> str:
     """오류 글에서 채점기 안쪽 이름을 가린다: 임시 폴더 경로는 지우고, 호출 파일을 가리키는 자취 줄은 빼고,
-    호출 파일의 위치 머리(FunctionRunner.java:12:)는 떼고, 내 코드를 적어 둔 파일 이름은 '내 코드'로 바꾼다."""
-    rows = []
+    호출 파일의 위치 머리(FunctionRunner.java:12:)는 떼고, 내 코드를 적어 둔 파일 이름은 '내 코드'로 바꾼다.
+    뺀 Python 자취 줄(File …) 아래에 그보다 깊이 들여 쓴 줄(소스 줄과 ^ 표시)은 호출 파일의 것이라 같이 뺀다.
+    Rust의 --> 아래 줄은 내 코드를 이어 붙인 파일의 줄이라 남긴다."""
+    rows, under = [], None  # under: 바로 앞에서 뺀 Python 자취 줄의 들여쓰기
+    indent = lambda row: len(row) - len(row.lstrip())  # noqa: E731
     for row in TEMP_DIR.sub("", text or "").splitlines():
         if HARNESS.search(row) and row.strip().startswith(("at ", "-->", "File ")):
+            under = indent(row) if row.strip().startswith("File ") else None
             continue
+        if under is not None and row.strip() and indent(row) > under:
+            continue
+        under = None
         rows.append(USER_FILE.sub("내 코드", re.sub(HARNESS.pattern + r"(?::\d+)*:?\s?", "", row)))
     return "\n".join(rows)
+
+
+TERM_MAX = 8000  # 터미널 출력(찍은 것, 표준 오류) 하나에 싣는 글자 수. 넘으면 앞뒤 절반씩 남긴다(앞의 디버그 출력과 끝의 오류 자취가 남게)
+TERM_TOTAL = 48000  # 결과 하나에 싣는 터미널 출력의 합(찍은 것과 표준 오류 저마다). 예시가 많은 문제는 예시마다 몫을 줄인다(1000자 아래로는 줄이지 않는다)
+
+
+def term_text(text: str, limit: int = TERM_MAX) -> str:
+    """터미널 출력에 실을 글: 끝 공백을 빼고, limit보다 길면 가운데를 줄인다."""
+    text = (text or "").rstrip()
+    if len(text) <= limit:
+        return text
+    half = limit // 2
+    return f"{text[:half]}\n… (가운데 {len(text) - 2 * half:,}자는 줄였어요) …\n{text[-half:]}"
+
+
+def terminal(printed: str, stderr: str, limit: int = TERM_MAX) -> dict:
+    """공개 예시·직접 실행의 터미널 출력. stdout은 내가 찍은 것(함수 방식에서 돌려준 값 줄은 뺀다), stderr는 채점기 이름을 가린 표준 오류 전체. 빈 것은 싣지 않는다."""
+    out = {"stdout": term_text(printed, limit), "stderr": term_text(clean(stderr), limit)}
+    return {key: value for key, value in out.items() if value}
 
 
 def error_line(text: str, status: str = "") -> str:
@@ -1808,17 +1834,29 @@ def error_fields(case: dict, language: str, hidden: bool) -> dict:
     return {**out, **({"line": case["line"]} if case.get("line") else {})}
 
 
-def result_body(report: dict) -> dict:
+def result_body(report: dict, term: bool = False) -> dict:
     """채점 결과를 화면 모양으로. 오류 글은 한 줄만(error_line, 초보자가 읽을 한 줄)과 한 줄 풀이(hint), 줄 번호(line, 채점기가 줄 때).
+    term: 공개 예시에 터미널 출력(찍은 것·표준 오류)을 싣는다. 예시 실행에만 켠다(제출 때는 채점 폴더에 숨은 테스트까지 담긴 케이스 파일이 있어, 그것을 읽어 찍은 글이 예시로 보인다).
     숨은 테스트는 통과 여부만: 입력·기대값·내 결과는 공개 예시에만 싣고, 숨은 테스트는 실행 오류일 때 예외 이름만 싣는다.
     효율성 케이스가 제한 시간에 가깝게 통과했으면 near와 제한(limit, 초). 같은 코드를 다시 내서 제출로 남기지 않았으면 repeat."""
     language = report.get("language", "")
-    cases = []
+    cases, shown = [], sum(case["kind"] == "example" for case in report["cases"])
+    share = max(1000, min(TERM_MAX, TERM_TOTAL // max(shown, 1)))  # 예시마다의 터미널 출력 몫
+    room = TERM_TOTAL // share if term else 0  # 터미널 출력을 싣는 예시 수(예시가 아주 많으면 일부만. 합이 상한을 넘지 않게)
+    ran_examples = [case for case in report["cases"] if case["kind"] == "example" and case["status"] != "skipped"]  # 돌리지 않은 예시의 표준 오류 자리는 채점기의 안내 글이다
+    loud = {case["id"] for case in sorted(ran_examples, key=lambda case: case["status"] == "passed")[:room]}  # 틀린 예시부터(화면도 틀린 것을 위에 둔다)
     for case in report["cases"]:
         row = {"id": case["id"], "kind": case["kind"], "status": case["status"], "ms": case["ms"], **({"made": True} if case.get("made") else {})}  # made: 자동으로 만든 테스트
         hidden = case["kind"] != "example"
-        if not hidden:
-            row |= {"input": case["input"], "expected": case["expected"], "got": case["got"][:2000], "error": error_line(case["error"], case["status"])}
+        if not hidden:  # 숨은 테스트는 찍은 것·표준 오류를 싣지 않는다(찍은 출력으로 숨은 입력이 드러난다)
+            ran, got, printed = case["status"] in ("passed", "failed"), case["got"], ""
+            if report.get("mode") == "function":  # 채점기는 마지막 줄을 돌려준 값으로 본다. 그 앞 줄은 내가 찍은 것
+                lines = got.splitlines()
+                got, printed = (lines[-1], "\n".join(lines[:-1])) if ran and lines else ("", "\n".join(lines))
+            row |= {"input": case["input"], "expected": case["expected"], "got": got[:2000],
+                    "error": "" if ran or case["status"] in ("timeout", "skipped") else LIMIT_WORDS.get(case["status"]) or error_line(case["error"], case["status"])}  # 출력·메모리 초과는 멈춘 까닭(표준 오류는 터미널에)
+            if case["id"] in loud:
+                row |= terminal(printed, case["error"], share)
         if case["status"] == "runtime_error":
             row |= error_fields(case, language, hidden)
         if case.get("note"):  # 답이 여럿일 수 있는 문제에서 값이 달랐다: 틀렸다고 단정하지 않는다(숨은 테스트도 입력·값은 싣지 않는다)
@@ -1897,7 +1935,8 @@ def run_once(p, language: str, code: str, given: str) -> dict:
     ran = status in ("passed", "failed")
     lines = (case.get("stdout") or "").strip().splitlines()
     got, printed = (lines[-1], lines[:-1]) if ran and lines else ("", lines)
-    out = {"status": "ran" if ran else status, "reason": raw.get("reason") or "", "input": given, "got": got[:2000], "stdout": "\n".join(printed)[:2000],
+    out = {"status": "ran" if ran else status, "reason": raw.get("reason") or "", "input": given, "got": got[:2000], "stdout": term_text("\n".join(printed)),
+           "stderr": term_text(clean(case.get("stderr") or "")),
            "error": "" if ran else error_line(case.get("stderr") or "", status), "ms": case.get("time_ms", 0),
            "compile": compile_head((raw.get("compile") or {}).get("stderr", "")), "compile_line": raw.get("compile_line"), "notice": notice_of(raw)}
     if p.mode == "program":
@@ -2891,7 +2930,7 @@ def handle(path: str, body: dict) -> tuple[int, dict]:
             code = need_code(body)
             if body.get("input") is not None:
                 return 200, run_once(p, language, code, own_input(p, body["input"]))
-            return 200, result_body(grade(p, language, code, ("example",)))
+            return 200, result_body(grade(p, language, code, ("example",)), term=True)
         if path == "/api/hint":
             rows = hint_rows(t, pid)
             if not rows:
