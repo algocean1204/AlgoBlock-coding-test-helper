@@ -249,6 +249,10 @@ def builtin(fake) -> None:
         + [{"id": "s", "kind": "example", "input": "[]", "expected": "1", "got": "", "error": "돌리지 않았어요", "status": "skipped", "ms": 0}]})["cases"]
     assert all(case["got"] == "1" for case in many[:40]) and max(sum(len(case[key]) for case in many[:40]) for key in ("stdout", "stderr")) <= server.TERM_TOTAL + 41 * 40, len(many[0]["stdout"])  # 예시가 많으면 예시마다 몫을 줄인다(합이 상한 안. 줄였다는 글만큼 여유)
     assert not {"stdout", "stderr"} & many[40].keys() and many[40]["error"] == ""  # 돌리지 않은 예시는 채점기 안내를 터미널에 싣지 않는다
+    started = time.perf_counter()  # 공백 없는 아주 긴 오류 줄도 바로 가린다(경로 가리기가 길이의 제곱으로 느려지면 요청 하나가 몇 초씩 걸린다)
+    assert server.clean("z" * 200000 + " /x/algoblock-check-ab/solution.py") == "z" * 200000 + " 내 코드" and time.perf_counter() - started < 1.0
+    wide = call("/api/run", id=PID, code="import sys\ndef solution(loans, k):\n    sys.stderr.write('z' * 60000)\n    return []\n", input='[["a"], 2]')[1]
+    assert wide["status"] == "ran" and wide["stderr"].startswith("z" * 100) and "줄였어요" in wide["stderr"] and len(wide["stderr"]) < server.TERM_MAX + 40
     long = server.term_text("앞" * 6000 + "뒤" * 6000)
     assert len(long) < server.TERM_MAX + 40 and long.startswith("앞") and long.endswith("뒤") and "가운데 4,000자는 줄였어요" in long, long[3990:4030]
     broken = call("/api/run", id=PID, code="def solution(loans, k):\n    x = 1\n    return x / 0\n", input='[["a"], 2]')[1]

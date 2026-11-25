@@ -1681,7 +1681,7 @@ TRACE_LINES = ("    at ", "\tat ", "Node.js v")  # JS·Java 호출 자취와 Nod
 
 
 ABNORMAL = "프로그램이 비정상적으로 끝났어요. 배열 범위를 벗어났거나 재귀가 너무 깊을 수 있어요."  # 오류 글 없이 끝났다(C++ 등)
-TEMP_DIR = re.compile(r"[^\s'\"(]*algoblock-check-[^/\\\s]+[/\\]")  # 채점기의 임시 폴더 경로(app/judge common.work_directory)
+TEMP_DIR = re.compile(r"(?<![^\s'\"(])[^\s'\"(]*algoblock-check-[^/\\\s]+[/\\]")  # 채점기의 임시 폴더 경로(app/judge common.work_directory). 낱말이 시작하는 자리에서만 맞춘다(공백 없는 긴 줄에서 길이의 제곱으로 느려지지 않게)
 HARNESS = re.compile(r"\b(?:algoblock_main|algoblock_runner|FunctionRunner)\.\w+")  # 채점기가 만든 호출 파일(app/judge의 언어별 runner.py)
 # 채점기가 내 코드를 적어 둔 파일: 함수 방식, 프로그램 방식(main. 임시 폴더 경로는 먼저 지우므로 경로 안의 main.rs 같은 남의 파일은 둔다)
 USER_FILE = re.compile(r"\b(?:solution\.(?:py|js|rs|cpp)|Solution\.java)\b|(?<![/\\])\b(?:main\.(?:py|js|rs|cpp)|Main\.java)\b")
