@@ -5200,7 +5200,7 @@ def solution_traps() -> None:
         assert call("/api/solution", id=PID, force=True)[1]["traps"] == []  # 증명이 없는 문제
         assert server.problem_shape(PID, "python")["traps"] == []
     js, css = (HERE / "app.js").read_text(encoding="utf-8"), (HERE / "app.css").read_text(encoding="utf-8")
-    assert '<div class="traps"><h5>이 언어로 풀 때 조심할 것</h5>' in js and js.index('class="traps"') < js.index('<pre class="code"><code>${esc(sol.code') and ".traps {" in css
+    assert '<div class="traps"><h5>이 언어로 풀 때 조심할 것</h5>' in js and js.index('class="traps"') < js.index('${codeBlock(sol.code') and ".traps {" in css
     change = js[js.index("async function changeLanguage"):js.index("\n}\n", js.index("async function changeLanguage"))]
     assert change.index("const kept = ") < change.index("await work(") and "S.solo.codeOpen = kept.code;" in change  # 기다리는 동안의 다시 그리기 전에 적어 둔다
     assert "codeOpen(S.solo, passed)" in js and "noteCodeToggle(S.solo, summary.parentElement.open)" in js
