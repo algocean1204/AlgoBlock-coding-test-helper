@@ -43,7 +43,7 @@ for (const [viewport, problem] of RUNS) {
   })
   await need('테스트별 결과를 펼친다', async () => {
     const fold = page.locator('#result details.case-fold')
-    if (!(await fold.evaluate((d) => d.open))) await fold.locator('summary').click({ timeout: 3000 })
+    if (!(await fold.evaluate((d) => d.open))) await fold.locator(':scope > summary').click({ timeout: 3000 }) // 안쪽 예시의 summary는 빼고
     await page.evaluate(() => document.querySelectorAll('#result details.case').forEach((d) => { d.open = true }))
   })
   await need('예시마다 터미널 출력이 돌려준 값과 따로 보인다', async () => {

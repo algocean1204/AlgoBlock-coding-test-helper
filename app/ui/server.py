@@ -1706,20 +1706,21 @@ def clean(text: str) -> str:
 
 
 TERM_MAX = 8000  # 터미널 출력(찍은 것, 표준 오류) 하나에 싣는 글자 수. 넘으면 앞뒤 절반씩 남긴다(앞의 디버그 출력과 끝의 오류 자취가 남게)
+TERM_TOTAL = 48000  # 결과 하나에 싣는 터미널 출력의 합(찍은 것과 표준 오류 저마다). 예시가 많은 문제는 예시마다 몫을 줄인다(1000자 아래로는 줄이지 않는다)
 
 
-def term_text(text: str) -> str:
-    """터미널 출력에 실을 글: 끝 공백을 빼고, 너무 길면 가운데를 줄인다."""
+def term_text(text: str, limit: int = TERM_MAX) -> str:
+    """터미널 출력에 실을 글: 끝 공백을 빼고, limit보다 길면 가운데를 줄인다."""
     text = (text or "").rstrip()
-    if len(text) <= TERM_MAX:
+    if len(text) <= limit:
         return text
-    half = TERM_MAX // 2
+    half = limit // 2
     return f"{text[:half]}\n… (가운데 {len(text) - 2 * half:,}자는 줄였어요) …\n{text[-half:]}"
 
 
-def terminal(printed: str, stderr: str) -> dict:
+def terminal(printed: str, stderr: str, limit: int = TERM_MAX) -> dict:
     """공개 예시·직접 실행의 터미널 출력. stdout은 내가 찍은 것(함수 방식에서 돌려준 값 줄은 뺀다), stderr는 채점기 이름을 가린 표준 오류 전체. 빈 것은 싣지 않는다."""
-    out = {"stdout": term_text(printed), "stderr": term_text(clean(stderr))}
+    out = {"stdout": term_text(printed, limit), "stderr": term_text(clean(stderr), limit)}
     return {key: value for key, value in out.items() if value}
 
 
@@ -1838,7 +1839,8 @@ def result_body(report: dict) -> dict:
     숨은 테스트는 통과 여부만: 입력·기대값·내 결과는 공개 예시에만 싣고, 숨은 테스트는 실행 오류일 때 예외 이름만 싣는다.
     효율성 케이스가 제한 시간에 가깝게 통과했으면 near와 제한(limit, 초). 같은 코드를 다시 내서 제출로 남기지 않았으면 repeat."""
     language = report.get("language", "")
-    cases = []
+    cases, shown = [], sum(case["kind"] == "example" for case in report["cases"])
+    share = max(1000, min(TERM_MAX, TERM_TOTAL // max(shown, 1)))  # 예시마다의 터미널 출력 몫
     for case in report["cases"]:
         row = {"id": case["id"], "kind": case["kind"], "status": case["status"], "ms": case["ms"], **({"made": True} if case.get("made") else {})}  # made: 자동으로 만든 테스트
         hidden = case["kind"] != "example"
@@ -1848,7 +1850,7 @@ def result_body(report: dict) -> dict:
                 lines = got.splitlines()
                 got, printed = (lines[-1], "\n".join(lines[:-1])) if ran and lines else ("", "\n".join(lines))
             row |= {"input": case["input"], "expected": case["expected"], "got": got[:2000], "error": "" if ran or case["status"] in ("timeout", "skipped") else error_line(case["error"], case["status"]),
-                    **terminal(printed, case["error"])}
+                    **({} if case["status"] == "skipped" else terminal(printed, case["error"], share))}  # 돌리지 않은 예시의 표준 오류 자리는 채점기의 안내 글이다
         if case["status"] == "runtime_error":
             row |= error_fields(case, language, hidden)
         if case.get("note"):  # 답이 여럿일 수 있는 문제에서 값이 달랐다: 틀렸다고 단정하지 않는다(숨은 테스트도 입력·값은 싣지 않는다)
