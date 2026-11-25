@@ -241,7 +241,9 @@ def builtin(fake) -> None:
     assert all(("stdout" in case) == ("stderr" in case) == (case["kind"] == "example") for case in graded), graded  # 숨은 테스트에는 찍은 것을 싣지 않는다
     crash = call("/api/run", id=PID, code="def solution(loans, k):\n    print('before')\n    return helper(loans)\n\ndef helper(x):\n    return len(x) / 0\n")[1]["cases"][0]
     assert crash["status"] == "runtime_error" and crash["got"] == "" and crash["stdout"] == "before" and "\n" not in crash["error"], crash
-    assert crash["stderr"].count("\n") >= 3 and "helper" in crash["stderr"] and "ZeroDivisionError" in crash["stderr"] and "algoblock-" not in crash["stderr"] and "/var/" not in crash["stderr"], crash["stderr"]
+    assert crash["stderr"].count("\n") >= 3 and "helper" in crash["stderr"] and "ZeroDivisionError" in crash["stderr"] and "algoblock-" not in crash["stderr"] and "/var/" not in crash["stderr"] and "call(*args)" not in crash["stderr"], crash["stderr"]
+    harness = 'Traceback (most recent call last):\n  File "/x/algoblock-check-ab/algoblock_runner.py", line 22, in <module>\n    print(json.dumps(call(*args)))\n          ~~~~^^^^\n  File "/x/algoblock-check-ab/solution.py", line 3, in solution\n    return 1 / 0\nZeroDivisionError: division by zero'
+    assert server.clean(harness) == 'Traceback (most recent call last):\n  File "내 코드", line 3, in solution\n    return 1 / 0\nZeroDivisionError: division by zero', server.clean(harness)  # 뺀 호출 파일 자취 아래의 소스 줄과 ^ 표시도 뺀다
     long = server.term_text("앞" * 6000 + "뒤" * 6000)
     assert len(long) < server.TERM_MAX + 40 and long.startswith("앞") and long.endswith("뒤") and "가운데 4,000자는 줄였어요" in long, long[3990:4030]
     broken = call("/api/run", id=PID, code="def solution(loans, k):\n    x = 1\n    return x / 0\n", input='[["a"], 2]')[1]

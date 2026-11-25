@@ -1689,11 +1689,18 @@ USER_FILE = re.compile(r"\b(?:solution\.(?:py|js|rs|cpp)|Solution\.java)\b|(?<![
 
 def clean(text: str) -> str:
     """오류 글에서 채점기 안쪽 이름을 가린다: 임시 폴더 경로는 지우고, 호출 파일을 가리키는 자취 줄은 빼고,
-    호출 파일의 위치 머리(FunctionRunner.java:12:)는 떼고, 내 코드를 적어 둔 파일 이름은 '내 코드'로 바꾼다."""
-    rows = []
+    호출 파일의 위치 머리(FunctionRunner.java:12:)는 떼고, 내 코드를 적어 둔 파일 이름은 '내 코드'로 바꾼다.
+    뺀 Python 자취 줄(File …) 아래에 그보다 깊이 들여 쓴 줄(소스 줄과 ^ 표시)은 호출 파일의 것이라 같이 뺀다.
+    Rust의 --> 아래 줄은 내 코드를 이어 붙인 파일의 줄이라 남긴다."""
+    rows, under = [], None  # under: 바로 앞에서 뺀 Python 자취 줄의 들여쓰기
+    indent = lambda row: len(row) - len(row.lstrip())  # noqa: E731
     for row in TEMP_DIR.sub("", text or "").splitlines():
         if HARNESS.search(row) and row.strip().startswith(("at ", "-->", "File ")):
+            under = indent(row) if row.strip().startswith("File ") else None
             continue
+        if under is not None and row.strip() and indent(row) > under:
+            continue
+        under = None
         rows.append(USER_FILE.sub("내 코드", re.sub(HARNESS.pattern + r"(?::\d+)*:?\s?", "", row)))
     return "\n".join(rows)
 
