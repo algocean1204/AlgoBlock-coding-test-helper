@@ -1834,13 +1834,15 @@ def error_fields(case: dict, language: str, hidden: bool) -> dict:
     return {**out, **({"line": case["line"]} if case.get("line") else {})}
 
 
-def result_body(report: dict) -> dict:
+def result_body(report: dict, term: bool = False) -> dict:
     """채점 결과를 화면 모양으로. 오류 글은 한 줄만(error_line, 초보자가 읽을 한 줄)과 한 줄 풀이(hint), 줄 번호(line, 채점기가 줄 때).
+    term: 공개 예시에 터미널 출력(찍은 것·표준 오류)을 싣는다. 예시 실행에만 켠다(제출 때는 채점 폴더에 숨은 테스트까지 담긴 케이스 파일이 있어, 그것을 읽어 찍은 글이 예시로 보인다).
     숨은 테스트는 통과 여부만: 입력·기대값·내 결과는 공개 예시에만 싣고, 숨은 테스트는 실행 오류일 때 예외 이름만 싣는다.
     효율성 케이스가 제한 시간에 가깝게 통과했으면 near와 제한(limit, 초). 같은 코드를 다시 내서 제출로 남기지 않았으면 repeat."""
     language = report.get("language", "")
     cases, shown = [], sum(case["kind"] == "example" for case in report["cases"])
     share = max(1000, min(TERM_MAX, TERM_TOTAL // max(shown, 1)))  # 예시마다의 터미널 출력 몫
+    room = TERM_TOTAL // share if term else 0  # 터미널 출력을 싣는 예시 수(예시가 아주 많으면 앞의 것만. 합이 상한을 넘지 않게)
     for case in report["cases"]:
         row = {"id": case["id"], "kind": case["kind"], "status": case["status"], "ms": case["ms"], **({"made": True} if case.get("made") else {})}  # made: 자동으로 만든 테스트
         hidden = case["kind"] != "example"
@@ -1849,8 +1851,11 @@ def result_body(report: dict) -> dict:
             if report.get("mode") == "function":  # 채점기는 마지막 줄을 돌려준 값으로 본다. 그 앞 줄은 내가 찍은 것
                 lines = got.splitlines()
                 got, printed = (lines[-1], "\n".join(lines[:-1])) if ran and lines else ("", "\n".join(lines))
-            row |= {"input": case["input"], "expected": case["expected"], "got": got[:2000], "error": "" if ran or case["status"] in ("timeout", "skipped") else error_line(case["error"], case["status"]),
-                    **({} if case["status"] == "skipped" else terminal(printed, case["error"], share))}  # 돌리지 않은 예시의 표준 오류 자리는 채점기의 안내 글이다
+            row |= {"input": case["input"], "expected": case["expected"], "got": got[:2000],
+                    "error": "" if ran or case["status"] in ("timeout", "skipped") else LIMIT_WORDS.get(case["status"]) or error_line(case["error"], case["status"])}  # 출력·메모리 초과는 멈춘 까닭(표준 오류는 터미널에)
+            if room and case["status"] != "skipped":  # 돌리지 않은 예시의 표준 오류 자리는 채점기의 안내 글이다
+                room -= 1
+                row |= terminal(printed, case["error"], share)
         if case["status"] == "runtime_error":
             row |= error_fields(case, language, hidden)
         if case.get("note"):  # 답이 여럿일 수 있는 문제에서 값이 달랐다: 틀렸다고 단정하지 않는다(숨은 테스트도 입력·값은 싣지 않는다)
@@ -2924,7 +2929,7 @@ def handle(path: str, body: dict) -> tuple[int, dict]:
             code = need_code(body)
             if body.get("input") is not None:
                 return 200, run_once(p, language, code, own_input(p, body["input"]))
-            return 200, result_body(grade(p, language, code, ("example",)))
+            return 200, result_body(grade(p, language, code, ("example",)), term=True)
         if path == "/api/hint":
             rows = hint_rows(t, pid)
             if not rows:

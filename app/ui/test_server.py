@@ -238,17 +238,24 @@ def builtin(fake) -> None:
     shown = call("/api/run", id=PID, code=loud)[1]
     assert shown["ok"] and all(case["got"] == case["expected"] and case["stdout"].startswith("seen ") and case["stderr"].startswith("debug ") and case["error"] == "" for case in shown["cases"]), shown["cases"]
     graded = server.result_body(server.grade(server.PROBLEMS[PID], "python", loud))["cases"]  # 제출의 모양(제출로 남기지 않는다)
-    assert all(("stdout" in case) == ("stderr" in case) == (case["kind"] == "example") for case in graded), graded  # 숨은 테스트에는 찍은 것을 싣지 않는다
+    assert not any({"stdout", "stderr"} & case.keys() for case in graded), graded  # 제출에는 싣지 않는다(채점 폴더의 케이스 파일을 읽어 찍으면 숨은 입력이 예시로 보인다)
+    assert all(("stdout" in case) == ("stderr" in case) == (case["kind"] == "example") for case in server.result_body(server.grade(server.PROBLEMS[PID], "python", loud), term=True)["cases"])  # 켜도 숨은 테스트에는 싣지 않는다
     crash = call("/api/run", id=PID, code="def solution(loans, k):\n    print('before')\n    return helper(loans)\n\ndef helper(x):\n    return len(x) / 0\n")[1]["cases"][0]
     assert crash["status"] == "runtime_error" and crash["got"] == "" and crash["stdout"] == "before" and "\n" not in crash["error"], crash
     assert crash["stderr"].count("\n") >= 3 and "helper" in crash["stderr"] and "ZeroDivisionError" in crash["stderr"] and "algoblock-" not in crash["stderr"] and "/var/" not in crash["stderr"] and "call(*args)" not in crash["stderr"], crash["stderr"]
     harness = 'Traceback (most recent call last):\n  File "/x/algoblock-check-ab/algoblock_runner.py", line 22, in <module>\n    print(json.dumps(call(*args)))\n          ~~~~^^^^\n  File "/x/algoblock-check-ab/solution.py", line 3, in solution\n    return 1 / 0\nZeroDivisionError: division by zero'
     assert server.clean(harness) == 'Traceback (most recent call last):\n  File "내 코드", line 3, in solution\n    return 1 / 0\nZeroDivisionError: division by zero', server.clean(harness)  # 뺀 호출 파일 자취 아래의 소스 줄과 ^ 표시도 뺀다
-    many = server.result_body({"status": "failed", "reason": "", "compile": "", "language": "python", "mode": "function", "cases": [
+    many = server.result_body(term=True, report={"status": "failed", "reason": "", "compile": "", "language": "python", "mode": "function", "cases": [
         {"id": str(i), "kind": "example", "input": "[]", "expected": "1", "got": "x" * 20000 + "\n1", "error": "e" * 20000, "status": "passed", "ms": 1} for i in range(40)]
         + [{"id": "s", "kind": "example", "input": "[]", "expected": "1", "got": "", "error": "돌리지 않았어요", "status": "skipped", "ms": 0}]})["cases"]
     assert all(case["got"] == "1" for case in many[:40]) and max(sum(len(case[key]) for case in many[:40]) for key in ("stdout", "stderr")) <= server.TERM_TOTAL + 41 * 40, len(many[0]["stdout"])  # 예시가 많으면 예시마다 몫을 줄인다(합이 상한 안. 줄였다는 글만큼 여유)
     assert not {"stdout", "stderr"} & many[40].keys() and many[40]["error"] == ""  # 돌리지 않은 예시는 채점기 안내를 터미널에 싣지 않는다
+    crowd = server.result_body(term=True, report={"status": "passed", "reason": "", "compile": "", "language": "python", "mode": "function", "cases": [
+        {"id": str(i), "kind": "example", "input": "[]", "expected": "1", "got": "x" * 3000 + "\n1", "error": "", "status": "passed", "ms": 1} for i in range(200)]})["cases"]
+    assert sum("stdout" in case for case in crowd) == server.TERM_TOTAL // 1000 and sum(len(case.get("stdout", "")) for case in crowd) <= server.TERM_TOTAL + 48 * 40  # 예시가 아주 많으면 앞의 것만 싣는다
+    stopped = server.result_body(term=True, report={"status": "output_limit", "reason": "", "compile": "", "language": "python", "mode": "function", "cases": [
+        {"id": "1", "kind": "example", "input": "[]", "expected": "1", "got": "y\ny", "error": "debug line", "status": "output_limit", "ms": 1}]})["cases"][0]
+    assert (stopped["error"], stopped["stderr"], stopped["stdout"]) == (server.LIMIT_WORDS["output_limit"], "debug line", "y\ny"), stopped  # 멈춘 까닭을 오류로, 표준 오류는 터미널에
     started = time.perf_counter()  # 공백 없는 아주 긴 오류 줄도 바로 가린다(경로 가리기가 길이의 제곱으로 느려지면 요청 하나가 몇 초씩 걸린다)
     assert server.clean("z" * 200000 + " /x/algoblock-check-ab/solution.py") == "z" * 200000 + " 내 코드" and time.perf_counter() - started < 1.0
     wide = call("/api/run", id=PID, code="import sys\ndef solution(loans, k):\n    sys.stderr.write('z' * 60000)\n    return []\n", input='[["a"], 2]')[1]
