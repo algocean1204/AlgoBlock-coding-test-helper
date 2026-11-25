@@ -2020,13 +2020,13 @@ function clearCode() {
 }
 
 /* ── 채점 결과 ── */
-/** 복사 단추를 단 코드 상자. lang을 주면 코드 칸과 같은 문법 색을 칠한다(AlgoBlockHighlight가 &, <, >를 바꾼다. 모르는 언어는 글만). */
-const COPY = '<button type="button" class="btn quiet small copy" data-copy>복사</button>';
-const codeBlock = (text, lang, cls = "") => `<div class="code-wrap"><pre class="code${cls ? ` ${cls}` : ""}"><code>${
-  lang ? window.AlgoBlockHighlight.lines(text, lang).join("\n") : esc(text)}</code></pre>${COPY}</div>`;
+/** 복사 단추. what: 무엇을 복사하는지(단추 이름) */
+const copyBtn = (what) => `<button type="button" class="btn quiet small copy" data-copy aria-label="${esc(what)} 복사">복사</button>`;
+/** 복사 단추를 단 코드 상자. 코드 칸과 같은 문법 색을 칠한다(AlgoBlockHighlight가 &, <, >를 바꾸고, 모르는 언어는 글만 둔다). */
+const codeBlock = (text, lang, what) => `<div class="code-wrap"><pre class="code"><code>${window.AlgoBlockHighlight.lines(text, lang).join("\n")}</code></pre>${copyBtn(what)}</div>`;
 /** 터미널 출력: 내가 찍은 것(표준 출력) 다음에 표준 오류(색을 달리한다). 둘은 따로 모아 섞인 차례는 알 수 없다. 둘 다 없으면 빈 글 */
 const termBox = (out, err) => (out || err ? `<div class="code-wrap"><pre class="code term" tabindex="0" aria-label="터미널 출력"><code>${esc(out || "")}${out && err ? "\n" : ""}${
-  err ? `<span class="term-err">${esc(err)}</span>` : ""}</code></pre>${COPY}</div>` : "");
+  err ? `<span class="term-err">${esc(err)}</span>` : ""}</code></pre>${copyBtn("터미널 출력")}</div>` : "");
 /** 복사 단추: 같은 상자의 코드 글을 클립보드에 넣는다. 클립보드를 쓰지 못하면 글을 골라 두어 복사 단축키로 가져가게 한다. */
 async function copyCode(el) {
   const pre = el.closest(".code-wrap").querySelector("pre"), text = pre.textContent;
@@ -2430,7 +2430,7 @@ function solutionHtml(sol, passed) {
       ${sol.steps.length ? `<h4>푸는 순서</h4><ol class="plain-list numbered">${sol.steps.map((x) => `<li>${inline(x)}</li>`).join("")}</ol>` : ""}
       <h4>정답 풀이 <span class="tag">${esc(LANG[sol.language] || sol.language)}</span></h4>${guide ? "" : '<p class="hint">이 문제는 글로 된 해설이 아직 없어요. 정답 코드만 있어요.</p>'}
       ${(sol.traps || []).length ? `<div class="traps"><h5>이 언어로 풀 때 조심할 것</h5><ul class="plain-list">${sol.traps.map((x) => `<li>${inline(x.what)} ${inline(x.fix)}${(x.at || []).length ? ` <small>이 문제에서 걸리는 곳: ${x.at.map((at) => `<q>${esc(at)}</q>`).join(" · ")}</small>` : ""}</li>`).join("")}</ul></div>` : ""}
-      ${codeBlock(sol.code.replace(/\s+$/, ""), sol.language)}</details>${passed ? "" : next}`;
+      ${codeBlock(sol.code.replace(/\s+$/, ""), sol.language, "정답 코드")}</details>${passed ? "" : next}`;
 }
 
 function renderSolo() {
