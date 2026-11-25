@@ -59,6 +59,29 @@ for (const [viewport, problem] of RUNS) {
     const painted = await code.locator('span[class^="t-"]').count()
     if (!painted) throw new Error('색을 칠한 글이 없다')
   })
+  await need('문법 색이 상자 바탕 위에서 4.5:1 넘게 읽힌다(밝은·어두운 화면)', async () => {
+    const low = await code.evaluate((pre) => {
+      const rgb = (c) => c.match(/[\d.]+/g).slice(0, 3).map(Number)
+      const lum = (c) => { const [r, g, b] = rgb(c).map((v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4 }); return 0.2126 * r + 0.7152 * g + 0.0722 * b }
+      const ratio = (a, b) => { const [x, y] = [lum(a), lum(b)].sort((m, n) => n - m); return (x + 0.05) / (y + 0.05) }
+      const root = document.documentElement, before = root.dataset.scheme, out = []
+      for (const scheme of ['light', 'dark']) {
+        root.dataset.scheme = scheme
+        const bg = getComputedStyle(pre).backgroundColor
+        for (const span of new Set([...pre.querySelectorAll('span[class^="t-"]')].map((s) => s.className))) {
+          const color = getComputedStyle(pre.querySelector(`span.${span}`)).color
+          if (ratio(color, bg) < 4.5) out.push(`${scheme} ${span} ${color} on ${bg} = ${ratio(color, bg).toFixed(2)}`)
+        }
+      }
+      if (before === undefined) delete root.dataset.scheme; else root.dataset.scheme = before
+      return out
+    })
+    if (low.length) throw new Error(low.join(', '))
+  })
+  await need('복사 단추가 코드의 첫 줄을 가리지 않는다', async () => {
+    const [top, bottom] = await code.evaluate((pre) => [pre.getBoundingClientRect().top + parseFloat(getComputedStyle(pre).paddingTop), pre.parentElement.querySelector('.copy').getBoundingClientRect().bottom])
+    if (top < bottom - 0.5) throw new Error(`코드가 ${top}px에서 시작하는데 단추가 ${bottom}px까지 내려온다`)
+  })
   await need('색을 칠해도 글은 원래 코드와 같다', async () => {
     const text = await code.evaluate((pre) => pre.textContent)
     if (text !== problem.solutions.python.replace(/\s+$/, '')) throw new Error('글이 달라졌다')
