@@ -232,6 +232,29 @@ def builtin(fake) -> None:
     assert (own["reference"], own["same"]) == ('["a"]', True)  # 기본 문제는 정답 풀이의 결과를 같이 보여 준다
     printed = call("/api/run", id=PID, code="def solution(loans, k):\n    print('hi')\n    return loans\n", input='[["a"], 2]')[1]
     assert (printed["status"], printed["got"], printed["stdout"], printed["reference"], printed["same"]) == ("ran", '["a"]', "hi", "[]", False)
+    # 터미널 출력: 찍은 것과 표준 오류 전체를 돌려준 값과 나눠 싣는다. 다 돈 케이스의 표준 오류는 오류가 아니다. 숨은 테스트에는 싣지 않는다
+    loud = "import sys\n" + FIRST["solutions"]["python"].replace("def solution(loans, k):\n", "def solution(loans, k):\n    print('seen', len(loans))\n    print('debug', k, file=sys.stderr)\n", 1)
+    assert own["stderr"] == "" and {"got": "[]", "stdout": "seen 1", "stderr": "debug 2", "error": ""}.items() <= call("/api/run", id=PID, code=loud, input='[["a"], 2]')[1].items()
+    shown = call("/api/run", id=PID, code=loud)[1]
+    assert shown["ok"] and all(case["got"] == case["expected"] and case["stdout"].startswith("seen ") and case["stderr"].startswith("debug ") and case["error"] == "" for case in shown["cases"]), shown["cases"]
+    graded = server.result_body(server.grade(server.PROBLEMS[PID], "python", loud))["cases"]  # 제출의 모양(제출로 남기지 않는다)
+    assert all(("stdout" in case) == ("stderr" in case) == (case["kind"] == "example") for case in graded), graded  # 숨은 테스트에는 찍은 것을 싣지 않는다
+    crash = call("/api/run", id=PID, code="def solution(loans, k):\n    print('before')\n    return helper(loans)\n\ndef helper(x):\n    return len(x) / 0\n")[1]["cases"][0]
+    assert crash["status"] == "runtime_error" and crash["got"] == "" and crash["stdout"] == "before" and "\n" not in crash["error"], crash
+    assert crash["stderr"].count("\n") >= 3 and "helper" in crash["stderr"] and "ZeroDivisionError" in crash["stderr"] and "algoblock-" not in crash["stderr"] and "/var/" not in crash["stderr"] and "call(*args)" not in crash["stderr"], crash["stderr"]
+    harness = 'Traceback (most recent call last):\n  File "/x/algoblock-check-ab/algoblock_runner.py", line 22, in <module>\n    print(json.dumps(call(*args)))\n          ~~~~^^^^\n  File "/x/algoblock-check-ab/solution.py", line 3, in solution\n    return 1 / 0\nZeroDivisionError: division by zero'
+    assert server.clean(harness) == 'Traceback (most recent call last):\n  File "내 코드", line 3, in solution\n    return 1 / 0\nZeroDivisionError: division by zero', server.clean(harness)  # 뺀 호출 파일 자취 아래의 소스 줄과 ^ 표시도 뺀다
+    many = server.result_body({"status": "failed", "reason": "", "compile": "", "language": "python", "mode": "function", "cases": [
+        {"id": str(i), "kind": "example", "input": "[]", "expected": "1", "got": "x" * 20000 + "\n1", "error": "e" * 20000, "status": "passed", "ms": 1} for i in range(40)]
+        + [{"id": "s", "kind": "example", "input": "[]", "expected": "1", "got": "", "error": "돌리지 않았어요", "status": "skipped", "ms": 0}]})["cases"]
+    assert all(case["got"] == "1" for case in many[:40]) and max(sum(len(case[key]) for case in many[:40]) for key in ("stdout", "stderr")) <= server.TERM_TOTAL + 41 * 40, len(many[0]["stdout"])  # 예시가 많으면 예시마다 몫을 줄인다(합이 상한 안. 줄였다는 글만큼 여유)
+    assert not {"stdout", "stderr"} & many[40].keys() and many[40]["error"] == ""  # 돌리지 않은 예시는 채점기 안내를 터미널에 싣지 않는다
+    started = time.perf_counter()  # 공백 없는 아주 긴 오류 줄도 바로 가린다(경로 가리기가 길이의 제곱으로 느려지면 요청 하나가 몇 초씩 걸린다)
+    assert server.clean("z" * 200000 + " /x/algoblock-check-ab/solution.py") == "z" * 200000 + " 내 코드" and time.perf_counter() - started < 1.0
+    wide = call("/api/run", id=PID, code="import sys\ndef solution(loans, k):\n    sys.stderr.write('z' * 60000)\n    return []\n", input='[["a"], 2]')[1]
+    assert wide["status"] == "ran" and wide["stderr"].startswith("z" * 100) and "줄였어요" in wide["stderr"] and len(wide["stderr"]) < server.TERM_MAX + 40
+    long = server.term_text("앞" * 6000 + "뒤" * 6000)
+    assert len(long) < server.TERM_MAX + 40 and long.startswith("앞") and long.endswith("뒤") and "가운데 4,000자는 줄였어요" in long, long[3990:4030]
     broken = call("/api/run", id=PID, code="def solution(loans, k):\n    x = 1\n    return x / 0\n", input='[["a"], 2]')[1]
     assert broken["status"] == "runtime_error" and broken["error"].startswith("ZeroDivisionError") and broken["got"] == "" and "0으로 나눴어요" in broken["hint"]
     assert broken["reference"] == "[]" and "same" not in broken  # 내 코드가 돌지 못했으면 견주지 않는다
@@ -1946,6 +1969,10 @@ def program_mode() -> None:
     # 직접 입력: 글 그대로 넣고, 출력 전체를 돌려준다. 예시 실행은 공개 예시만
     ran = call("/api/run", id=pid, code="import sys\nprint(sys.stdin.read().split())\n", input="1 2\r\n3")[1]
     assert (ran["status"], ran["input"], ran["got"], ran["stdout"], ran["error"]) == ("ran", "1 2\n3\n", "['1', '2', '3']\n", "", "") and "reference" not in ran
+    # 표준 입출력: 출력 전체가 답이라 찍은 것은 따로 없고, 표준 오류만 터미널로. 다 돈 예시의 표준 오류는 오류가 아니다
+    noisy = call("/api/run", id=pid, code="import sys\n" + PY_SUM + "print('dbg', file=sys.stderr)\n")[1]
+    assert noisy["ok"] and all(case["stderr"] == "dbg" and case["error"] == "" and "stdout" not in case for case in noisy["cases"]), noisy["cases"]
+    assert {"got": "['1']\n", "stdout": "", "stderr": "dbg"}.items() <= call("/api/run", id=pid, code="import sys\nprint('dbg', file=sys.stderr)\nprint(sys.stdin.read().split())\n", input="1")[1].items()
     broke = call("/api/run", id=pid, code="print('before')\nprint(1 / 0)\n", input="")[1]
     assert (broke["status"], broke["got"]) == ("runtime_error", "before\n") and broke["error"].startswith("ZeroDivisionError")
     assert "20,000자" in refuses("/api/run", id=pid, code=PY_SUM, input="1" * 20_001)
