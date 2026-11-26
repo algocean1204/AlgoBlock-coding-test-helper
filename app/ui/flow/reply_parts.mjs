@@ -238,7 +238,7 @@ async function flow(way, viewport, scenario) {
       served = [...chat, svc('m7', '새 결과 줄이에요.', 2, { block_index: 2, result: '새 결과 줄이에요.', buttons: ['fill', 'skip'] })]
       await btn('skip').focus()
       await page.keyboard.press('Enter')
-      await msg('m7').waitFor({ state: 'visible' })
+      await msg('m7').waitFor({ state: 'visible', timeout: 15000 }) // 단추를 누르면 서버를 한 번 오간 뒤에 새 말이 그려진다(느린 러너는 4초를 넘는다)
       await page.waitForFunction(() => document.activeElement && document.activeElement !== document.body, null, { timeout: 2000 })
       const at = await page.evaluate(() => { const a = document.activeElement, m = a.closest('.msg'); return { tag: a.tagName, id: a.id, act: a.dataset.act, msg: m && m.dataset.msg, block: a.dataset.block } })
       if (!((at.act === 'skip' && at.msg === 'm7') || at.block === blockId)) throw new Error(`초점이 ${JSON.stringify(at)}에 있다`)
@@ -247,7 +247,7 @@ async function flow(way, viewport, scenario) {
       served = [...chat, svc('m7', '새 결과 줄이에요.', 2, { block_index: 2, result: '새 결과 줄이에요.', buttons: ['fill', 'skip'] }), svc('m8', '이 블록은 확인 전으로 두었어요.', 2, { block_index: 2, result: '이 블록은 확인 전으로 두었어요.' })]
       await msg('m7').locator('.slot-buttons > button[data-act="skip"]').focus()
       await page.keyboard.press('Enter')
-      await msg('m8').waitFor({ state: 'visible' })
+      await msg('m8').waitFor({ state: 'visible', timeout: 15000 }) // 위와 같다
       const ok = await page.waitForFunction((id) => { const a = document.activeElement; return a && a.tagName === 'TEXTAREA' && a.dataset.block === id }, blockId, { timeout: 3000 }).then(() => true, () => false)
       if (!ok) {
         const at = await page.evaluate(() => { const a = document.activeElement, m = a.closest('.msg'); return { tag: a.tagName, id: a.id, act: a.dataset.act, msg: m && m.dataset.msg, block: a.dataset.block } })
